@@ -1,0 +1,40 @@
+import { createLogger } from "../log/index.js";
+import { runInspect } from "../local/inspect/index.js";
+import type { InspectArgs, InspectResult } from "../types.js";
+import { defaultLogPath, utcTimestamp } from "../internal/paths.js";
+
+export interface InspectContext {
+  profileDir: string;
+  logDir: string;
+}
+
+export async function inspectImpl(
+  ctx: InspectContext,
+  args: InspectArgs,
+): Promise<InspectResult> {
+  const ts = utcTimestamp();
+  const logPath = args.log ?? defaultLogPath(ctx.logDir, ts);
+  const logger = await createLogger(logPath, "inspect");
+
+  try {
+    await logger.info("resolve", "inspect start", {
+      input: args.in,
+      mode: args.mode ?? "outer",
+      key: args.key ?? "auto",
+    });
+    const stats = await runInspect(args);
+    await logger.info("stats", "inspect complete", { stats });
+    return {
+      input: args.in,
+      stats,
+      logPath: logger.handle.path,
+    };
+  } catch (err) {
+    await logger.error("error", (err as Error).message, {
+      code: (err as { code?: string }).code ?? null,
+    });
+    throw err;
+  } finally {
+    await logger.close();
+  }
+}

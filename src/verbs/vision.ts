@@ -1,0 +1,171 @@
+import { readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+import { Logger, createLogger } from "../log/index.js";
+import { loadProfile } from "../profile/load.js";
+import { resolveProfile } from "../profile/resolve.js";
+import { applyPatch } from "../recipe/applyPatch.js";
+import { applySet } from "../recipe/applySet.js";
+import { loadRecipe } from "../recipe/load.js";
+import { validateVisionSection } from "../recipe/schemas.js";
+import { writeSidecar } from "../sidecar/write.js";
+import { getProvider } from "../providers/index.js";
+import { detectFormat } from "../image/detectFormat.js";
+import { shrinkForVision } from "../image/shrinkForVision.js";
+import type {
+  Sidecar,
+  VisionArgs,
+  VisionResult,
+} from "../types.js";
+import {
+  defaultLogPath,
+  defaultOutDir,
+  defaultProfilePath,
+  defaultRecipePath,
+  defaultStem,
+  utcTimestamp,
+} from "../internal/paths.js";
+
+export interface VisionContext {
+  profileDir: string;
+  logDir: string;
+}
+
+const DEFAULT_SHRINK = { width: 1024, height: 1024 };
+
+interface PreparedImage {
+  path: string;
+  data: Uint8Array;
+  format: string;
+  shrink: {
+    applied: boolean;
+    originalWidth: number;
+    originalHeight: number;
+    outputWidth: number;
+    outputHeight: number;
+  };
+}
+
+async function prepareImage(
+  imagePath: string,
+  fit: { width: number; height: number },
+  logger: Logger,
+): Promise<PreparedImage> {
+  const raw = await readFile(imagePath);
+  const shrink = await shrinkForVision(raw, fit);
+  await logger.info("write", "prepared vision input", {
+    path: path.basename(imagePath),
+    shrink: {
+      applied: shrink.applied,
+      originalWidth: shrink.originalWidth,
+      originalHeight: shrink.originalHeight,
+      outputWidth: shrink.outputWidth,
+      outputHeight: shrink.outputHeight,
+    },
+  });
+  const fmt = await detectFormat(shrink.buffer);
+  return {
+    path: imagePath,
+    data: new Uint8Array(shrink.buffer),
+    format: fmt.format,
+    shrink: {
+      applied: shrink.applied,
+      originalWidth: shrink.originalWidth,
+      originalHeight: shrink.originalHeight,
+      outputWidth: shrink.outputWidth,
+      outputHeight: shrink.outputHeight,
+    },
+  };
+}
+
+export async function visionImpl(
+  ctx: VisionContext,
+  args: VisionArgs,
+): Promise<VisionResult> {
+  const ts = utcTimestamp();
+  const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
+  const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
+  const logPath = args.log ?? defaultLogPath(ctx.logDir, ts);
+  const logger = await createLogger(logPath, "vision");
+
+  try {
+    const profile = await loadProfile(profilePath);
+    const resolved = resolveProfile(profile);
+    await logger.info("resolve", "apiKey resolved", {
+      apiKeySource: resolved.apiKeySource,
+      provider: profile.provider,
+    });
+
+    let recipe = await loadRecipe(recipePath);
+    if (args.patch) recipe = applyPatch(recipe, args.patch);
+    if (args.set?.length) recipe = await applySet(recipe, "vision", args.set);
+    const section = validateVisionSection(recipe.vision);
+    const params: Record<string, unknown> = { ...section };
+    const shrink = section.shrink ?? DEFAULT_SHRINK;
+    delete params.shrink;
+
+    const inputs = Array.isArray(args.in) ? args.in : [args.in];
+    const prepared = await Promise.all(
+      inputs.map((p) => prepareImage(p, shrink, logger)),
+    );
+
+    await logger.info("request", "calling provider.vision", {
+      provider: profile.provider,
+      model: params.model ?? profile.model ?? null,
+      images: prepared.length,
+    });
+
+    const provider = getProvider(profile.provider);
+    const providerResult = await provider.vision({
+      check: args.check,
+      images: prepared.map((p) => ({ data: p.data, format: p.format })),
+      params,
+      profile: resolved,
+    });
+    await logger.info("response", "provider.vision returned", {
+      ok: providerResult.verdict.ok,
+      score: providerResult.verdict.score,
+    });
+
+    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
+    await mkdir(outDir, { recursive: true });
+    const stem = args.outName ?? defaultStem(ts);
+    const stemPath = path.join(outDir, stem);
+
+    const sidecar: Sidecar = {
+      request: {
+        ...params,
+        check: args.check,
+        inputs: prepared.map((p) => ({
+          name: path.basename(p.path),
+          shrink: p.shrink,
+        })),
+      },
+      response: {
+        verdict: providerResult.verdict,
+        raw: providerResult.raw,
+      },
+      files: [],
+    };
+    const sidecarPath = await writeSidecar(stemPath, sidecar);
+    await logger.info("write", "wrote sidecar", {
+      name: path.basename(sidecarPath),
+    });
+
+    return {
+      ok: providerResult.verdict.ok,
+      score: providerResult.verdict.score,
+      reasons: providerResult.verdict.reasons,
+      raw: providerResult.raw,
+      sidecarPath,
+      logPath: logger.handle.path,
+    };
+  } catch (err) {
+    await logger.error("error", (err as Error).message, {
+      code: (err as { code?: string }).code ?? null,
+    });
+    throw err;
+  } finally {
+    await logger.close();
+  }
+}
