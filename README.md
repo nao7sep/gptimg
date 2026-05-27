@@ -1,10 +1,26 @@
 # GptImg
 
-A TypeScript SDK + CLI for AI image generation, vision verification, and local chroma-key post-processing. Designed to be driven both by humans on the CLI and by AI agents through the SDK, with stable on-disk artifacts (timestamped images, sidecars, JSONL logs) that let an agent iterate without in-process state.
+TypeScript SDK + CLI for AI image generation, vision verification, and local chroma-key post-processing. It is designed for human CLI use and for AI agents or skills that need durable artifacts: timestamped images, JSON sidecars, and JSONL logs.
 
-Personal tool. v1 ships OpenAI only; the provider seam is in place but no second provider is shipped.
+Personal tool. v1 ships OpenAI only; the provider boundary exists but no second provider is shipped.
 
-## Install
+## AI Agent Usage
+
+Most automated use should start with the agent manual:
+
+- [Agent workflows and best practices](docs/agent-workflows.md)
+
+Core operating rules:
+
+- Parse CLI stdout JSON for success; runtime errors are JSON on stderr.
+- Keep the original generated or input image. Treat chroma outputs as derived artifacts.
+- Use task-specific `--out-dir` / `--out-name` values. Use `--overwrite` only when intentionally replacing an artifact group.
+- Treat `partial: true` from `generate` / `edit` as recoverable when at least one file was written.
+- Run `inspect` before destructive chroma removal when subject content may contain key-like colors.
+- For chroma interiors, compare `inspect --mode outer` and `inspect --mode all` on the original image.
+- When changing chroma `mode`, key, threshold, despill, or fill strategy, rerun from the original image. Do not use an already background-removed image as the final source unless intentionally experimenting.
+
+## Quick Start
 
 ```sh
 git clone <this repo> gptimg
@@ -13,11 +29,9 @@ npm install
 npm run build
 ```
 
-The build emits `dist/`; the CLI entry is `bin/gptimg.js`. Add to PATH or invoke as `node bin/gptimg.js`.
+The build emits `dist/`; the CLI entry is `bin/gptimg.js`. Add `bin/` to `PATH` or invoke as `node bin/gptimg.js`.
 
-## Setup
-
-The profile holds the connection info. Two ways to provide the API key:
+Set up a profile:
 
 ```sh
 # Store the key in the profile (obfuscated on disk).
@@ -29,11 +43,11 @@ cat > ~/.gptimg/profile.json <<'EOF'
 EOF
 ```
 
-When both are present, the environment variable wins (runtime overrides persistent config). `profile clear-key` removes only the stored `apiKey`; a missing profile file or missing key is a no-op, while unreadable profile paths are reported as errors.
+When both `apiKeyEnv` and `apiKey` are present, the environment variable wins. `profile clear-key` removes only stored `apiKey`; a missing profile file or missing key is a no-op, while unreadable profile paths are errors.
 
 Profile files are strict JSON objects. Supported top-level keys are `provider`, `apiKey`, `apiKeyEnv`, `organization`, `project`, and `network`. For org-scoped OpenAI accounts, `organization` and `project` are passed through to the OpenAI SDK.
 
-Defaults all live under `~/.gptimg/`:
+Defaults live under `~/.gptimg/`:
 
 | Path | Purpose |
 |---|---|
@@ -42,136 +56,72 @@ Defaults all live under `~/.gptimg/`:
 | `~/.gptimg/output/` | Generated images |
 | `~/.gptimg/logs/` | One JSONL file per invocation |
 
-## Models
+## Common Workflows
 
-Per-verb defaults: `gpt-image-2` for `generate` and `edit`, `gpt-5.4-mini` for `vision`. Override per project by setting `model` inside the matching recipe section (`recipe.generate.model`, `recipe.edit.model`, `recipe.vision.model`), or per call with `--set model=...`. There is no global `model` in `profile.json` — each verb picks its own model independently.
-
-A few gpt-image-2 specifics worth knowing:
-
-- **No transparent backgrounds.** `background: "transparent"` is rejected by gpt-image-2. If you need transparent output, either set `recipe.generate.model` to `gpt-image-1.5`, or keep gpt-image-2 and use the chroma-key workflow below (generate against a solid backdrop, then strip it locally).
-- **`input_fidelity` is gone.** gpt-image-2 always processes input images at high fidelity; passing the parameter will fail. Our code never sent it.
-- **`n > 1` behavior varies.** Some references treat gpt-image-2 generation as fixed at `n=1` while edit requests support 1–10. If a batch request fails, fall back to a single image and call again.
-- **Reference images are billed at max fidelity** on edit calls regardless of `quality`. Quality affects output cost only.
-
-### Where defaults and overrides live
-
-Every tunable knob has exactly one default. The override layers stack on top:
-
-| Knob | Default lives in | Override path |
-|---|---|---|
-| Per-verb model | `src/providers/openai/defaults.ts` (`OPENAI_MODEL_DEFAULTS`) | `recipe.{verb}.model` → per-call `--set model=...` |
-| Vision system prompt | `src/providers/openai/defaults.ts` (`OPENAI_VISION_SYSTEM_PROMPT`) | `recipe.vision.systemPrompt` |
-| Vision shrink target | `src/verbs/defaults.ts` (`VISION_DEFAULTS.shrink`) | `recipe.vision.shrink` |
-| Chroma options (mode, thresholds, despill, …) | `src/local/chroma/defaults.ts` (`CHROMA_DEFAULTS`) | `recipe.chroma.*` → per-call CLI/SDK flags |
-| Chroma backdrop prompt | `src/local/chroma/defaults.ts` (`CHROMA_BACKDROP_INSTRUCTION`) | `recipe.chroma.backdropInstruction` (template, with `{color}`) |
-| Chroma verify-prompt suffix | `src/local/chroma/defaults.ts` (`CHROMA_VERIFY_INSTRUCTION`) | `recipe.chroma.verifyInstruction` |
-| Network budgets | `src/network/defaults.ts` (`NETWORK_DEFAULTS`) | `profile.network.*` → `recipe.network.*` |
-
-`network` is the only knob that appears in both `profile.json` and `recipe.json`, because account-wide rate limits and project-specific budgets are both legitimate concerns. Everything else lives in recipe only.
-
-## Network
-
-Every outbound network call passes through a typed budget that defines the timeout, retry count, and retry schedule. There are three categories:
-
-| Category | Used by | Default timeout | Default retries | Default intervals |
-|---|---|---|---|---|
-| `imageGenerate` | `images.generate`, `images.edit` | 600,000 ms | 2 | `[2000, 5000]` ms |
-| `imageVision` | `chat.completions.create` (vision verb, chroma `--verify`) | 120,000 ms | 2 | `[2000, 5000]` ms |
-| `imageDownload` | URL-to-bytes fallback when a response returns a URL instead of base64 | 30,000 ms | 2 | `[500, 1500]` ms |
-
-Override per-category in profile, recipe, `--patch`, or `--set` — last wins:
-
-```jsonc
-// ~/.gptimg/profile.json
-{
-  "provider": "openai",
-  "apiKey": "...",
-  "network": {
-    "imageGenerate": { "timeout": 300000, "maxRetries": 4 }
-  }
-}
-```
-
-```jsonc
-// ~/.gptimg/recipe.json
-{
-  "network": {
-    "imageGenerate": { "retryIntervals": [1000, 3000, 10000] }
-  },
-  "generate": { "size": "1024x1024" }
-}
-```
+Generate one image:
 
 ```sh
-# CLI: arrays and objects are JSON-parsed in --set values
-gptimg generate "logo" \
-  --set network.imageGenerate.timeout=120000 \
-  --set 'network.imageGenerate.retryIntervals=[2000,5000,15000]'
+gptimg generate "a red coffee mug on a wooden desk"
 ```
 
-**Retry behavior:**
+Generate and verify:
 
-- `Retry-After` and `retry-after-ms` response headers always win — when the server tells us to wait N, we wait N.
-- Otherwise, the wait before retry K is `retryIntervals[min(K - 1, length - 1)]`. So `[5000]` means "always wait 5s" and `[]` means immediate retry.
-- A mild jitter (75–100%) is applied to scheduled waits.
-- Retryable errors: HTTP 408, 409, 429, 5xx, and transient network errors (`ECONNRESET`, `ETIMEDOUT`, etc.). Everything else (400/401/403/404, validation failures) fails immediately.
-- `maxRetries: 0` disables retries entirely. The OpenAI SDK's built-in retries are also disabled — we own the policy end-to-end so URL downloads share the same behavior as AI calls.
+```sh
+gptimg generate "single centered product photo of a pink frosted donut" \
+  --out-dir ./out \
+  --out-name donut
 
-Profile and recipe `network` entries are strict: unknown budget categories or fields are rejected so typos fail before any API call.
-
-## Cancellation
-
-Every SDK method accepts a second argument with an optional `AbortSignal`:
-
-```ts
-const ctrl = new AbortController();
-setTimeout(() => ctrl.abort(), 30_000);
-
-await sdk.generate({ prompt: "logo" }, { signal: ctrl.signal });
+gptimg vision \
+  --in ./out/donut.png \
+  --check "one donut is centered, fully visible, and not cropped"
 ```
 
-When the signal aborts, the SDK rejects with an `AbortError` (`errorType: "abort"`, `code: "cancelled"`) and:
+Edit an existing image:
 
-- closes the in-flight HTTP request to OpenAI,
-- cancels any URL download in progress,
-- breaks out of retry sleeps,
-- stops the chroma pipeline at the next phase boundary,
-- skips the sidecar write (which would be incomplete and misleading).
+```sh
+gptimg edit "remove the background" --in input.png --out-dir ./out --out-name edited
+```
 
-What we cannot do:
+Safe chroma workflow for subjects with holes or key-like colors:
 
-- Stop OpenAI's server from finishing inference on a request it has already accepted. **You will still be billed for tokens spent server-side.** Cancellation just unblocks our process — it does not refund.
-- Stop a `sharp` decode that's mid-stride. We honor the signal *between* stages, not inside them.
-- Reverse a `write-file-atomic` write that has already begun. They take fractions of a second so this is rarely visible.
+```sh
+# 1. Inspect the original. Outer mode is safer because it ignores interior pockets.
+gptimg inspect --in donut-original.png --key from-sidecar --mode outer
 
-On the CLI, the first `Ctrl-C` triggers cancellation cleanly; a second `Ctrl-C` exits the process hard with code 130. A backstop timer also forces exit after 2 s if the abort doesn't drain.
+# 2. Inspect the original again with all mode to discover interior candidates.
+gptimg inspect --in donut-original.png --key from-sidecar --mode all
 
-## Verbs
+# 3. If the non-border regions are true background holes, render the final
+#    all-mode chroma result from the original, not from an outer-mode output.
+gptimg chroma \
+  --in donut-original.png \
+  --key from-sidecar \
+  --mode all \
+  --verify "background is transparent, including the donut hole; subject edges are smooth"
+```
+
+## CLI Reference
 
 ### `generate`
 
 ```sh
-gptimg generate "a red coffee mug on a wooden desk"
-
-# With a chroma-key backdrop hint (recipe.json):
-#   { "chroma": { "color": "#00ff00" } }
-gptimg generate "isometric icon of a folder"
-
-# Override recipe fields on the command line.
 gptimg generate "logo" \
   --set size=1024x1024 \
   --set quality=high \
   --set n=4
 ```
 
-Outputs `<utc>-gptimg.png` in the out directory, or indexed filenames such as `<stem>-1.png` / `<stem>-01.png` when multiple images are written. A `<stem>.json` sidecar captures the resolved request and the AI response (base64 image fields nulled in place).
+Outputs `<stem>.<ext>` for one image, or indexed filenames such as `<stem>-1.png` / `<stem>-01.png` when multiple images are written. A `<stem>.json` sidecar captures the resolved request and provider response with base64 image fields nulled.
+
+If `recipe.chroma.color` is set, `generate` appends the configured chroma backdrop instruction to the prompt and records the color in the sidecar so later `chroma --key from-sidecar` can reuse it.
 
 ### `edit`
 
 ```sh
-gptimg edit "remove the background" --in input.png
 gptimg edit "fill in the masked area with sky" --in input.png --mask mask.png
 ```
+
+Uses the same output, sidecar, recipe, network, and overwrite behavior as `generate`.
 
 ### `vision`
 
@@ -181,11 +131,11 @@ gptimg vision \
   --check "the subject is a single coffee mug, no other objects"
 ```
 
-Returns `{ ok, score, reasons }` from a structured `json_schema` response. The default vision model is `gpt-5.4-mini`. Images are auto-shrunk to fit inside 1024×1024 before upload (configurable via `recipe.vision.shrink` or `--set 'shrink={...}'`). Vision detail can be configured via `recipe.vision.detail` or `--set detail=low|high|original|auto`. By default, detail is left unset so the model can choose automatically; `original` requires a model that supports it (for example `gpt-5.4`, not `gpt-5.4-mini`). The system prompt is configurable via `recipe.vision.systemPrompt`.
+Returns `{ ok, score, reasons }` from a structured `json_schema` response. Images are auto-shrunk to fit inside 1024x1024 before upload unless `recipe.vision.shrink` or `--set 'shrink={...}'` overrides it.
+
+Vision detail can be configured with `recipe.vision.detail` or `--set detail=low|high|original|auto`. By default, detail is left unset so the model can choose automatically. `original` requires a model that supports it; the default vision model does not.
 
 ### `chroma`
-
-Local; no API call. Detects the chroma-key background via a region-aware Gaussian color model in LAB, then extracts the subject by closed-form alpha matting in linear-light RGB with spill suppression on the recovered foreground.
 
 ```sh
 # Auto-detect the chroma key from the image border.
@@ -194,62 +144,21 @@ gptimg chroma --in image.png
 # Use the hint stored in the sibling sidecar.
 gptimg chroma --in image.png --key from-sidecar
 
-# Two modes: outer (default) keeps interior background pockets opaque;
-# all removes them too.
+# Remove interior chroma-key regions too.
 gptimg chroma --in donut.png --mode all
-
-# Chain a vision check after removal.
-gptimg chroma --in image.png \
-  --verify "background is fully removed and the subject is intact"
 ```
 
-Writes `<input-stem>-chroma.png` and `<input-stem>-mask.png` next to the input by default. The original is never overwritten. When `--verify` runs, alpha-channel checks are performed locally and the vision model receives a checkerboard preview (`<output-stem>-verify-preview.png`) so it judges visible subject quality instead of guessing how transparent pixels should render. Stats are returned on stdout for the agent's branching:
+Local only; no API call unless `--verify` is provided. It detects the chroma background with a region-aware Gaussian color model in LAB, then extracts the subject by alpha matting in linear-light RGB with spill suppression.
 
-```json
-{
-  "stats": {
-    "removedFraction": 0.83,
-    "regionsRemoved": [{ "area": 5891, "meanConfidence": 0.82, "touchesBorder": true }],
-    "noKeyDetected": false,
-    "subjectKeyCollisionRisk": false
-  },
-  "alphaVerify": {
-    "ok": true,
-    "metrics": {
-      "boundaryKeyDominantRatio": 0
-    }
-  }
-}
-```
-
-Use `--mode all` when interior chroma-key regions such as mug handles or donut holes should become transparent. The default `outer` mode intentionally keeps interior regions opaque.
-
-Project-level defaults live under `recipe.chroma`:
-
-```jsonc
-// ~/.gptimg/recipe.json
-{
-  "chroma": {
-    "color": "#00ff00",          // used by `generate` for the backdrop prompt
-                                  // and by `chroma --key` as a default
-    "mode": "all",
-    "innerThreshold": 6,
-    "despill": true,
-    "backdropInstruction": "...{color}...",  // override the embedded prompt
-    "verifyInstruction": "..."               // appended to --verify text
-  }
-}
-```
-
-CLI flags on the `chroma` verb override anything in `recipe.chroma`.
+Default `outer` mode removes only key regions connected to the border. `all` mode also removes interior regions, such as donut holes or mug handles, but should be used only after confirming that those interior regions are background rather than subject content.
 
 ### `inspect`
 
-Same detection pipeline as `chroma` but writes nothing — returns the stats only. Useful when an agent wants to decide whether to attempt removal at all.
-
 ```sh
-gptimg inspect --in image.png
+gptimg inspect --in image.png --key from-sidecar --mode outer
 ```
+
+Runs the chroma detection pipeline without writing images. Use it to decide whether removal is safe and which regions would be affected.
 
 ## SDK
 
@@ -266,7 +175,7 @@ const verdict = await sdk.vision({
 const chroma = await sdk.chroma({ in: gen.files[0].path });
 ```
 
-All verbs return pure data (file paths, hashes, structured stats). The SDK never writes to stdout/stderr — that is the CLI layer's job.
+All SDK verbs return data objects and never write to stdout/stderr. Each method accepts `{ signal?: AbortSignal }` as a second argument.
 
 Building blocks are exposed for composition:
 
@@ -278,24 +187,63 @@ sdk.image.hash / detectFormat / shrinkForVision
 sdk.log.open / append / close / createLogger
 ```
 
-## File outputs
+## Configuration
 
-| File | Written by |
-|---|---|
-| `<stem>.<ext>`, `<stem>-N.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
-| `<stem>.json` | Sidecar — resolved request, AI response (base64 nulled), `files` table with SHA-256 + format |
-| `<utc>-gptimg.jsonl` | Per-invocation log; one JSON object per stage |
-| `<input-stem>-chroma.png` | Chroma RGBA result |
-| `<input-stem>-mask.png` | Chroma alpha mask (where background was removed) |
+Per-verb model defaults:
 
-Sidecars are mobile: filenames are basenames only so an image + sidecar pair can be moved together without breaking references.
+| Verb | Default model | Override |
+|---|---|---|
+| `generate` | `gpt-image-2` | `recipe.generate.model` or `--set model=...` |
+| `edit` | `gpt-image-2` | `recipe.edit.model` or `--set model=...` |
+| `vision` | `gpt-5.4-mini` | `recipe.vision.model` or `--set model=...` |
 
-## Override mechanism
+There is no global `model` in `profile.json`.
 
-Recipes can be modified per-call:
+Model notes:
+
+- `gpt-image-2` rejects `background: "transparent"`. For transparent output, generate against a solid chroma backdrop and remove it locally, or choose a model that supports transparent backgrounds.
+- `gpt-image-2` does not use `input_fidelity`; the OpenAI provider adapter does not send it.
+- `n > 1` behavior can vary by model and endpoint. If a batch request fails, retry with `n=1` or split the batch.
+- Edit reference images may be billed at maximum fidelity even when output `quality` is lower.
+
+Key defaults and overrides:
+
+| Knob | Default lives in | Override path |
+|---|---|---|
+| Per-verb model | `src/providers/openai/defaults.ts` | `recipe.{verb}.model` or `--set model=...` |
+| Vision system prompt | `src/providers/openai/defaults.ts` | `recipe.vision.systemPrompt` |
+| Vision shrink target | `src/verbs/defaults.ts` | `recipe.vision.shrink` |
+| Chroma options | `src/local/chroma/defaults.ts` | `recipe.chroma.*` or chroma CLI/SDK args |
+| Chroma backdrop prompt | `src/local/chroma/defaults.ts` | `recipe.chroma.backdropInstruction` |
+| Chroma verify suffix | `src/local/chroma/defaults.ts` | `recipe.chroma.verifyInstruction` |
+| Network budgets | `src/network/defaults.ts` | `profile.network.*`, `recipe.network.*`, `--patch`, or `--set` |
+
+Network budgets are strict and can be set in `profile.network`, `recipe.network`, `--patch`, or `--set`:
+
+| Category | Used by | Default timeout | Default retries | Default intervals |
+|---|---|---|---|---|
+| `imageGenerate` | `images.generate`, `images.edit` | 600,000 ms | 2 | `[2000, 5000]` ms |
+| `imageVision` | `chat.completions.create` | 120,000 ms | 2 | `[2000, 5000]` ms |
+| `imageDownload` | URL-to-bytes fallback | 30,000 ms | 2 | `[500, 1500]` ms |
 
 ```sh
-# Layered last-wins: file → --patch → --set
+gptimg generate "logo" \
+  --set network.imageGenerate.timeout=120000 \
+  --set 'network.imageGenerate.retryIntervals=[2000,5000,15000]'
+```
+
+Retry behavior:
+
+- `Retry-After` and `retry-after-ms` response headers override configured intervals.
+- Without retry headers, retry K waits `retryIntervals[min(K - 1, length - 1)]`.
+- `[]` means immediate retry; `maxRetries: 0` disables retries.
+- Retryable errors include HTTP 408, 409, 429, 5xx, transient network errors, and per-attempt download timeouts.
+- 400/401/403/404 and validation failures fail immediately.
+
+Recipe overrides:
+
+```sh
+# Layered last-wins: file -> --patch -> --set
 gptimg generate "x" \
   --patch '{"generate":{"size":"1024x1024"}}' \
   --set quality=high \
@@ -305,15 +253,36 @@ gptimg generate "x" \
 
 `--patch` is recipe-rooted. Bare `--set` keys are scoped under the current verb; paths beginning with `generate`, `edit`, `vision`, `chroma`, or `network` are recipe-rooted.
 
-## Exit codes
+## Artifacts
+
+| File | Written by |
+|---|---|
+| `<stem>.<ext>`, `<stem>-N.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
+| `<stem>.json` | Sidecar with resolved request, redacted response, SHA-256 file table |
+| `<utc>-gptimg.jsonl` | Per-invocation JSONL log |
+| `<input-stem>-chroma.png` | Chroma RGBA result |
+| `<input-stem>-mask.png` | Chroma alpha mask |
+| `<output-stem>-verify-preview.png` | Checkerboard preview used by chroma vision verification |
+
+Sidecars store basenames for image entries so an image + sidecar pair can be moved together.
+
+## Cancellation
+
+Every SDK method accepts an optional `AbortSignal`. On abort, the SDK rejects with `AbortError` (`errorType: "abort"`, `code: "cancelled"`), closes in-flight HTTP requests, cancels URL downloads, breaks out of retry sleeps, stops chroma at the next phase boundary, and skips sidecar writes that would be incomplete.
+
+Cancellation cannot stop OpenAI server-side inference after the request has been accepted; billing may still occur. It also cannot interrupt a `sharp` decode mid-stage or reverse an atomic write that has already begun.
+
+On the CLI, the first `Ctrl-C` triggers cancellation cleanly; a second `Ctrl-C` exits hard with code 130.
+
+## Exit Codes
 
 | Code | Meaning |
 |---|---|
 | 0 | success |
 | 2 | usage error |
 | 3 | profile or recipe error |
-| 4 | provider error (configuration or API failure) |
-| 5 | local-op error (file I/O, decode, output, logs, etc.) |
+| 4 | provider error |
+| 5 | local operation error |
 | 130 | cancelled by `Ctrl-C` / abort |
 
 Usage errors are emitted by Commander as plain text with usage help. Runtime errors are emitted as a single JSON object on stderr.
@@ -321,12 +290,12 @@ Usage errors are emitted by Commander as plain text with usage help. Runtime err
 ## Development
 
 ```sh
-npm run build       # tsup → dist/ (ESM)
-npm run typecheck   # tsc --noEmit
-npm test            # vitest run
+npm run build
+npm run typecheck
+npm test
 ```
 
-Tests cover the algorithmic core (obfuscation, resolution, recipe merging, output naming, hashing, base64 nulling), CLI exit-code boundaries, SDK abort shape, and the chroma pipeline against committed synthetic fixtures under `tests/fixtures/`. The fixture generator is `tests/fixtures/_generate.mjs`.
+Tests cover the algorithmic core, CLI exit-code boundaries, SDK abort shape, OpenAI provider adapters, network retry behavior, and the chroma pipeline against committed synthetic fixtures under `tests/fixtures/`.
 
 ## License
 
