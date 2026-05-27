@@ -6,6 +6,7 @@ import {
   defaultLogPath,
   utcTimestamp,
 } from "../internal/paths.js";
+import type { VerbCallOptions } from "./options.js";
 
 export interface ChromaContext {
   profileDir: string;
@@ -15,10 +16,12 @@ export interface ChromaContext {
 export async function chromaImpl(
   ctx: ChromaContext,
   args: ChromaArgs,
+  opts: VerbCallOptions = {},
 ): Promise<ChromaResult> {
   const ts = utcTimestamp();
   const logPath = args.log ?? defaultLogPath(ctx.logDir, ts);
   const logger = await createLogger(logPath, "chroma");
+  const signal = opts.signal;
 
   try {
     await logger.info("resolve", "chroma start", {
@@ -27,7 +30,7 @@ export async function chromaImpl(
       key: args.key ?? "auto",
     });
 
-    const out = await runChroma(args);
+    const out = await runChroma(args, { signal });
     await logger.info("stats", "chroma complete", {
       output: out.imagePath,
       mask: out.maskPath,
@@ -45,11 +48,15 @@ export async function chromaImpl(
         threshold: verifyThreshold,
         removedFraction: out.stats.removedFraction,
       });
-      verify = await visionImpl(visionCtx, {
-        in: out.imagePath,
-        check: args.verify,
-        log: logger.handle.path,
-      });
+      verify = await visionImpl(
+        visionCtx,
+        {
+          in: out.imagePath,
+          check: args.verify,
+          log: logger.handle.path,
+        },
+        { signal },
+      );
       await logger.info("response", "vision verification returned", {
         ok: verify.ok,
         score: verify.score,

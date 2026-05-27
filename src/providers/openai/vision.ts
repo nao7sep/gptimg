@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { ProviderError } from "../../errors.js";
+import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { VisionVerdict } from "../../types.js";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
@@ -105,12 +106,23 @@ export async function openaiVision(
     },
   };
 
+  const { primary, logger, signal } = args.network;
+
   let response: {
     choices?: Array<{ message?: { content?: string | null } }>;
   };
   try {
-    response = (await client.chat.completions.create(params as never)) as never;
+    response = (await callWithRetry(
+      { budgetName: "imageVision", budget: primary, signal, logger },
+      () =>
+        client.chat.completions.create(params as never, {
+          timeout: primary.timeout,
+          maxRetries: 0,
+          signal,
+        }),
+    )) as never;
   } catch (err) {
+    if (isAbortError(err)) throw err;
     throw new ProviderError(
       "provider.requestFailed",
       `OpenAI chat.completions.create failed: ${(err as Error).message}`,

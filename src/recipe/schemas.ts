@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RecipeError } from "../errors.js";
+import { NetworkSchema } from "../network/schema.js";
 import type {
   EditRecipe,
   GenerateRecipe,
@@ -47,6 +48,7 @@ export const RecipeSchema = z
     generate: GenerateRecipeSchema.optional(),
     edit: EditRecipeSchema.optional(),
     vision: VisionRecipeSchema.optional(),
+    network: NetworkSchema.optional(),
   })
   .passthrough();
 

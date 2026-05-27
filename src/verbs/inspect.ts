@@ -2,6 +2,7 @@ import { createLogger } from "../log/index.js";
 import { runInspect } from "../local/inspect/index.js";
 import type { InspectArgs, InspectResult } from "../types.js";
 import { defaultLogPath, utcTimestamp } from "../internal/paths.js";
+import type { VerbCallOptions } from "./options.js";
 
 export interface InspectContext {
   profileDir: string;
@@ -11,10 +12,12 @@ export interface InspectContext {
 export async function inspectImpl(
   ctx: InspectContext,
   args: InspectArgs,
+  opts: VerbCallOptions = {},
 ): Promise<InspectResult> {
   const ts = utcTimestamp();
   const logPath = args.log ?? defaultLogPath(ctx.logDir, ts);
   const logger = await createLogger(logPath, "inspect");
+  const signal = opts.signal;
 
   try {
     await logger.info("resolve", "inspect start", {
@@ -22,7 +25,7 @@ export async function inspectImpl(
       mode: args.mode ?? "outer",
       key: args.key ?? "auto",
     });
-    const stats = await runInspect(args);
+    const stats = await runInspect(args, { signal });
     await logger.info("stats", "inspect complete", { stats });
     return {
       input: args.in,

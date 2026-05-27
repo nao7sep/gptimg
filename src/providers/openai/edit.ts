@@ -2,20 +2,12 @@ import { Buffer } from "node:buffer";
 import { createReadStream } from "node:fs";
 import { toFile } from "openai";
 import { ProviderError } from "../../errors.js";
+import { fetchWithBudget } from "../../network/fetch.js";
+import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
 
-const DEFAULT_EDIT_MODEL = "gpt-image-1";
-
-async function fetchUrlToBytes(url: string): Promise<Uint8Array | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return new Uint8Array(await res.arrayBuffer());
-  } catch {
-    return null;
-  }
-}
+const DEFAULT_EDIT_MODEL = "gpt-image-2";
 
 export async function openaiEdit(
   args: EditProviderArgs,
@@ -45,10 +37,21 @@ export async function openaiEdit(
     params.response_format = "b64_json";
   }
 
+  const { primary, download, logger, signal } = args.network;
+
   let response: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
   try {
-    response = (await client.images.edit(params as never)) as never;
+    response = (await callWithRetry(
+      { budgetName: "imageGenerate", budget: primary, signal, logger },
+      () =>
+        client.images.edit(params as never, {
+          timeout: primary.timeout,
+          maxRetries: 0,
+          signal,
+        }),
+    )) as never;
   } catch (err) {
+    if (isAbortError(err)) throw err;
     throw new ProviderError(
       "provider.requestFailed",
       `OpenAI images.edit failed: ${(err as Error).message}`,
@@ -63,9 +66,19 @@ export async function openaiEdit(
         return { data: new Uint8Array(Buffer.from(item.b64_json, "base64")) };
       }
       if (typeof item.url === "string" && item.url.length > 0) {
-        const bytes = await fetchUrlToBytes(item.url);
-        if (bytes) return { data: bytes };
-        return { data: null, error: "Failed to fetch image from URL" };
+        try {
+          const bytes = await fetchWithBudget(item.url, download, {
+            signal,
+            logger,
+          });
+          return { data: bytes };
+        } catch (err) {
+          if (isAbortError(err)) throw err;
+          return {
+            data: null,
+            error: `Failed to fetch image from URL: ${(err as Error).message}`,
+          };
+        }
       }
       return { data: null, error: "Response item contained neither b64_json nor url" };
     }),

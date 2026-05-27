@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
+import { getAbortSignal } from "../abort.js";
 import { addAiCommonOptions, collectMultiInput } from "../options.js";
 import { emit } from "../output.js";
 
@@ -34,17 +35,20 @@ export function registerVision(program: Command): void {
       throw new Error("--in is required (at least one)");
     }
     const sdk = new GptImg();
-    const result = await sdk.vision({
-      in: opts.in.length === 1 ? opts.in[0]! : opts.in,
-      check: opts.check,
-      profile: opts.profile,
-      recipe: opts.recipe,
-      log: opts.log,
-      outDir: opts.outDir,
-      outName: opts.outName,
-      set: opts.set,
-      patch: opts.patch,
-    });
+    const result = await sdk.vision(
+      {
+        in: opts.in.length === 1 ? opts.in[0]! : opts.in,
+        check: opts.check,
+        profile: opts.profile,
+        recipe: opts.recipe,
+        log: opts.log,
+        outDir: opts.outDir,
+        outName: opts.outName,
+        set: opts.set,
+        patch: opts.patch,
+      },
+      { signal: getAbortSignal() },
+    );
     emit(result);
   });
 }

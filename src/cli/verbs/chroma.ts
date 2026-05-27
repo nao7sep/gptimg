@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
+import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
 import type { ChromaMetric, ChromaMode } from "../../types.js";
 
@@ -103,26 +104,29 @@ export function registerChroma(program: Command): void {
             erode: opts.edgeBandErode ?? 2,
           }
         : undefined;
-    const result = await sdk.chroma({
-      in: opts.in,
-      mode: opts.mode,
-      key: opts.key,
-      innerThreshold: opts.innerThreshold,
-      outerThreshold: opts.outerThreshold,
-      metric: opts.metric,
-      borderSample: opts.borderSample,
-      edgeBand,
-      despill: opts.despill,
-      fillHoles: opts.fillHoles,
-      strictConfidence: opts.strictConfidence,
-      outDir: opts.outDir,
-      outName: opts.outName,
-      maskName: opts.mask === false ? false : opts.maskName,
-      verify: opts.verify,
-      verifyThreshold: opts.verifyThreshold,
-      log: opts.log,
-      overwrite: opts.overwrite,
-    });
+    const result = await sdk.chroma(
+      {
+        in: opts.in,
+        mode: opts.mode,
+        key: opts.key,
+        innerThreshold: opts.innerThreshold,
+        outerThreshold: opts.outerThreshold,
+        metric: opts.metric,
+        borderSample: opts.borderSample,
+        edgeBand,
+        despill: opts.despill,
+        fillHoles: opts.fillHoles,
+        strictConfidence: opts.strictConfidence,
+        outDir: opts.outDir,
+        outName: opts.outName,
+        maskName: opts.mask === false ? false : opts.maskName,
+        verify: opts.verify,
+        verifyThreshold: opts.verifyThreshold,
+        log: opts.log,
+        overwrite: opts.overwrite,
+      },
+      { signal: getAbortSignal() },
+    );
     emit(result);
   });
 }

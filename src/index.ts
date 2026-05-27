@@ -1,5 +1,6 @@
 export { GptImg } from "./gptimg.js";
 export {
+  AbortError,
   GptImgError,
   LocalOpError,
   ProfileError,

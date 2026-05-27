@@ -38,7 +38,10 @@ import { chromaImpl } from "./verbs/chroma.js";
 import { editImpl } from "./verbs/edit.js";
 import { generateImpl } from "./verbs/generate.js";
 import { inspectImpl } from "./verbs/inspect.js";
+import type { VerbCallOptions } from "./verbs/options.js";
 import { visionImpl } from "./verbs/vision.js";
+
+export type { VerbCallOptions } from "./verbs/options.js";
 
 export class GptImg {
   readonly profileDir: string;
@@ -94,23 +97,23 @@ export class GptImg {
     return { profileDir: this.profileDir, logDir: this.logDir };
   }
 
-  generate(args: GenerateArgs): Promise<GenerateResult> {
-    return generateImpl(this.ctx, args);
+  generate(args: GenerateArgs, opts?: VerbCallOptions): Promise<GenerateResult> {
+    return generateImpl(this.ctx, args, opts);
   }
 
-  edit(args: EditArgs): Promise<EditResult> {
-    return editImpl(this.ctx, args);
+  edit(args: EditArgs, opts?: VerbCallOptions): Promise<EditResult> {
+    return editImpl(this.ctx, args, opts);
   }
 
-  vision(args: VisionArgs): Promise<VisionResult> {
-    return visionImpl(this.ctx, args);
+  vision(args: VisionArgs, opts?: VerbCallOptions): Promise<VisionResult> {
+    return visionImpl(this.ctx, args, opts);
   }
 
-  chroma(args: ChromaArgs): Promise<ChromaResult> {
-    return chromaImpl(this.ctx, args);
+  chroma(args: ChromaArgs, opts?: VerbCallOptions): Promise<ChromaResult> {
+    return chromaImpl(this.ctx, args, opts);
   }
 
-  inspect(args: InspectArgs): Promise<InspectResult> {
-    return inspectImpl(this.ctx, args);
+  inspect(args: InspectArgs, opts?: VerbCallOptions): Promise<InspectResult> {
+    return inspectImpl(this.ctx, args, opts);
   }
 }

@@ -1,4 +1,9 @@
-export type GptImgErrorType = "profile" | "recipe" | "provider" | "localOp";
+export type GptImgErrorType =
+  | "profile"
+  | "recipe"
+  | "provider"
+  | "localOp"
+  | "abort";
 
 export abstract class GptImgError extends Error {
   abstract readonly errorType: GptImgErrorType;
@@ -25,4 +30,12 @@ export class ProviderError extends GptImgError {
 
 export class LocalOpError extends GptImgError {
   readonly errorType = "localOp" as const;
+}
+
+export class AbortError extends GptImgError {
+  readonly errorType = "abort" as const;
+  constructor(message = "cancelled", options?: { cause?: unknown }) {
+    super("cancelled", message, options);
+    this.name = "AbortError";
+  }
 }

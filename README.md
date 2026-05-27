@@ -40,6 +40,98 @@ Defaults all live under `~/.gptimg/`:
 | `~/.gptimg/output/` | Generated images |
 | `~/.gptimg/logs/` | One JSONL file per invocation |
 
+## Models
+
+The default model for `generate` and `edit` is `gpt-image-2`. Override per-call with `--set model=...` or persistently via `profile.json` (`"model": "..."`) or `recipe.json`.
+
+A few gpt-image-2 specifics worth knowing:
+
+- **No transparent backgrounds.** `background: "transparent"` is rejected by gpt-image-2. If you need transparent output, either set `model` to `gpt-image-1.5`, or keep gpt-image-2 and use the chroma-key workflow below (generate against a solid backdrop, then strip it locally).
+- **`input_fidelity` is gone.** gpt-image-2 always processes input images at high fidelity; passing the parameter will fail. Our code never sent it.
+- **`n > 1` behavior varies.** Some references treat gpt-image-2 generation as fixed at `n=1` while edit requests support 1–10. If a batch request fails, fall back to a single image and call again.
+- **Reference images are billed at max fidelity** on edit calls regardless of `quality`. Quality affects output cost only.
+
+### Why `model` (and `network`) live in both profile and recipe
+
+`model` is part-connection-shaped (it gates which features exist, like `provider`) and part-call-shaped (it's a per-request parameter, like `size`). So it can appear in `profile.json` for the stable default and in `recipe.json` for per-project overrides — the recipe value wins. The `network` block below follows the same rule for the same reason.
+
+## Network
+
+Every outbound network call passes through a typed budget that defines the timeout, retry count, and retry schedule. There are three categories:
+
+| Category | Used by | Default timeout | Default retries | Default intervals |
+|---|---|---|---|---|
+| `imageGenerate` | `images.generate`, `images.edit` | 600,000 ms | 2 | `[2000, 5000]` ms |
+| `imageVision` | `chat.completions.create` (vision verb, chroma `--verify`) | 120,000 ms | 2 | `[2000, 5000]` ms |
+| `imageDownload` | URL-to-bytes fallback when a response returns a URL instead of base64 | 30,000 ms | 2 | `[500, 1500]` ms |
+
+Override per-category in profile, recipe, `--patch`, or `--set` — last wins:
+
+```jsonc
+// ~/.gptimg/profile.json
+{
+  "provider": "openai",
+  "apiKey": "...",
+  "network": {
+    "imageGenerate": { "timeout": 300000, "maxRetries": 4 }
+  }
+}
+```
+
+```jsonc
+// ~/.gptimg/recipe.json
+{
+  "network": {
+    "imageGenerate": { "retryIntervals": [1000, 3000, 10000] }
+  },
+  "generate": { "size": "1024x1024" }
+}
+```
+
+```sh
+# CLI: arrays and objects are JSON-parsed in --set values
+gptimg generate "logo" \
+  --set network.imageGenerate.timeout=120000 \
+  --set 'network.imageGenerate.retryIntervals=[2000,5000,15000]'
+```
+
+**Retry behavior:**
+
+- `Retry-After` and `retry-after-ms` response headers always win — when the server tells us to wait N, we wait N.
+- Otherwise, the wait before retry K is `retryIntervals[min(K - 1, length - 1)]`. So `[5000]` means "always wait 5s" and `[]` means immediate retry.
+- A mild jitter (75–100%) is applied to scheduled waits.
+- Retryable errors: HTTP 408, 409, 429, 5xx, and transient network errors (`ECONNRESET`, `ETIMEDOUT`, etc.). Everything else (400/401/403/404, validation failures) fails immediately.
+- `maxRetries: 0` disables retries entirely. The OpenAI SDK's built-in retries are also disabled — we own the policy end-to-end so URL downloads share the same behavior as AI calls.
+
+The legacy top-level `profile.timeout` / `profile.maxRetries` fields are accepted for one release but log a deprecation warning. Move them under `profile.network.imageGenerate` / `profile.network.imageDownload` as appropriate.
+
+## Cancellation
+
+Every SDK method accepts a second argument with an optional `AbortSignal`:
+
+```ts
+const ctrl = new AbortController();
+setTimeout(() => ctrl.abort(), 30_000);
+
+await sdk.generate({ prompt: "logo" }, { signal: ctrl.signal });
+```
+
+When the signal aborts, the SDK rejects with an `AbortError` (`errorType: "abort"`, `code: "cancelled"`) and:
+
+- closes the in-flight HTTP request to OpenAI,
+- cancels any URL download in progress,
+- breaks out of retry sleeps,
+- stops the chroma pipeline at the next phase boundary,
+- skips the sidecar write (which would be incomplete and misleading).
+
+What we cannot do:
+
+- Stop OpenAI's server from finishing inference on a request it has already accepted. **You will still be billed for tokens spent server-side.** Cancellation just unblocks our process — it does not refund.
+- Stop a `sharp` decode that's mid-stride. We honor the signal *between* stages, not inside them.
+- Reverse a `write-file-atomic` write that has already begun. They take fractions of a second so this is rarely visible.
+
+On the CLI, the first `Ctrl-C` triggers cancellation cleanly; a second `Ctrl-C` exits the process hard with code 130. A backstop timer also forces exit after 2 s if the abort doesn't drain.
+
 ## Verbs
 
 ### `generate`

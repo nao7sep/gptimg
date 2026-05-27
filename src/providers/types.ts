@@ -1,3 +1,5 @@
+import type { Logger } from "../log/index.js";
+import type { NetworkBudget } from "../network/defaults.js";
 import type { ResolvedProfile, VisionVerdict } from "../types.js";
 
 export interface ProviderImageResult {
@@ -17,18 +19,29 @@ export interface ProviderVisionResult {
   verdict: VisionVerdict;
 }
 
+export interface ProviderNetworkCtx {
+  /** Budget for the primary AI call. */
+  primary: NetworkBudget;
+  /** Budget for any image-URL downloads triggered by the response. */
+  download: NetworkBudget;
+  logger?: Logger | undefined;
+  signal?: AbortSignal | undefined;
+}
+
 export interface GenerateProviderArgs {
   prompt: string;
   params: Record<string, unknown>;
   profile: ResolvedProfile;
+  network: ProviderNetworkCtx;
 }
 
 export interface EditProviderArgs {
   prompt: string;
   imagePath: string;
-  maskPath?: string;
+  maskPath?: string | undefined;
   params: Record<string, unknown>;
   profile: ResolvedProfile;
+  network: ProviderNetworkCtx;
 }
 
 export interface VisionProviderArgs {
@@ -36,6 +49,7 @@ export interface VisionProviderArgs {
   images: Array<{ data: Uint8Array; format: string }>;
   params: Record<string, unknown>;
   profile: ResolvedProfile;
+  network: ProviderNetworkCtx;
 }
 
 export interface Provider {

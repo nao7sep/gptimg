@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { Logger, createLogger } from "../log/index.js";
+import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
 import { applyPatch } from "../recipe/applyPatch.js";
@@ -17,6 +18,7 @@ import type {
   VisionArgs,
   VisionResult,
 } from "../types.js";
+import type { VerbCallOptions } from "./options.js";
 import {
   defaultLogPath,
   defaultOutDir,
@@ -81,12 +83,14 @@ async function prepareImage(
 export async function visionImpl(
   ctx: VisionContext,
   args: VisionArgs,
+  opts: VerbCallOptions = {},
 ): Promise<VisionResult> {
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
   const logPath = args.log ?? defaultLogPath(ctx.logDir, ts);
   const logger = await createLogger(logPath, "vision");
+  const signal = opts.signal;
 
   try {
     const profile = await loadProfile(profilePath);
@@ -99,6 +103,7 @@ export async function visionImpl(
     let recipe = await loadRecipe(recipePath);
     if (args.patch) recipe = applyPatch(recipe, args.patch);
     if (args.set?.length) recipe = await applySet(recipe, "vision", args.set);
+    const network = await resolveNetworkForCall(profile, recipe, logger);
     const section = validateVisionSection(recipe.vision);
     const params: Record<string, unknown> = { ...section };
     const shrink = section.shrink ?? DEFAULT_SHRINK;
@@ -121,6 +126,12 @@ export async function visionImpl(
       images: prepared.map((p) => ({ data: p.data, format: p.format })),
       params,
       profile: resolved,
+      network: {
+        primary: network.imageVision,
+        download: network.imageDownload,
+        logger,
+        signal,
+      },
     });
     await logger.info("response", "provider.vision returned", {
       ok: providerResult.verdict.ok,

@@ -38,13 +38,21 @@ function cloneRecipe(recipe: Recipe): Recipe {
   return JSON.parse(JSON.stringify(recipe ?? {})) as Recipe;
 }
 
+const TOP_LEVEL_KEYS = new Set(["generate", "edit", "vision", "network"]);
+
 /**
  * Apply `--set key=value` expressions to a recipe section.
  *
  * Each expression has the form `dot.path=value`. Numeric path segments
  * index arrays. Values are JSON-parsed when valid (numbers, bools, null,
- * JSON literals); otherwise treated as strings. A value of `@path` reads
- * the value from a file (parsed as JSON if possible, otherwise raw text).
+ * JSON arrays/objects, etc.); otherwise treated as strings. A value of
+ * `@path` reads the value from a file (parsed as JSON if possible).
+ *
+ * Paths that start with a recognized top-level key (`generate`, `edit`,
+ * `vision`, `network`) are treated as recipe-rooted; everything else is
+ * scoped under the verb's section. So `--set network.imageGenerate.timeout=...`
+ * sets `recipe.network.imageGenerate.timeout`, while `--set size=...` sets
+ * `recipe.<verb>.size`.
  */
 export async function applySet(
   recipe: Recipe,
@@ -53,10 +61,7 @@ export async function applySet(
 ): Promise<Recipe> {
   if (expressions.length === 0) return recipe;
   const out = cloneRecipe(recipe);
-  const section = ((out as Record<string, unknown>)[verb] ??= {}) as Record<
-    string,
-    unknown
-  >;
+  const outRecord = out as Record<string, unknown>;
   for (const expr of expressions) {
     const eq = expr.indexOf("=");
     if (eq < 0) {
@@ -74,7 +79,13 @@ export async function applySet(
     }
     const rawValue = expr.slice(eq + 1);
     const value = await parseSetValue(rawValue);
-    dset(section, dotPath, value);
+    const firstSegment = dotPath.split(".", 1)[0];
+    if (firstSegment && TOP_LEVEL_KEYS.has(firstSegment)) {
+      dset(outRecord, dotPath, value);
+    } else {
+      const section = (outRecord[verb] ??= {}) as Record<string, unknown>;
+      dset(section, dotPath, value);
+    }
   }
   return out;
 }

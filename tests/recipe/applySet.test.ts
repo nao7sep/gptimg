@@ -88,4 +88,35 @@ describe("applySet", () => {
     await applySet(r, "generate", ["size=new"]);
     expect(JSON.stringify(r)).toBe(snapshot);
   });
+
+  it("treats network.* as a recipe-rooted path, not verb-scoped", async () => {
+    const out = await applySet({}, "generate", [
+      "network.imageGenerate.timeout=120000",
+    ]);
+    expect((out as Record<string, unknown>).network).toEqual({
+      imageGenerate: { timeout: 120000 },
+    });
+    expect(out.generate?.network).toBeUndefined();
+  });
+
+  it("JSON-parses inline array values for retryIntervals", async () => {
+    const out = await applySet({}, "generate", [
+      "network.imageGenerate.retryIntervals=[1000,2000,4000]",
+    ]);
+    expect(
+      ((out as Record<string, unknown>).network as Record<string, { retryIntervals?: unknown }>)
+        .imageGenerate?.retryIntervals,
+    ).toEqual([1000, 2000, 4000]);
+  });
+
+  it("treats verb-shaped top-level keys (generate, edit, vision) as recipe-rooted", async () => {
+    const out = await applySet({}, "generate", ["edit.size=512x512"]);
+    expect(out.edit?.size).toBe("512x512");
+    expect(out.generate?.edit).toBeUndefined();
+  });
+
+  it("still scopes bare keys under the current verb", async () => {
+    const out = await applySet({}, "vision", ["custom=value"]);
+    expect(out.vision?.custom).toBe("value");
+  });
 });

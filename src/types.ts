@@ -4,6 +4,8 @@ export interface Profile {
   apiKey?: string;
   apiKeyEnv?: string;
   baseURL?: string;
+  /** Per-category network budgets. See src/network/defaults.ts. */
+  network?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -42,6 +44,8 @@ export interface Recipe {
   generate?: GenerateRecipe;
   edit?: EditRecipe;
   vision?: VisionRecipe;
+  /** Per-category network budgets. See src/network/defaults.ts. */
+  network?: Record<string, unknown>;
 }
 
 export type RecipeVerb = "generate" | "edit" | "vision";
@@ -60,7 +64,15 @@ export interface Sidecar {
 }
 
 export type LogLevel = "info" | "warn" | "error";
-export type LogStage = "resolve" | "request" | "response" | "write" | "stats" | "error";
+export type LogStage =
+  | "resolve"
+  | "request"
+  | "response"
+  | "write"
+  | "stats"
+  | "retry"
+  | "cancelled"
+  | "error";
 export type LogVerb = "generate" | "edit" | "vision" | "chroma" | "inspect";
 
 export interface LogEntry {

@@ -41,6 +41,16 @@ export const CHROMA_DEFAULTS = {
   verifyThreshold: 0,
 } as const;
 
+export function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    const reason = signal.reason;
+    if (reason instanceof Error) throw reason;
+    const err = new Error(typeof reason === "string" ? reason : "cancelled");
+    err.name = "AbortError";
+    throw err;
+  }
+}
+
 export interface DetectionInput {
   in: string;
   mode?: ChromaArgs["mode"];
@@ -144,7 +154,11 @@ function detectSubjectCollision(
   return nearKeyButRejected / totalRejected > 0.05;
 }
 
-export async function detect(args: DetectionInput): Promise<DetectionResult> {
+export async function detect(
+  args: DetectionInput,
+  opts: { signal?: AbortSignal | undefined } = {},
+): Promise<DetectionResult> {
+  const { signal } = opts;
   if (!isChromaArgsInput(args)) {
     throw new LocalOpError("image.formatUnknown", "Invalid detection input");
   }
@@ -161,10 +175,13 @@ export async function detect(args: DetectionInput): Promise<DetectionResult> {
   const edgeBand = args.edgeBand ?? CHROMA_DEFAULTS.edgeBand;
   const fillHoles = args.fillHoles ?? CHROMA_DEFAULTS.fillHoles;
 
+  throwIfAborted(signal);
   const { data: rgba, width, height } = await loadRawRGBA(args.in);
   const totalPixels = width * height;
+  throwIfAborted(signal);
   const lab = rgbaBufferToLab(rgba, width, height);
   const keyRes = await resolveKey(args, rgba, width, height, lab, borderSample);
+  throwIfAborted(signal);
   const distance = distanceMap(lab, keyRes.model);
 
   const candidate = new Uint8Array(totalPixels);
@@ -173,6 +190,7 @@ export async function detect(args: DetectionInput): Promise<DetectionResult> {
   }
   const candidateClosed = fillHoles ? close(candidate, width, height, 1) : candidate;
 
+  throwIfAborted(signal);
   const { labels, numComponents } = connectedComponents(
     candidateClosed,
     width,
@@ -192,6 +210,7 @@ export async function detect(args: DetectionInput): Promise<DetectionResult> {
   }
   const accepted = buildLabelMask(labels, acceptedLabels);
 
+  throwIfAborted(signal);
   const band = computeEdgeBand(accepted, width, height, edgeBand);
   const alpha = computeAlpha(accepted, band, distance, innerThreshold, outerThreshold);
 

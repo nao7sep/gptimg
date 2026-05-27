@@ -8,7 +8,7 @@ import type {
   ChromaStats,
 } from "../../types.js";
 import { despill as applyDespill } from "./despill.js";
-import { CHROMA_DEFAULTS, detect } from "./detect.js";
+import { CHROMA_DEFAULTS, detect, throwIfAborted } from "./detect.js";
 
 export { CHROMA_DEFAULTS } from "./detect.js";
 
@@ -41,11 +41,16 @@ function checkOverwrite(filePath: string, allowOverwrite: boolean): void {
   }
 }
 
-export async function runChroma(args: ChromaArgs): Promise<ChromaPipelineOutput> {
-  const result = await detect(args);
+export async function runChroma(
+  args: ChromaArgs,
+  opts: { signal?: AbortSignal | undefined } = {},
+): Promise<ChromaPipelineOutput> {
+  const { signal } = opts;
+  const result = await detect(args, { signal });
   const { width, height, rgba, alpha, keyResolution, stats } = result;
   const totalPixels = width * height;
 
+  throwIfAborted(signal);
   const doDespill = args.despill ?? CHROMA_DEFAULTS.despill;
   if (doDespill) {
     applyDespill(rgba, width, height, alpha, keyResolution.hex);
@@ -72,6 +77,7 @@ export async function runChroma(args: ChromaArgs): Promise<ChromaPipelineOutput>
     checkOverwrite(maskPath, overwrite);
   }
 
+  throwIfAborted(signal);
   await writeRGBA(rgba, width, height, outPath);
   if (maskPath) {
     const removalMask = new Uint8Array(totalPixels);

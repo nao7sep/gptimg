@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
+import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
 import type { ChromaMetric, ChromaMode } from "../../types.js";
 
@@ -81,18 +82,21 @@ export function registerInspect(program: Command): void {
             erode: opts.edgeBandErode ?? 2,
           }
         : undefined;
-    const result = await sdk.inspect({
-      in: opts.in,
-      mode: opts.mode,
-      key: opts.key,
-      innerThreshold: opts.innerThreshold,
-      outerThreshold: opts.outerThreshold,
-      metric: opts.metric,
-      borderSample: opts.borderSample,
-      edgeBand,
-      strictConfidence: opts.strictConfidence,
-      log: opts.log,
-    });
+    const result = await sdk.inspect(
+      {
+        in: opts.in,
+        mode: opts.mode,
+        key: opts.key,
+        innerThreshold: opts.innerThreshold,
+        outerThreshold: opts.outerThreshold,
+        metric: opts.metric,
+        borderSample: opts.borderSample,
+        edgeBand,
+        strictConfidence: opts.strictConfidence,
+        log: opts.log,
+      },
+      { signal: getAbortSignal() },
+    );
     emit(result);
   });
 }

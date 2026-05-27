@@ -8,6 +8,7 @@ import { LocalOpError } from "../errors.js";
 import { hash } from "../image/hash.js";
 import { detectFormat } from "../image/detectFormat.js";
 import { createLogger } from "../log/index.js";
+import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
 import { applyPatch } from "../recipe/applyPatch.js";
@@ -23,6 +24,7 @@ import type {
   OutputFile,
   Sidecar,
 } from "../types.js";
+import type { VerbCallOptions } from "./options.js";
 import {
   defaultLogPath,
   defaultOutDir,
@@ -49,12 +51,14 @@ function buildChromaKeyInstruction(color: string): string {
 export async function generateImpl(
   ctx: GenerateContext,
   args: GenerateArgs,
+  opts: VerbCallOptions = {},
 ): Promise<GenerateResult> {
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
   const logPath = args.log ?? defaultLogPath(ctx.logDir, ts);
   const logger = await createLogger(logPath, "generate");
+  const signal = opts.signal;
 
   try {
     const profile = await loadProfile(profilePath);
@@ -67,6 +71,7 @@ export async function generateImpl(
     let recipe = await loadRecipe(recipePath);
     if (args.patch) recipe = applyPatch(recipe, args.patch);
     if (args.set?.length) recipe = await applySet(recipe, "generate", args.set);
+    const network = await resolveNetworkForCall(profile, recipe, logger);
     const section = validateGenerateSection(recipe.generate);
 
     const params: Record<string, unknown> = { ...section };
@@ -91,6 +96,12 @@ export async function generateImpl(
       prompt: promptToSend,
       params,
       profile: resolved,
+      network: {
+        primary: network.imageGenerate,
+        download: network.imageDownload,
+        logger,
+        signal,
+      },
     });
     await logger.info("response", "provider.generate returned", {
       itemCount: providerResult.images.length,

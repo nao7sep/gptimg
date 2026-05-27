@@ -1,19 +1,24 @@
 import OpenAI from "openai";
 import type { ResolvedProfile } from "../../types.js";
 
+// `timeout` and `maxRetries` are intentionally NOT in this list. They were
+// briefly supported as profile-level passthroughs but are now driven by the
+// network category budgets (see src/network/defaults.ts). The retry policy
+// is owned by callWithRetry, so we set maxRetries=0 on the constructed
+// client to disable the SDK's built-in retries. Per-request `{ timeout }`
+// is passed on the call site instead.
 const CLIENT_PASSTHROUGH_KEYS = new Set([
   "organization",
   "project",
   "defaultHeaders",
   "defaultQuery",
-  "timeout",
-  "maxRetries",
   "httpAgent",
 ]);
 
 export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
   const opts: Record<string, unknown> = {
     apiKey: profile.apiKey,
+    maxRetries: 0,
   };
   const baseURL = profile.redacted.baseURL;
   if (typeof baseURL === "string" && baseURL.length > 0) {
