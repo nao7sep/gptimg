@@ -2,9 +2,10 @@ export interface Profile {
   provider: string;
   apiKey?: string;
   apiKeyEnv?: string;
+  organization?: string;
+  project?: string;
   /** Per-category network budgets. See src/network/defaults.ts. */
   network?: Record<string, unknown>;
-  [key: string]: unknown;
 }
 
 export interface ResolvedProfile {

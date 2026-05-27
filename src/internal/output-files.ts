@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { Buffer } from "node:buffer";
+import path from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { LocalOpError } from "../errors.js";
 
@@ -27,5 +29,33 @@ export async function writeOutputBytes(
       `Failed to write output at ${filePath}: ${(err as Error).message}`,
       { cause: err },
     );
+  }
+}
+
+export function assertOutputPathsAvailable(
+  filePaths: string[],
+  allowOverwrite: boolean,
+): void {
+  const seen = new Map<string, string>();
+  for (const filePath of filePaths) {
+    const resolved = path.resolve(filePath);
+    const existing = seen.get(resolved);
+    if (existing) {
+      throw new LocalOpError(
+        "output.duplicate",
+        `Multiple outputs resolve to the same path: ${existing} and ${filePath}`,
+      );
+    }
+    seen.set(resolved, filePath);
+  }
+
+  if (allowOverwrite) return;
+  for (const filePath of filePaths) {
+    if (existsSync(filePath)) {
+      throw new LocalOpError(
+        "output.exists",
+        `Output exists: ${filePath}. Use overwrite to allow.`,
+      );
+    }
   }
 }

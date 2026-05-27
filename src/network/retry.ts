@@ -34,6 +34,7 @@ function isRetryableError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const code = (err as { code?: string }).code;
   if (typeof code === "string" && RETRYABLE_NETWORK_CODES.has(code)) return true;
+  if (err.name === "TimeoutError") return true;
   // Heuristic: fetch failures land as TypeError with cause; the OpenAI SDK
   // wraps connection errors in APIConnectionError without a status.
   if (err.name === "APIConnectionError" || err.name === "APIConnectionTimeoutError") {

@@ -6,7 +6,7 @@ const NetworkBudgetSchema = z
     maxRetries: z.number().int().min(0).optional(),
     retryIntervals: z.array(z.number().nonnegative()).optional(),
   })
-  .passthrough();
+  .strict();
 
 export const NetworkSchema = z
   .object({
@@ -14,7 +14,7 @@ export const NetworkSchema = z
     imageVision: NetworkBudgetSchema.optional(),
     imageDownload: NetworkBudgetSchema.optional(),
   })
-  .passthrough();
+  .strict();
 
 export type NetworkPartial = z.infer<typeof NetworkSchema>;
 

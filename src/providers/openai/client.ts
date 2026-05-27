@@ -13,7 +13,7 @@ export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
   };
   for (const k of CLIENT_PASSTHROUGH_KEYS) {
     if (k in profile.redacted) {
-      opts[k] = (profile.redacted as Record<string, unknown>)[k];
+      opts[k] = profile.redacted[k as keyof typeof profile.redacted];
     }
   }
   return new OpenAI(opts as ConstructorParameters<typeof OpenAI>[0]);

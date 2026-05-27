@@ -6,17 +6,17 @@ export function addAiCommonOptions(cmd: Command): Command {
     .option("--recipe <path>", "Path to recipe.json")
     .option("--log <path>", "Path to log JSONL file")
     .option("--out-dir <dir>", "Output directory")
-    .option("--out-name <name>", "Output filename stem (extension auto-detected)")
+    .option("--out-name <name>", "Output stem for generated files")
     .option(
       "--set <expr...>",
-      "Override a recipe field: dot.path=value (repeatable; values JSON-parsed; @file form supported)",
+      "Override recipe values: dot.path=value (repeatable; values JSON-parsed; @file form supported)",
     )
-    .option("--patch <json>", "Deep-merge JSON object into the recipe section");
+    .option("--patch <json>", "Deep-merge a JSON object into the recipe");
 }
 
 /** Adds `--overwrite` for verbs that produce image outputs (generate, edit). */
 export function addOverwriteOption(cmd: Command): Command {
-  return cmd.option("--overwrite", "Overwrite existing output files");
+  return cmd.option("--overwrite", "Overwrite existing output images and sidecar");
 }
 
 export function collectMultiInput(value: string, prev: string[] = []): string[] {

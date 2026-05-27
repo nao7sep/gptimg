@@ -362,6 +362,36 @@ describe("AI verb implementations with mocked provider", () => {
     ).resolves.toMatchObject({ partial: false });
   });
 
+  it("generate rejects sidecar collisions before writing new images", async () => {
+    providerCalls.generate.mockResolvedValue({
+      raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
+      images: [{ data: png }],
+    });
+    const outDir = path.join(tmp, "sidecar-collision-out");
+    await sdk.generate({ prompt: "first", outDir, outName: "same" });
+
+    providerCalls.generate.mockResolvedValue({
+      raw: {
+        data: [
+          { b64_json: Buffer.from(png).toString("base64") },
+          { b64_json: Buffer.from(png).toString("base64") },
+        ],
+      },
+      images: [{ data: png }, { data: png }],
+    });
+
+    await expect(
+      sdk.generate({
+        prompt: "second",
+        outDir,
+        outName: "same",
+        set: ["n=2"],
+      }),
+    ).rejects.toMatchObject({ code: "output.exists" });
+    expect(existsSync(path.join(outDir, "same-1.png"))).toBe(false);
+    expect(existsSync(path.join(outDir, "same-2.png"))).toBe(false);
+  });
+
   it("generate uses the default output directory and n>1 file names", async () => {
     providerCalls.generate.mockResolvedValue({
       raw: {
@@ -411,6 +441,39 @@ describe("AI verb implementations with mocked provider", () => {
       "edited-1.png",
       "edited-2.png",
     ]);
+  });
+
+  it("edit rejects sidecar collisions before writing new images", async () => {
+    const input = path.join(tmp, "sidecar-edit-input.png");
+    const outDir = path.join(tmp, "edit-sidecar-collision");
+    await copyFile(fixture("green-disk.png"), input);
+    providerCalls.edit.mockResolvedValue({
+      raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
+      images: [{ data: png }],
+    });
+    await sdk.edit({ prompt: "first", in: input, outDir, outName: "same" });
+
+    providerCalls.edit.mockResolvedValue({
+      raw: {
+        data: [
+          { b64_json: Buffer.from(png).toString("base64") },
+          { b64_json: Buffer.from(png).toString("base64") },
+        ],
+      },
+      images: [{ data: png }, { data: png }],
+    });
+
+    await expect(
+      sdk.edit({
+        prompt: "second",
+        in: input,
+        outDir,
+        outName: "same",
+        set: ["n=2"],
+      }),
+    ).rejects.toMatchObject({ code: "output.exists" });
+    expect(existsSync(path.join(outDir, "same-1.png"))).toBe(false);
+    expect(existsSync(path.join(outDir, "same-2.png"))).toBe(false);
   });
 
   it("edit marks invalid image bytes as partial and still writes valid later items", async () => {

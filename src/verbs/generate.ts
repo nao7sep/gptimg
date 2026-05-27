@@ -1,10 +1,12 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
 import pLimit from "p-limit";
-import { LocalOpError } from "../errors.js";
 import { hash } from "../image/hash.js";
 import { detectFormat } from "../image/detectFormat.js";
-import { ensureOutputDir, writeOutputBytes } from "../internal/output-files.js";
+import {
+  assertOutputPathsAvailable,
+  ensureOutputDir,
+  writeOutputBytes,
+} from "../internal/output-files.js";
 import { createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
@@ -14,7 +16,7 @@ import { applySet } from "../recipe/applySet.js";
 import { loadRecipe } from "../recipe/load.js";
 import { validateChromaSection, validateGenerateSection } from "../recipe/schemas.js";
 import { CHROMA_BACKDROP_INSTRUCTION } from "../local/chroma/defaults.js";
-import { writeSidecar } from "../sidecar/write.js";
+import { sidecarPathForStem, writeSidecar } from "../sidecar/write.js";
 import { nullBase64InResponse } from "../sidecar/nullBase64.js";
 import { getProvider } from "../providers/index.js";
 import type {
@@ -111,48 +113,65 @@ export async function generateImpl(
 
     const items = providerResult.images;
     const limit = pLimit(4);
-    const files: OutputFile[] = [];
     let partial = false;
+    const suffixCount = Math.max(n, items.length);
+
+    const plannedImages = (
+      await Promise.all(
+        items.map((item, i) =>
+          limit(async () => {
+            const index = i + 1;
+            if (!item.data) {
+              partial = true;
+              await logger.warn("write", `image ${index} failed`, {
+                index,
+                error: item.error ?? null,
+              });
+              return null;
+            }
+            try {
+              const fmt = await detectFormat(item.data);
+              const fileName = imageFileName(stem, index, suffixCount, fmt.extension);
+              const filePath = path.join(outDir, fileName);
+              return { index, data: item.data, fmt, fileName, filePath };
+            } catch (err) {
+              partial = true;
+              await logger.warn("write", `image ${index} format detection failed`, {
+                index,
+                error: (err as Error).message,
+              });
+              return null;
+            }
+          }),
+        ),
+      )
+    ).filter((item): item is NonNullable<typeof item> => item !== null);
+
+    const stemPath = path.join(outDir, stem);
+    const sidecarPath = sidecarPathForStem(stemPath);
+    assertOutputPathsAvailable(
+      [...plannedImages.map((item) => item.filePath), sidecarPath],
+      overwrite,
+    );
+
+    const files: OutputFile[] = [];
 
     await Promise.all(
-      items.map((item, i) =>
+      plannedImages.map((item) =>
         limit(async () => {
-          const index = i + 1;
-          if (!item.data) {
-            partial = true;
-            await logger.warn("write", `image ${index} failed`, {
-              index,
-              error: item.error ?? null,
-            });
-            return;
-          }
-          let fmt;
-          try {
-            fmt = await detectFormat(item.data);
-          } catch (err) {
-            partial = true;
-            await logger.warn("write", `image ${index} format detection failed`, {
-              index,
-              error: (err as Error).message,
-            });
-            return;
-          }
-          const fileName = imageFileName(stem, index, n, fmt.extension);
-          const filePath = path.join(outDir, fileName);
-          if (!overwrite && existsSync(filePath)) {
-            throw new LocalOpError(
-              "output.exists",
-              `Output exists: ${filePath}. Use overwrite to allow.`,
-            );
-          }
-          await writeOutputBytes(filePath, item.data);
+          await writeOutputBytes(item.filePath, item.data);
           const sha = hash(item.data);
-          files.push({ index, path: filePath, sha256: sha, format: fmt.format });
-          await logger.info("write", `wrote image ${index}`, {
-            index,
-            name: fileName,
+          files.push({
+            index: item.index,
+            path: item.filePath,
             sha256: sha,
-            format: fmt.format,
+            format: item.fmt.format,
+          });
+          await logger.info("write", `wrote image ${item.index}`, {
+            index: item.index,
+            name: item.fileName,
+            sha256: sha,
+            format: item.fmt.format,
           });
         }),
       ),
@@ -176,8 +195,7 @@ export async function generateImpl(
         format: f.format,
       })),
     };
-    const stemPath = path.join(outDir, stem);
-    const sidecarPath = await writeSidecar(stemPath, sidecar);
+    await writeSidecar(stemPath, sidecar);
     await logger.info("write", "wrote sidecar", {
       name: path.basename(sidecarPath),
     });

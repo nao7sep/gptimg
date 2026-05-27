@@ -22,12 +22,19 @@ describe("loadProfile", () => {
     const file = path.join(tmp, "profile.json");
     await writeFile(
       file,
-      JSON.stringify({ provider: "openai", model: "gpt-image-2" }) + "\n",
+      JSON.stringify({
+        provider: "openai",
+        organization: "org-local",
+        project: "proj-local",
+        network: { imageGenerate: { timeout: 1000 } },
+      }) + "\n",
     );
 
     await expect(loadProfile(file)).resolves.toEqual({
       provider: "openai",
-      model: "gpt-image-2",
+      organization: "org-local",
+      project: "proj-local",
+      network: { imageGenerate: { timeout: 1000 } },
     });
   });
 
@@ -35,13 +42,32 @@ describe("loadProfile", () => {
     for (const [name, text] of [
       ["array", "[]"],
       ["null", "null"],
-      ["missing-provider", "{}"],
-      ["empty-provider", '{"provider":""}'],
     ]) {
       const file = path.join(tmp, `${name}.json`);
       await writeFile(file, text);
       await expect(loadProfile(file), name).rejects.toMatchObject({
         code: "profile.invalidJson",
+      });
+    }
+  });
+
+  it("rejects malformed, unknown, and legacy profile fields", async () => {
+    for (const [name, value] of [
+      ["missing-provider", {}],
+      ["empty-provider", { provider: "" }],
+      ["unknown-field", { provider: "openai", model: "gpt-image-2" }],
+      ["legacy-timeout", { provider: "openai", timeout: 1234 }],
+      ["legacy-max-retries", { provider: "openai", maxRetries: 4 }],
+      ["unknown-network-category", { provider: "openai", network: { typo: {} } }],
+      [
+        "unknown-network-field",
+        { provider: "openai", network: { imageGenerate: { retryInterval: 1000 } } },
+      ],
+    ]) {
+      const file = path.join(tmp, `${name}.json`);
+      await writeFile(file, JSON.stringify(value));
+      await expect(loadProfile(file), name).rejects.toMatchObject({
+        code: "profile.validationFailed",
       });
     }
   });
@@ -82,9 +108,10 @@ describe("setApiKey / clearApiKey", () => {
       file,
       JSON.stringify({
         provider: "openai",
-        model: "gpt-image-2",
         apiKeyEnv: "GPTIMG_TEST_KEY",
         organization: "org-local",
+        project: "proj-local",
+        network: { imageGenerate: { timeout: 1000 } },
       }) + "\n",
     );
 
@@ -94,16 +121,18 @@ describe("setApiKey / clearApiKey", () => {
     expect(text).not.toContain("sk-local-secret");
     const profile = JSON.parse(text) as {
       provider: string;
-      model: string;
       apiKey: string;
       apiKeyEnv: string;
       organization: string;
+      project: string;
+      network: unknown;
     };
     expect(profile).toMatchObject({
       provider: "openai",
-      model: "gpt-image-2",
       apiKeyEnv: "GPTIMG_TEST_KEY",
       organization: "org-local",
+      project: "proj-local",
+      network: { imageGenerate: { timeout: 1000 } },
     });
     expect(deobfuscate(profile.apiKey)).toBe("sk-local-secret");
   });

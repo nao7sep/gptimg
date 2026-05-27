@@ -12,8 +12,12 @@ import type { Sidecar } from "../types.js";
  *
  * @returns the absolute or relative sidecar path that was written.
  */
+export function sidecarPathForStem(stem: string): string {
+  return `${stem}.json`;
+}
+
 export async function writeSidecar(stem: string, sidecar: Sidecar): Promise<string> {
-  const sidecarPath = `${stem}.json`;
+  const sidecarPath = sidecarPathForStem(stem);
   try {
     await mkdir(path.dirname(sidecarPath), { recursive: true });
     const safe = redact(sidecar);

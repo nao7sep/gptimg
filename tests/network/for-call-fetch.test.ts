@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProfileError } from "../../src/errors.js";
+import { ProfileError, RecipeError } from "../../src/errors.js";
 import type { Logger } from "../../src/log/index.js";
 import { NETWORK_DEFAULTS, fetchWithBudget, resolveNetworkForCall } from "../../src/network/index.js";
 import { NetworkSchema, formatNetworkZodError } from "../../src/network/schema.js";
@@ -42,25 +42,45 @@ describe("resolveNetworkForCall", () => {
     ).rejects.toBeInstanceOf(ProfileError);
   });
 
-  it("emits a warning for deprecated top-level profile network fields", async () => {
+  it("rejects invalid recipe.network values after overrides", async () => {
+    for (const [name, recipe] of [
+      [
+        "unknown category",
+        { network: { imageGenrate: { timeout: 120000 } } },
+      ],
+      [
+        "unknown budget field",
+        { network: { imageGenerate: { retryInterval: [1000] } } },
+      ],
+      [
+        "bad value type",
+        { network: { imageGenerate: { timeout: "slow" } } },
+      ],
+    ]) {
+      await expect(
+        resolveNetworkForCall(
+          { provider: "openai", apiKey: "sk-test" },
+          recipe,
+        ),
+        name,
+      ).rejects.toBeInstanceOf(RecipeError);
+    }
+  });
+
+  it("does not log deprecation warnings for current profile shapes", async () => {
     const logger = testLogger();
 
     await resolveNetworkForCall(
       {
         provider: "openai",
         apiKey: "sk-test",
-        timeout: 1234,
-        maxRetries: 4,
+        network: { imageGenerate: { timeout: 1234 } },
       },
       undefined,
       logger,
     );
 
-    expect(logger.warn).toHaveBeenCalledWith(
-      "resolve",
-      expect.stringContaining("deprecated top-level network field"),
-      { deprecated: ["timeout", "maxRetries"] },
-    );
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });
 
@@ -80,6 +100,17 @@ describe("network schema errors", () => {
         "imageGenerate.retryIntervals.1",
       );
     }
+  });
+
+  it("rejects unknown network categories and budget fields", () => {
+    expect(
+      NetworkSchema.safeParse({ imageGenrate: { timeout: 1000 } }).success,
+    ).toBe(false);
+    expect(
+      NetworkSchema.safeParse({
+        imageGenerate: { retryInterval: [1000] },
+      }).success,
+    ).toBe(false);
   });
 });
 
@@ -192,5 +223,31 @@ describe("fetchWithBudget", () => {
     ).rejects.toMatchObject({
       name: "TimeoutError",
     });
+  });
+
+  it("retries per-attempt timeout failures", async () => {
+    let calls = 0;
+    const { server, baseURL } = await listen((_req, res) => {
+      calls += 1;
+      if (calls === 1) {
+        setTimeout(() => {
+          res.writeHead(200);
+          res.end("late");
+        }, 50);
+        return;
+      }
+      res.writeHead(200);
+      res.end("ok");
+    });
+    servers.push(server);
+
+    await expect(
+      fetchWithBudget(baseURL, {
+        timeout: 5,
+        maxRetries: 1,
+        retryIntervals: [],
+      }),
+    ).resolves.toEqual(new Uint8Array(Buffer.from("ok")));
+    expect(calls).toBe(2);
   });
 });

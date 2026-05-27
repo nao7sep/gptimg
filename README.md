@@ -31,7 +31,7 @@ EOF
 
 When both are present, the environment variable wins (runtime overrides persistent config). `profile clear-key` removes only the stored `apiKey`; a missing profile file or missing key is a no-op, while unreadable profile paths are reported as errors.
 
-For org-scoped OpenAI accounts, `organization` and `project` in the profile are passed through to the OpenAI SDK; nothing else is.
+Profile files are strict JSON objects. Supported top-level keys are `provider`, `apiKey`, `apiKeyEnv`, `organization`, `project`, and `network`. For org-scoped OpenAI accounts, `organization` and `project` are passed through to the OpenAI SDK.
 
 Defaults all live under `~/.gptimg/`:
 
@@ -117,7 +117,7 @@ gptimg generate "logo" \
 - Retryable errors: HTTP 408, 409, 429, 5xx, and transient network errors (`ECONNRESET`, `ETIMEDOUT`, etc.). Everything else (400/401/403/404, validation failures) fails immediately.
 - `maxRetries: 0` disables retries entirely. The OpenAI SDK's built-in retries are also disabled — we own the policy end-to-end so URL downloads share the same behavior as AI calls.
 
-The legacy top-level `profile.timeout` / `profile.maxRetries` fields are accepted for one release but log a deprecation warning. Move them under `profile.network.imageGenerate` / `profile.network.imageDownload` as appropriate.
+Profile and recipe `network` entries are strict: unknown budget categories or fields are rejected so typos fail before any API call.
 
 ## Cancellation
 
@@ -164,7 +164,7 @@ gptimg generate "logo" \
   --set n=4
 ```
 
-Outputs `<utc>-gptimg.png` (or `-01..-NN.png` when n>1) in the out directory, plus a `<stem>.json` sidecar capturing the resolved request and the AI response (base64 image fields nulled in place).
+Outputs `<utc>-gptimg.png` in the out directory, or indexed filenames such as `<stem>-1.png` / `<stem>-01.png` when multiple images are written. A `<stem>.json` sidecar captures the resolved request and the AI response (base64 image fields nulled in place).
 
 ### `edit`
 
@@ -282,7 +282,7 @@ sdk.log.open / append / close / createLogger
 
 | File | Written by |
 |---|---|
-| `<stem>.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
+| `<stem>.<ext>`, `<stem>-N.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
 | `<stem>.json` | Sidecar — resolved request, AI response (base64 nulled), `files` table with SHA-256 + format |
 | `<utc>-gptimg.jsonl` | Per-invocation log; one JSON object per stage |
 | `<input-stem>-chroma.png` | Chroma RGBA result |
@@ -302,6 +302,8 @@ gptimg generate "x" \
   --set tools.0.type=image_generation \
   --set mask=@./mask.json
 ```
+
+`--patch` is recipe-rooted. Bare `--set` keys are scoped under the current verb; paths beginning with `generate`, `edit`, `vision`, `chroma`, or `network` are recipe-rooted.
 
 ## Exit codes
 

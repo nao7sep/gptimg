@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { ProfileError } from "../errors.js";
 import type { Profile } from "../types.js";
+import { ProfileSchema, formatProfileZodError } from "./schema.js";
 
 export async function loadProfile(filePath: string): Promise<Profile> {
   let text: string;
@@ -29,13 +30,14 @@ export async function loadProfile(filePath: string): Promise<Profile> {
         `Profile at ${filePath} must be a JSON object`,
       );
     }
-    if (typeof parsed.provider !== "string" || parsed.provider.length === 0) {
+    const result = ProfileSchema.safeParse(parsed);
+    if (!result.success) {
       throw new ProfileError(
-        "profile.invalidJson",
-        `Profile at ${filePath} is missing required "provider" field`,
+        "profile.validationFailed",
+        `Profile at ${filePath} invalid: ${formatProfileZodError(result.error)}`,
       );
     }
-    return parsed as Profile;
+    return result.data as Profile;
   } catch (err) {
     if (err instanceof ProfileError) throw err;
     throw new ProfileError(
