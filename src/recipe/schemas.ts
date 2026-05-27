@@ -40,6 +40,7 @@ export const VisionShrinkSchema = z.object({
 export const VisionRecipeSchema = z
   .object({
     shrink: VisionShrinkSchema.optional(),
+    detail: z.enum(["low", "high", "original", "auto"]).optional(),
   })
   .passthrough();
 

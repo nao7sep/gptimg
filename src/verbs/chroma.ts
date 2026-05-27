@@ -1,3 +1,4 @@
+import path from "node:path";
 import { createLogger, safeLogError } from "../log/index.js";
 import { runChroma } from "../local/chroma/index.js";
 import { visionImpl, type VisionContext } from "./vision.js";
@@ -54,6 +55,8 @@ export async function chromaImpl(
           in: out.imagePath,
           check: args.verify,
           log: logger.handle.path,
+          outDir: path.dirname(out.imagePath),
+          outName: `${path.parse(out.imagePath).name}-verify`,
         },
         { signal },
       );

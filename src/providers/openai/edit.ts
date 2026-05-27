@@ -1,11 +1,10 @@
 import { Buffer } from "node:buffer";
-import { createReadStream } from "node:fs";
-import { toFile } from "openai";
 import { LocalOpError, ProviderError } from "../../errors.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
+import { imageFileForEditUpload } from "./upload.js";
 
 const DEFAULT_EDIT_MODEL = "gpt-image-2";
 
@@ -22,11 +21,12 @@ export async function openaiEdit(
   let imageFile;
   let maskFile;
   try {
-    imageFile = await toFile(createReadStream(args.imagePath));
+    imageFile = await imageFileForEditUpload(args.imagePath, "input");
     maskFile = args.maskPath
-      ? await toFile(createReadStream(args.maskPath))
+      ? await imageFileForEditUpload(args.maskPath, "mask")
       : undefined;
   } catch (err) {
+    if (err instanceof LocalOpError) throw err;
     throw new LocalOpError(
       "image.readFailed",
       `Failed to read edit input image: ${(err as Error).message}`,

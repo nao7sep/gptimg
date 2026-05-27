@@ -1,6 +1,6 @@
 import type { Logger } from "../log/index.js";
 import type { NetworkBudget } from "../network/defaults.js";
-import type { ResolvedProfile, VisionVerdict } from "../types.js";
+import type { ResolvedProfile, VisionDetail, VisionVerdict } from "../types.js";
 
 export interface ProviderImageResult {
   /** Raw response from the provider, suitable for sidecar capture. */
@@ -46,7 +46,7 @@ export interface EditProviderArgs {
 
 export interface VisionProviderArgs {
   check: string;
-  images: Array<{ data: Uint8Array; format: string }>;
+  images: Array<{ data: Uint8Array; format: string; detail?: VisionDetail }>;
   params: Record<string, unknown>;
   profile: ResolvedProfile;
   network: ProviderNetworkCtx;

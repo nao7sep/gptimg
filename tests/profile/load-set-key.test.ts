@@ -37,6 +37,9 @@ describe("loadProfile", () => {
       ["null", "null"],
       ["missing-provider", "{}"],
       ["empty-provider", '{"provider":""}'],
+      ["baseurl-number", '{"provider":"openai","baseURL":123}'],
+      ["baseurl-relative", '{"provider":"openai","baseURL":"/v1"}'],
+      ["baseurl-ftp", '{"provider":"openai","baseURL":"ftp://example.test/v1"}'],
     ]) {
       const file = path.join(tmp, `${name}.json`);
       await writeFile(file, text);

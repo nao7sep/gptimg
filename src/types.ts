@@ -37,6 +37,7 @@ export interface EditRecipe {
 
 export interface VisionRecipe {
   shrink?: { width: number; height: number };
+  detail?: VisionDetail;
   [key: string]: unknown;
 }
 
@@ -133,6 +134,8 @@ export interface VisionArgs {
   outDir?: string;
   outName?: string;
 }
+
+export type VisionDetail = "low" | "high" | "original" | "auto";
 
 export interface VisionVerdict {
   ok: boolean;

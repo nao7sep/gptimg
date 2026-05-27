@@ -458,7 +458,7 @@ describe("AI verb implementations with mocked provider", () => {
       check: "both are green disks",
       outDir: path.join(tmp, "vision-out"),
       outName: "vision",
-      set: ['shrink={"width":64,"height":64}', "model=vision-model"],
+      set: ['shrink={"width":64,"height":64}', "model=vision-model", "detail=high"],
     });
 
     expect(result).toMatchObject({
@@ -473,11 +473,16 @@ describe("AI verb implementations with mocked provider", () => {
     });
     expect(call?.images).toHaveLength(2);
     expect(call?.images[0]?.format).toBe("png");
+    expect(call?.images[0]?.detail).toBe("high");
 
     const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as {
-      request: { inputs: Array<{ name: string; shrink: { applied: boolean; outputWidth: number } }> };
+      request: {
+        detail?: string;
+        inputs: Array<{ name: string; shrink: { applied: boolean; outputWidth: number } }>;
+      };
       response: { verdict: { ok: boolean } };
     };
+    expect(sidecar.request.detail).toBe("high");
     expect(sidecar.request.inputs.map((x) => x.name)).toEqual([
       "first.png",
       "second.png",
@@ -564,6 +569,9 @@ describe("AI verb implementations with mocked provider", () => {
 
     expect(verified.verify).toMatchObject({ ok: true, score: 1 });
     expect(verified.verify?.logPath).toBe(verified.logPath);
+    expect(verified.verify?.sidecarPath).toBe(
+      path.join(tmp, "chroma-verify", "verified-verify.json"),
+    );
     const sharedLog = lines(await readFile(verified.logPath, "utf-8"));
     expect(sharedLog).toEqual(
       expect.arrayContaining([

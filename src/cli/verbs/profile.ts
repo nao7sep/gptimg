@@ -27,11 +27,11 @@ async function readStdin(): Promise<string> {
 export function registerProfile(program: Command): void {
   const profile = program
     .command("profile")
-    .description("Profile management (apiKey storage)");
+    .description("Profile management (connection settings and apiKey storage)");
 
   const setKey = profile
     .command("set-key")
-    .description("Set the apiKey in a profile (stored obfuscated)")
+    .description("Set the apiKey in a profile (stored obfuscated; other fields preserved)")
     .option("--key <value>", "API key value (warning: visible in shell history)")
     .option("--stdin", "Read the API key from stdin")
     .option("--path <path>", "Profile file path (default: ~/.gptimg/profile.json)");

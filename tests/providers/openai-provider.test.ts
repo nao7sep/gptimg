@@ -190,6 +190,12 @@ describe("OpenAI provider implementations", () => {
     });
 
     expect(openaiMock.toFile).toHaveBeenCalledTimes(2);
+    expect(Buffer.isBuffer(openaiMock.toFile.mock.calls[0]?.[0])).toBe(true);
+    expect(openaiMock.toFile.mock.calls[0]?.[1]).toBe("green-disk.png");
+    expect(openaiMock.toFile.mock.calls[0]?.[2]).toEqual({ type: "image/png" });
+    expect(Buffer.isBuffer(openaiMock.toFile.mock.calls[1]?.[0])).toBe(true);
+    expect(openaiMock.toFile.mock.calls[1]?.[1]).toBe("green-disk.png");
+    expect(openaiMock.toFile.mock.calls[1]?.[2]).toEqual({ type: "image/png" });
     expect(openaiMock.edit.mock.calls[0]?.[0]).toMatchObject({
       model: "gpt-image-2",
       prompt: "edit it",
@@ -266,25 +272,47 @@ describe("OpenAI provider implementations", () => {
 
     const result = await openaiVision({
       check: "is it green?",
-      images: [{ data: png, format: "png" }],
-      params: { model: "gpt-4o-mini" },
+      images: [{ data: png, format: "png", detail: "high" }],
+      params: { model: "gpt-5.4-mini" },
       profile,
       network,
     });
 
     const request = openaiMock.create.mock.calls[0]?.[0];
     expect(request).toMatchObject({
-      model: "gpt-4o-mini",
+      model: "gpt-5.4-mini",
       response_format: { type: "json_schema" },
     });
     expect(request.messages[1].content[1].image_url.url).toMatch(
       /^data:image\/png;base64,/,
     );
+    expect(request.messages[1].content[1].image_url.detail).toBe("high");
     expect(result.verdict).toEqual({
       ok: true,
       score: 0.8,
       reasons: ["green disk visible"],
     });
+  });
+
+  it("vision allows detail=original on a compatible model", async () => {
+    openaiMock.create.mockResolvedValue({
+      choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
+    });
+
+    await openaiVision({
+      check: "is it green?",
+      images: [{ data: png, format: "png", detail: "original" }],
+      params: { model: "gpt-5.4" },
+      profile,
+      network,
+    });
+
+    expect(openaiMock.create.mock.calls[0]?.[0]).toMatchObject({
+      model: "gpt-5.4",
+    });
+    expect(openaiMock.create.mock.calls[0]?.[0].messages[1].content[1].image_url.detail).toBe(
+      "original",
+    );
   });
 
   it("vision falls back to profile model and then provider default model", async () => {
@@ -315,7 +343,7 @@ describe("OpenAI provider implementations", () => {
       network,
     });
     expect(openaiMock.create.mock.calls[0]?.[0]).toMatchObject({
-      model: "gpt-4o-mini",
+      model: "gpt-5.4-mini",
     });
   });
 
@@ -334,6 +362,22 @@ describe("OpenAI provider implementations", () => {
     ).rejects.toMatchObject({
       name: "AbortError",
       code: "cancelled",
+    });
+    expect(openaiMock.create).not.toHaveBeenCalled();
+  });
+
+  it("vision rejects detail=original on mini models before calling the SDK", async () => {
+    await expect(
+      openaiVision({
+        check: "is it green?",
+        images: [{ data: png, format: "png", detail: "original" }],
+        params: {},
+        profile,
+        network,
+      }),
+    ).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "vision.detailUnsupported",
     });
     expect(openaiMock.create).not.toHaveBeenCalled();
   });

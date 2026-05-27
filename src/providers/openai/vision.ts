@@ -1,11 +1,11 @@
 import { Buffer } from "node:buffer";
-import { ProviderError } from "../../errors.js";
+import { LocalOpError, ProviderError } from "../../errors.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { VisionVerdict } from "../../types.js";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
 
-const DEFAULT_VISION_MODEL = "gpt-4o-mini";
+const DEFAULT_VISION_MODEL = "gpt-5.4-mini";
 
 const SYSTEM_PROMPT =
   "You are a strict image verification assistant. Given one or more images and a user-supplied criterion, decide whether the image(s) clearly satisfy the criterion. Return ok=true only when the criterion is clearly met. score is your confidence in [0, 1]. reasons is a list of concrete observations supporting your verdict (positive or negative).";
@@ -28,6 +28,22 @@ const VERDICT_SCHEMA = {
   },
 } as const;
 
+function modelSupportsOriginalDetail(model: string): boolean {
+  return !/^gpt-5(?:\.\d+)?-(?:mini|nano)(?:-|$)/.test(model);
+}
+
+function assertSupportedVisionDetail(
+  model: string,
+  images: VisionProviderArgs["images"],
+): void {
+  if (!images.some((img) => img.detail === "original")) return;
+  if (modelSupportsOriginalDetail(model)) return;
+  throw new LocalOpError(
+    "vision.detailUnsupported",
+    `vision.detail=original is not supported by model ${model}; use low, high, or auto, or choose a model that supports original detail such as gpt-5.4`,
+  );
+}
+
 function mimeFromFormat(format: string): string {
   if (format === "jpg") return "image/jpeg";
   return `image/${format}`;
@@ -38,6 +54,7 @@ function imageContentParts(images: VisionProviderArgs["images"]) {
     type: "image_url" as const,
     image_url: {
       url: `data:${mimeFromFormat(img.format)};base64,${Buffer.from(img.data).toString("base64")}`,
+      ...(img.detail ? { detail: img.detail } : {}),
     },
   }));
 }
@@ -78,12 +95,13 @@ function parseVerdict(raw: string | null | undefined): VisionVerdict {
 export async function openaiVision(
   args: VisionProviderArgs,
 ): Promise<ProviderVisionResult> {
-  const client = buildOpenAIClient(args.profile);
   const model = resolveModel(
     args.params.model,
     args.profile.redacted.model,
     DEFAULT_VISION_MODEL,
   );
+  assertSupportedVisionDetail(model, args.images);
+  const client = buildOpenAIClient(args.profile);
 
   const messages = [
     { role: "system" as const, content: SYSTEM_PROMPT },

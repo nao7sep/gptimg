@@ -16,6 +16,7 @@ import { detectFormat } from "../image/detectFormat.js";
 import { shrinkForVision } from "../image/shrinkForVision.js";
 import type {
   Sidecar,
+  VisionDetail,
   VisionArgs,
   VisionResult,
 } from "../types.js";
@@ -40,6 +41,7 @@ interface PreparedImage {
   path: string;
   data: Uint8Array;
   format: string;
+  detail?: VisionDetail;
   shrink: {
     applied: boolean;
     originalWidth: number;
@@ -52,6 +54,7 @@ interface PreparedImage {
 async function prepareImage(
   imagePath: string,
   fit: { width: number; height: number },
+  detail: VisionDetail | undefined,
   logger: Logger,
 ): Promise<PreparedImage> {
   let raw: Buffer;
@@ -80,6 +83,7 @@ async function prepareImage(
     path: imagePath,
     data: new Uint8Array(shrink.buffer),
     format: fmt.format,
+    detail,
     shrink: {
       applied: shrink.applied,
       originalWidth: shrink.originalWidth,
@@ -115,13 +119,12 @@ export async function visionImpl(
     if (args.set?.length) recipe = await applySet(recipe, "vision", args.set);
     const network = await resolveNetworkForCall(profile, recipe, logger);
     const section = validateVisionSection(recipe.vision);
-    const params: Record<string, unknown> = { ...section };
-    const shrink = section.shrink ?? DEFAULT_SHRINK;
-    delete params.shrink;
+    const { shrink: configuredShrink, detail, ...params } = section;
+    const shrink = configuredShrink ?? DEFAULT_SHRINK;
 
     const inputs = Array.isArray(args.in) ? args.in : [args.in];
     const prepared = await Promise.all(
-      inputs.map((p) => prepareImage(p, shrink, logger)),
+      inputs.map((p) => prepareImage(p, shrink, detail, logger)),
     );
 
     await logger.info("request", "calling provider.vision", {
@@ -133,7 +136,11 @@ export async function visionImpl(
     const provider = getProvider(profile.provider);
     const providerResult = await provider.vision({
       check: args.check,
-      images: prepared.map((p) => ({ data: p.data, format: p.format })),
+      images: prepared.map((p) => ({
+        data: p.data,
+        format: p.format,
+        ...(p.detail ? { detail: p.detail } : {}),
+      })),
       params,
       profile: resolved,
       network: {
@@ -157,6 +164,7 @@ export async function visionImpl(
       request: {
         ...params,
         check: args.check,
+        ...(detail ? { detail } : {}),
         inputs: prepared.map((p) => ({
           name: path.basename(p.path),
           shrink: p.shrink,

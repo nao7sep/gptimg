@@ -230,6 +230,25 @@ describe("CLI exit codes", () => {
     expect(vision.code).toBe(5);
     expect(parseError(vision.stderr).error.type).toBe("localOp");
 
+    const unsupportedDetail = await run([
+      "vision",
+      "--in",
+      fixture("green-disk.png"),
+      "--check",
+      "is this a green disk?",
+      "--profile",
+      profilePath,
+      "--log",
+      path.join(tmp, "vision-detail.log"),
+      "--set",
+      "detail=original",
+    ]);
+    expect(unsupportedDetail.code).toBe(5);
+    expect(parseError(unsupportedDetail.stderr).error).toMatchObject({
+      type: "localOp",
+      code: "vision.detailUnsupported",
+    });
+
     const logDir = path.join(tmp, "log-dir");
     await mkdir(logDir);
     const badLog = await run([

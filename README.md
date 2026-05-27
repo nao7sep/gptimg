@@ -31,6 +31,19 @@ EOF
 
 When both are present, the environment variable wins (runtime overrides persistent config). `profile clear-key` removes only the stored `apiKey`; a missing profile file or missing key is a no-op, while unreadable profile paths are reported as errors.
 
+For alternate OpenAI-compatible endpoints, keep using `provider: "openai"` and point the client at the other root with `baseURL`:
+
+```json
+{
+  "provider": "openai",
+  "apiKeyEnv": "ALT_API_KEY",
+  "baseURL": "https://example-gateway.invalid/v1",
+  "model": "gpt-5.4-mini"
+}
+```
+
+`baseURL` must be an absolute `http` or `https` URL. `organization`, `project`, `defaultHeaders`, and `defaultQuery` are also passed through to the OpenAI SDK when you need gateway-specific connection settings.
+
 Defaults all live under `~/.gptimg/`:
 
 | Path | Purpose |
@@ -167,7 +180,7 @@ gptimg vision \
   --check "the subject is a single coffee mug, no other objects"
 ```
 
-Returns `{ ok, score, reasons }` from a structured `json_schema` response. Images are auto-shrunk to fit inside 1024×1024 before upload (configurable via `recipe.vision.shrink`).
+Returns `{ ok, score, reasons }` from a structured `json_schema` response. The default vision model is `gpt-5.4-mini`. Images are auto-shrunk to fit inside 1024×1024 before upload (configurable via `recipe.vision.shrink` or `--set 'shrink={...}'`). Vision detail can be configured via `recipe.vision.detail` or `--set detail=low|high|original|auto`. By default, detail is left unset so the model can choose automatically; `original` requires a model that supports it (for example `gpt-5.4`, not `gpt-5.4-mini`).
 
 ### `chroma`
 
