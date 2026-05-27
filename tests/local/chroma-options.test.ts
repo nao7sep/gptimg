@@ -45,7 +45,7 @@ describe("chroma option paths", () => {
     await writeFile(
       path.join(tmp, "generated.json"),
       JSON.stringify({
-        request: { chromaKey: { color: "#00ff00" } },
+        request: { chroma: { color: "#00ff00" } },
         response: {},
         files: [],
       }) + "\n",

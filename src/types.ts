@@ -1,6 +1,5 @@
 export interface Profile {
   provider: string;
-  model?: string;
   apiKey?: string;
   apiKeyEnv?: string;
   /** Per-category network budgets. See src/network/defaults.ts. */
@@ -17,26 +16,43 @@ export interface ResolvedProfile {
   apiKeySource: string;
 }
 
-export interface ChromaKeyHint {
-  color: string;
-}
-
 export interface GenerateRecipe {
+  model?: string;
   size?: string;
   quality?: string;
   n?: number;
-  chromaKey?: ChromaKeyHint | null;
   [key: string]: unknown;
 }
 
 export interface EditRecipe {
+  model?: string;
   size?: string;
+  quality?: string;
+  n?: number;
   [key: string]: unknown;
 }
 
 export interface VisionRecipe {
+  model?: string;
   shrink?: { width: number; height: number };
   detail?: VisionDetail;
+  systemPrompt?: string;
+  [key: string]: unknown;
+}
+
+export interface ChromaRecipe {
+  color?: string;
+  mode?: ChromaMode;
+  innerThreshold?: number;
+  borderSample?: number;
+  despill?: boolean;
+  fillHoles?: boolean;
+  strictConfidence?: number;
+  verifyThreshold?: number;
+  /** Suffix appended to the user's generate prompt. `{color}` is replaced with the resolved key. */
+  backdropInstruction?: string;
+  /** Suffix appended to the user's `--verify` text when chroma triggers a vision check. */
+  verifyInstruction?: string;
   [key: string]: unknown;
 }
 
@@ -44,6 +60,7 @@ export interface Recipe {
   generate?: GenerateRecipe;
   edit?: EditRecipe;
   vision?: VisionRecipe;
+  chroma?: ChromaRecipe;
   /** Per-category network budgets. See src/network/defaults.ts. */
   network?: Record<string, unknown>;
 }
@@ -209,6 +226,7 @@ export interface ChromaArgs {
   maskName?: string | false;
   verify?: string;
   verifyThreshold?: number;
+  recipe?: string;
   log?: string;
   overwrite?: boolean;
 }
@@ -234,6 +252,7 @@ export type InspectArgs = Pick<
   | "metric"
   | "borderSample"
   | "strictConfidence"
+  | "recipe"
   | "log"
 >;
 

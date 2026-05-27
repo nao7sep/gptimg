@@ -4,19 +4,14 @@ import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
+import { OPENAI_MODEL_DEFAULTS } from "./defaults.js";
 import { imageFileForEditUpload } from "./upload.js";
-
-const DEFAULT_EDIT_MODEL = "gpt-image-2";
 
 export async function openaiEdit(
   args: EditProviderArgs,
 ): Promise<ProviderImageResult> {
   const client = buildOpenAIClient(args.profile);
-  const model = resolveModel(
-    args.params.model,
-    args.profile.redacted.model,
-    DEFAULT_EDIT_MODEL,
-  );
+  const model = resolveModel(args.params.model, OPENAI_MODEL_DEFAULTS.edit);
 
   let imageFile;
   let maskFile;

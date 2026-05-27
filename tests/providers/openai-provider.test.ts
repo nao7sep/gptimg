@@ -105,20 +105,17 @@ describe("OpenAI provider implementations", () => {
     expect(result.images[0]?.data).toEqual(png);
   });
 
-  it("generate falls back to profile model and then provider default model", async () => {
+  it("generate uses the params model and falls back to the provider default", async () => {
     openaiMock.generate.mockResolvedValue({ data: [] });
 
     await openaiGenerate({
       prompt: "prompt",
-      params: {},
-      profile: {
-        ...profile,
-        redacted: { provider: "openai", model: "profile-image-model" },
-      },
+      params: { model: "custom-image-model" },
+      profile,
       network,
     });
     expect(openaiMock.generate.mock.calls[0]?.[0]).toMatchObject({
-      model: "profile-image-model",
+      model: "custom-image-model",
     });
 
     openaiMock.generate.mockClear();
@@ -206,21 +203,18 @@ describe("OpenAI provider implementations", () => {
     expect(result.images[0]?.data).toEqual(png);
   });
 
-  it("edit falls back to profile model and then provider default model", async () => {
+  it("edit uses the params model and falls back to the provider default", async () => {
     openaiMock.edit.mockResolvedValue({ data: [] });
 
     await openaiEdit({
       prompt: "edit it",
       imagePath: path.join(FIXTURES, "green-disk.png"),
-      params: {},
-      profile: {
-        ...profile,
-        redacted: { provider: "openai", model: "profile-edit-model" },
-      },
+      params: { model: "custom-edit-model" },
+      profile,
       network,
     });
     expect(openaiMock.edit.mock.calls[0]?.[0]).toMatchObject({
-      model: "profile-edit-model",
+      model: "custom-edit-model",
     });
 
     openaiMock.edit.mockClear();
@@ -315,7 +309,7 @@ describe("OpenAI provider implementations", () => {
     );
   });
 
-  it("vision falls back to profile model and then provider default model", async () => {
+  it("vision uses the params model and falls back to the provider default", async () => {
     openaiMock.create.mockResolvedValue({
       choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
     });
@@ -323,15 +317,12 @@ describe("OpenAI provider implementations", () => {
     await openaiVision({
       check: "is it green?",
       images: [{ data: png, format: "png" }],
-      params: {},
-      profile: {
-        ...profile,
-        redacted: { provider: "openai", model: "profile-vision-model" },
-      },
+      params: { model: "custom-vision-model" },
+      profile,
       network,
     });
     expect(openaiMock.create.mock.calls[0]?.[0]).toMatchObject({
-      model: "profile-vision-model",
+      model: "custom-vision-model",
     });
 
     openaiMock.create.mockClear();

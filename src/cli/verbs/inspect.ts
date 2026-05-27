@@ -18,6 +18,7 @@ interface InspectCliOpts {
   metric?: ChromaMetric;
   borderSample?: number;
   strictConfidence?: number;
+  recipe?: string;
   log?: string;
 }
 
@@ -42,15 +43,15 @@ export function registerInspect(program: Command): void {
     .description("Detect chroma regions and report stats only (no writes)")
     .requiredOption("--in <path>", "Input image path")
     .addOption(
-      new Option("--mode <mode>", "Detection mode")
-        .choices(["outer", "all"])
-        .default("outer"),
+      new Option("--mode <mode>", "Detection mode (default: outer)").choices([
+        "outer",
+        "all",
+      ]),
     )
     .option(
       "--key <value>",
-      "auto | from-sidecar | #rrggbb",
+      "auto | from-sidecar | #rrggbb (default: auto, unless recipe.chroma.color is set)",
       parseKeyOpt,
-      "auto",
     )
     .option(
       "--inner-threshold <n>",
@@ -58,9 +59,7 @@ export function registerInspect(program: Command): void {
       parseFloatOpt("--inner-threshold"),
     )
     .addOption(
-      new Option("--metric <name>", "Distance metric")
-        .choices(["lab_de76"])
-        .default("lab_de76"),
+      new Option("--metric <name>", "Distance metric").choices(["lab_de76"]),
     )
     .option(
       "--border-sample <px>",
@@ -72,6 +71,7 @@ export function registerInspect(program: Command): void {
       "Higher confidence gate for region acceptance (0..1)",
       parseFloatOpt("--strict-confidence"),
     )
+    .option("--recipe <path>", "Path to recipe JSON file")
     .option("--log <path>", "Path to log JSONL file");
 
   cmd.action(async (opts: InspectCliOpts) => {
@@ -85,6 +85,7 @@ export function registerInspect(program: Command): void {
         metric: opts.metric,
         borderSample: opts.borderSample,
         strictConfidence: opts.strictConfidence,
+        recipe: opts.recipe,
         log: opts.log,
       },
       { signal: getAbortSignal() },

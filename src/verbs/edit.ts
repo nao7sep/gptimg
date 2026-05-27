@@ -88,7 +88,7 @@ export async function editImpl(
 
     await logger.info("request", "calling provider.edit", {
       provider: profile.provider,
-      model: params.model ?? profile.model ?? null,
+      model: params.model ?? null,
       input: path.basename(args.in),
       mask: args.mask ? path.basename(args.mask) : null,
       n,

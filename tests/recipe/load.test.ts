@@ -25,22 +25,16 @@ describe("loadRecipe", () => {
     await writeFile(
       file,
       JSON.stringify({
-        generate: {
-          size: "1024x1024",
-          n: 2,
-          chromaKey: { color: "#00ff00" },
-        },
+        generate: { size: "1024x1024", n: 2 },
         vision: { shrink: { width: 512, height: 512 } },
+        chroma: { color: "#00ff00" },
       }) + "\n",
     );
 
     await expect(loadRecipe(file)).resolves.toEqual({
-      generate: {
-        size: "1024x1024",
-        n: 2,
-        chromaKey: { color: "#00ff00" },
-      },
+      generate: { size: "1024x1024", n: 2 },
       vision: { shrink: { width: 512, height: 512 } },
+      chroma: { color: "#00ff00" },
     });
   });
 
@@ -57,7 +51,7 @@ describe("loadRecipe", () => {
   it("rejects malformed recipe sections", async () => {
     for (const [name, value] of [
       ["generate-n", { generate: { n: 0 } }],
-      ["chroma-key", { generate: { chromaKey: { color: "green" } } }],
+      ["chroma-color", { chroma: { color: "green" } }],
       ["edit", { edit: { size: 123 } }],
       ["vision-shrink", { vision: { shrink: { width: 0, height: 100 } } }],
       ["network", { network: { imageGenerate: { timeout: "slow" } } }],

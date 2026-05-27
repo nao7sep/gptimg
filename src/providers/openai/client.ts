@@ -19,12 +19,7 @@ export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
   return new OpenAI(opts as ConstructorParameters<typeof OpenAI>[0]);
 }
 
-export function resolveModel(
-  paramModel: unknown,
-  profileModel: unknown,
-  fallback: string,
-): string {
+export function resolveModel(paramModel: unknown, fallback: string): string {
   if (typeof paramModel === "string" && paramModel.length > 0) return paramModel;
-  if (typeof profileModel === "string" && profileModel.length > 0) return profileModel;
   return fallback;
 }

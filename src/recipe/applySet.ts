@@ -38,7 +38,7 @@ function cloneRecipe(recipe: Recipe): Recipe {
   return JSON.parse(JSON.stringify(recipe ?? {})) as Recipe;
 }
 
-const TOP_LEVEL_KEYS = new Set(["generate", "edit", "vision", "network"]);
+const TOP_LEVEL_KEYS = new Set(["generate", "edit", "vision", "chroma", "network"]);
 
 /**
  * Apply `--set key=value` expressions to a recipe section.

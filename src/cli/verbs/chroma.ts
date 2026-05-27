@@ -26,6 +26,7 @@ interface ChromaCliOpts {
   mask?: boolean;
   verify?: string;
   verifyThreshold?: number;
+  recipe?: string;
   log?: string;
   overwrite?: boolean;
 }
@@ -51,15 +52,15 @@ export function registerChroma(program: Command): void {
     .description("Detect and remove a chroma-key background (local, no API)")
     .requiredOption("--in <path>", "Input image path")
     .addOption(
-      new Option("--mode <mode>", "Detection mode")
-        .choices(["outer", "all"])
-        .default("outer"),
+      new Option("--mode <mode>", "Detection mode (default: outer)").choices([
+        "outer",
+        "all",
+      ]),
     )
     .option(
       "--key <value>",
-      "auto | from-sidecar | #rrggbb",
+      "auto | from-sidecar | #rrggbb (default: auto, unless recipe.chroma.color is set)",
       parseKeyOpt,
-      "auto",
     )
     .option(
       "--inner-threshold <n>",
@@ -67,9 +68,7 @@ export function registerChroma(program: Command): void {
       parseFloatOpt("--inner-threshold"),
     )
     .addOption(
-      new Option("--metric <name>", "Distance metric")
-        .choices(["lab_de76"])
-        .default("lab_de76"),
+      new Option("--metric <name>", "Distance metric").choices(["lab_de76"]),
     )
     .option(
       "--border-sample <px>",
@@ -93,6 +92,7 @@ export function registerChroma(program: Command): void {
       "Trigger verify when removedFraction > this (default 0)",
       parseFloatOpt("--verify-threshold"),
     )
+    .option("--recipe <path>", "Path to recipe JSON file")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite existing output files");
 
@@ -114,6 +114,7 @@ export function registerChroma(program: Command): void {
         maskName: opts.mask === false ? false : opts.maskName,
         verify: opts.verify,
         verifyThreshold: opts.verifyThreshold,
+        recipe: opts.recipe,
         log: opts.log,
         overwrite: opts.overwrite,
       },

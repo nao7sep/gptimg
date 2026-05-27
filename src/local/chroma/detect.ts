@@ -23,19 +23,11 @@ import {
   resolveExplicitKey,
   type KeyResolution,
 } from "./detectKey.js";
+import { CHROMA_DEFAULTS } from "./defaults.js";
 import { close } from "./morphology.js";
 import { scoreRegions } from "./scoreRegions.js";
 
-export const CHROMA_DEFAULTS = {
-  mode: "outer" as const,
-  key: "auto" as const,
-  innerThreshold: 5,
-  metric: "lab_de76" as const,
-  borderSample: 4,
-  despill: true,
-  fillHoles: true,
-  verifyThreshold: 0,
-} as const;
+export { CHROMA_DEFAULTS } from "./defaults.js";
 
 export function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
@@ -81,14 +73,14 @@ async function loadKeyFromSidecar(inputPath: string): Promise<string> {
   const stemFull = path.join(dir, stem);
   const sidecar = await readSidecar(stemFull);
   const req = sidecar.request as Record<string, unknown> | undefined;
-  const chromaKey = req?.chromaKey as { color?: string } | undefined;
-  if (!chromaKey || typeof chromaKey.color !== "string") {
+  const chroma = req?.chroma as { color?: string } | undefined;
+  if (!chroma || typeof chroma.color !== "string") {
     throw new LocalOpError(
       "image.formatUnknown",
-      `Sidecar at ${stemFull}.json does not contain request.chromaKey.color`,
+      `Sidecar at ${stemFull}.json does not contain request.chroma.color`,
     );
   }
-  return chromaKey.color;
+  return chroma.color;
 }
 
 async function resolveKey(

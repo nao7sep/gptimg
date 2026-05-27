@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RecipeError } from "../errors.js";
 import { NetworkSchema } from "../network/schema.js";
 import type {
+  ChromaRecipe,
   EditRecipe,
   GenerateRecipe,
   Recipe,
@@ -11,26 +12,16 @@ import type {
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
-export const ChromaKeyHintSchema = z
-  .object({
-    color: z.string().regex(HEX_COLOR_RE, "Must be a #rrggbb hex color"),
-  })
-  .passthrough();
+const IMAGE_PARAMS_SHAPE = {
+  model: z.string().optional(),
+  size: z.string().optional(),
+  quality: z.string().optional(),
+  n: z.number().int().positive().optional(),
+};
 
-export const GenerateRecipeSchema = z
-  .object({
-    size: z.string().optional(),
-    quality: z.string().optional(),
-    n: z.number().int().positive().optional(),
-    chromaKey: ChromaKeyHintSchema.nullable().optional(),
-  })
-  .passthrough();
+export const GenerateRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
 
-export const EditRecipeSchema = z
-  .object({
-    size: z.string().optional(),
-  })
-  .passthrough();
+export const EditRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
 
 export const VisionShrinkSchema = z.object({
   width: z.number().int().positive(),
@@ -39,8 +30,25 @@ export const VisionShrinkSchema = z.object({
 
 export const VisionRecipeSchema = z
   .object({
+    model: z.string().optional(),
     shrink: VisionShrinkSchema.optional(),
     detail: z.enum(["low", "high", "original", "auto"]).optional(),
+    systemPrompt: z.string().optional(),
+  })
+  .passthrough();
+
+export const ChromaRecipeSchema = z
+  .object({
+    color: z.string().regex(HEX_COLOR_RE, "Must be a #rrggbb hex color").optional(),
+    mode: z.enum(["outer", "all"]).optional(),
+    innerThreshold: z.number().optional(),
+    borderSample: z.number().int().positive().optional(),
+    despill: z.boolean().optional(),
+    fillHoles: z.boolean().optional(),
+    strictConfidence: z.number().optional(),
+    verifyThreshold: z.number().optional(),
+    backdropInstruction: z.string().optional(),
+    verifyInstruction: z.string().optional(),
   })
   .passthrough();
 
@@ -49,6 +57,7 @@ export const RecipeSchema = z
     generate: GenerateRecipeSchema.optional(),
     edit: EditRecipeSchema.optional(),
     vision: VisionRecipeSchema.optional(),
+    chroma: ChromaRecipeSchema.optional(),
     network: NetworkSchema.optional(),
   })
   .passthrough();
@@ -90,6 +99,17 @@ export function validateVisionSection(input: unknown): VisionRecipe {
     );
   }
   return r.data as VisionRecipe;
+}
+
+export function validateChromaSection(input: unknown): ChromaRecipe {
+  const r = ChromaRecipeSchema.safeParse(input ?? {});
+  if (!r.success) {
+    throw new RecipeError(
+      "recipe.validationFailed",
+      `chroma section invalid: ${formatZodError(r.error)}`,
+    );
+  }
+  return r.data as ChromaRecipe;
 }
 
 export function validateRecipe(input: unknown): Recipe {

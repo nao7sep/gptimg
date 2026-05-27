@@ -59,7 +59,6 @@ describe("AI verb implementations with mocked provider", () => {
       path.join(tmp, "profile.json"),
       JSON.stringify({
         provider: "openai",
-        model: "profile-model",
         apiKey: obfuscate("sk-profile-only"),
       }) + "\n",
     );
@@ -93,7 +92,7 @@ describe("AI verb implementations with mocked provider", () => {
         prompt: "a green disk",
         outDir,
         outName: "gen",
-        patch: '{"generate":{"quality":"low","chromaKey":{"color":"#00ff00"}}}',
+        patch: '{"generate":{"quality":"low"},"chroma":{"color":"#00ff00"}}',
         set: ["n=2", "model=param-model"],
       });
 
@@ -118,6 +117,7 @@ describe("AI verb implementations with mocked provider", () => {
         params: { quality: "low", n: 2, model: "param-model" },
       });
       expect(call?.params).not.toHaveProperty("chromaKey");
+      expect(call?.params).not.toHaveProperty("chroma");
       expect(call?.prompt).toContain("a green disk");
       expect(call?.prompt).toContain("solid #00ff00 chroma-key background");
 
@@ -126,7 +126,7 @@ describe("AI verb implementations with mocked provider", () => {
         response: { data: Array<{ b64_json: string | null }> };
         files: Array<{ name: string }>;
       };
-      expect(sidecar.request.chromaKey).toEqual({ color: "#00ff00" });
+      expect(sidecar.request.chroma).toEqual({ color: "#00ff00" });
       expect(sidecar.response.data[0]?.b64_json).toBeNull();
       expect(sidecar.files).toEqual([expect.objectContaining({ name: "gen-1.png" })]);
 
@@ -152,7 +152,6 @@ describe("AI verb implementations with mocked provider", () => {
       profilePath,
       JSON.stringify({
         provider: "openai",
-        model: "custom-profile-model",
         apiKey: obfuscate("sk-custom-profile"),
       }) + "\n",
     );

@@ -23,14 +23,10 @@ describe("OpenAI client helpers", () => {
     expect(client.maxRetries).toBe(0);
   });
 
-  it("resolves model precedence from params to profile to fallback", () => {
-    expect(resolveModel("param-model", "profile-model", "fallback")).toBe(
-      "param-model",
-    );
-    expect(resolveModel(undefined, "profile-model", "fallback")).toBe(
-      "profile-model",
-    );
-    expect(resolveModel("", "", "fallback")).toBe("fallback");
+  it("resolves model from params, falling back to the provider default", () => {
+    expect(resolveModel("param-model", "fallback")).toBe("param-model");
+    expect(resolveModel(undefined, "fallback")).toBe("fallback");
+    expect(resolveModel("", "fallback")).toBe("fallback");
   });
 
   it("returns the OpenAI provider and rejects unknown providers", () => {

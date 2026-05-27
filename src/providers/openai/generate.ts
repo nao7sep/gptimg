@@ -4,8 +4,7 @@ import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { GenerateProviderArgs, ProviderImageResult } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
-
-const DEFAULT_GENERATE_MODEL = "gpt-image-2";
+import { OPENAI_MODEL_DEFAULTS } from "./defaults.js";
 
 function shouldOmitResponseFormat(model: string): boolean {
   // gpt-image-* always returns base64 and rejects response_format.
@@ -16,11 +15,7 @@ export async function openaiGenerate(
   args: GenerateProviderArgs,
 ): Promise<ProviderImageResult> {
   const client = buildOpenAIClient(args.profile);
-  const model = resolveModel(
-    args.params.model,
-    args.profile.redacted.model,
-    DEFAULT_GENERATE_MODEL,
-  );
+  const model = resolveModel(args.params.model, OPENAI_MODEL_DEFAULTS.generate);
 
   const params: Record<string, unknown> = {
     ...args.params,

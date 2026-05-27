@@ -30,12 +30,12 @@ import {
   utcTimestamp,
 } from "../internal/paths.js";
 
+import { VISION_DEFAULTS } from "./defaults.js";
+
 export interface VisionContext {
   profileDir: string;
   logDir: string;
 }
-
-const DEFAULT_SHRINK = { width: 1024, height: 1024 };
 
 interface PreparedImage {
   path: string;
@@ -120,7 +120,7 @@ export async function visionImpl(
     const network = await resolveNetworkForCall(profile, recipe, logger);
     const section = validateVisionSection(recipe.vision);
     const { shrink: configuredShrink, detail, ...params } = section;
-    const shrink = configuredShrink ?? DEFAULT_SHRINK;
+    const shrink = configuredShrink ?? VISION_DEFAULTS.shrink;
 
     const inputs = Array.isArray(args.in) ? args.in : [args.in];
     const prepared = await Promise.all(
@@ -129,7 +129,7 @@ export async function visionImpl(
 
     await logger.info("request", "calling provider.vision", {
       provider: profile.provider,
-      model: params.model ?? profile.model ?? null,
+      model: params.model ?? null,
       images: prepared.length,
     });
 

@@ -5,15 +5,20 @@ import {
   verifyChromaAlpha,
   writeCheckerboardPreview,
 } from "../local/chroma/verifyAlpha.js";
+import { CHROMA_VERIFY_INSTRUCTION } from "../local/chroma/defaults.js";
+import { loadRecipe } from "../recipe/load.js";
+import { validateChromaSection } from "../recipe/schemas.js";
 import { visionImpl, type VisionContext } from "./vision.js";
 import type {
   ChromaAlphaVerifyResult,
   ChromaArgs,
+  ChromaRecipe,
   ChromaResult,
   VisionResult,
 } from "../types.js";
 import {
   defaultLogPath,
+  defaultRecipePath,
   utcTimestamp,
 } from "../internal/paths.js";
 import type { VerbCallOptions } from "./options.js";
@@ -23,6 +28,43 @@ export interface ChromaContext {
   logDir: string;
 }
 
+/**
+ * Per-field merge: CLI/SDK args win; recipe fills in everything unset.
+ * Anything still unset is filled by CHROMA_DEFAULTS inside runChroma.
+ */
+function applyRecipeDefaults(args: ChromaArgs, section: ChromaRecipe): ChromaArgs {
+  const merged: ChromaArgs = { ...args };
+  if (merged.mode === undefined && section.mode !== undefined) merged.mode = section.mode;
+  if (
+    (merged.key === undefined || merged.key === "auto") &&
+    typeof section.color === "string" &&
+    section.color.length > 0
+  ) {
+    // recipe.chroma.color acts as an explicit key default when the caller
+    // hasn't asked for auto-detect explicitly.
+    if (merged.key === undefined) merged.key = section.color;
+  }
+  if (merged.innerThreshold === undefined && section.innerThreshold !== undefined) {
+    merged.innerThreshold = section.innerThreshold;
+  }
+  if (merged.borderSample === undefined && section.borderSample !== undefined) {
+    merged.borderSample = section.borderSample;
+  }
+  if (merged.despill === undefined && section.despill !== undefined) {
+    merged.despill = section.despill;
+  }
+  if (merged.fillHoles === undefined && section.fillHoles !== undefined) {
+    merged.fillHoles = section.fillHoles;
+  }
+  if (merged.strictConfidence === undefined && section.strictConfidence !== undefined) {
+    merged.strictConfidence = section.strictConfidence;
+  }
+  if (merged.verifyThreshold === undefined && section.verifyThreshold !== undefined) {
+    merged.verifyThreshold = section.verifyThreshold;
+  }
+  return merged;
+}
+
 export async function chromaImpl(
   ctx: ChromaContext,
   args: ChromaArgs,
@@ -30,17 +72,22 @@ export async function chromaImpl(
 ): Promise<ChromaResult> {
   const ts = utcTimestamp();
   const logPath = args.log ?? defaultLogPath(ctx.logDir, ts);
+  const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
   const logger = await createLogger(logPath, "chroma");
   const signal = opts.signal;
 
   try {
+    const recipe = await loadRecipe(recipePath);
+    const chromaSection = validateChromaSection(recipe.chroma);
+    const resolved = applyRecipeDefaults(args, chromaSection);
+
     await logger.info("resolve", "chroma start", {
-      input: args.in,
-      mode: args.mode ?? "outer",
-      key: args.key ?? "auto",
+      input: resolved.in,
+      mode: resolved.mode ?? "outer",
+      key: resolved.key ?? "auto",
     });
 
-    const out = await runChroma(args, { signal });
+    const out = await runChroma(resolved, { signal });
     await logger.info("stats", "chroma complete", {
       output: out.imagePath,
       mask: out.maskPath,
@@ -50,8 +97,8 @@ export async function chromaImpl(
     let verify: VisionResult | undefined;
     let previewPath: string | undefined;
     let alphaVerify: ChromaAlphaVerifyResult | undefined;
-    const verifyThreshold = args.verifyThreshold ?? 0;
-    if (args.verify && out.stats.removedFraction > verifyThreshold) {
+    const verifyThreshold = resolved.verifyThreshold ?? 0;
+    if (resolved.verify && out.stats.removedFraction > verifyThreshold) {
       alphaVerify = await verifyChromaAlpha(out.imagePath, {
         key: out.stats.key,
         mode: out.stats.mode,
@@ -79,14 +126,13 @@ export async function chromaImpl(
         removedFraction: out.stats.removedFraction,
         preview: path.basename(previewPath),
       });
+      const verifyInstruction =
+        chromaSection.verifyInstruction ?? CHROMA_VERIFY_INSTRUCTION;
       verify = await visionImpl(
         visionCtx,
         {
           in: previewPath,
-          check:
-            `${args.verify}\n\n` +
-            "Transparency and alpha-channel correctness are checked locally. " +
-            "For this vision check, inspect the checkerboard preview for subject integrity, visible halos, and visual artifacts.",
+          check: `${resolved.verify}\n\n${verifyInstruction}`,
           log: logger.handle.path,
           outDir: path.dirname(out.imagePath),
           outName: `${path.parse(out.imagePath).name}-verify`,
@@ -100,7 +146,7 @@ export async function chromaImpl(
     }
 
     return {
-      input: args.in,
+      input: resolved.in,
       outputs: { image: out.imagePath, mask: out.maskPath },
       stats: out.stats,
       ...(alphaVerify ? { alphaVerify } : {}),

@@ -44,18 +44,30 @@ Defaults all live under `~/.gptimg/`:
 
 ## Models
 
-The default model for `generate` and `edit` is `gpt-image-2`. Override per-call with `--set model=...` or persistently via `profile.json` (`"model": "..."`) or `recipe.json`.
+Per-verb defaults: `gpt-image-2` for `generate` and `edit`, `gpt-5.4-mini` for `vision`. Override per project by setting `model` inside the matching recipe section (`recipe.generate.model`, `recipe.edit.model`, `recipe.vision.model`), or per call with `--set model=...`. There is no global `model` in `profile.json` — each verb picks its own model independently.
 
 A few gpt-image-2 specifics worth knowing:
 
-- **No transparent backgrounds.** `background: "transparent"` is rejected by gpt-image-2. If you need transparent output, either set `model` to `gpt-image-1.5`, or keep gpt-image-2 and use the chroma-key workflow below (generate against a solid backdrop, then strip it locally).
+- **No transparent backgrounds.** `background: "transparent"` is rejected by gpt-image-2. If you need transparent output, either set `recipe.generate.model` to `gpt-image-1.5`, or keep gpt-image-2 and use the chroma-key workflow below (generate against a solid backdrop, then strip it locally).
 - **`input_fidelity` is gone.** gpt-image-2 always processes input images at high fidelity; passing the parameter will fail. Our code never sent it.
 - **`n > 1` behavior varies.** Some references treat gpt-image-2 generation as fixed at `n=1` while edit requests support 1–10. If a batch request fails, fall back to a single image and call again.
 - **Reference images are billed at max fidelity** on edit calls regardless of `quality`. Quality affects output cost only.
 
-### Why `model` (and `network`) live in both profile and recipe
+### Where defaults and overrides live
 
-`model` is part-connection-shaped (it gates which features exist, like `provider`) and part-call-shaped (it's a per-request parameter, like `size`). So it can appear in `profile.json` for the stable default and in `recipe.json` for per-project overrides — the recipe value wins. The `network` block below follows the same rule for the same reason.
+Every tunable knob has exactly one default. The override layers stack on top:
+
+| Knob | Default lives in | Override path |
+|---|---|---|
+| Per-verb model | `src/providers/openai/defaults.ts` (`OPENAI_MODEL_DEFAULTS`) | `recipe.{verb}.model` → per-call `--set model=...` |
+| Vision system prompt | `src/providers/openai/defaults.ts` (`OPENAI_VISION_SYSTEM_PROMPT`) | `recipe.vision.systemPrompt` |
+| Vision shrink target | `src/verbs/defaults.ts` (`VISION_DEFAULTS.shrink`) | `recipe.vision.shrink` |
+| Chroma options (mode, thresholds, despill, …) | `src/local/chroma/defaults.ts` (`CHROMA_DEFAULTS`) | `recipe.chroma.*` → per-call CLI/SDK flags |
+| Chroma backdrop prompt | `src/local/chroma/defaults.ts` (`CHROMA_BACKDROP_INSTRUCTION`) | `recipe.chroma.backdropInstruction` (template, with `{color}`) |
+| Chroma verify-prompt suffix | `src/local/chroma/defaults.ts` (`CHROMA_VERIFY_INSTRUCTION`) | `recipe.chroma.verifyInstruction` |
+| Network budgets | `src/network/defaults.ts` (`NETWORK_DEFAULTS`) | `profile.network.*` → `recipe.network.*` |
+
+`network` is the only knob that appears in both `profile.json` and `recipe.json`, because account-wide rate limits and project-specific budgets are both legitimate concerns. Everything else lives in recipe only.
 
 ## Network
 
@@ -142,7 +154,7 @@ On the CLI, the first `Ctrl-C` triggers cancellation cleanly; a second `Ctrl-C` 
 gptimg generate "a red coffee mug on a wooden desk"
 
 # With a chroma-key backdrop hint (recipe.json):
-#   { "generate": { "chromaKey": { "color": "#00ff00" } } }
+#   { "chroma": { "color": "#00ff00" } }
 gptimg generate "isometric icon of a folder"
 
 # Override recipe fields on the command line.
@@ -169,7 +181,7 @@ gptimg vision \
   --check "the subject is a single coffee mug, no other objects"
 ```
 
-Returns `{ ok, score, reasons }` from a structured `json_schema` response. The default vision model is `gpt-5.4-mini`. Images are auto-shrunk to fit inside 1024×1024 before upload (configurable via `recipe.vision.shrink` or `--set 'shrink={...}'`). Vision detail can be configured via `recipe.vision.detail` or `--set detail=low|high|original|auto`. By default, detail is left unset so the model can choose automatically; `original` requires a model that supports it (for example `gpt-5.4`, not `gpt-5.4-mini`).
+Returns `{ ok, score, reasons }` from a structured `json_schema` response. The default vision model is `gpt-5.4-mini`. Images are auto-shrunk to fit inside 1024×1024 before upload (configurable via `recipe.vision.shrink` or `--set 'shrink={...}'`). Vision detail can be configured via `recipe.vision.detail` or `--set detail=low|high|original|auto`. By default, detail is left unset so the model can choose automatically; `original` requires a model that supports it (for example `gpt-5.4`, not `gpt-5.4-mini`). The system prompt is configurable via `recipe.vision.systemPrompt`.
 
 ### `chroma`
 
@@ -211,6 +223,25 @@ Writes `<input-stem>-chroma.png` and `<input-stem>-mask.png` next to the input b
 ```
 
 Use `--mode all` when interior chroma-key regions such as mug handles or donut holes should become transparent. The default `outer` mode intentionally keeps interior regions opaque.
+
+Project-level defaults live under `recipe.chroma`:
+
+```jsonc
+// ~/.gptimg/recipe.json
+{
+  "chroma": {
+    "color": "#00ff00",          // used by `generate` for the backdrop prompt
+                                  // and by `chroma --key` as a default
+    "mode": "all",
+    "innerThreshold": 6,
+    "despill": true,
+    "backdropInstruction": "...{color}...",  // override the embedded prompt
+    "verifyInstruction": "..."               // appended to --verify text
+  }
+}
+```
+
+CLI flags on the `chroma` verb override anything in `recipe.chroma`.
 
 ### `inspect`
 
