@@ -147,7 +147,8 @@ export interface VisionResult extends VisionVerdict {
 }
 
 export type ChromaMode = "outer" | "all";
-export type ChromaMetric = "lab_de76" | "ycbcr";
+/** Distance metric in LAB color space. Single value today; widened when alternatives ship. */
+export type ChromaMetric = "lab_de76";
 export type ChromaKeySource = "auto" | "sidecar" | "explicit";
 
 export interface ChromaRegionSummary {

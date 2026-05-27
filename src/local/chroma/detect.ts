@@ -1,5 +1,5 @@
 import path from "node:path";
-import { LocalOpError } from "../../errors.js";
+import { LocalOpError, toAbortError } from "../../errors.js";
 import { loadRawRGBA } from "../../image/bridge.js";
 import { readSidecar } from "../../sidecar/read.js";
 import type {
@@ -43,11 +43,7 @@ export const CHROMA_DEFAULTS = {
 
 export function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
-    const reason = signal.reason;
-    if (reason instanceof Error) throw reason;
-    const err = new Error(typeof reason === "string" ? reason : "cancelled");
-    err.name = "AbortError";
-    throw err;
+    throw toAbortError(signal.reason);
   }
 }
 
@@ -161,12 +157,6 @@ export async function detect(
   const { signal } = opts;
   if (!isChromaArgsInput(args)) {
     throw new LocalOpError("image.formatUnknown", "Invalid detection input");
-  }
-  if (args.metric && args.metric !== "lab_de76") {
-    throw new LocalOpError(
-      "image.formatUnknown",
-      `metric "${args.metric}" is reserved; v1 only implements lab_de76`,
-    );
   }
   const mode = args.mode ?? CHROMA_DEFAULTS.mode;
   const innerThreshold = args.innerThreshold ?? CHROMA_DEFAULTS.innerThreshold;

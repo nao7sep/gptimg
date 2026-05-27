@@ -1,8 +1,8 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
 import { LocalOpError } from "../../errors.js";
 import { writeMaskPNG, writeRGBA } from "../../image/bridge.js";
+import { ensureOutputDir } from "../../internal/output-files.js";
 import type {
   ChromaArgs,
   ChromaStats,
@@ -62,7 +62,7 @@ export async function runChroma(
 
   const inDir = path.dirname(args.in);
   const outDir = args.outDir ? args.outDir : inDir;
-  await mkdir(outDir, { recursive: true });
+  await ensureOutputDir(outDir);
 
   const outName = args.outName ?? defaultOutputName(args.in);
   const outPath = path.isAbsolute(outName) ? outName : path.join(outDir, outName);

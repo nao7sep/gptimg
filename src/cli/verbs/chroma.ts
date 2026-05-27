@@ -1,8 +1,14 @@
-import type { Command } from "commander";
+import { InvalidArgumentError, Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
 import type { ChromaMetric, ChromaMode } from "../../types.js";
+
+function parseKeyOpt(v: string): string {
+  if (v === "auto" || v === "from-sidecar") return v;
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  throw new InvalidArgumentError("must be 'auto', 'from-sidecar', or '#rrggbb'");
+}
 
 interface ChromaCliOpts {
   in: string;
@@ -30,14 +36,14 @@ interface ChromaCliOpts {
 function parseIntOpt(name: string) {
   return (v: string): number => {
     const n = parseInt(v, 10);
-    if (Number.isNaN(n)) throw new Error(`${name}: not a number`);
+    if (Number.isNaN(n)) throw new InvalidArgumentError(`${name}: not a number`);
     return n;
   };
 }
 function parseFloatOpt(name: string) {
   return (v: string): number => {
     const n = parseFloat(v);
-    if (Number.isNaN(n)) throw new Error(`${name}: not a number`);
+    if (Number.isNaN(n)) throw new InvalidArgumentError(`${name}: not a number`);
     return n;
   };
 }
@@ -47,8 +53,17 @@ export function registerChroma(program: Command): void {
     .command("chroma")
     .description("Detect and remove a chroma-key background (local, no API)")
     .requiredOption("--in <path>", "Input image path")
-    .option("--mode <mode>", "outer | all", "outer")
-    .option("--key <value>", "auto | from-sidecar | #rrggbb", "auto")
+    .addOption(
+      new Option("--mode <mode>", "Detection mode")
+        .choices(["outer", "all"])
+        .default("outer"),
+    )
+    .option(
+      "--key <value>",
+      "auto | from-sidecar | #rrggbb",
+      parseKeyOpt,
+      "auto",
+    )
     .option(
       "--inner-threshold <n>",
       "Distance below which pixels are background",
@@ -59,7 +74,11 @@ export function registerChroma(program: Command): void {
       "Distance above which pixels are subject",
       parseFloatOpt("--outer-threshold"),
     )
-    .option("--metric <name>", "lab_de76 (v1 only)", "lab_de76")
+    .addOption(
+      new Option("--metric <name>", "Distance metric")
+        .choices(["lab_de76"])
+        .default("lab_de76"),
+    )
     .option(
       "--border-sample <px>",
       "Border depth for auto key detection",

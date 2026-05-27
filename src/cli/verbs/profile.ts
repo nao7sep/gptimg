@@ -29,31 +29,33 @@ export function registerProfile(program: Command): void {
     .command("profile")
     .description("Profile management (apiKey storage)");
 
-  profile
+  const setKey = profile
     .command("set-key")
     .description("Set the apiKey in a profile (stored obfuscated)")
     .option("--key <value>", "API key value (warning: visible in shell history)")
     .option("--stdin", "Read the API key from stdin")
-    .option("--path <path>", "Profile path (default: ~/.gptimg/profile.json)")
-    .action(async (opts: SetKeyOpts) => {
-      let raw: string | undefined = opts.key;
-      if (!raw && opts.stdin) {
-        raw = await readStdin();
-      }
-      if (!raw || raw.length === 0) {
-        throw new Error(
-          "No API key provided. Use --key <value> or pipe via --stdin.",
-        );
-      }
-      const sdk = new GptImg();
-      await sdk.profile.setApiKey(raw, opts.path ? { path: opts.path } : undefined);
-      emit({ ok: true });
-    });
+    .option("--path <path>", "Profile file path (default: ~/.gptimg/profile.json)");
+
+  setKey.action(async (opts: SetKeyOpts) => {
+    let raw: string | undefined = opts.key;
+    if (!raw && opts.stdin) {
+      raw = await readStdin();
+    }
+    if (!raw || raw.length === 0) {
+      setKey.error("No API key provided. Use --key <value> or pipe via --stdin.", {
+        code: "commander.missingArgument",
+      });
+    }
+    const key = raw as string;
+    const sdk = new GptImg();
+    await sdk.profile.setApiKey(key, opts.path ? { path: opts.path } : undefined);
+    emit({ ok: true });
+  });
 
   profile
     .command("clear-key")
-    .description("Remove the apiKey from a profile (keeps other fields)")
-    .option("--path <path>", "Profile path (default: ~/.gptimg/profile.json)")
+    .description("Remove stored apiKey from a profile file (no-op if missing)")
+    .option("--path <path>", "Profile file path (default: ~/.gptimg/profile.json)")
     .action(async (opts: ClearKeyOpts) => {
       const sdk = new GptImg();
       await sdk.profile.clearApiKey(opts.path ? { path: opts.path } : undefined);

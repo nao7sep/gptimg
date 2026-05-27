@@ -16,7 +16,7 @@ export async function loadProfile(filePath: string): Promise<Profile> {
       );
     }
     throw new ProfileError(
-      "profile.notFound",
+      "profile.readFailed",
       `Failed to read profile at ${filePath}: ${e.message}`,
       { cause: err },
     );

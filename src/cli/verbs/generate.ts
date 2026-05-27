@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
-import { addAiCommonOptions } from "../options.js";
+import { addAiCommonOptions, addOverwriteOption } from "../options.js";
 import { emit } from "../output.js";
 
 interface GenerateCliOpts {
@@ -22,6 +22,7 @@ export function registerGenerate(program: Command): void {
     .argument("<prompt>", "Text prompt for image generation");
 
   addAiCommonOptions(cmd);
+  addOverwriteOption(cmd);
 
   cmd.action(async (prompt: string, opts: GenerateCliOpts) => {
     const sdk = new GptImg();

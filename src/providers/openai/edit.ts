@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createReadStream } from "node:fs";
 import { toFile } from "openai";
-import { ProviderError } from "../../errors.js";
+import { LocalOpError, ProviderError } from "../../errors.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
@@ -19,10 +19,20 @@ export async function openaiEdit(
     DEFAULT_EDIT_MODEL,
   );
 
-  const imageFile = await toFile(createReadStream(args.imagePath));
-  const maskFile = args.maskPath
-    ? await toFile(createReadStream(args.maskPath))
-    : undefined;
+  let imageFile;
+  let maskFile;
+  try {
+    imageFile = await toFile(createReadStream(args.imagePath));
+    maskFile = args.maskPath
+      ? await toFile(createReadStream(args.maskPath))
+      : undefined;
+  } catch (err) {
+    throw new LocalOpError(
+      "image.readFailed",
+      `Failed to read edit input image: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
 
   const params: Record<string, unknown> = {
     ...args.params,

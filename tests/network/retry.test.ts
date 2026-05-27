@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AbortError } from "../../src/errors.js";
 import { callWithRetry, isAbortError } from "../../src/network/retry.js";
 import type { NetworkBudget } from "../../src/network/defaults.js";
 
@@ -118,9 +119,16 @@ describe("callWithRetry", () => {
     const abortErr = new Error("cancelled");
     abortErr.name = "AbortError";
     const fn = vi.fn().mockRejectedValue(abortErr);
-    await expect(
-      callWithRetry({ budgetName: "imageGenerate", budget: fast }, fn),
-    ).rejects.toBe(abortErr);
+    const err = await callWithRetry(
+      { budgetName: "imageGenerate", budget: fast },
+      fn,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AbortError);
+    expect(err).toMatchObject({
+      name: "AbortError",
+      errorType: "abort",
+      code: "cancelled",
+    });
     expect(fn).toHaveBeenCalledOnce();
   });
 

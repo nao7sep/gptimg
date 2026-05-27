@@ -1,4 +1,4 @@
-import { createLogger } from "../log/index.js";
+import { createLogger, safeLogError } from "../log/index.js";
 import { runInspect } from "../local/inspect/index.js";
 import type { InspectArgs, InspectResult } from "../types.js";
 import { defaultLogPath, utcTimestamp } from "../internal/paths.js";
@@ -33,7 +33,7 @@ export async function inspectImpl(
       logPath: logger.handle.path,
     };
   } catch (err) {
-    await logger.error("error", (err as Error).message, {
+    await safeLogError(logger, (err as Error).message, {
       code: (err as { code?: string }).code ?? null,
     });
     throw err;

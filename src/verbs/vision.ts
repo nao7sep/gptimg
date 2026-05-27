@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { Logger, createLogger } from "../log/index.js";
+import { LocalOpError } from "../errors.js";
+import { ensureOutputDir } from "../internal/output-files.js";
+import { Logger, createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
@@ -53,7 +54,16 @@ async function prepareImage(
   fit: { width: number; height: number },
   logger: Logger,
 ): Promise<PreparedImage> {
-  const raw = await readFile(imagePath);
+  let raw: Buffer;
+  try {
+    raw = await readFile(imagePath);
+  } catch (err) {
+    throw new LocalOpError(
+      "image.readFailed",
+      `Failed to read image at ${imagePath}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
   const shrink = await shrinkForVision(raw, fit);
   await logger.info("write", "prepared vision input", {
     path: path.basename(imagePath),
@@ -139,7 +149,7 @@ export async function visionImpl(
     });
 
     const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
-    await mkdir(outDir, { recursive: true });
+    await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem(ts);
     const stemPath = path.join(outDir, stem);
 
@@ -172,7 +182,7 @@ export async function visionImpl(
       logPath: logger.handle.path,
     };
   } catch (err) {
-    await logger.error("error", (err as Error).message, {
+    await safeLogError(logger, (err as Error).message, {
       code: (err as { code?: string }).code ?? null,
     });
     throw err;

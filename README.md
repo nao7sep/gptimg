@@ -29,7 +29,7 @@ cat > ~/.gptimg/profile.json <<'EOF'
 EOF
 ```
 
-When both are present, the environment variable wins (runtime overrides persistent config).
+When both are present, the environment variable wins (runtime overrides persistent config). `profile clear-key` removes only the stored `apiKey`; a missing profile file or missing key is a no-op, while unreadable profile paths are reported as errors.
 
 Defaults all live under `~/.gptimg/`:
 
@@ -269,10 +269,11 @@ gptimg generate "x" \
 | 0 | success |
 | 2 | usage error |
 | 3 | profile or recipe error |
-| 4 | provider error (API failure) |
-| 5 | local-op error (file I/O, decode, etc.) |
+| 4 | provider error (configuration or API failure) |
+| 5 | local-op error (file I/O, decode, output, logs, etc.) |
+| 130 | cancelled by `Ctrl-C` / abort |
 
-Errors are emitted as a single JSON object on stderr.
+Usage errors are emitted by Commander as plain text with usage help. Runtime errors are emitted as a single JSON object on stderr.
 
 ## Development
 
@@ -282,7 +283,7 @@ npm run typecheck   # tsc --noEmit
 npm test            # vitest run
 ```
 
-Tests cover the algorithmic core (obfuscation, resolution, recipe merging, output naming, hashing, base64 nulling) and the chroma pipeline against committed synthetic fixtures under `tests/fixtures/`. The fixture generator is `tests/fixtures/_generate.mjs`.
+Tests cover the algorithmic core (obfuscation, resolution, recipe merging, output naming, hashing, base64 nulling), CLI exit-code boundaries, SDK abort shape, and the chroma pipeline against committed synthetic fixtures under `tests/fixtures/`. The fixture generator is `tests/fixtures/_generate.mjs`.
 
 ## License
 

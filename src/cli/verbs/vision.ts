@@ -5,7 +5,7 @@ import { addAiCommonOptions, collectMultiInput } from "../options.js";
 import { emit } from "../output.js";
 
 interface VisionCliOpts {
-  in: string[];
+  in?: string[];
   check: string;
   profile?: string;
   recipe?: string;
@@ -24,20 +24,22 @@ export function registerVision(program: Command): void {
       "--in <path>",
       "Image path (repeatable)",
       collectMultiInput,
-      [] as string[],
     )
     .requiredOption("--check <text>", "Criterion to verify");
 
   addAiCommonOptions(cmd);
 
   cmd.action(async (opts: VisionCliOpts) => {
-    if (opts.in.length === 0) {
-      throw new Error("--in is required (at least one)");
+    if (!opts.in?.length) {
+      cmd.error("--in is required (at least one)", {
+        code: "commander.missingMandatoryOptionValue",
+      });
     }
+    const inputs = opts.in as string[];
     const sdk = new GptImg();
     const result = await sdk.vision(
       {
-        in: opts.in.length === 1 ? opts.in[0]! : opts.in,
+        in: inputs.length === 1 ? inputs[0]! : inputs,
         check: opts.check,
         profile: opts.profile,
         recipe: opts.recipe,

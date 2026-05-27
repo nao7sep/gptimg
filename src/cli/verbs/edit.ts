@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
-import { addAiCommonOptions } from "../options.js";
+import { addAiCommonOptions, addOverwriteOption } from "../options.js";
 import { emit } from "../output.js";
 
 interface EditCliOpts {
@@ -26,6 +26,7 @@ export function registerEdit(program: Command): void {
     .option("--mask <path>", "Optional mask image path");
 
   addAiCommonOptions(cmd);
+  addOverwriteOption(cmd);
 
   cmd.action(async (prompt: string, opts: EditCliOpts) => {
     const sdk = new GptImg();

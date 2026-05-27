@@ -7,13 +7,29 @@ import { loadProfile } from "./load.js";
 import { obfuscate } from "./obfuscate.js";
 
 async function ensureDir(filePath: string): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
+  try {
+    await mkdir(path.dirname(filePath), { recursive: true });
+  } catch (err) {
+    throw new ProfileError(
+      "profile.writeFailed",
+      `Failed to create profile directory for ${filePath}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
 }
 
 async function writeProfile(filePath: string, profile: Profile): Promise<void> {
   await ensureDir(filePath);
   const text = JSON.stringify(profile, null, 2) + "\n";
-  await writeFileAtomic(filePath, text, { encoding: "utf-8" });
+  try {
+    await writeFileAtomic(filePath, text, { encoding: "utf-8" });
+  } catch (err) {
+    throw new ProfileError(
+      "profile.writeFailed",
+      `Failed to write profile at ${filePath}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
 }
 
 /**
@@ -39,7 +55,7 @@ export async function setApiKey(filePath: string, rawKey: string): Promise<void>
 
 /**
  * Remove `apiKey` from the profile. Preserves every other field including
- * `apiKeyEnv`. Atomic. No-op if the profile or the field doesn't exist.
+ * `apiKeyEnv`. Atomic. No-op if the profile file or the field doesn't exist.
  */
 export async function clearApiKey(filePath: string): Promise<void> {
   let profile: Profile;

@@ -39,3 +39,11 @@ export class AbortError extends GptImgError {
     this.name = "AbortError";
   }
 }
+
+export function toAbortError(err: unknown, fallback = "cancelled"): AbortError {
+  if (err instanceof AbortError) return err;
+  if (err instanceof Error) {
+    return new AbortError(err.message || fallback, { cause: err });
+  }
+  return new AbortError(typeof err === "string" && err.length > 0 ? err : fallback);
+}

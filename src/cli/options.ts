@@ -1,4 +1,4 @@
-import { Command, Option } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 
 export function addAiCommonOptions(cmd: Command): Command {
   return cmd
@@ -11,8 +11,12 @@ export function addAiCommonOptions(cmd: Command): Command {
       "--set <expr...>",
       "Override a recipe field: dot.path=value (repeatable; values JSON-parsed; @file form supported)",
     )
-    .option("--patch <json>", "Deep-merge JSON object into the recipe section")
-    .option("--overwrite", "Overwrite existing output files");
+    .option("--patch <json>", "Deep-merge JSON object into the recipe section");
+}
+
+/** Adds `--overwrite` for verbs that produce image outputs (generate, edit). */
+export function addOverwriteOption(cmd: Command): Command {
+  return cmd.option("--overwrite", "Overwrite existing output files");
 }
 
 export function collectMultiInput(value: string, prev: string[] = []): string[] {
@@ -22,7 +26,7 @@ export function collectMultiInput(value: string, prev: string[] = []): string[] 
 export function intOption(name: string, desc: string): Option {
   return new Option(name, desc).argParser((v) => {
     const n = parseInt(v, 10);
-    if (Number.isNaN(n)) throw new Error(`${name}: not a number`);
+    if (Number.isNaN(n)) throw new InvalidArgumentError("not a number");
     return n;
   });
 }
@@ -30,7 +34,7 @@ export function intOption(name: string, desc: string): Option {
 export function floatOption(name: string, desc: string): Option {
   return new Option(name, desc).argParser((v) => {
     const n = parseFloat(v);
-    if (Number.isNaN(n)) throw new Error(`${name}: not a number`);
+    if (Number.isNaN(n)) throw new InvalidArgumentError("not a number");
     return n;
   });
 }

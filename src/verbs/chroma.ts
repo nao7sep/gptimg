@@ -1,4 +1,4 @@
-import { createLogger } from "../log/index.js";
+import { createLogger, safeLogError } from "../log/index.js";
 import { runChroma } from "../local/chroma/index.js";
 import { visionImpl, type VisionContext } from "./vision.js";
 import type { ChromaArgs, ChromaResult, VisionResult } from "../types.js";
@@ -71,7 +71,7 @@ export async function chromaImpl(
       logPath: logger.handle.path,
     };
   } catch (err) {
-    await logger.error("error", (err as Error).message, {
+    await safeLogError(logger, (err as Error).message, {
       code: (err as { code?: string }).code ?? null,
     });
     throw err;

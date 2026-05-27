@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import writeFileAtomic from "write-file-atomic";
+import { LocalOpError } from "../errors.js";
 import { redact } from "../profile/redact.js";
 import type { Sidecar } from "../types.js";
 
@@ -13,9 +14,17 @@ import type { Sidecar } from "../types.js";
  */
 export async function writeSidecar(stem: string, sidecar: Sidecar): Promise<string> {
   const sidecarPath = `${stem}.json`;
-  await mkdir(path.dirname(sidecarPath), { recursive: true });
-  const safe = redact(sidecar);
-  const text = JSON.stringify(safe, null, 2) + "\n";
-  await writeFileAtomic(sidecarPath, text, { encoding: "utf-8" });
+  try {
+    await mkdir(path.dirname(sidecarPath), { recursive: true });
+    const safe = redact(sidecar);
+    const text = JSON.stringify(safe, null, 2) + "\n";
+    await writeFileAtomic(sidecarPath, text, { encoding: "utf-8" });
+  } catch (err) {
+    throw new LocalOpError(
+      "sidecar.writeFailed",
+      `Failed to write sidecar at ${sidecarPath}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
   return sidecarPath;
 }

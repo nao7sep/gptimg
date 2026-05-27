@@ -1,13 +1,11 @@
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import writeFileAtomic from "write-file-atomic";
 import pLimit from "p-limit";
-import { Buffer } from "node:buffer";
 import { LocalOpError } from "../errors.js";
 import { hash } from "../image/hash.js";
 import { detectFormat } from "../image/detectFormat.js";
-import { createLogger } from "../log/index.js";
+import { ensureOutputDir, writeOutputBytes } from "../internal/output-files.js";
+import { createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
@@ -108,7 +106,7 @@ export async function generateImpl(
     });
 
     const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
-    await mkdir(outDir, { recursive: true });
+    await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem(ts);
     const overwrite = args.overwrite ?? false;
 
@@ -148,7 +146,7 @@ export async function generateImpl(
               `Output exists: ${filePath}. Use overwrite to allow.`,
             );
           }
-          await writeFileAtomic(filePath, Buffer.from(item.data));
+          await writeOutputBytes(filePath, item.data);
           const sha = hash(item.data);
           files.push({ index, path: filePath, sha256: sha, format: fmt.format });
           await logger.info("write", `wrote image ${index}`, {
@@ -192,7 +190,7 @@ export async function generateImpl(
       partial,
     };
   } catch (err) {
-    await logger.error("error", (err as Error).message, {
+    await safeLogError(logger, (err as Error).message, {
       code: (err as { code?: string }).code ?? null,
     });
     throw err;

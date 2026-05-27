@@ -1,4 +1,5 @@
 import type { Logger } from "../log/index.js";
+import { toAbortError } from "../errors.js";
 import type { NetworkBudget, NetworkBudgetName } from "./defaults.js";
 
 const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 429, 500, 502, 503, 504]);
@@ -82,11 +83,7 @@ function computeScheduledWait(retryNumber: number, intervals: number[]): number 
 }
 
 function abortReason(signal: AbortSignal): Error {
-  const reason = signal.reason;
-  if (reason instanceof Error) return reason;
-  const e = new Error(typeof reason === "string" ? reason : "cancelled");
-  e.name = "AbortError";
-  return e;
+  return toAbortError(signal.reason);
 }
 
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -134,7 +131,9 @@ export async function callWithRetry<T>(
     try {
       return await fn();
     } catch (err) {
-      if (isAbortError(err) || signal?.aborted) throw err;
+      if (isAbortError(err) || signal?.aborted) {
+        throw toAbortError(signal?.aborted ? (signal.reason ?? err) : err);
+      }
       const remaining = budget.maxRetries - attempt;
       if (remaining <= 0) throw err;
       if (!isRetryableError(err)) throw err;
