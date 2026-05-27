@@ -184,7 +184,7 @@ Returns `{ ok, score, reasons }` from a structured `json_schema` response. The d
 
 ### `chroma`
 
-Local; no API call. Detects and removes a chroma-key background using a region-aware Gaussian model plus smoothstep alpha along the silhouette.
+Local; no API call. Detects the chroma-key background via a region-aware Gaussian color model in LAB, then extracts the subject by closed-form alpha matting in linear-light RGB with spill suppression on the recovered foreground.
 
 ```sh
 # Auto-detect the chroma key from the image border.

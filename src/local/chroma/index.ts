@@ -7,8 +7,8 @@ import type {
   ChromaArgs,
   ChromaStats,
 } from "../../types.js";
-import { despill as applyDespill } from "./despill.js";
 import { CHROMA_DEFAULTS, detect, throwIfAborted } from "./detect.js";
+import { solveMatting } from "./matting.js";
 
 export { CHROMA_DEFAULTS } from "./detect.js";
 
@@ -41,57 +41,25 @@ function checkOverwrite(filePath: string, allowOverwrite: boolean): void {
   }
 }
 
-function computeDespillBand(
-  detectorBand: Uint8Array,
-  alpha: Uint8Array,
-  width: number,
-  height: number,
-): Uint8Array {
-  const out = new Uint8Array(detectorBand);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      if (alpha[idx]! <= 5) continue;
-      let nearTransparent = false;
-      for (let dy = -2; dy <= 2 && !nearTransparent; dy++) {
-        for (let dx = -2; dx <= 2 && !nearTransparent; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-          if (alpha[ny * width + nx]! <= 5) nearTransparent = true;
-        }
-      }
-      if (nearTransparent) out[idx] = 255;
-    }
-  }
-  return out;
-}
-
 export async function runChroma(
   args: ChromaArgs,
   opts: { signal?: AbortSignal | undefined } = {},
 ): Promise<ChromaPipelineOutput> {
   const { signal } = opts;
   const result = await detect(args, { signal });
-  const { width, height, rgba, alpha, keyResolution, stats } = result;
+  const { width, height, rgba, accepted, keyResolution, stats } = result;
   const totalPixels = width * height;
 
   throwIfAborted(signal);
-  const doDespill = args.despill ?? CHROMA_DEFAULTS.despill;
-  if (doDespill) {
-    applyDespill(
-      rgba,
-      width,
-      height,
-      alpha,
-      keyResolution.hex,
-      computeDespillBand(result.band, alpha, width, height),
-    );
-  }
-
-  for (let p = 0, i = 0; p < totalPixels; p++, i += 4) {
-    rgba[i + 3] = alpha[p]!;
-  }
+  const applyDecontamination = args.despill ?? CHROMA_DEFAULTS.despill;
+  const matted = solveMatting(
+    rgba,
+    width,
+    height,
+    accepted,
+    keyResolution.hex,
+    { applyDecontamination },
+  );
 
   const inDir = path.dirname(args.in);
   const outDir = args.outDir ? args.outDir : inDir;
@@ -111,11 +79,11 @@ export async function runChroma(
   }
 
   throwIfAborted(signal);
-  await writeRGBA(rgba, width, height, outPath);
+  await writeRGBA(matted.rgba, width, height, outPath);
   if (maskPath) {
     const removalMask = new Uint8Array(totalPixels);
     for (let p = 0; p < totalPixels; p++) {
-      removalMask[p] = 255 - alpha[p]!;
+      removalMask[p] = 255 - matted.alpha[p]!;
     }
     await writeMaskPNG(removalMask, width, height, maskPath);
   }

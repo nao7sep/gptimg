@@ -10,7 +10,6 @@ export {
 export type { GptImgErrorType } from "./errors.js";
 export type {
   ChromaArgs,
-  ChromaEdgeBand,
   ChromaKeyHint,
   ChromaKeySource,
   ChromaMetric,

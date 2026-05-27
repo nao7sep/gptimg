@@ -15,11 +15,8 @@ interface ChromaCliOpts {
   mode?: ChromaMode;
   key?: string;
   innerThreshold?: number;
-  outerThreshold?: number;
   metric?: ChromaMetric;
   borderSample?: number;
-  edgeBandDilate?: number;
-  edgeBandErode?: number;
   despill?: boolean;
   fillHoles?: boolean;
   strictConfidence?: number;
@@ -69,11 +66,6 @@ export function registerChroma(program: Command): void {
       "Distance below which pixels are background",
       parseFloatOpt("--inner-threshold"),
     )
-    .option(
-      "--outer-threshold <n>",
-      "Distance above which pixels are subject",
-      parseFloatOpt("--outer-threshold"),
-    )
     .addOption(
       new Option("--metric <name>", "Distance metric")
         .choices(["lab_de76"])
@@ -84,17 +76,7 @@ export function registerChroma(program: Command): void {
       "Border depth for auto key detection",
       parseIntOpt("--border-sample"),
     )
-    .option(
-      "--edge-band-dilate <px>",
-      "Dilate radius for the edge band",
-      parseIntOpt("--edge-band-dilate"),
-    )
-    .option(
-      "--edge-band-erode <px>",
-      "Erode radius for the edge band",
-      parseIntOpt("--edge-band-erode"),
-    )
-    .option("--no-despill", "Disable color despill on partial-alpha pixels")
+    .option("--no-despill", "Disable color decontamination of the matted foreground")
     .option("--no-fill-holes", "Disable morphological close for hole-filling")
     .option(
       "--strict-confidence <n>",
@@ -116,23 +98,14 @@ export function registerChroma(program: Command): void {
 
   cmd.action(async (opts: ChromaCliOpts) => {
     const sdk = new GptImg();
-    const edgeBand =
-      opts.edgeBandDilate !== undefined || opts.edgeBandErode !== undefined
-        ? {
-            dilate: opts.edgeBandDilate ?? 2,
-            erode: opts.edgeBandErode ?? 2,
-          }
-        : undefined;
     const result = await sdk.chroma(
       {
         in: opts.in,
         mode: opts.mode,
         key: opts.key,
         innerThreshold: opts.innerThreshold,
-        outerThreshold: opts.outerThreshold,
         metric: opts.metric,
         borderSample: opts.borderSample,
-        edgeBand,
         despill: opts.despill,
         fillHoles: opts.fillHoles,
         strictConfidence: opts.strictConfidence,

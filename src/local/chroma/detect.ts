@@ -23,8 +23,6 @@ import {
   resolveExplicitKey,
   type KeyResolution,
 } from "./detectKey.js";
-import { computeEdgeBand } from "./edgeBand.js";
-import { computeAlpha } from "./gradientAlpha.js";
 import { close } from "./morphology.js";
 import { scoreRegions } from "./scoreRegions.js";
 
@@ -32,10 +30,8 @@ export const CHROMA_DEFAULTS = {
   mode: "outer" as const,
   key: "auto" as const,
   innerThreshold: 5,
-  outerThreshold: 25,
   metric: "lab_de76" as const,
   borderSample: 4,
-  edgeBand: { dilate: 2, erode: 2 },
   despill: true,
   fillHoles: true,
   verifyThreshold: 0,
@@ -52,10 +48,8 @@ export interface DetectionInput {
   mode?: ChromaArgs["mode"];
   key?: ChromaArgs["key"];
   innerThreshold?: number;
-  outerThreshold?: number;
   metric?: ChromaArgs["metric"];
   borderSample?: number;
-  edgeBand?: { dilate: number; erode: number };
   fillHoles?: boolean;
   strictConfidence?: number;
 }
@@ -63,16 +57,12 @@ export interface DetectionInput {
 export interface DetectionResult {
   width: number;
   height: number;
-  /** Original RGBA buffer (not yet alpha-updated). */
+  /** Original RGBA buffer (unchanged by detection). */
   rgba: Uint8Array;
   /** Per-pixel Mahalanobis distance to the background model. */
   distance: Float32Array;
   /** Binary mask (0/255) of the accepted-as-background pixels. */
   accepted: Uint8Array;
-  /** Edge band mask (0/255) where soft alpha is computed. */
-  band: Uint8Array;
-  /** Per-pixel alpha values (0..255). 0 = background, 255 = subject. */
-  alpha: Uint8Array;
   keyResolution: KeyResolution;
   stats: ChromaStats;
 }
@@ -160,9 +150,7 @@ export async function detect(
   }
   const mode = args.mode ?? CHROMA_DEFAULTS.mode;
   const innerThreshold = args.innerThreshold ?? CHROMA_DEFAULTS.innerThreshold;
-  const outerThreshold = args.outerThreshold ?? CHROMA_DEFAULTS.outerThreshold;
   const borderSample = args.borderSample ?? CHROMA_DEFAULTS.borderSample;
-  const edgeBand = args.edgeBand ?? CHROMA_DEFAULTS.edgeBand;
   const fillHoles = args.fillHoles ?? CHROMA_DEFAULTS.fillHoles;
 
   throwIfAborted(signal);
@@ -200,13 +188,9 @@ export async function detect(
   }
   const accepted = buildLabelMask(labels, acceptedLabels);
 
-  throwIfAborted(signal);
-  const band = computeEdgeBand(accepted, width, height, edgeBand);
-  const alpha = computeAlpha(accepted, band, distance, innerThreshold, outerThreshold);
-
   let removedPixels = 0;
   for (let p = 0; p < totalPixels; p++) {
-    if (alpha[p]! < 255) removedPixels++;
+    if (accepted[p]! > 0) removedPixels++;
   }
   const removedFraction = totalPixels > 0 ? removedPixels / totalPixels : 0;
 
@@ -245,8 +229,6 @@ export async function detect(
     rgba,
     distance,
     accepted,
-    band,
-    alpha,
     keyResolution: keyRes,
     stats,
   };

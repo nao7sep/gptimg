@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hash } from "../../src/image/hash.js";
 import { detect } from "../../src/local/chroma/detect.js";
-import { computeAlpha } from "../../src/local/chroma/gradientAlpha.js";
 import { GptImg } from "../../src/gptimg.js";
 import { runChroma } from "../../src/local/chroma/index.js";
 import { runInspect } from "../../src/local/inspect/index.js";
@@ -178,15 +177,4 @@ describe("chroma option paths", () => {
     );
   });
 
-  it("outer threshold changes the soft-alpha gradient", async () => {
-    const accepted = new Uint8Array([255, 0, 0]);
-    const band = new Uint8Array([255, 255, 255]);
-    const distance = new Float32Array([5, 10, 30]);
-    const tight = computeAlpha(accepted, band, distance, 5, 12);
-    const loose = computeAlpha(accepted, band, distance, 5, 60);
-
-    const alphaTotal = (values: Uint8Array): number =>
-      values.reduce((acc, value) => acc + value, 0);
-    expect(alphaTotal(tight)).toBeGreaterThan(alphaTotal(loose));
-  });
 });

@@ -193,21 +193,14 @@ export interface ChromaAlphaVerifyResult {
   metrics: ChromaAlphaVerifyMetrics;
 }
 
-export interface ChromaEdgeBand {
-  dilate: number;
-  erode: number;
-}
-
 export interface ChromaArgs {
   in: string;
   mode?: ChromaMode;
   /** "auto" | "from-sidecar" | "#rrggbb" */
   key?: string;
   innerThreshold?: number;
-  outerThreshold?: number;
   metric?: ChromaMetric;
   borderSample?: number;
-  edgeBand?: ChromaEdgeBand;
   despill?: boolean;
   fillHoles?: boolean;
   strictConfidence?: number;
@@ -239,10 +232,8 @@ export type InspectArgs = Pick<
   | "mode"
   | "key"
   | "innerThreshold"
-  | "outerThreshold"
   | "metric"
   | "borderSample"
-  | "edgeBand"
   | "strictConfidence"
   | "log"
 >;
