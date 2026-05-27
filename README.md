@@ -31,18 +31,7 @@ EOF
 
 When both are present, the environment variable wins (runtime overrides persistent config). `profile clear-key` removes only the stored `apiKey`; a missing profile file or missing key is a no-op, while unreadable profile paths are reported as errors.
 
-For alternate OpenAI-compatible endpoints, keep using `provider: "openai"` and point the client at the other root with `baseURL`:
-
-```json
-{
-  "provider": "openai",
-  "apiKeyEnv": "ALT_API_KEY",
-  "baseURL": "https://example-gateway.invalid/v1",
-  "model": "gpt-5.4-mini"
-}
-```
-
-`baseURL` must be an absolute `http` or `https` URL. `organization`, `project`, `defaultHeaders`, and `defaultQuery` are also passed through to the OpenAI SDK when you need gateway-specific connection settings.
+For org-scoped OpenAI accounts, `organization` and `project` in the profile are passed through to the OpenAI SDK; nothing else is.
 
 Defaults all live under `~/.gptimg/`:
 

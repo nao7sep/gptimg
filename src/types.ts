@@ -3,7 +3,6 @@ export interface Profile {
   model?: string;
   apiKey?: string;
   apiKeyEnv?: string;
-  baseURL?: string;
   /** Per-category network budgets. See src/network/defaults.ts. */
   network?: Record<string, unknown>;
   [key: string]: unknown;

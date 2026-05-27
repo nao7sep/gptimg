@@ -10,32 +10,17 @@ describe("OpenAI client helpers", () => {
       apiKeySource: "profile.apiKey",
       redacted: {
         provider: "openai",
-        baseURL: "https://api.example.test/v1",
         organization: "org-local",
         project: "proj-local",
-        defaultHeaders: { "x-local": "yes" },
-        defaultQuery: { local: "true" },
-        httpAgent: { marker: "agent" },
       },
     };
 
     const client = buildOpenAIClient(profile);
-    const options = client as unknown as {
-      _options: {
-        defaultHeaders?: unknown;
-        defaultQuery?: unknown;
-        httpAgent?: unknown;
-      };
-    };
 
     expect(client.apiKey).toBe("sk-local");
-    expect(client.baseURL).toBe("https://api.example.test/v1");
     expect(client.organization).toBe("org-local");
     expect(client.project).toBe("proj-local");
     expect(client.maxRetries).toBe(0);
-    expect(options._options.defaultHeaders).toEqual({ "x-local": "yes" });
-    expect(options._options.defaultQuery).toEqual({ local: "true" });
-    expect(options._options.httpAgent).toEqual({ marker: "agent" });
   });
 
   it("resolves model precedence from params to profile to fallback", () => {

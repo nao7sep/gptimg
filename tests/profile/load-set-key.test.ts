@@ -37,9 +37,6 @@ describe("loadProfile", () => {
       ["null", "null"],
       ["missing-provider", "{}"],
       ["empty-provider", '{"provider":""}'],
-      ["baseurl-number", '{"provider":"openai","baseURL":123}'],
-      ["baseurl-relative", '{"provider":"openai","baseURL":"/v1"}'],
-      ["baseurl-ftp", '{"provider":"openai","baseURL":"ftp://example.test/v1"}'],
     ]) {
       const file = path.join(tmp, `${name}.json`);
       await writeFile(file, text);
@@ -87,7 +84,7 @@ describe("setApiKey / clearApiKey", () => {
         provider: "openai",
         model: "gpt-image-2",
         apiKeyEnv: "GPTIMG_TEST_KEY",
-        baseURL: "https://api.example.test/v1",
+        organization: "org-local",
       }) + "\n",
     );
 
@@ -100,13 +97,13 @@ describe("setApiKey / clearApiKey", () => {
       model: string;
       apiKey: string;
       apiKeyEnv: string;
-      baseURL: string;
+      organization: string;
     };
     expect(profile).toMatchObject({
       provider: "openai",
       model: "gpt-image-2",
       apiKeyEnv: "GPTIMG_TEST_KEY",
-      baseURL: "https://api.example.test/v1",
+      organization: "org-local",
     });
     expect(deobfuscate(profile.apiKey)).toBe("sk-local-secret");
   });

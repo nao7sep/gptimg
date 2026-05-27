@@ -86,13 +86,11 @@ describe("resolveProfile", () => {
       model: "gpt-image-1",
       apiKey: "secret",
       apiKeyEnv: "GPTIMG_TEST_KEY",
-      baseURL: "https://api.example.com",
     };
     const r = resolveProfile(p);
     expect(r.redacted).not.toHaveProperty("apiKey");
     expect(r.redacted).not.toHaveProperty("apiKeyEnv");
     expect(r.redacted.provider).toBe("openai");
     expect(r.redacted.model).toBe("gpt-image-1");
-    expect(r.redacted.baseURL).toBe("https://api.example.com");
   });
 });
