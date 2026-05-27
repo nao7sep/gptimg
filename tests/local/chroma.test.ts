@@ -117,4 +117,23 @@ describe("runChroma: writes outputs", () => {
       code: "output.exists",
     });
   });
+
+  it("checks mask collisions before writing a partial chroma image", async () => {
+    const input = path.join(tmp, "in.png");
+    const imagePath = path.join(tmp, "out.png");
+    const maskPath = path.join(tmp, "mask.png");
+    await copyFile(fixture("green-disk.png"), input);
+    await copyFile(fixture("green-disk.png"), maskPath);
+
+    await expect(
+      runChroma({
+        in: input,
+        outName: imagePath,
+        maskName: maskPath,
+      }),
+    ).rejects.toMatchObject({
+      code: "output.exists",
+    });
+    expect(existsSync(imagePath)).toBe(false);
+  });
 });

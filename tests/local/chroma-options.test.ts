@@ -1,0 +1,192 @@
+import { existsSync } from "node:fs";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { hash } from "../../src/image/hash.js";
+import { detect } from "../../src/local/chroma/detect.js";
+import { computeAlpha } from "../../src/local/chroma/gradientAlpha.js";
+import { GptImg } from "../../src/gptimg.js";
+import { runChroma } from "../../src/local/chroma/index.js";
+import { runInspect } from "../../src/local/inspect/index.js";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURES = path.resolve(HERE, "..", "fixtures");
+
+function fixture(name: string): string {
+  return path.join(FIXTURES, name);
+}
+
+describe("chroma option paths", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-chroma-options-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("uses explicit key values", async () => {
+    const result = await detect({
+      in: fixture("green-disk.png"),
+      key: "#00ff00",
+    });
+
+    expect(result.stats.key).toBe("#00ff00");
+    expect(result.stats.keySource).toBe("explicit");
+    expect(result.stats.noKeyDetected).toBe(false);
+  });
+
+  it("loads chroma key hints from sibling sidecars", async () => {
+    const input = path.join(tmp, "generated-01.png");
+    await copyFile(fixture("green-disk.png"), input);
+    await writeFile(
+      path.join(tmp, "generated.json"),
+      JSON.stringify({
+        request: { chromaKey: { color: "#00ff00" } },
+        response: {},
+        files: [],
+      }) + "\n",
+    );
+
+    const result = await detect({ in: input, key: "from-sidecar" });
+
+    expect(result.stats.key).toBe("#00ff00");
+    expect(result.stats.keySource).toBe("sidecar");
+  });
+
+  it("reports missing sidecar chroma key hints as a local operation error", async () => {
+    const input = path.join(tmp, "generated-01.png");
+    await copyFile(fixture("green-disk.png"), input);
+
+    await expect(detect({ in: input, key: "from-sidecar" })).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "image.decodeFailed",
+    });
+  });
+
+  it("runInspect is read-only", async () => {
+    const input = path.join(tmp, "in.png");
+    await copyFile(fixture("green-disk.png"), input);
+
+    const stats = await runInspect({ in: input });
+
+    expect(stats.removedFraction).toBeGreaterThan(0.75);
+    expect(existsSync(path.join(tmp, "in-chroma.png"))).toBe(false);
+    expect(existsSync(path.join(tmp, "in-mask.png"))).toBe(false);
+  });
+
+  it("SDK inspect writes stats to its log", async () => {
+    const sdk = new GptImg({ profileDir: tmp, logDir: path.join(tmp, "logs") });
+    const input = path.join(tmp, "inspect-input.png");
+    await copyFile(fixture("green-disk.png"), input);
+
+    const result = await sdk.inspect({ in: input });
+
+    const entries = (await readFile(result.logPath, "utf-8"))
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { stage: string; data?: unknown });
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: "resolve" }),
+        expect.objectContaining({ stage: "stats" }),
+      ]),
+    );
+  });
+
+  it("writes custom output names without modifying the original input", async () => {
+    const input = path.join(tmp, "in.png");
+    const outDir = path.join(tmp, "custom-out");
+    await copyFile(fixture("green-disk.png"), input);
+    const before = hash(await readFile(input));
+
+    const result = await runChroma({
+      in: input,
+      outDir,
+      outName: "subject.png",
+      maskName: "subject-mask.png",
+    });
+
+    expect(result.imagePath).toBe(path.join(outDir, "subject.png"));
+    expect(result.maskPath).toBe(path.join(outDir, "subject-mask.png"));
+    expect(existsSync(result.imagePath)).toBe(true);
+    expect(existsSync(result.maskPath!)).toBe(true);
+    expect(hash(await readFile(input))).toBe(before);
+  });
+
+  it("runChroma honors an already-aborted signal before writing outputs", async () => {
+    const input = path.join(tmp, "abort-input.png");
+    await copyFile(fixture("green-disk.png"), input);
+    const ctrl = new AbortController();
+    ctrl.abort(new Error("stop"));
+
+    await expect(
+      runChroma(
+        {
+          in: input,
+          outDir: tmp,
+          outName: "abort-output.png",
+          maskName: false,
+        },
+        { signal: ctrl.signal },
+      ),
+    ).rejects.toMatchObject({
+      name: "AbortError",
+      code: "cancelled",
+    });
+    expect(existsSync(path.join(tmp, "abort-output.png"))).toBe(false);
+  });
+
+  it("strict confidence can reject otherwise accepted regions", async () => {
+    const normal = await detect({ in: fixture("green-disk.png") });
+    const strict = await detect({
+      in: fixture("green-disk.png"),
+      strictConfidence: 1.1,
+    });
+
+    expect(normal.stats.regionsRemoved.length).toBeGreaterThan(0);
+    expect(strict.stats.regionsRemoved).toHaveLength(0);
+    expect(strict.stats.removedFraction).toBe(0);
+  });
+
+  it("inner threshold changes how much background is accepted", async () => {
+    const strict = await detect({
+      in: fixture("green-disk.png"),
+      innerThreshold: 0,
+    });
+    const normal = await detect({ in: fixture("green-disk.png") });
+
+    expect(strict.stats.removedFraction).toBeLessThan(normal.stats.removedFraction);
+  });
+
+  it("border sample changes the auto-key sample set", async () => {
+    const shallow = await detect({
+      in: fixture("green-disk.png"),
+      borderSample: 1,
+    });
+    const deep = await detect({
+      in: fixture("green-disk.png"),
+      borderSample: 6,
+    });
+
+    expect(shallow.keyResolution.sampleIndices.length).toBeLessThan(
+      deep.keyResolution.sampleIndices.length,
+    );
+  });
+
+  it("outer threshold changes the soft-alpha gradient", async () => {
+    const accepted = new Uint8Array([255, 0, 0]);
+    const band = new Uint8Array([255, 255, 255]);
+    const distance = new Float32Array([5, 10, 30]);
+    const tight = computeAlpha(accepted, band, distance, 5, 12);
+    const loose = computeAlpha(accepted, band, distance, 5, 60);
+
+    const alphaTotal = (values: Uint8Array): number =>
+      values.reduce((acc, value) => acc + value, 0);
+    expect(alphaTotal(tight)).toBeGreaterThan(alphaTotal(loose));
+  });
+});

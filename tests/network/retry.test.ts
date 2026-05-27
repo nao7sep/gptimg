@@ -132,6 +132,28 @@ describe("callWithRetry", () => {
     expect(fn).toHaveBeenCalledOnce();
   });
 
+  it("aborts during retry sleep", async () => {
+    const ctrl = new AbortController();
+    const fn = vi.fn().mockRejectedValue(http(503));
+    setTimeout(() => ctrl.abort(new Error("stop sleeping")), 5);
+
+    await expect(
+      callWithRetry(
+        {
+          budgetName: "imageGenerate",
+          budget: { ...fast, retryIntervals: [50] },
+          signal: ctrl.signal,
+        },
+        fn,
+      ),
+    ).rejects.toMatchObject({
+      name: "AbortError",
+      code: "cancelled",
+      message: "stop sleeping",
+    });
+    expect(fn).toHaveBeenCalledOnce();
+  });
+
   it("retries even when retryIntervals is empty (immediate retry)", async () => {
     const fn = vi
       .fn()

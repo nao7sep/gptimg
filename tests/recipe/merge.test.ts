@@ -57,6 +57,34 @@ describe("applyPatch", () => {
     expect(out.generate?.n).toBe(1);
   });
 
+  it("deep-merges nested objects without mutating the base recipe", () => {
+    const base: Recipe = {
+      generate: {
+        network: {
+          imageGenerate: {
+            timeout: 1000,
+            retryIntervals: [1, 2],
+          },
+        },
+      },
+    };
+    const snapshot = JSON.stringify(base);
+
+    const out = applyPatch(
+      base,
+      '{"generate":{"network":{"imageGenerate":{"maxRetries":4}}}}',
+    );
+
+    expect(out.generate?.network).toEqual({
+      imageGenerate: {
+        timeout: 1000,
+        retryIntervals: [1, 2],
+        maxRetries: 4,
+      },
+    });
+    expect(JSON.stringify(base)).toBe(snapshot);
+  });
+
   it("throws on invalid JSON", () => {
     expect(() => applyPatch({}, "{not-json")).toThrow(RecipeError);
     try {
