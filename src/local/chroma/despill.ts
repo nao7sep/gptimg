@@ -1,12 +1,11 @@
-import { srgbToLab } from "./backgroundModel.js";
-
 /**
- * For pixels with partial alpha (0 < α < 255), project the color away from
- * the key direction in LAB chroma space (a*, b*) by a factor proportional to
- * (1 - α/255). The L* channel is untouched. The amount of correction is
- * capped by the original color's chroma distance to the key.
+ * Replace chroma-key spill on the cutout boundary with nearby foreground color.
  *
- * Operates in place on `rgba`.
+ * Alpha solves the shape; RGB solves compositing quality. For pixels on the
+ * boundary, especially low-alpha antialias pixels, the original RGB often still
+ * contains the green backdrop. Projecting that green away can create black or
+ * gray halos. Instead, sample nearby opaque, non-key-dominant subject pixels and
+ * use their color as the foreground estimate for the edge.
  */
 export function despill(
   rgba: Uint8Array,
@@ -14,30 +13,92 @@ export function despill(
   height: number,
   alpha: Uint8Array,
   keyHex: string,
-  strength = 0.6,
+  band?: Uint8Array,
 ): void {
-  const [kr, kg, kb] = parseHex(keyHex);
-  const keyLab = srgbToLab(kr, kg, kb);
+  const keyRgb = parseHex(keyHex);
+  const source = new Uint8Array(rgba);
 
   for (let p = 0, i = 0; p < width * height; p++, i += 4) {
     const a = alpha[p]!;
-    if (a === 0 || a === 255) continue;
-    const r = rgba[i]!;
-    const g = rgba[i + 1]!;
-    const b = rgba[i + 2]!;
-    const lab = srgbToLab(r, g, b);
-    const dA = lab[1] - keyLab[1];
-    const dB = lab[2] - keyLab[2];
-    const t = (1 - a / 255) * strength;
-    // Move chroma away from key by factor t along the (key → pixel) direction
-    // in (a*, b*) chroma space.
-    const newA = lab[1] + dA * t;
-    const newB = lab[2] + dB * t;
-    const [nr, ng, nb] = labToSrgb(lab[0], newA, newB);
-    rgba[i] = nr;
-    rgba[i + 1] = ng;
-    rgba[i + 2] = nb;
+    if (a === 0) continue;
+    const inBand = band?.[p] !== undefined && band[p]! > 0;
+    const keyDominant = isKeyDominant(source[i]!, source[i + 1]!, source[i + 2]!, keyRgb);
+    if (!inBand && a === 255 && !keyDominant) continue;
+
+    const foreground = sampleForegroundColor(source, alpha, width, height, p, keyRgb);
+    if (!foreground) continue;
+
+    const amount = a < 255 || keyDominant ? 1 : 0.35;
+    rgba[i] = mix(source[i]!, foreground[0], amount);
+    rgba[i + 1] = mix(source[i + 1]!, foreground[1], amount);
+    rgba[i + 2] = mix(source[i + 2]!, foreground[2], amount);
   }
+}
+
+function sampleForegroundColor(
+  rgba: Uint8Array,
+  alpha: Uint8Array,
+  width: number,
+  height: number,
+  pixel: number,
+  keyRgb: [number, number, number],
+): [number, number, number] | null {
+  const x = pixel % width;
+  const y = Math.floor(pixel / width);
+  let weightTotal = 0;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  for (let radius = 1; radius <= 8; radius++) {
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const n = ny * width + nx;
+        if (alpha[n]! < 240) continue;
+        const offset = n * 4;
+        if (isKeyDominant(rgba[offset]!, rgba[offset + 1]!, rgba[offset + 2]!, keyRgb)) {
+          continue;
+        }
+        const weight = 1 / Math.max(1, Math.hypot(dx, dy));
+        weightTotal += weight;
+        r += rgba[offset]! * weight;
+        g += rgba[offset + 1]! * weight;
+        b += rgba[offset + 2]! * weight;
+      }
+    }
+    if (weightTotal > 0) {
+      return [
+        Math.round(r / weightTotal),
+        Math.round(g / weightTotal),
+        Math.round(b / weightTotal),
+      ];
+    }
+  }
+  return null;
+}
+
+function isKeyDominant(
+  r: number,
+  g: number,
+  b: number,
+  keyRgb: [number, number, number],
+): boolean {
+  const rgb = [r, g, b];
+  const keyMax = Math.max(...keyRgb);
+  return keyRgb.some((v, i) => {
+    if (v !== keyMax || keyMax < 128) return false;
+    const other1 = rgb[(i + 1) % 3]!;
+    const other2 = rgb[(i + 2) % 3]!;
+    return rgb[i]! > other1 + 12 && rgb[i]! > other2 + 12;
+  });
+}
+
+function mix(from: number, to: number, amount: number): number {
+  return Math.round(from * (1 - amount) + to * amount);
 }
 
 function parseHex(hex: string): [number, number, number] {
@@ -46,44 +107,5 @@ function parseHex(hex: string): [number, number, number] {
     parseInt(h.slice(0, 2), 16),
     parseInt(h.slice(2, 4), 16),
     parseInt(h.slice(4, 6), 16),
-  ];
-}
-
-const D65_X = 0.95047;
-const D65_Y = 1.0;
-const D65_Z = 1.08883;
-
-function fLabInv(t: number): number {
-  const t3 = t * t * t;
-  return t3 > 216 / 24389 ? t3 : (116 * t - 16) / (24389 / 27);
-}
-
-function clamp255(v: number): number {
-  v = v * 255;
-  if (v < 0) return 0;
-  if (v > 255) return 255;
-  return Math.round(v);
-}
-
-function gammaEncode(c: number): number {
-  if (c <= 0) return 0;
-  if (c >= 1) return 1;
-  return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-}
-
-function labToSrgb(L: number, a: number, b: number): [number, number, number] {
-  const fy = (L + 16) / 116;
-  const fx = a / 500 + fy;
-  const fz = fy - b / 200;
-  const X = fLabInv(fx) * D65_X;
-  const Y = fLabInv(fy) * D65_Y;
-  const Z = fLabInv(fz) * D65_Z;
-  const lr = 3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z;
-  const lg = -0.969266 * X + 1.8760108 * Y + 0.041556 * Z;
-  const lb = 0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z;
-  return [
-    clamp255(gammaEncode(lr)),
-    clamp255(gammaEncode(lg)),
-    clamp255(gammaEncode(lb)),
   ];
 }

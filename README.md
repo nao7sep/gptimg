@@ -202,7 +202,7 @@ gptimg chroma --in image.png \
   --verify "background is fully removed and the subject is intact"
 ```
 
-Writes `<input-stem>-chroma.png` and `<input-stem>-mask.png` next to the input by default. The original is never overwritten. Stats are returned on stdout for the agent's branching:
+Writes `<input-stem>-chroma.png` and `<input-stem>-mask.png` next to the input by default. The original is never overwritten. When `--verify` runs, alpha-channel checks are performed locally and the vision model receives a checkerboard preview (`<output-stem>-verify-preview.png`) so it judges visible subject quality instead of guessing how transparent pixels should render. Stats are returned on stdout for the agent's branching:
 
 ```json
 {
@@ -211,9 +211,17 @@ Writes `<input-stem>-chroma.png` and `<input-stem>-mask.png` next to the input b
     "regionsRemoved": [{ "area": 5891, "meanConfidence": 0.82, "touchesBorder": true }],
     "noKeyDetected": false,
     "subjectKeyCollisionRisk": false
+  },
+  "alphaVerify": {
+    "ok": true,
+    "metrics": {
+      "boundaryKeyDominantRatio": 0
+    }
   }
 }
 ```
+
+Use `--mode all` when interior chroma-key regions such as mug handles or donut holes should become transparent. The default `outer` mode intentionally keeps interior regions opaque.
 
 ### `inspect`
 

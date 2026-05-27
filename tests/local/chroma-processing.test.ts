@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { despill } from "../../src/local/chroma/despill.js";
 import { detect } from "../../src/local/chroma/detect.js";
 import { computeEdgeBand } from "../../src/local/chroma/edgeBand.js";
+import {
+  verifyChromaAlpha,
+  writeCheckerboardPreview,
+} from "../../src/local/chroma/verifyAlpha.js";
 
 async function writeRawPng(
   filePath: string,
@@ -53,19 +57,120 @@ describe("chroma local processing details", () => {
     expect(sum(wide)).toBeGreaterThan(sum(narrow));
   });
 
-  it("despill changes only partial-alpha pixels", () => {
+  it("despill suppresses key spill on partial-alpha and edge-band pixels", () => {
     const rgba = new Uint8Array([
       10, 220, 10, 255,
       80, 200, 20, 255,
       200, 10, 10, 255,
     ]);
     const alpha = new Uint8Array([0, 128, 255]);
+    const band = new Uint8Array([0, 255, 255]);
 
-    despill(rgba, 3, 1, alpha, "#00ff00");
+    despill(rgba, 3, 1, alpha, "#00ff00", band);
 
     expect([...rgba.slice(0, 4)]).toEqual([10, 220, 10, 255]);
-    expect([...rgba.slice(4, 8)]).not.toEqual([80, 200, 20, 255]);
-    expect([...rgba.slice(8, 12)]).toEqual([200, 10, 10, 255]);
+    expect(rgba[5]).toBeLessThan(200);
+    expect(rgba[9]).toBeLessThanOrEqual(10);
+    expect(rgba[9]).toBeLessThan(rgba[8]! + 12);
+  });
+
+  it("alpha verification detects interior transparency and key spill", async () => {
+    const width = 12;
+    const height = 12;
+    const rgba = new Uint8Array(width * height * 4);
+    for (let p = 0, i = 0; p < width * height; p++, i += 4) {
+      rgba[i] = 0;
+      rgba[i + 1] = 0;
+      rgba[i + 2] = 0;
+      rgba[i + 3] = 0;
+    }
+    for (let y = 2; y < 10; y++) {
+      for (let x = 2; x < 10; x++) {
+        const i = (y * width + x) * 4;
+        rgba[i] = 200;
+        rgba[i + 1] = 0;
+        rgba[i + 2] = 0;
+        rgba[i + 3] = 255;
+      }
+    }
+    for (let y = 5; y < 7; y++) {
+      for (let x = 5; x < 7; x++) {
+        const i = (y * width + x) * 4;
+        rgba[i] = 0;
+        rgba[i + 1] = 0;
+        rgba[i + 2] = 0;
+        rgba[i + 3] = 0;
+      }
+    }
+    for (let x = 2; x < 10; x++) {
+      const top = (2 * width + x) * 4;
+      rgba[top] = 20;
+      rgba[top + 1] = 220;
+      rgba[top + 2] = 20;
+      rgba[top + 3] = 128;
+      const bottom = (9 * width + x) * 4;
+      rgba[bottom] = 20;
+      rgba[bottom + 1] = 220;
+      rgba[bottom + 2] = 20;
+      rgba[bottom + 3] = 128;
+    }
+    for (let y = 2; y < 10; y++) {
+      const left = (y * width + 2) * 4;
+      rgba[left] = 20;
+      rgba[left + 1] = 220;
+      rgba[left + 2] = 20;
+      rgba[left + 3] = 128;
+      const right = (y * width + 9) * 4;
+      rgba[right] = 20;
+      rgba[right + 1] = 220;
+      rgba[right + 2] = 20;
+      rgba[right + 3] = 128;
+    }
+
+    const file = path.join(tmp, "alpha-check.png");
+    await writeRawPng(file, width, height, rgba);
+
+    const result = await verifyChromaAlpha(file, {
+      key: "#00ff00",
+      mode: "all",
+      expectInteriorTransparency: true,
+    });
+
+    expect(result.metrics.interiorTransparentArea).toBeGreaterThan(0);
+    expect(result.metrics.partialAlphaPixels).toBeGreaterThan(0);
+    expect(result.metrics.boundaryKeyDominantPixels).toBeGreaterThan(0);
+  });
+
+  it("writes checkerboard previews with opaque alpha for vision", async () => {
+    const file = path.join(tmp, "transparent.png");
+    const preview = path.join(tmp, "preview.png");
+    await writeRawPng(
+      file,
+      1,
+      1,
+      new Uint8Array([255, 0, 0, 128]),
+    );
+
+    await writeCheckerboardPreview(file, preview);
+
+    const { data } = await sharp(preview).ensureAlpha().raw().toBuffer({
+      resolveWithObject: true,
+    });
+    expect(data[3]).toBe(255);
+    expect(data[0]).toBeGreaterThan(220);
+    expect(data[1]).toBeGreaterThan(80);
+  });
+
+  it("despill leaves non-band opaque pixels untouched", () => {
+    const rgba = new Uint8Array([
+      200, 10, 10, 255,
+    ]);
+    const alpha = new Uint8Array([255]);
+    const band = new Uint8Array([0]);
+
+    despill(rgba, 1, 1, alpha, "#00ff00", band);
+
+    expect([...rgba]).toEqual([200, 10, 10, 255]);
   });
 
   it("fillHoles removes tiny holes in otherwise accepted background regions", async () => {

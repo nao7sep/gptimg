@@ -1,8 +1,17 @@
 import path from "node:path";
 import { createLogger, safeLogError } from "../log/index.js";
 import { runChroma } from "../local/chroma/index.js";
+import {
+  verifyChromaAlpha,
+  writeCheckerboardPreview,
+} from "../local/chroma/verifyAlpha.js";
 import { visionImpl, type VisionContext } from "./vision.js";
-import type { ChromaArgs, ChromaResult, VisionResult } from "../types.js";
+import type {
+  ChromaAlphaVerifyResult,
+  ChromaArgs,
+  ChromaResult,
+  VisionResult,
+} from "../types.js";
 import {
   defaultLogPath,
   utcTimestamp,
@@ -39,21 +48,45 @@ export async function chromaImpl(
     });
 
     let verify: VisionResult | undefined;
+    let previewPath: string | undefined;
+    let alphaVerify: ChromaAlphaVerifyResult | undefined;
     const verifyThreshold = args.verifyThreshold ?? 0;
     if (args.verify && out.stats.removedFraction > verifyThreshold) {
+      alphaVerify = await verifyChromaAlpha(out.imagePath, {
+        key: out.stats.key,
+        mode: out.stats.mode,
+        expectInteriorTransparency: out.stats.regionsRemoved.some(
+          (region) => !region.touchesBorder,
+        ),
+      });
+      await logger.info("stats", "local alpha verification complete", {
+        ok: alphaVerify.ok,
+        score: alphaVerify.score,
+        metrics: alphaVerify.metrics,
+      });
+
       const visionCtx: VisionContext = {
         profileDir: ctx.profileDir,
         logDir: ctx.logDir,
       };
+      previewPath = path.join(
+        path.dirname(out.imagePath),
+        `${path.parse(out.imagePath).name}-verify-preview.png`,
+      );
+      await writeCheckerboardPreview(out.imagePath, previewPath);
       await logger.info("request", "running internal vision verification", {
         threshold: verifyThreshold,
         removedFraction: out.stats.removedFraction,
+        preview: path.basename(previewPath),
       });
       verify = await visionImpl(
         visionCtx,
         {
-          in: out.imagePath,
-          check: args.verify,
+          in: previewPath,
+          check:
+            `${args.verify}\n\n` +
+            "Transparency and alpha-channel correctness are checked locally. " +
+            "For this vision check, inspect the checkerboard preview for subject integrity, visible halos, and visual artifacts.",
           log: logger.handle.path,
           outDir: path.dirname(out.imagePath),
           outName: `${path.parse(out.imagePath).name}-verify`,
@@ -70,7 +103,8 @@ export async function chromaImpl(
       input: args.in,
       outputs: { image: out.imagePath, mask: out.maskPath },
       stats: out.stats,
-      ...(verify ? { verify } : {}),
+      ...(alphaVerify ? { alphaVerify } : {}),
+      ...(verify ? { verify: { ...verify, ...(previewPath ? { previewPath } : {}) } } : {}),
       logPath: logger.handle.path,
     };
   } catch (err) {

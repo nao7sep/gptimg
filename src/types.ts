@@ -176,6 +176,23 @@ export interface ChromaStats {
   };
 }
 
+export interface ChromaAlphaVerifyMetrics {
+  transparentComponentCount: number;
+  borderTransparentArea: number;
+  interiorTransparentArea: number;
+  partialAlphaPixels: number;
+  boundaryPixels: number;
+  boundaryKeyDominantPixels: number;
+  boundaryKeyDominantRatio: number;
+}
+
+export interface ChromaAlphaVerifyResult {
+  ok: boolean;
+  score: number;
+  reasons: string[];
+  metrics: ChromaAlphaVerifyMetrics;
+}
+
 export interface ChromaEdgeBand {
   dilate: number;
   erode: number;
@@ -211,7 +228,8 @@ export interface ChromaResult {
     mask: string | null;
   };
   stats: ChromaStats;
-  verify?: VisionResult;
+  alphaVerify?: ChromaAlphaVerifyResult;
+  verify?: VisionResult & { previewPath?: string };
   logPath: string;
 }
 

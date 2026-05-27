@@ -568,14 +568,26 @@ describe("AI verb implementations with mocked provider", () => {
     });
 
     expect(verified.verify).toMatchObject({ ok: true, score: 1 });
+    expect(verified.alphaVerify?.metrics.borderTransparentArea).toBeGreaterThan(0);
     expect(verified.verify?.logPath).toBe(verified.logPath);
     expect(verified.verify?.sidecarPath).toBe(
       path.join(tmp, "chroma-verify", "verified-verify.json"),
+    );
+    expect(verified.verify?.previewPath).toBe(
+      path.join(tmp, "chroma-verify", "verified-verify-preview.png"),
+    );
+    expect(providerCalls.vision.mock.calls[0]?.[0].images[0]).toEqual(
+      expect.objectContaining({ format: "png" }),
     );
     const sharedLog = lines(await readFile(verified.logPath, "utf-8"));
     expect(sharedLog).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ verb: "chroma", stage: "request" }),
+        expect.objectContaining({
+          verb: "chroma",
+          stage: "stats",
+          msg: "local alpha verification complete",
+        }),
         expect.objectContaining({ verb: "vision", stage: "request" }),
         expect.objectContaining({ verb: "vision", stage: "response" }),
       ]),
