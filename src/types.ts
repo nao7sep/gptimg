@@ -47,6 +47,8 @@ export interface MaskRecipe {
   preserveInterior?: boolean;
   /** Border-sample depth in pixels for `--key auto`. */
   borderSample?: number;
+  /** Spill ratio at which near-key pixels saturate to α=0. */
+  saturationRatio?: number;
   [key: string]: unknown;
 }
 
@@ -172,10 +174,11 @@ export interface VisionResult extends VisionVerdict {
 
 // ----- mask / compose / combine -----
 
-export type MaskMethod = "chroma";
+export type MaskMethod = "chroma" | "ai";
 export type ChromaKeySource = "auto" | "sidecar" | "explicit";
 
-export interface MaskStats {
+export interface ChromaMaskStats {
+  method: "chroma";
   /** Resolved key color as `#rrggbb`. */
   key: string;
   keySource: ChromaKeySource;
@@ -185,6 +188,17 @@ export interface MaskStats {
   width: number;
   height: number;
 }
+
+export interface AiMaskStats {
+  method: "ai";
+  model: "birefnet";
+  removedPixels: number;
+  removedFraction: number;
+  width: number;
+  height: number;
+}
+
+export type MaskStats = ChromaMaskStats | AiMaskStats;
 
 export interface MaskArgs {
   in: string;
@@ -218,8 +232,13 @@ export interface ComposeArgs {
    * Omit for transparent output.
    */
   over?: string;
-  /** Optional decontamination: spill key as `#rrggbb`. */
-  decontaminate?: string;
+  /**
+   * Remove the named background color from subject pixels. Applies
+   * chromatic spill suppression at every kept pixel and alpha-aware edge
+   * recovery at partial-α pixels. Achromatic hexes still get edge recovery.
+   * Format: `#rrggbb`.
+   */
+  removeBleed?: string;
   outDir?: string;
   outName?: string;
   log?: string;

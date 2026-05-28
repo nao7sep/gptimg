@@ -18,7 +18,7 @@ interface ComposeCliOpts {
   in: string;
   mask: string;
   over?: string;
-  decontaminate?: string;
+  removeBleed?: string;
   outDir?: string;
   outName?: string;
   log?: string;
@@ -36,9 +36,9 @@ export function registerCompose(program: Command): void {
       "Flatten target: '#rrggbb' for solid color, or a path to another image. Omit for transparent output.",
     )
     .option(
-      "--decontaminate <#rrggbb>",
-      "Suppress spill from this key color on partial-alpha pixels.",
-      parseHexOpt("--decontaminate"),
+      "--remove-bleed <#rrggbb>",
+      "Remove this bg color from subject pixels. Chromatic spill suppression on all kept pixels plus alpha-aware edge recovery at partial-α pixels.",
+      parseHexOpt("--remove-bleed"),
     )
     .option("--out-dir <dir>", "Output directory (default: same as input)")
     .option("--out-name <name>", "Output filename (default: <input-stem>-composed.png)")
@@ -52,7 +52,7 @@ export function registerCompose(program: Command): void {
         in: opts.in,
         mask: opts.mask,
         over: opts.over,
-        decontaminate: opts.decontaminate,
+        removeBleed: opts.removeBleed,
         outDir: opts.outDir,
         outName: opts.outName,
         log: opts.log,

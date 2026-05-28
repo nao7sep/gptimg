@@ -2,6 +2,10 @@ import { InvalidArgumentError, Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
+import { ensureModel } from "../../local/models/fetch.js";
+import { BIREFNET } from "../../local/models/registry.js";
+import { defaultModelsDir } from "../../internal/paths.js";
+import { DEFAULT_PROFILE_DIR } from "../../internal/paths.js";
 import type { MaskMethod } from "../../types.js";
 
 const KEY_RE = /^#[0-9a-fA-F]{6}$/;
@@ -40,7 +44,9 @@ export function registerMask(program: Command): void {
     .description("Produce a grayscale alpha mask from an image (no compositing).")
     .requiredOption("--in <path>", "Input image path")
     .addOption(
-      new Option("--method <name>", "Mask producer").choices(["chroma"]).default("chroma"),
+      new Option("--method <name>", "Mask producer")
+        .choices(["chroma", "ai"])
+        .default("chroma"),
     )
     .option(
       "--key <value>",
@@ -83,4 +89,17 @@ export function registerMask(program: Command): void {
     );
     emit(result);
   });
+
+  cmd
+    .command("install-model")
+    .description(
+      "Pre-fetch the AI mask model into the cache so the first --method ai call is offline-fast.",
+    )
+    .action(async () => {
+      const cacheDir = defaultModelsDir(DEFAULT_PROFILE_DIR);
+      const finalPath = await ensureModel(BIREFNET, cacheDir, {
+        signal: getAbortSignal(),
+      });
+      emit({ model: BIREFNET.name, path: finalPath });
+    });
 }

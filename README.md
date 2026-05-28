@@ -95,7 +95,7 @@ gptimg mask --in donut.png --key from-sidecar --preserve-interior \
   --out-name donut-mask.png
 
 gptimg compose --in donut.png --mask donut-mask.png \
-  --decontaminate "#00ff00" \
+  --remove-bleed "#00ff00" \
   --out-name donut-cutout.png
 ```
 
@@ -141,7 +141,7 @@ Vision detail can be configured with `recipe.vision.detail` or `--set detail=low
 ### `mask`
 
 ```sh
-# Auto-detect the chroma key from the image border.
+# Chroma method (default): auto-detect the key from the image border.
 gptimg mask --in image.png
 
 # Use the hint stored in the sibling sidecar.
@@ -152,11 +152,22 @@ gptimg mask --in donut.png --preserve-interior
 
 # Compute stats without writing a file.
 gptimg mask --in image.png --dry-run
+
+# AI method (BiRefNet via ONNX Runtime). First call downloads the model into ~/.gptimg/models/.
+gptimg mask --in image.png --method ai
+
+# Pre-fetch the AI model for offline use.
+gptimg mask install-model
 ```
 
-Local only; no API call. Produces a grayscale alpha mask the same size as the input. Currently only `--method chroma` is implemented; AI segmentation will land as a second method.
+Local only; no API call. Produces a grayscale alpha mask the same size as the input. Two methods are available:
+
+- `--method chroma` (default): per-pixel spill against a chroma-key color. Deterministic, fast, requires the subject to sit on a uniform key.
+- `--method ai`: BiRefNet inference via [`onnxruntime-node`](https://www.npmjs.com/package/onnxruntime-node). Works on any background. Lazily downloads the model on first use; cached under `~/.gptimg/models/` (override with `GPTIMG_MODELS_DIR`).
 
 Chroma method algorithm: the key is taken as `--key` (or detected as the linear-RGB average of border pixels for `--key auto`). Per-pixel α is then `clamp(1 − spill / key_strength)` where spill is `max(0, C[key] − max(C[other_1], C[other_2]))` for a primary key (R/G/B), or `max(0, min(C[other_1], C[other_2]) − C[suppressed])` for a secondary key (C/M/Y). A pure-key pixel is fully transparent; a pixel with no key contamination is opaque. With `--preserve-interior`, a flood fill from the border identifies border-connected transparent pixels; any α≈0 pixel not reached by the fill (the inside of a donut hole, for example) is forced back to opaque.
+
+AI method algorithm: the input is resized to 1024×1024, ImageNet-normalized, and fed to BiRefNet through ONNX Runtime. The final-stage sigmoid mask is resized back to the source dimensions and returned as the alpha buffer. The model weights are lazily fetched on first use from the URL pinned in `src/local/models/registry.ts`. Cached file lives at `~/.gptimg/models/birefnet-general-v1.onnx` (or `$GPTIMG_MODELS_DIR/birefnet-general-v1.onnx`). Run `gptimg mask install-model` to pre-fetch. Version reproducibility is handled by pinning the registry URL to a specific HuggingFace commit (`/resolve/<commit-sha>/...`); no hash maintenance.
 
 ### `compose`
 
@@ -171,10 +182,12 @@ gptimg compose --in image.png --mask image-mask.png --over "#ffffff"
 gptimg compose --in image.png --mask image-mask.png --over background.png
 
 # Decontaminate spill on partial-alpha pixels using a known key color.
-gptimg compose --in image.png --mask image-mask.png --decontaminate "#00ff00"
+gptimg compose --in image.png --mask image-mask.png --remove-bleed "#00ff00"
 ```
 
-Local only. Writes RGBA when `--over` is omitted; flattens to opaque RGB when `--over` is given. `--decontaminate` inpaints clean foreground color into partial-α pixels by iterated dilation from confirmed-opaque sources, suppressing visible halos for the specified key.
+Local only. Writes RGBA when `--over` is omitted; flattens to opaque RGB when `--over` is given.
+
+`--remove-bleed <#rrggbb>` cleans the named bg color out of the subject pixels the mask kept. Two passes run together: (1) chromatic spill suppression on every pixel with α > 0 — for a primary key (R/G/B) the key channel is clamped to ≤ max(other two), for a secondary key (C/M/Y) the two non-suppressed channels are reduced by their excess above the suppressed channel; legitimate subject colors satisfy these constraints so the clamp is a no-op for them. (2) Alpha-aware edge color recovery on partial-α pixels — given `C = α·F + (1−α)·B`, solve for `F`, removing the bg blend baked into edge pixels during the original capture. Achromatic hexes (gray bg) skip step 1 but still benefit from step 2.
 
 ### `combine`
 
@@ -316,6 +329,7 @@ Bare `--set` keys are scoped under the current verb; paths beginning with `gener
 | `<stem>.<ext>`, `<stem>-N.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
 | `<stem>.json` | Sidecar with resolved request, redacted response, SHA-256 file table |
 | `<utc>-gptimg.jsonl` | Per-invocation JSONL log |
+| `~/.gptimg/models/<model>.onnx` | Lazily fetched AI mask model (BiRefNet today) |
 | `<input-stem>-mask.png` | `mask` output (grayscale alpha) |
 | `<input-stem>-composed.png` | `compose` output (RGBA or flattened RGB) |
 | `<input-stem>-<op>.png` | `combine` output (grayscale alpha) |

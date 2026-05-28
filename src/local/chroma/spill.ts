@@ -89,12 +89,21 @@ export function linearizeRGBA(rgba: Uint8Array): {
 /**
  * Compute per-pixel alpha from spill against a given key topology. Returns a
  * Uint8Array of length width*height with values 0..255.
+ *
+ * `saturationRatio` is the spill ratio at which a pixel is considered fully
+ * background. The auto-key for a chroma backdrop is computed as the *average*
+ * border color, so real bg pixels vary slightly around that average — some
+ * have spill ≥ strength (saturate cleanly to α=0), others have spill slightly
+ * below (would otherwise leave a faint 5–7% haze on the composite). A
+ * saturationRatio < 1 snaps near-key pixels to α=0 and rescales the soft
+ * range to [0, saturationRatio]; subject edges keep their gradient.
  */
 export function spillAlpha(
   linR: Float32Array,
   linG: Float32Array,
   linB: Float32Array,
   topology: NonNullable<KeyTopology>,
+  saturationRatio = 0.9,
 ): Uint8Array {
   const n = linR.length;
   const channels = [linR, linG, linB] as const;
@@ -104,6 +113,8 @@ export function spillAlpha(
   const linOtherB = channels[((pivot + 2) % 3) as 0 | 1 | 2];
   const strength = topology.strength;
   const isPrimary = topology.kind === "primary";
+  const sat = Math.max(0.001, Math.min(1, saturationRatio));
+  const invSat = 1 / sat;
   const out = new Uint8Array(n);
   for (let p = 0; p < n; p++) {
     const a = linOtherA[p]!;
@@ -114,7 +125,7 @@ export function spillAlpha(
     if (spill <= 0) {
       out[p] = 255;
     } else {
-      const ratio = spill / strength;
+      const ratio = (spill / strength) * invSat;
       if (ratio >= 1) out[p] = 0;
       else out[p] = Math.round((1 - ratio) * 255);
     }

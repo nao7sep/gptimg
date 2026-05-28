@@ -40,10 +40,8 @@ export const ChromaRecipeSchema = z
   .object({
     color: z.string().regex(HEX_COLOR_RE, "Must be a #rrggbb hex color").optional(),
     preserveInterior: z.boolean().optional(),
-    innerThreshold: z.number().optional(),
     borderSample: z.number().int().positive().optional(),
-    fillHoles: z.boolean().optional(),
-    strictConfidence: z.number().optional(),
+    saturationRatio: z.number().positive().max(1).optional(),
   })
   .passthrough();
 

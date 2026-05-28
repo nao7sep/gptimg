@@ -19,6 +19,16 @@ export function defaultOutDir(profileDir: string): string {
   return path.join(profileDir, "output");
 }
 
+/**
+ * Where lazily fetched model files live. Default `<profileDir>/models`.
+ * Override with `GPTIMG_MODELS_DIR`.
+ */
+export function defaultModelsDir(profileDir: string): string {
+  const env = process.env.GPTIMG_MODELS_DIR;
+  if (env && env.length > 0) return env;
+  return path.join(profileDir, "models");
+}
+
 export function defaultLogPath(logDir: string, ts: string): string {
   return path.join(logDir, `${ts}-gptimg.jsonl`);
 }

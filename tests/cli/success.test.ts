@@ -259,7 +259,7 @@ describe("CLI success contracts", () => {
     );
   });
 
-  it("compose forwards --over and --decontaminate", async () => {
+  it("compose forwards --over and --remove-bleed", async () => {
     const result = await run([
       "compose",
       "--in",
@@ -268,7 +268,7 @@ describe("CLI success contracts", () => {
       "in-mask.png",
       "--over",
       "#ffffff",
-      "--decontaminate",
+      "--remove-bleed",
       "#00ff00",
     ]);
 
@@ -279,7 +279,7 @@ describe("CLI success contracts", () => {
         in: "in.png",
         mask: "in-mask.png",
         over: "#ffffff",
-        decontaminate: "#00ff00",
+        removeBleed: "#00ff00",
       }),
       { signal: expect.any(AbortSignal) },
     );
@@ -394,13 +394,13 @@ describe("CLI success contracts", () => {
       ],
       [
         "bad mask method choice",
-        ["mask", "--in", "in.png", "--method", "ai"],
-        "Allowed choices are chroma",
+        ["mask", "--in", "in.png", "--method", "nope"],
+        "Allowed choices are chroma, ai",
       ],
       [
-        "bad compose decontaminate",
-        ["compose", "--in", "in.png", "--mask", "m.png", "--decontaminate", "green"],
-        "--decontaminate: must be #rrggbb",
+        "bad compose remove-bleed",
+        ["compose", "--in", "in.png", "--mask", "m.png", "--remove-bleed", "green"],
+        "--remove-bleed: must be #rrggbb",
       ],
       [
         "bad combine op",

@@ -35,9 +35,12 @@ export interface ChromaMaskOptions {
   key?: ChromaKeySpec;
   preserveInterior?: boolean;
   borderSample?: number;
+  /** Spill ratio at which near-key pixels saturate to α=0. Defaults to CHROMA_DEFAULTS.saturationRatio. */
+  saturationRatio?: number;
 }
 
 export interface ChromaMaskStats {
+  method: "chroma";
   key: string;
   keySource: ChromaKeySource;
   preserveInterior: boolean;
@@ -247,7 +250,8 @@ export async function chromaMask(
   } else {
     const { linR, linG, linB } = linearizeRGBA(rgba);
     throwIfAborted(signal);
-    alpha = spillAlpha(linR, linG, linB, topology);
+    const sat = options.saturationRatio ?? CHROMA_DEFAULTS.saturationRatio;
+    alpha = spillAlpha(linR, linG, linB, topology, sat);
     if (preserveInterior) {
       throwIfAborted(signal);
       preserveInteriorRegions(alpha, width, height);
@@ -265,6 +269,7 @@ export async function chromaMask(
     width,
     height,
     stats: {
+      method: "chroma",
       key: hex,
       keySource: source,
       preserveInterior,

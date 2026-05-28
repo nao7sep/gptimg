@@ -5,10 +5,27 @@
  *   compose(image, mask, over=#rgb)   → flatten over a solid color (RGB output)
  *   compose(image, mask, over=path)   → flatten over another image
  *
- * Optional decontamination removes spill on partial-α pixels for a known key
- * color: the spill-tainted color is replaced by inpainted clean color from
- * confirmed-opaque neighbors. Off by default. Honest about its limits — it
- * only helps when the user knows what color was bleeding in.
+ * Optional `removeBleed <hex>` cleans a known background color out of the
+ * subject pixels the mask kept. The algorithm dispatches on the hex's
+ * chromaticity — they need different math:
+ *
+ *   Chromatic key (R/G/B/C/M/Y): spill suppression at every pixel the mask
+ *   kept (α > 0), all alphas. For a primary key clamp the key channel to
+ *   ≤ max(other two). For a secondary key reduce both non-suppressed
+ *   channels by their excess above the suppressed channel. Legitimate
+ *   subject colors satisfy these constraints; tainted pixels don't, and
+ *   the clamp pulls them to neutral. No edge recovery — the compositing
+ *   equation C = α·F + (1−α)·B is fragile for non-physical alphas (AI
+ *   masks, even chroma-spill alphas under noise) and produces magenta or
+ *   green halos when its subtraction goes negative.
+ *
+ *   Achromatic key (gray): can't suppress a hue that has none. Fall back
+ *   to alpha-aware edge color recovery — solve C = α·F + (1−α)·B for F at
+ *   partial-α pixels. This removes the gray blend baked into edge pixels
+ *   during the original capture. Limited to partial-α; α=255 pixels are
+ *   left alone (there's no "spill" to remove from a gray bg into a
+ *   confidently-opaque subject pixel — at α=255 the bg contributed
+ *   nothing).
  */
 
 import { LocalOpError, toAbortError } from "../errors.js";
@@ -31,8 +48,8 @@ export interface ComposeArgs {
   mask: string;
   out: string;
   over?: ComposeOver;
-  /** Decontaminate spill from this key color before compositing. */
-  decontaminate?: string;
+  /** Background color to remove from subject pixels. See module doc. */
+  removeBleed?: string;
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -53,103 +70,6 @@ export function parseOverColor(value: string): ComposeOver {
     };
   }
   return { kind: "image", path: value };
-}
-
-/**
- * Inpaint clean foreground color into partial-α pixels by iterated 4-connected
- * dilation from confirmed-opaque sources (α = 255). Each pass averages
- * already-filled neighbors into unfilled cells. Stops when nothing changes.
- */
-function inpaintForeground(
-  linR: Float32Array,
-  linG: Float32Array,
-  linB: Float32Array,
-  alpha: Uint8Array,
-  width: number,
-  height: number,
-): { r: Float32Array; g: Float32Array; b: Float32Array; filled: Uint8Array } {
-  const n = width * height;
-  let curR = new Float32Array(n);
-  let curG = new Float32Array(n);
-  let curB = new Float32Array(n);
-  let curFilled = new Uint8Array(n);
-  for (let p = 0; p < n; p++) {
-    if (alpha[p]! === 255) {
-      curR[p] = linR[p]!;
-      curG[p] = linG[p]!;
-      curB[p] = linB[p]!;
-      curFilled[p] = 1;
-    }
-  }
-  let nextR = new Float32Array(n);
-  let nextG = new Float32Array(n);
-  let nextB = new Float32Array(n);
-  let nextFilled = new Uint8Array(n);
-  const maxIter = Math.max(width, height);
-  for (let iter = 0; iter < maxIter; iter++) {
-    nextR.set(curR);
-    nextG.set(curG);
-    nextB.set(curB);
-    nextFilled.set(curFilled);
-    let changed = false;
-    for (let y = 0; y < height; y++) {
-      const row = y * width;
-      for (let x = 0; x < width; x++) {
-        const p = row + x;
-        if (curFilled[p]! !== 0) continue;
-        let sumR = 0;
-        let sumG = 0;
-        let sumB = 0;
-        let count = 0;
-        if (x > 0 && curFilled[p - 1]! !== 0) {
-          sumR += curR[p - 1]!;
-          sumG += curG[p - 1]!;
-          sumB += curB[p - 1]!;
-          count++;
-        }
-        if (x + 1 < width && curFilled[p + 1]! !== 0) {
-          sumR += curR[p + 1]!;
-          sumG += curG[p + 1]!;
-          sumB += curB[p + 1]!;
-          count++;
-        }
-        if (y > 0 && curFilled[p - width]! !== 0) {
-          sumR += curR[p - width]!;
-          sumG += curG[p - width]!;
-          sumB += curB[p - width]!;
-          count++;
-        }
-        if (y + 1 < height && curFilled[p + width]! !== 0) {
-          sumR += curR[p + width]!;
-          sumG += curG[p + width]!;
-          sumB += curB[p + width]!;
-          count++;
-        }
-        if (count > 0) {
-          const inv = 1 / count;
-          nextR[p] = sumR * inv;
-          nextG[p] = sumG * inv;
-          nextB[p] = sumB * inv;
-          nextFilled[p] = 1;
-          changed = true;
-        }
-      }
-    }
-    if (!changed) break;
-    const tR = curR;
-    const tG = curG;
-    const tB = curB;
-    const tF = curFilled;
-    curR = nextR;
-    curG = nextG;
-    curB = nextB;
-    curFilled = nextFilled;
-    nextR = tR;
-    nextG = tG;
-    nextB = tB;
-    nextFilled = tF;
-  }
-  return { r: curR, g: curG, b: curB, filled: curFilled };
 }
 
 async function loadOverImage(
@@ -174,6 +94,114 @@ export interface ComposeResult {
   over: ComposeOver["kind"];
 }
 
+/**
+ * Per-pixel removeBleed. Mutates the linear-RGB buffers in place. Returns
+ * nothing; the cleaned linear values are read out at composite time.
+ *
+ * Operates only on pixels with α > 0 (kept by the mask). Pure-α=0 pixels are
+ * left alone — their output alpha is 0 and they're invisible anyway.
+ */
+function applyRemoveBleed(
+  linR: Float32Array,
+  linG: Float32Array,
+  linB: Float32Array,
+  maskAlpha: Uint8Array,
+  bgHex: string,
+  width: number,
+  height: number,
+): void {
+  const [bgSR, bgSG, bgSB] = parseHex(bgHex);
+  const bgR = SRGB_TO_LINEAR_LUT[bgSR]!;
+  const bgG = SRGB_TO_LINEAR_LUT[bgSG]!;
+  const bgB = SRGB_TO_LINEAR_LUT[bgSB]!;
+  const topology = analyzeKey([bgR, bgG, bgB]);
+
+  const n = width * height;
+  for (let p = 0; p < n; p++) {
+    const aByte = maskAlpha[p]!;
+    if (aByte === 0) continue;
+    let r = linR[p]!;
+    let g = linG[p]!;
+    let b = linB[p]!;
+
+    if (topology !== null) {
+      // Chromatic key — spill suppression on every kept pixel.
+      if (topology.kind === "primary") {
+        const ch = topology.channel;
+        if (ch === 0) {
+          const limit = g > b ? g : b;
+          if (r > limit) r = limit;
+        } else if (ch === 1) {
+          const limit = r > b ? r : b;
+          if (g > limit) g = limit;
+        } else {
+          const limit = r > g ? r : g;
+          if (b > limit) b = limit;
+        }
+      } else {
+        const sup = topology.suppressed;
+        let supVal: number;
+        let oA: number;
+        let oB: number;
+        if (sup === 0) {
+          supVal = r;
+          oA = g;
+          oB = b;
+        } else if (sup === 1) {
+          supVal = g;
+          oA = r;
+          oB = b;
+        } else {
+          supVal = b;
+          oA = r;
+          oB = g;
+        }
+        const minOther = oA < oB ? oA : oB;
+        if (minOther > supVal) {
+          const excess = minOther - supVal;
+          const newA = oA - excess;
+          const newB = oB - excess;
+          if (sup === 0) {
+            g = newA < 0 ? 0 : newA;
+            b = newB < 0 ? 0 : newB;
+          } else if (sup === 1) {
+            r = newA < 0 ? 0 : newA;
+            b = newB < 0 ? 0 : newB;
+          } else {
+            r = newA < 0 ? 0 : newA;
+            g = newB < 0 ? 0 : newB;
+          }
+        }
+      }
+    } else if (aByte < 255) {
+      // Achromatic key — alpha-aware edge color recovery, partial-α only.
+      const alpha = aByte / 255;
+      // Floor on α — for very small α the inversion amplifies noise wildly
+      // and the result is invisible anyway. Leave near-transparent pixels
+      // as-is.
+      if (alpha > 0.05) {
+        const oneMinus = 1 - alpha;
+        let fr = (r - oneMinus * bgR) / alpha;
+        let fg = (g - oneMinus * bgG) / alpha;
+        let fb = (b - oneMinus * bgB) / alpha;
+        if (fr < 0) fr = 0;
+        else if (fr > 1) fr = 1;
+        if (fg < 0) fg = 0;
+        else if (fg > 1) fg = 1;
+        if (fb < 0) fb = 0;
+        else if (fb > 1) fb = 1;
+        r = fr;
+        g = fg;
+        b = fb;
+      }
+    }
+
+    linR[p] = r;
+    linG[p] = g;
+    linB[p] = b;
+  }
+}
+
 export async function runCompose(
   args: ComposeArgs,
   opts: { signal?: AbortSignal | undefined } = {},
@@ -192,25 +220,11 @@ export async function runCompose(
   const { width, height, data: rgba } = image;
   const n = width * height;
 
-  let fgR: Float32Array | null = null;
-  let fgG: Float32Array | null = null;
-  let fgB: Float32Array | null = null;
-  let fgFilled: Uint8Array | null = null;
-  if (args.decontaminate) {
-    const linear = parseHex(args.decontaminate).map((v) => SRGB_TO_LINEAR_LUT[v]!) as [
-      number,
-      number,
-      number,
-    ];
-    const topology = analyzeKey(linear);
-    if (topology !== null) {
-      const { linR, linG, linB } = linearizeRGBA(rgba);
-      const inpainted = inpaintForeground(linR, linG, linB, mask.data, width, height);
-      fgR = inpainted.r;
-      fgG = inpainted.g;
-      fgB = inpainted.b;
-      fgFilled = inpainted.filled;
-    }
+  // Lift to linear-RGB whether or not we plan to removeBleed — the math is
+  // simpler and we convert back at the end.
+  const { linR, linG, linB } = linearizeRGBA(rgba);
+  if (args.removeBleed) {
+    applyRemoveBleed(linR, linG, linB, mask.data, args.removeBleed, width, height);
   }
 
   const over: ComposeOver = args.over ?? { kind: "transparent" };
@@ -222,18 +236,9 @@ export async function runCompose(
   const out = new Uint8Array(n * 4);
   for (let p = 0, i = 0; p < n; p++, i += 4) {
     const a = mask.data[p]!;
-    let r: number;
-    let g: number;
-    let b: number;
-    if (fgR && fgFilled && fgFilled[p] !== 0) {
-      r = linearToSRGBByte(fgR[p]!);
-      g = linearToSRGBByte(fgG![p]!);
-      b = linearToSRGBByte(fgB![p]!);
-    } else {
-      r = rgba[i]!;
-      g = rgba[i + 1]!;
-      b = rgba[i + 2]!;
-    }
+    const r = linearToSRGBByte(linR[p]!);
+    const g = linearToSRGBByte(linG[p]!);
+    const b = linearToSRGBByte(linB[p]!);
     if (over.kind === "transparent") {
       out[i] = r;
       out[i + 1] = g;

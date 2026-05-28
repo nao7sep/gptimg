@@ -114,10 +114,10 @@ describe("CLI exit codes", () => {
       "--in",
       fixture("green-disk.png"),
       "--method",
-      "ai",
+      "nope",
     ]);
     expect(badChoice.code).toBe(2);
-    expect(badChoice.stderr).toContain("Allowed choices are chroma");
+    expect(badChoice.stderr).toContain("Allowed choices are chroma, ai");
   });
 
   it("returns 2 for CLI-owned usage validation", async () => {

@@ -120,7 +120,7 @@ gptimg mask \
 gptimg compose \
   --in ./out/task-003/donut.png \
   --mask ./out/task-003/donut-mask.png \
-  --decontaminate "#00ff00" \
+  --remove-bleed "#00ff00" \
   --out-dir ./out/task-003 \
   --out-name donut-cutout.png \
   > ./out/task-003/03-compose.json
@@ -156,10 +156,28 @@ gptimg compose --in donut.png --mask donut-final-mask.png \
   --out-name donut-cutout.png
 ```
 
+### AI mask method
+
+When the subject is not on a uniform chroma backdrop, use `--method ai` instead of `--method chroma`:
+
+```sh
+gptimg mask --in scene.png --method ai \
+  --out-dir ./out/task-004 \
+  --out-name scene-mask.png \
+  > ./out/task-004/01-mask-ai.json
+
+gptimg compose --in scene.png --mask ./out/task-004/scene-mask.png \
+  --out-dir ./out/task-004 \
+  --out-name scene-cutout.png \
+  > ./out/task-004/02-compose.json
+```
+
+The AI method runs BiRefNet locally via ONNX Runtime. The model is lazily fetched into `~/.gptimg/models/` on first use (override with `GPTIMG_MODELS_DIR`). For offline machines or CI, pre-fetch with `gptimg mask install-model`.
+
 ### Definitions
 
-- `preserveInterior: false` (default): every key-colored pixel becomes transparent — including interior pockets like donut holes or hair gaps.
-- `preserveInterior: true`: border-connected key regions become transparent; interior key-colored regions stay opaque.
+- `preserveInterior: false` (default): every key-colored pixel becomes transparent — including interior pockets like donut holes or hair gaps. Chroma method only.
+- `preserveInterior: true`: border-connected key regions become transparent; interior key-colored regions stay opaque. Chroma method only.
 
 ### Compose targets
 
@@ -169,7 +187,7 @@ gptimg compose --in donut.png --mask donut-final-mask.png \
 
 ### Decontamination
 
-`compose --decontaminate "#rrggbb"` inpaints clean foreground color into partial-α pixels by iterated dilation from confirmed-opaque pixels. Off by default. Useful when the mask still has visible spill on subject edges.
+`compose --remove-bleed "#rrggbb"` cleans the named background color out of subject pixels. Spill suppression on all kept pixels (chromatic keys) plus alpha-aware edge recovery on partial-α pixels (any key, including gray). Off by default. Use when subject pixels carry visible tint from the background they were photographed against.
 
 ## Verification Loops
 

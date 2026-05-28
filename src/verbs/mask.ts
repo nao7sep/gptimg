@@ -4,12 +4,19 @@ import { LocalOpError } from "../errors.js";
 import { writeMaskPNG } from "../image/bridge.js";
 import { ensureOutputDir } from "../internal/output-files.js";
 import { createLogger, safeLogError } from "../log/index.js";
+import { aiMaskFromFile } from "../local/ai-mask.js";
 import { chromaMaskFromFile } from "../local/chroma/mask.js";
 import { loadRecipe } from "../recipe/load.js";
 import { validateChromaSection } from "../recipe/schemas.js";
-import type { MaskArgs, MaskResult, MaskRecipe } from "../types.js";
+import type {
+  MaskArgs,
+  MaskRecipe,
+  MaskResult,
+  MaskStats,
+} from "../types.js";
 import {
   defaultLogPath,
+  defaultModelsDir,
   defaultRecipePath,
   utcTimestamp,
 } from "../internal/paths.js";
@@ -73,61 +80,97 @@ export async function maskImpl(
 
   try {
     const method = args.method ?? "chroma";
-    if (method !== "chroma") {
+
+    let alpha: Uint8Array;
+    let width: number;
+    let height: number;
+    let stats: MaskStats;
+    let resolvedKey: string | undefined;
+    let resolvedPreserveInterior: boolean | undefined;
+
+    if (method === "chroma") {
+      const recipe = await loadRecipe(recipePath);
+      const chromaSection = validateChromaSection(recipe.chroma);
+      const resolved = applyChromaRecipeDefaults(args, chromaSection);
+      resolvedKey = resolved.key;
+      resolvedPreserveInterior = resolved.preserveInterior;
+
+      await logger.info("resolve", "mask start", {
+        input: resolved.in,
+        method,
+        key: resolved.key ?? "auto",
+        preserveInterior: resolved.preserveInterior ?? false,
+        dryRun: resolved.dryRun ?? false,
+      });
+
+      const result = await chromaMaskFromFile(
+        {
+          in: resolved.in,
+          key: resolved.key,
+          preserveInterior: resolved.preserveInterior,
+          borderSample: resolved.borderSample,
+        },
+        { signal },
+      );
+      alpha = result.alpha;
+      width = result.width;
+      height = result.height;
+      stats = result.stats;
+    } else if (method === "ai") {
+      await logger.info("resolve", "mask start", {
+        input: args.in,
+        method,
+        dryRun: args.dryRun ?? false,
+      });
+
+      const cacheDir = defaultModelsDir(ctx.profileDir);
+      const result = await aiMaskFromFile(
+        { in: args.in },
+        cacheDir,
+        { signal },
+      );
+      alpha = result.alpha;
+      width = result.width;
+      height = result.height;
+      stats = result.stats;
+    } else {
       throw new LocalOpError(
         "image.formatUnknown",
-        `mask method "${method}" is not implemented; only "chroma" is available.`,
+        `mask method "${method}" is not implemented.`,
       );
     }
 
-    const recipe = await loadRecipe(recipePath);
-    const chromaSection = validateChromaSection(recipe.chroma);
-    const resolved = applyChromaRecipeDefaults(args, chromaSection);
+    await logger.info("stats", "mask complete", { stats });
 
-    await logger.info("resolve", "mask start", {
-      input: resolved.in,
-      method,
-      key: resolved.key ?? "auto",
-      preserveInterior: resolved.preserveInterior ?? false,
-      dryRun: resolved.dryRun ?? false,
-    });
-
-    const result = await chromaMaskFromFile(
-      {
-        in: resolved.in,
-        key: resolved.key,
-        preserveInterior: resolved.preserveInterior,
-        borderSample: resolved.borderSample,
-      },
-      { signal },
-    );
-
-    await logger.info("stats", "mask complete", { stats: result.stats });
-
-    if (resolved.dryRun) {
+    if (args.dryRun) {
       return {
-        input: resolved.in,
+        input: args.in,
         output: null,
-        stats: result.stats,
+        stats,
         logPath: logger.handle.path,
       };
     }
 
-    const inDir = path.dirname(resolved.in);
-    const outDir = resolved.outDir ?? inDir;
+    const inDir = path.dirname(args.in);
+    const outDir = args.outDir ?? inDir;
     await ensureOutputDir(outDir);
-    const outName = resolved.outName ?? defaultOutputName(resolved.in);
+    const outName = args.outName ?? defaultOutputName(args.in);
     const outPath = path.isAbsolute(outName) ? outName : path.join(outDir, outName);
-    const overwrite = resolved.overwrite ?? false;
+    const overwrite = args.overwrite ?? false;
     checkOverwrite(outPath, overwrite);
 
-    await writeMaskPNG(result.alpha, result.width, result.height, outPath);
+    await writeMaskPNG(alpha, width, height, outPath);
     await logger.info("write", "wrote mask", { path: outPath });
 
+    // Silence unused warnings for chroma-only resolved values; they were
+    // logged above already.
+    void resolvedKey;
+    void resolvedPreserveInterior;
+
     return {
-      input: resolved.in,
+      input: args.in,
       output: outPath,
-      stats: result.stats,
+      stats,
       logPath: logger.handle.path,
     };
   } catch (err) {

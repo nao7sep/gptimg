@@ -64,7 +64,7 @@ export async function composeImpl(
       mask: args.mask,
       out: outPath,
       over: over?.kind ?? "transparent",
-      decontaminate: args.decontaminate ?? null,
+      removeBleed: args.removeBleed ?? null,
     });
 
     const result = await runCompose(
@@ -73,7 +73,7 @@ export async function composeImpl(
         mask: args.mask,
         out: outPath,
         over,
-        decontaminate: args.decontaminate,
+        removeBleed: args.removeBleed,
       },
       { signal },
     );

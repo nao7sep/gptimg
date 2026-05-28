@@ -9,7 +9,9 @@ export {
 } from "./errors.js";
 export type { GptImgErrorType } from "./errors.js";
 export type {
+  AiMaskStats,
   ChromaKeySource,
+  ChromaMaskStats,
   ChromaRecipe,
   CombineArgs,
   CombineOp,
