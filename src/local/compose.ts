@@ -220,11 +220,31 @@ export async function runCompose(
   const { width, height, data: rgba } = image;
   const n = width * height;
 
-  // Lift to linear-RGB whether or not we plan to removeBleed — the math is
-  // simpler and we convert back at the end.
-  const { linR, linG, linB } = linearizeRGBA(rgba);
+  // Build the per-pixel "clean" sRGB byte source the compose loop reads from.
+  // With removeBleed: lift to linear, apply removeBleed math, convert back
+  // once. Without removeBleed: read the original sRGB bytes directly — no
+  // roundtrip, no ±1/channel quantization drift on unchanged pixels.
+  let getR: (p: number) => number;
+  let getG: (p: number) => number;
+  let getB: (p: number) => number;
   if (args.removeBleed) {
+    const { linR, linG, linB } = linearizeRGBA(rgba);
     applyRemoveBleed(linR, linG, linB, mask.data, args.removeBleed, width, height);
+    const cleanR = new Uint8Array(n);
+    const cleanG = new Uint8Array(n);
+    const cleanB = new Uint8Array(n);
+    for (let p = 0; p < n; p++) {
+      cleanR[p] = linearToSRGBByte(linR[p]!);
+      cleanG[p] = linearToSRGBByte(linG[p]!);
+      cleanB[p] = linearToSRGBByte(linB[p]!);
+    }
+    getR = (p) => cleanR[p]!;
+    getG = (p) => cleanG[p]!;
+    getB = (p) => cleanB[p]!;
+  } else {
+    getR = (p) => rgba[p * 4]!;
+    getG = (p) => rgba[p * 4 + 1]!;
+    getB = (p) => rgba[p * 4 + 2]!;
   }
 
   const over: ComposeOver = args.over ?? { kind: "transparent" };
@@ -236,9 +256,9 @@ export async function runCompose(
   const out = new Uint8Array(n * 4);
   for (let p = 0, i = 0; p < n; p++, i += 4) {
     const a = mask.data[p]!;
-    const r = linearToSRGBByte(linR[p]!);
-    const g = linearToSRGBByte(linG[p]!);
-    const b = linearToSRGBByte(linB[p]!);
+    const r = getR(p);
+    const g = getG(p);
+    const b = getB(p);
     if (over.kind === "transparent") {
       out[i] = r;
       out[i + 1] = g;

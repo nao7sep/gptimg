@@ -94,8 +94,8 @@ async function runWithStdin(args: string[], stdinText: string): Promise<CliResul
 describe("CLI success contracts", () => {
   beforeEach(() => {
     for (const fn of Object.values(sdkCalls)) fn.mockReset();
-    sdkCalls.generate.mockResolvedValue({ files: [], sidecarPath: "s.json", logPath: "l.jsonl", partial: false });
-    sdkCalls.edit.mockResolvedValue({ files: [], sidecarPath: "e.json", logPath: "l.jsonl", partial: false });
+    sdkCalls.generate.mockResolvedValue({ files: [], logPath: "l.jsonl", partial: false });
+    sdkCalls.edit.mockResolvedValue({ files: [], logPath: "l.jsonl", partial: false });
     sdkCalls.vision.mockResolvedValue({ ok: true, score: 1, reasons: ["ok"], raw: {}, sidecarPath: "v.json", logPath: "l.jsonl" });
     sdkCalls.mask.mockResolvedValue({
       input: "in.png",
@@ -148,7 +148,6 @@ describe("CLI success contracts", () => {
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toEqual({
       files: [],
-      sidecarPath: "s.json",
       logPath: "l.jsonl",
       partial: false,
     });
@@ -180,7 +179,7 @@ describe("CLI success contracts", () => {
     ]);
 
     expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout).sidecarPath).toBe("e.json");
+    expect(JSON.parse(result.stdout).partial).toBe(false);
     expect(sdkCalls.edit).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: "prompt",

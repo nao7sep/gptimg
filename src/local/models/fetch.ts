@@ -5,10 +5,13 @@
  *   - ensureModel(entry, cacheDir) returns the absolute path to the cached
  *     model file. If the file is already present, it is returned with no
  *     network call.
- *   - Otherwise the file is downloaded to `<final>.partial`, then atomically
- *     renamed to its final name. A partial file from an interrupted prior
- *     run is removed before the new download starts so the cache never
- *     contains a half-downloaded file under its final name.
+ *   - Otherwise the file is downloaded to a per-process unique partial path
+ *     (`<final>.partial.<pid>.<random>`) and then published to the final
+ *     name via POSIX `link()`, which is atomic and fails with EEXIST if
+ *     another concurrent caller published first. Concurrent callers waste
+ *     bandwidth (each downloads to its own partial) but never corrupt the
+ *     cache: only the winning `link()` becomes the final file, all losers
+ *     unlink their partial and return the published path.
  *   - One-line progress notes go to stderr; stdout stays clean for JSON
  *     output.
  *
@@ -17,8 +20,9 @@
  */
 
 import { createWriteStream, existsSync } from "node:fs";
-import { mkdir, rename, unlink } from "node:fs/promises";
+import { link, mkdir, unlink } from "node:fs/promises";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { LocalOpError, toAbortError } from "../../errors.js";
 import type { ModelEntry } from "./registry.js";
 
@@ -87,6 +91,11 @@ async function downloadTo(
   return received;
 }
 
+function partialPathFor(finalPath: string): string {
+  const suffix = randomBytes(6).toString("hex");
+  return `${finalPath}.partial.${process.pid}.${suffix}`;
+}
+
 export async function ensureModel(
   entry: ModelEntry,
   cacheDir: string,
@@ -102,10 +111,18 @@ export async function ensureModel(
     return finalPath;
   }
 
-  const partialPath = `${finalPath}.partial`;
-  if (existsSync(partialPath)) {
-    await unlink(partialPath);
+  // Legacy cleanup: pre-link()-rework versions used a fixed `<final>.partial`
+  // name that older interrupted runs may have left behind. The unique-suffix
+  // partials produced by the new code never collide with it, so removing
+  // the legacy artifact is safe and frees disk on first post-upgrade run.
+  const legacyPartial = `${finalPath}.partial`;
+  if (existsSync(legacyPartial)) {
+    await unlink(legacyPartial).catch(() => undefined);
   }
+
+  // Each caller writes to its own partial path; no shared filename, so
+  // concurrent downloads never interleave bytes on the same file.
+  const partialPath = partialPathFor(finalPath);
 
   try {
     await downloadTo(entry.url, partialPath, signal);
@@ -114,6 +131,24 @@ export async function ensureModel(
     throw err;
   }
 
-  await rename(partialPath, finalPath);
+  // POSIX link() is atomic: it succeeds (final name now references our
+  // partial inode) or fails with EEXIST (another caller already published).
+  // Either way our partial is no longer needed under its temp name.
+  try {
+    await link(partialPath, finalPath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "EEXIST") {
+      await unlink(partialPath).catch(() => undefined);
+      throw new LocalOpError(
+        "model.downloadFailed",
+        `Failed to publish model at ${finalPath}: ${(err as Error).message}`,
+        { cause: err },
+      );
+    }
+    // Another concurrent caller won the publish race — drop our copy.
+  }
+  await unlink(partialPath).catch(() => undefined);
+
   return finalPath;
 }

@@ -24,12 +24,21 @@ function parseIntOpt(name: string) {
   };
 }
 
+function parseSaturationRatioOpt(v: string): number {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0 || n > 1) {
+    throw new InvalidArgumentError("--saturation-ratio: expected a number in (0, 1]");
+  }
+  return n;
+}
+
 interface MaskCliOpts {
   in: string;
   method?: MaskMethod;
   key?: string;
   preserveInterior?: boolean;
   borderSample?: number;
+  saturationRatio?: number;
   dryRun?: boolean;
   outDir?: string;
   outName?: string;
@@ -44,7 +53,10 @@ export function registerMask(program: Command): void {
     .description("Produce a grayscale alpha mask from an image (no compositing).")
     .requiredOption("--in <path>", "Input image path")
     .addOption(
-      new Option("--method <name>", "Mask producer")
+      new Option(
+        "--method <name>",
+        "Mask producer. 'ai' uses BiRefNet (~1-1.5GB RSS per process); run sequentially.",
+      )
         .choices(["chroma", "ai"])
         .default("chroma"),
     )
@@ -62,6 +74,11 @@ export function registerMask(program: Command): void {
       "Border depth for --key auto",
       parseIntOpt("--border-sample"),
     )
+    .option(
+      "--saturation-ratio <n>",
+      "Spill ratio at which near-key pixels saturate to α=0 (0,1]. Chroma method only.",
+      parseSaturationRatioOpt,
+    )
     .option("--dry-run", "Compute and emit stats without writing the mask file")
     .option("--out-dir <dir>", "Output directory (default: same as input)")
     .option("--out-name <name>", "Output filename (default: <input-stem>-mask.png)")
@@ -78,6 +95,7 @@ export function registerMask(program: Command): void {
         key: opts.key,
         preserveInterior: opts.preserveInterior,
         borderSample: opts.borderSample,
+        saturationRatio: opts.saturationRatio,
         dryRun: opts.dryRun,
         outDir: opts.outDir,
         outName: opts.outName,

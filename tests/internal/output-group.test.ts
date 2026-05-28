@@ -6,7 +6,8 @@ import {
   assertOutputGroupAvailable,
   createOutputGroup,
   plannedImagePaths,
-  sidecarPath,
+  plannedSidecarPaths,
+  sidecarPathFor,
   siblingsOnDisk,
 } from "../../src/internal/output-group.js";
 
@@ -21,18 +22,28 @@ describe("OutputGroup", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("derives planned image paths and sidecar path from group fields", () => {
+  it("derives planned image paths and per-image sidecar paths from group fields", () => {
     const group = createOutputGroup(tmp, "stem", "png");
-    expect(sidecarPath(group)).toBe(path.join(tmp, "stem.json"));
+    expect(sidecarPathFor(group, 1, 1)).toBe(path.join(tmp, "stem.json"));
+    expect(plannedSidecarPaths(group, 1, 1)).toEqual([path.join(tmp, "stem.json")]);
     expect(plannedImagePaths(group, 1, 1)).toEqual([path.join(tmp, "stem.png")]);
     expect(plannedImagePaths(group, 3, 3)).toEqual([
       path.join(tmp, "stem-1.png"),
       path.join(tmp, "stem-2.png"),
       path.join(tmp, "stem-3.png"),
     ]);
+    expect(plannedSidecarPaths(group, 3, 3)).toEqual([
+      path.join(tmp, "stem-1.json"),
+      path.join(tmp, "stem-2.json"),
+      path.join(tmp, "stem-3.json"),
+    ]);
     expect(plannedImagePaths(group, 2, 12)).toEqual([
       path.join(tmp, "stem-01.png"),
       path.join(tmp, "stem-02.png"),
+    ]);
+    expect(plannedSidecarPaths(group, 2, 12)).toEqual([
+      path.join(tmp, "stem-01.json"),
+      path.join(tmp, "stem-02.json"),
     ]);
   });
 
@@ -41,15 +52,16 @@ describe("OutputGroup", () => {
     expect(siblingsOnDisk(group)).toEqual([]);
   });
 
-  it("matches stem.<ext>, stem-<digits>.<ext>, and stem.json; ignores unrelated names", async () => {
+  it("matches stem.<ext>, stem-<digits>.<ext>, stem.json, and stem-<digits>.json; ignores unrelated names", async () => {
     const names = [
       "stem.png",
       "stem-1.png",
       "stem-01.png",
       "stem-10.png",
       "stem.json",
+      "stem-01.json",
+      "stem-10.json",
       "stem-mask.png",
-      "stem-verify-preview.png",
       "other.png",
       "stemX.png",
     ];
@@ -58,8 +70,10 @@ describe("OutputGroup", () => {
     }
     const group = createOutputGroup(tmp, "stem", "png");
     expect(siblingsOnDisk(group).map((p) => path.basename(p)).sort()).toEqual([
+      "stem-01.json",
       "stem-01.png",
       "stem-1.png",
+      "stem-10.json",
       "stem-10.png",
       "stem.json",
       "stem.png",
@@ -128,9 +142,9 @@ describe("OutputGroup", () => {
       );
     });
 
-    it("ignores chroma-derived siblings (-mask, -verify-preview) as not group members", async () => {
+    it("ignores chroma-derived siblings (-mask, -cutout) as not group members", async () => {
       await mkdir(tmp, { recursive: true });
-      for (const name of ["stem-mask.png", "stem-verify-preview.png"]) {
+      for (const name of ["stem-mask.png", "stem-cutout.png"]) {
         await writeFile(path.join(tmp, name), "");
       }
       const group = createOutputGroup(tmp, "stem", "png");

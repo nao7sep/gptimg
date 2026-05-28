@@ -118,6 +118,8 @@ export interface LogHandle {
 export interface OutputFile {
   index: number;
   path: string;
+  /** Per-image sidecar: `<image-stem>.json`. Same stem as `path` minus the extension. */
+  sidecarPath: string;
   sha256: string;
   format: string;
 }
@@ -135,7 +137,6 @@ export interface GenerateArgs {
 
 export interface GenerateResult {
   files: OutputFile[];
-  sidecarPath: string;
   logPath: string;
   partial: boolean;
 }
@@ -207,6 +208,8 @@ export interface MaskArgs {
   key?: string;
   preserveInterior?: boolean;
   borderSample?: number;
+  /** Spill ratio at which near-key pixels saturate to α=0 (0..1]. Chroma-method only. */
+  saturationRatio?: number;
   /** Skip writing the mask; emit stats only. */
   dryRun?: boolean;
   outDir?: string;

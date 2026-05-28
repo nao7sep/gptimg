@@ -1,20 +1,22 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
-import { imageFileName } from "./output-naming.js";
+import { imageFileName, indexSuffix } from "./output-naming.js";
 
 /**
  * The artifact group produced by a single `generate` or `edit` invocation:
- * a stem plus an image extension plus a sidecar extension. Membership is
- * defined purely by filename pattern in `dir`:
+ * a stem plus an image extension plus a sidecar extension, with one sidecar
+ * per image (the per-image sidecar contract — no shared sidecar for n>1).
+ * Membership is defined purely by filename pattern in `dir`:
  *
  *   - `<stem>.<ext>`                  — single output (n=1)
  *   - `<stem>-<digits>.<ext>`         — indexed multi-output (any width)
- *   - `<stem>.<sidecarExt>`           — sidecar
+ *   - `<stem>.<sidecarExt>`           — single sidecar (n=1)
+ *   - `<stem>-<digits>.<sidecarExt>`  — per-image sidecar (n>1)
  *
- * Chroma-derived siblings (`-mask`, `-chroma`, `-verify-preview`) are NOT
- * group members; they belong to a different verb's output and must not be
- * touched by generate/edit overwrite logic.
+ * Mask/compose/combine derived siblings (`-mask`, `-cutout`, etc.) are NOT
+ * group members; they belong to other verbs' output and must not be touched
+ * by generate/edit overwrite logic.
  */
 export interface OutputGroup {
   dir: string;
@@ -33,8 +35,20 @@ export function createOutputGroup(
   return { dir, stem, ext, sidecarExt: SIDECAR_EXT };
 }
 
-export function sidecarPath(group: OutputGroup): string {
-  return path.join(group.dir, `${group.stem}.${group.sidecarExt}`);
+/**
+ * The sidecar path for the image at `index` in a group of `suffixWidth`.
+ * For n=1 this returns `<stem>.<sidecarExt>`; for n>1 it returns
+ * `<stem>-<index>.<sidecarExt>` matching the image's index suffix.
+ */
+export function sidecarPathFor(
+  group: OutputGroup,
+  index: number,
+  suffixWidth: number,
+): string {
+  return path.join(
+    group.dir,
+    `${group.stem}${indexSuffix(index, suffixWidth)}.${group.sidecarExt}`,
+  );
 }
 
 export function plannedImagePaths(
@@ -45,6 +59,18 @@ export function plannedImagePaths(
   const paths: string[] = [];
   for (let i = 1; i <= count; i++) {
     paths.push(path.join(group.dir, imageFileName(group.stem, i, suffixWidth, group.ext)));
+  }
+  return paths;
+}
+
+export function plannedSidecarPaths(
+  group: OutputGroup,
+  count: number,
+  suffixWidth: number,
+): string[] {
+  const paths: string[] = [];
+  for (let i = 1; i <= count; i++) {
+    paths.push(sidecarPathFor(group, i, suffixWidth));
   }
   return paths;
 }
@@ -70,7 +96,7 @@ export function siblingsOnDisk(group: OutputGroup): string[] {
   const ext = escapeRegex(group.ext);
   const sx = escapeRegex(group.sidecarExt);
   const imagePattern = new RegExp(`^${stem}(?:-\\d+)?\\.${ext}$`);
-  const sidecarPattern = new RegExp(`^${stem}\\.${sx}$`);
+  const sidecarPattern = new RegExp(`^${stem}(?:-\\d+)?\\.${sx}$`);
   return entries
     .filter((name) => imagePattern.test(name) || sidecarPattern.test(name))
     .map((name) => path.join(group.dir, name))

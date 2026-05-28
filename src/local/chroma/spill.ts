@@ -103,7 +103,7 @@ export function spillAlpha(
   linG: Float32Array,
   linB: Float32Array,
   topology: NonNullable<KeyTopology>,
-  saturationRatio = 0.9,
+  saturationRatio: number,
 ): Uint8Array {
   const n = linR.length;
   const channels = [linR, linG, linB] as const;

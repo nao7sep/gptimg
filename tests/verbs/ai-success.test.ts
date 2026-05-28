@@ -112,7 +112,11 @@ describe("AI verb implementations with mocked provider", () => {
         format: "png",
       });
       expect(existsSync(path.join(outDir, "gen-1.png"))).toBe(true);
-      expect(result.sidecarPath).toBe(path.join(outDir, "gen.json"));
+      // Per-image sidecar contract: each image gets its own JSON. n=2 with the
+      // first image dropped (partial) means only gen-2.json exists; but the
+      // mocked response in this test path produces image index=1 only, so the
+      // single survivor sits at gen-1.json.
+      expect(result.files[0]?.sidecarPath).toBe(path.join(outDir, "gen-1.json"));
 
       const call = providerCalls.generate.mock.calls[0]?.[0];
       expect(call).toMatchObject({
@@ -126,13 +130,16 @@ describe("AI verb implementations with mocked provider", () => {
       expect(call?.params).not.toHaveProperty("chroma");
       expect(call?.prompt).toBe("a green disk");
 
-      const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as {
+      const sidecar = JSON.parse(
+        await readFile(result.files[0]!.sidecarPath, "utf-8"),
+      ) as {
         request: Record<string, unknown>;
         response: { data: Array<{ b64_json: string | null }> };
         files: Array<{ name: string }>;
       };
       expect(sidecar.request.chroma).toEqual({ color: "#00ff00" });
       expect(sidecar.response.data[0]?.b64_json).toBeNull();
+      // Per-image sidecar: files[] holds just this image's entry.
       expect(sidecar.files).toEqual([expect.objectContaining({ name: "gen-1.png" })]);
 
       const logEntries = lines(await readFile(result.logPath, "utf-8"));
@@ -279,7 +286,9 @@ describe("AI verb implementations with mocked provider", () => {
       maskPath: mask,
     });
 
-    const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as {
+    const sidecar = JSON.parse(
+      await readFile(result.files[0]!.sidecarPath, "utf-8"),
+    ) as {
       request: { input: string; mask: string };
       response: { data: Array<{ b64_json: string | null }> };
     };
@@ -492,7 +501,11 @@ describe("AI verb implementations with mocked provider", () => {
       path.join("output", "two-1.png"),
       path.join("output", "two-2.png"),
     ]);
-    expect(result.sidecarPath).toBe(path.join(tmp, "output", "two.json"));
+    // Per-image sidecars: one JSON per image, named to match the image stem.
+    expect(result.files.map((f) => path.relative(tmp, f.sidecarPath))).toEqual([
+      path.join("output", "two-1.json"),
+      path.join("output", "two-2.json"),
+    ]);
   });
 
   it("edit writes n>1 output names", async () => {

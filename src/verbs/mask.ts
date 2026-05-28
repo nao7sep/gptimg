@@ -55,6 +55,9 @@ function applyChromaRecipeDefaults(
   if (merged.borderSample === undefined && section.borderSample !== undefined) {
     merged.borderSample = section.borderSample;
   }
+  if (merged.saturationRatio === undefined && section.saturationRatio !== undefined) {
+    merged.saturationRatio = section.saturationRatio;
+  }
   return merged;
 }
 
@@ -109,6 +112,7 @@ export async function maskImpl(
           key: resolved.key,
           preserveInterior: resolved.preserveInterior,
           borderSample: resolved.borderSample,
+          saturationRatio: resolved.saturationRatio,
         },
         { signal },
       );

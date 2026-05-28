@@ -32,7 +32,7 @@ Each successful call writes durable artifacts:
 | Artifact | Purpose |
 |---|---|
 | image file | Output for later steps |
-| sidecar JSON | Resolved request, redacted provider response, output file hashes (generate/edit/vision only) |
+| sidecar JSON | One per image (`<image-stem>.json`); resolved request + redacted response + this image's hash. Generate/edit/vision. |
 | JSONL log | Stage-by-stage trace for debugging |
 | mask PNG | Grayscale alpha (`mask`, `combine`) |
 | composite PNG | Image flattened against a mask (`compose`) |
@@ -174,6 +174,8 @@ gptimg compose --in scene.png --mask ./out/task-004/scene-mask.png \
 
 The AI method runs BiRefNet locally via ONNX Runtime. The model is lazily fetched into `~/.gptimg/models/` on first use (override with `GPTIMG_MODELS_DIR`). For offline machines or CI, pre-fetch with `gptimg mask install-model`.
 
+**Resource caution — do not parallelize `--method ai` carelessly.** Every `--method ai` process loads the BiRefNet ONNX session (~500MB) plus inference buffers, peaking around **1–1.5GB RSS** per process in native memory (V8's GC doesn't see it). Running many in parallel pushes the host into swap thrashing and can crash the desktop session — a 24GB machine should run AI masks **sequentially** (shell `&&`, not `&`). The chroma method, by contrast, is light (~100–200MB) and parallel-safe. ONNX Runtime's per-session intra-op thread pool is already capped to half the available cores so multiple sessions don't fight for the CPU, but the memory ceiling is the binding constraint. If you must batch many AI masks, run them one at a time.
+
 ### Definitions
 
 - `preserveInterior: false` (default): every key-colored pixel becomes transparent — including interior pockets like donut holes or hair gaps. Chroma method only.
@@ -253,7 +255,7 @@ A skill that wraps `gptimg` should:
 - Save each command's stdout JSON to a file next to the artifacts.
 - Keep original inputs and generated originals.
 - Use deterministic artifact names such as `01-generate.json`, `subject-original.png`, `subject-mask.png`, `subject-cutout.png`.
-- Parse `files`, `sidecarPath`, `logPath`, `partial`, and `stats` from stdout JSON.
+- Parse `files`, `logPath`, `partial`, and `stats` from stdout JSON. Each `files[i]` carries its own `sidecarPath` (per-image sidecar contract — one JSON per image).
 - Prefer final composites from the original image, not from diagnostic intermediates.
 - Use `vision` on composites for final visual quality.
 - Escalate to the user when interior key-like regions overlap plausible subject content.

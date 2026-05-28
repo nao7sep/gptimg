@@ -12,6 +12,7 @@
  *      dimensions, quantize to Uint8Array.
  */
 
+import os from "node:os";
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
 import { LocalOpError } from "../../errors.js";
@@ -24,11 +25,26 @@ const IMAGENET_STD = [0.229, 0.224, 0.225];
 let cachedSession: ort.InferenceSession | null = null;
 let cachedSessionPath: string | null = null;
 
+/**
+ * Cap the intra-op thread pool per session. ONNX Runtime's CPU EP defaults
+ * to one thread per core, which is fine for a single inference but pathological
+ * when the same machine runs multiple gptimg processes — each session grabs
+ * all cores and they thrash the scheduler. Halving the core count per session
+ * keeps a single call fast while letting parallel callers coexist without
+ * total oversubscription. A single core minimum keeps tiny VMs working.
+ */
+function intraOpThreadCount(): number {
+  const cpus = os.cpus()?.length ?? 1;
+  return Math.max(1, Math.floor(cpus / 2));
+}
+
 async function loadSession(modelPath: string): Promise<ort.InferenceSession> {
   if (cachedSession && cachedSessionPath === modelPath) return cachedSession;
   try {
     cachedSession = await ort.InferenceSession.create(modelPath, {
       executionProviders: ["cpu"],
+      intraOpNumThreads: intraOpThreadCount(),
+      interOpNumThreads: 1,
     });
     cachedSessionPath = modelPath;
     return cachedSession;
@@ -92,18 +108,44 @@ function preprocessToTensor(rgb: Uint8Array, size: number): ort.Tensor {
   return new ort.Tensor("float32", data, [1, 3, size, size]);
 }
 
-function tensorToAlpha(tensor: ort.Tensor, size: number): Uint8Array {
-  // BiRefNet's ONNX export emits raw logits at [1, 1, H, W]. We apply sigmoid
-  // to map them into [0, 1] and quantize to a Uint8Array mask.
+/**
+ * Convert the model's logit output tensor to a Uint8 alpha mask. The pinned
+ * BiRefNet export emits `[1, 1, H, W]` raw logits; we validate that shape
+ * explicitly and read H/W from `dims` rather than assuming inputSize, so
+ * future variants that downsample (e.g. deep-supervision outputs at H/4)
+ * fail loudly with a clear error instead of silently reading wrong data.
+ */
+function tensorToAlpha(tensor: ort.Tensor): { alpha: Uint8Array; width: number; height: number } {
+  const dims = tensor.dims;
+  if (dims.length !== 4 || dims[0] !== 1 || dims[1] !== 1) {
+    throw new LocalOpError(
+      "model.outputShape",
+      `BiRefNet output shape unexpected: got [${dims.join(",")}], expected [1, 1, H, W].`,
+    );
+  }
+  const height = Number(dims[2]);
+  const width = Number(dims[3]);
+  if (!Number.isFinite(height) || !Number.isFinite(width) || height <= 0 || width <= 0) {
+    throw new LocalOpError(
+      "model.outputShape",
+      `BiRefNet output spatial dims invalid: H=${dims[2]}, W=${dims[3]}.`,
+    );
+  }
   const data = tensor.data as Float32Array;
-  const out = new Uint8Array(size * size);
-  const offset = data.length - size * size;
-  for (let p = 0; p < size * size; p++) {
-    const v = data[offset + p]!;
+  const expected = width * height;
+  if (data.length !== expected) {
+    throw new LocalOpError(
+      "model.outputShape",
+      `BiRefNet output tensor has ${data.length} elements; expected ${expected} for [1,1,${height},${width}].`,
+    );
+  }
+  const out = new Uint8Array(expected);
+  for (let p = 0; p < expected; p++) {
+    const v = data[p]!;
     const sig = 1 / (1 + Math.exp(-v));
     out[p] = Math.max(0, Math.min(255, Math.round(sig * 255)));
   }
-  return out;
+  return { alpha: out, width, height };
 }
 
 export interface AiMaskResult {
@@ -143,7 +185,7 @@ export async function runBirefnet(
     );
   }
 
-  const alphaAtModel = tensorToAlpha(output, size);
-  const alpha = await resizeAlphaUp(alphaAtModel, size, size, width, height);
+  const { alpha: alphaAtModel, width: outW, height: outH } = tensorToAlpha(output);
+  const alpha = await resizeAlphaUp(alphaAtModel, outW, outH, width, height);
   return { alpha, width, height };
 }

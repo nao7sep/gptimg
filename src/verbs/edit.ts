@@ -11,7 +11,8 @@ import {
 import {
   assertOutputGroupAvailable,
   createOutputGroup,
-  sidecarPath as outputGroupSidecarPath,
+  plannedSidecarPaths,
+  sidecarPathFor,
 } from "../internal/output-group.js";
 import { createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
@@ -156,7 +157,6 @@ export async function editImpl(
       )
     ).filter((item): item is NonNullable<typeof item> => item !== null);
 
-    const stemPath = path.join(outDir, stem);
     const imageExts = new Set(plannedImages.map((item) => item.fmt.extension));
     if (imageExts.size > 1) {
       throw new LocalOpError(
@@ -166,23 +166,47 @@ export async function editImpl(
     }
     const groupExt = plannedImages[0]?.fmt.extension ?? "png";
     const group = createOutputGroup(outDir, stem, groupExt);
-    const sidecarPath = outputGroupSidecarPath(group);
+    const allSidecarPaths = plannedSidecarPaths(group, suffixCount, suffixCount);
     assertOutputGroupAvailable(
       group,
-      [...plannedImages.map((item) => item.filePath), sidecarPath],
+      [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
       overwrite,
     );
 
     const files: OutputFile[] = [];
+    const requestRecord = {
+      ...params,
+      prompt: args.prompt,
+      input: path.basename(args.in),
+      mask: args.mask ? path.basename(args.mask) : null,
+      n,
+    };
+    const redactedResponse = nullBase64InResponse(providerResult.raw);
 
     await Promise.all(
       plannedImages.map((item) =>
         limit(async () => {
           await writeOutputBytes(item.filePath, item.data);
           const sha = hash(item.data);
+          const itemSidecarPath = sidecarPathFor(group, item.index, suffixCount);
+          const itemSidecarStem = itemSidecarPath.replace(/\.json$/, "");
+          const itemSidecar: Sidecar = {
+            request: requestRecord,
+            response: redactedResponse,
+            files: [
+              {
+                index: item.index,
+                name: path.basename(item.filePath),
+                sha256: sha,
+                format: item.fmt.format,
+              },
+            ],
+          };
+          await writeSidecar(itemSidecarStem, itemSidecar);
           files.push({
             index: item.index,
             path: item.filePath,
+            sidecarPath: itemSidecarPath,
             sha256: sha,
             format: item.fmt.format,
           });
@@ -191,36 +215,15 @@ export async function editImpl(
             name: item.fileName,
             sha256: sha,
             format: item.fmt.format,
+            sidecar: path.basename(itemSidecarPath),
           });
         }),
       ),
     );
     files.sort((a, b) => a.index - b.index);
 
-    const sidecar: Sidecar = {
-      request: {
-        ...params,
-        prompt: args.prompt,
-        input: path.basename(args.in),
-        mask: args.mask ? path.basename(args.mask) : null,
-        n,
-      },
-      response: nullBase64InResponse(providerResult.raw),
-      files: files.map((f) => ({
-        index: f.index,
-        name: path.basename(f.path),
-        sha256: f.sha256,
-        format: f.format,
-      })),
-    };
-    await writeSidecar(stemPath, sidecar);
-    await logger.info("write", "wrote sidecar", {
-      name: path.basename(sidecarPath),
-    });
-
     return {
       files,
-      sidecarPath,
       logPath: logger.handle.path,
       partial,
     };

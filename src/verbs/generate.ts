@@ -10,7 +10,8 @@ import {
 import {
   assertOutputGroupAvailable,
   createOutputGroup,
-  sidecarPath as outputGroupSidecarPath,
+  plannedSidecarPaths,
+  sidecarPathFor,
 } from "../internal/output-group.js";
 import { createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
@@ -140,7 +141,6 @@ export async function generateImpl(
       )
     ).filter((item): item is NonNullable<typeof item> => item !== null);
 
-    const stemPath = path.join(outDir, stem);
     const imageExts = new Set(plannedImages.map((item) => item.fmt.extension));
     if (imageExts.size > 1) {
       throw new LocalOpError(
@@ -150,23 +150,53 @@ export async function generateImpl(
     }
     const groupExt = plannedImages[0]?.fmt.extension ?? "png";
     const group = createOutputGroup(outDir, stem, groupExt);
-    const sidecarPath = outputGroupSidecarPath(group);
+    // One sidecar per image: <stem>.json for n=1, <stem>-NN.json for n>1.
+    // The artifact group includes every per-image sidecar so overwrite logic
+    // catches all of them as a single unit.
+    const allSidecarPaths = plannedSidecarPaths(group, suffixCount, suffixCount);
     assertOutputGroupAvailable(
       group,
-      [...plannedImages.map((item) => item.filePath), sidecarPath],
+      [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
       overwrite,
     );
 
     const files: OutputFile[] = [];
+
+    const requestRecord: Record<string, unknown> = {
+      ...params,
+      prompt: args.prompt,
+      n,
+    };
+    if (chromaColor) requestRecord.chroma = { color: chromaColor };
+    const redactedResponse = nullBase64InResponse(providerResult.raw);
 
     await Promise.all(
       plannedImages.map((item) =>
         limit(async () => {
           await writeOutputBytes(item.filePath, item.data);
           const sha = hash(item.data);
+          // Per-image sidecar: same request and response across siblings (the
+          // call is the same), but `files` carries only this image's entry so
+          // each sidecar is self-describing.
+          const itemSidecarPath = sidecarPathFor(group, item.index, suffixCount);
+          const itemSidecarStem = itemSidecarPath.replace(/\.json$/, "");
+          const itemSidecar: Sidecar = {
+            request: requestRecord,
+            response: redactedResponse,
+            files: [
+              {
+                index: item.index,
+                name: path.basename(item.filePath),
+                sha256: sha,
+                format: item.fmt.format,
+              },
+            ],
+          };
+          await writeSidecar(itemSidecarStem, itemSidecar);
           files.push({
             index: item.index,
             path: item.filePath,
+            sidecarPath: itemSidecarPath,
             sha256: sha,
             format: item.fmt.format,
           });
@@ -175,37 +205,15 @@ export async function generateImpl(
             name: item.fileName,
             sha256: sha,
             format: item.fmt.format,
+            sidecar: path.basename(itemSidecarPath),
           });
         }),
       ),
     );
     files.sort((a, b) => a.index - b.index);
 
-    const requestRecord: Record<string, unknown> = {
-      ...params,
-      prompt: args.prompt,
-      n,
-    };
-    if (chromaColor) requestRecord.chroma = { color: chromaColor };
-
-    const sidecar: Sidecar = {
-      request: requestRecord,
-      response: nullBase64InResponse(providerResult.raw),
-      files: files.map((f) => ({
-        index: f.index,
-        name: path.basename(f.path),
-        sha256: f.sha256,
-        format: f.format,
-      })),
-    };
-    await writeSidecar(stemPath, sidecar);
-    await logger.info("write", "wrote sidecar", {
-      name: path.basename(sidecarPath),
-    });
-
     return {
       files,
-      sidecarPath,
       logPath: logger.handle.path,
       partial,
     };

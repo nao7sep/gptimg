@@ -35,13 +35,41 @@ describe("chromaMask: green disk fixture", () => {
     expect(res.stats.keySource).toBe("auto");
   });
 
-  it("loads chroma color from a sibling sidecar via from-sidecar", async () => {
+  it("loads chroma color from the per-image sidecar via from-sidecar", async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), "gptimg-mask-sidecar-"));
     try {
+      // Per-image sidecar contract: image `generated-01.png` reads its sidecar
+      // from `generated-01.json` (not a shared `generated.json`).
       const input = path.join(tmp, "generated-01.png");
       await copyFile(fixture("green-disk.png"), input);
       await writeFile(
-        path.join(tmp, "generated.json"),
+        path.join(tmp, "generated-01.json"),
+        JSON.stringify({
+          request: { chroma: { color: "#00ff00" } },
+          response: {},
+          files: [],
+        }) + "\n",
+      );
+
+      const res = await chromaMaskFromFile({ in: input, key: "from-sidecar" });
+      expect(res.stats.key).toBe("#00ff00");
+      expect(res.stats.keySource).toBe("sidecar");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("from-sidecar does not strip non-index `-NN` suffixes (date-stamped names)", async () => {
+    // Regression: previously a regex stripped trailing -\d+, so
+    // `donut-2024-05-28.png` looked up `donut-2024-05.json`. The
+    // per-image-sidecar contract removes the regex; the sidecar must
+    // exist at the literal stem.
+    const tmp = await mkdtemp(path.join(tmpdir(), "gptimg-mask-sidecar-date-"));
+    try {
+      const input = path.join(tmp, "donut-2024-05-28.png");
+      await copyFile(fixture("green-disk.png"), input);
+      await writeFile(
+        path.join(tmp, "donut-2024-05-28.json"),
         JSON.stringify({
           request: { chroma: { color: "#00ff00" } },
           response: {},
