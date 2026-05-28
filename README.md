@@ -47,7 +47,7 @@ EOF
 
 When both `apiKeyEnv` and `apiKey` are present, the environment variable wins. `profile clear-key` removes only stored `apiKey`; a missing profile file or missing key is a no-op, while unreadable profile paths are errors.
 
-Profile files are strict JSON objects. Supported top-level keys are `provider`, `apiKey`, `apiKeyEnv`, `organization`, `project`, and `network`. For org-scoped OpenAI accounts, `organization` and `project` are passed through to the OpenAI SDK.
+Profile files are strict JSON objects. Supported top-level keys are `provider`, `apiKey`, `apiKeyEnv`, `organization`, and `project`. For org-scoped OpenAI accounts, `organization` and `project` are passed through to the OpenAI SDK. Network budgets are not profile keys — they live in `recipe.json` under `recipe.network` (see [Configuration](#configuration)).
 
 ### Profile file permissions
 

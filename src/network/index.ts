@@ -2,8 +2,9 @@ import { RecipeError } from "../errors.js";
 import type { Logger } from "../log/index.js";
 import type { Profile, Recipe } from "../types.js";
 import type { NetworkConfig } from "./defaults.js";
+import { formatZodError } from "../internal/zodError.js";
 import { resolveNetworkConfig } from "./resolve.js";
-import { NetworkSchema, formatNetworkZodError } from "./schema.js";
+import { NetworkSchema } from "./schema.js";
 
 export type { NetworkBudget, NetworkBudgetName, NetworkConfig } from "./defaults.js";
 export {
@@ -30,7 +31,7 @@ export async function resolveNetworkForCall(
   if (!r.success) {
     throw new RecipeError(
       "recipe.validationFailed",
-      `recipe.network invalid: ${formatNetworkZodError(r.error)}`,
+      `recipe.network invalid: ${formatZodError(r.error)}`,
     );
   }
   return resolveNetworkConfig(r.data);

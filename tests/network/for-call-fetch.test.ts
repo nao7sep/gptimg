@@ -3,7 +3,8 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { RecipeError } from "../../src/errors.js";
 import { NETWORK_DEFAULTS, fetchWithBudget, resolveNetworkForCall } from "../../src/network/index.js";
-import { NetworkSchema, formatNetworkZodError } from "../../src/network/schema.js";
+import { formatZodError } from "../../src/internal/zodError.js";
+import { NetworkSchema } from "../../src/network/schema.js";
 
 function listen(
   handler: http.RequestListener,
@@ -63,8 +64,8 @@ describe("network schema errors", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(formatNetworkZodError(result.error)).toContain("imageGenerate.timeout");
-      expect(formatNetworkZodError(result.error)).toContain(
+      expect(formatZodError(result.error)).toContain("imageGenerate.timeout");
+      expect(formatZodError(result.error)).toContain(
         "imageGenerate.retryIntervals.1",
       );
     }

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assertOutputGroupAvailable,
   createOutputGroup,
-  plannedImagePaths,
   plannedSidecarPaths,
   sidecarPathFor,
   siblingsOnDisk,
@@ -22,24 +21,14 @@ describe("OutputGroup", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("derives planned image paths and per-image sidecar paths from group fields", () => {
+  it("derives per-image sidecar paths from group fields", () => {
     const group = createOutputGroup(tmp, "stem", "png");
     expect(sidecarPathFor(group, 1, 1)).toBe(path.join(tmp, "stem.json"));
     expect(plannedSidecarPaths(group, 1, 1)).toEqual([path.join(tmp, "stem.json")]);
-    expect(plannedImagePaths(group, 1, 1)).toEqual([path.join(tmp, "stem.png")]);
-    expect(plannedImagePaths(group, 3, 3)).toEqual([
-      path.join(tmp, "stem-1.png"),
-      path.join(tmp, "stem-2.png"),
-      path.join(tmp, "stem-3.png"),
-    ]);
     expect(plannedSidecarPaths(group, 3, 3)).toEqual([
       path.join(tmp, "stem-1.json"),
       path.join(tmp, "stem-2.json"),
       path.join(tmp, "stem-3.json"),
-    ]);
-    expect(plannedImagePaths(group, 2, 12)).toEqual([
-      path.join(tmp, "stem-01.png"),
-      path.join(tmp, "stem-02.png"),
     ]);
     expect(plannedSidecarPaths(group, 2, 12)).toEqual([
       path.join(tmp, "stem-01.json"),

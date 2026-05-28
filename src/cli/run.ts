@@ -10,7 +10,7 @@ import { registerMask } from "./verbs/mask.js";
 import { registerProfile } from "./verbs/profile.js";
 import { registerVision } from "./verbs/vision.js";
 
-export function createProgram(): Command {
+function createProgram(): Command {
   const program = new Command();
   program
     .name("gptimg")

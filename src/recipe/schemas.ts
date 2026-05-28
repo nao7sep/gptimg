@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RecipeError } from "../errors.js";
+import { formatZodError } from "../internal/zodError.js";
 import { NetworkSchema } from "../network/schema.js";
 import type {
   ChromaRecipe,
@@ -18,16 +19,16 @@ const IMAGE_PARAMS_SHAPE = {
   n: z.number().int().positive().optional(),
 };
 
-export const GenerateRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
+const GenerateRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
 
-export const EditRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
+const EditRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
 
-export const VisionShrinkSchema = z.object({
+const VisionShrinkSchema = z.object({
   width: z.number().int().positive(),
   height: z.number().int().positive(),
 });
 
-export const VisionRecipeSchema = z
+const VisionRecipeSchema = z
   .object({
     model: z.string().optional(),
     shrink: VisionShrinkSchema.optional(),
@@ -36,7 +37,7 @@ export const VisionRecipeSchema = z
   })
   .passthrough();
 
-export const ChromaRecipeSchema = z
+const ChromaRecipeSchema = z
   .object({
     color: z.string().regex(HEX_COLOR_RE, "Must be a #rrggbb hex color").optional(),
     preserveInterior: z.boolean().optional(),
@@ -45,7 +46,7 @@ export const ChromaRecipeSchema = z
   })
   .passthrough();
 
-export const RecipeSchema = z
+const RecipeSchema = z
   .object({
     generate: GenerateRecipeSchema.optional(),
     edit: EditRecipeSchema.optional(),
@@ -54,12 +55,6 @@ export const RecipeSchema = z
     network: NetworkSchema.optional(),
   })
   .passthrough();
-
-function formatZodError(err: z.ZodError): string {
-  return err.issues
-    .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
-    .join("; ");
-}
 
 export function validateGenerateSection(input: unknown): GenerateRecipe {
   const r = GenerateRecipeSchema.safeParse(input ?? {});

@@ -9,9 +9,3 @@ export const ProfileSchema = z
     project: z.string().optional(),
   })
   .strict();
-
-export function formatProfileZodError(err: z.ZodError): string {
-  return err.issues
-    .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
-    .join("; ");
-}

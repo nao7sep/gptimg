@@ -148,7 +148,7 @@ function tensorToAlpha(tensor: ort.Tensor): { alpha: Uint8Array; width: number; 
   return { alpha: out, width, height };
 }
 
-export interface AiMaskResult {
+export interface BirefnetOutput {
   alpha: Uint8Array;
   width: number;
   height: number;
@@ -160,7 +160,7 @@ export async function runBirefnet(
   height: number,
   cacheDir: string,
   signal: AbortSignal | undefined,
-): Promise<AiMaskResult> {
+): Promise<BirefnetOutput> {
   const modelPath = await ensureModel(BIREFNET, cacheDir, { signal });
   const session = await loadSession(modelPath);
 

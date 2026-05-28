@@ -2,7 +2,8 @@ import { open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { ProfileError } from "../errors.js";
 import type { Profile } from "../types.js";
-import { ProfileSchema, formatProfileZodError } from "./schema.js";
+import { formatZodError } from "../internal/zodError.js";
+import { ProfileSchema } from "./schema.js";
 
 // POSIX-only. Windows reports a synthesized mode whose lower bits do not
 // reflect access control, so this check would produce false positives there.
@@ -100,7 +101,7 @@ function parseProfile(text: string, filePath: string): Profile {
   const result = ProfileSchema.safeParse(parsed);
   if (!result.success) {
     const hint = migrationHint(result.error);
-    const detail = formatProfileZodError(result.error);
+    const detail = formatZodError(result.error);
     throw new ProfileError(
       "profile.validationFailed",
       `Profile at ${filePath} invalid: ${detail}${hint ? ` (${hint})` : ""}`,

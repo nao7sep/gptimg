@@ -29,7 +29,3 @@ export function deobfuscate(stored: string): string {
   }
   return reverseString(decoded);
 }
-
-export function isObfuscated(stored: string): boolean {
-  return stored.startsWith(MARKER);
-}

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProfileError } from "../../src/errors.js";
 import { loadProfile } from "../../src/profile/load.js";
-import { deobfuscate, isObfuscated } from "../../src/profile/obfuscate.js";
+import { deobfuscate } from "../../src/profile/obfuscate.js";
 import { clearApiKey, setApiKey } from "../../src/profile/setApiKey.js";
 
 const POSIX = process.platform !== "win32";
@@ -149,7 +149,7 @@ describe("setApiKey / clearApiKey", () => {
     const profile = await loadProfile(file);
     expect(profile.provider).toBe("openai");
     expect(typeof profile.apiKey).toBe("string");
-    expect(isObfuscated(profile.apiKey as string)).toBe(true);
+    expect((profile.apiKey as string).startsWith("obf:")).toBe(true);
     expect(deobfuscate(profile.apiKey as string)).toBe("sk-local-created");
   });
 

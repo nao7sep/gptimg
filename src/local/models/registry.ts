@@ -30,9 +30,3 @@ export const BIREFNET: ModelEntry = {
   url: "https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/main/onnx/model_fp16.onnx",
   inputSize: 1024,
 };
-
-export const MODELS = {
-  birefnet: BIREFNET,
-} as const;
-
-export type ModelKey = keyof typeof MODELS;

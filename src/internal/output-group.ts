@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
-import { imageFileName, indexSuffix } from "./output-naming.js";
+import { indexSuffix } from "./output-naming.js";
 
 /**
  * The artifact group produced by a single `generate` or `edit` invocation:
@@ -49,18 +49,6 @@ export function sidecarPathFor(
     group.dir,
     `${group.stem}${indexSuffix(index, suffixWidth)}.${group.sidecarExt}`,
   );
-}
-
-export function plannedImagePaths(
-  group: OutputGroup,
-  count: number,
-  suffixWidth: number,
-): string[] {
-  const paths: string[] = [];
-  for (let i = 1; i <= count; i++) {
-    paths.push(path.join(group.dir, imageFileName(group.stem, i, suffixWidth, group.ext)));
-  }
-  return paths;
 }
 
 export function plannedSidecarPaths(

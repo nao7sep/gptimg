@@ -17,9 +17,3 @@ export const NetworkSchema = z
   .strict();
 
 export type NetworkPartial = z.infer<typeof NetworkSchema>;
-
-export function formatNetworkZodError(err: z.ZodError): string {
-  return err.issues
-    .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
-    .join("; ");
-}
