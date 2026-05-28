@@ -44,9 +44,6 @@ export const ChromaRecipeSchema = z
     borderSample: z.number().int().positive().optional(),
     fillHoles: z.boolean().optional(),
     strictConfidence: z.number().optional(),
-    verifyThreshold: z.number().optional(),
-    backdropInstruction: z.string().optional(),
-    verifyInstruction: z.string().optional(),
   })
   .passthrough();
 

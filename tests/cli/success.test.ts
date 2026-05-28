@@ -8,7 +8,6 @@ const sdkCalls = vi.hoisted(() => ({
   edit: vi.fn(),
   vision: vi.fn(),
   chroma: vi.fn(),
-  inspect: vi.fn(),
   setApiKey: vi.fn(),
   clearApiKey: vi.fn(),
 }));
@@ -24,7 +23,6 @@ vi.mock("../../src/gptimg.js", () => ({
     edit = sdkCalls.edit;
     vision = sdkCalls.vision;
     chroma = sdkCalls.chroma;
-    inspect = sdkCalls.inspect;
   },
 }));
 
@@ -96,7 +94,6 @@ describe("CLI success contracts", () => {
     sdkCalls.edit.mockResolvedValue({ files: [], sidecarPath: "e.json", logPath: "l.jsonl", partial: false });
     sdkCalls.vision.mockResolvedValue({ ok: true, score: 1, reasons: ["ok"], raw: {}, sidecarPath: "v.json", logPath: "l.jsonl" });
     sdkCalls.chroma.mockResolvedValue({ input: "in.png", outputs: { image: "out.png", mask: null }, stats: {}, logPath: "l.jsonl" });
-    sdkCalls.inspect.mockResolvedValue({ input: "in.png", stats: { removedFraction: 0 }, logPath: "l.jsonl" });
     sdkCalls.setApiKey.mockResolvedValue(undefined);
     sdkCalls.clearApiKey.mockResolvedValue(undefined);
   });
@@ -118,8 +115,6 @@ describe("CLI success contracts", () => {
       "--set",
       "n=1",
       "quality=low",
-      "--patch",
-      "{}",
       "--overwrite",
     ]);
 
@@ -140,7 +135,6 @@ describe("CLI success contracts", () => {
         outDir: "out",
         outName: "name",
         set: ["n=1", "quality=low"],
-        patch: "{}",
         overwrite: true,
       },
       { signal: expect.any(AbortSignal) },
@@ -224,10 +218,6 @@ describe("CLI success contracts", () => {
       "--preserve-interior",
       "--no-fill-holes",
       "--no-mask",
-      "--verify",
-      "transparent background",
-      "--verify-threshold",
-      "0.2",
     ]);
 
     expect(result.code).toBe(0);
@@ -239,38 +229,6 @@ describe("CLI success contracts", () => {
         preserveInterior: true,
         fillHoles: false,
         maskName: false,
-        verify: "transparent background",
-        verifyThreshold: 0.2,
-      }),
-      { signal: expect.any(AbortSignal) },
-    );
-  });
-
-  it("inspect emits stats and maps explicit key options", async () => {
-    const result = await run([
-      "inspect",
-      "--in",
-      "in.png",
-      "--key",
-      "#00ff00",
-      "--border-sample",
-      "8",
-      "--strict-confidence",
-      "0.5",
-    ]);
-
-    expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual({
-      input: "in.png",
-      stats: { removedFraction: 0 },
-      logPath: "l.jsonl",
-    });
-    expect(sdkCalls.inspect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        in: "in.png",
-        key: "#00ff00",
-        borderSample: 8,
-        strictConfidence: 0.5,
       }),
       { signal: expect.any(AbortSignal) },
     );
@@ -319,7 +277,6 @@ describe("CLI success contracts", () => {
         fn: sdkCalls.vision,
       },
       { name: "chroma", args: ["chroma", "--in", "in.png"], fn: sdkCalls.chroma },
-      { name: "inspect", args: ["inspect", "--in", "in.png"], fn: sdkCalls.inspect },
     ];
 
     for (const item of cases) {
@@ -354,13 +311,13 @@ describe("CLI success contracts", () => {
         "--inner-threshold: not a number",
       ],
       [
-        "bad inspect int",
-        ["inspect", "--in", "in.png", "--border-sample", "large"],
+        "bad chroma int",
+        ["chroma", "--in", "in.png", "--border-sample", "large"],
         "--border-sample: not a number",
       ],
       [
-        "bad inspect choice",
-        ["inspect", "--in", "in.png", "--metric", "rgb"],
+        "bad chroma choice",
+        ["chroma", "--in", "in.png", "--metric", "rgb"],
         "Allowed choices are lab_de76",
       ],
     ] as const;
@@ -371,6 +328,5 @@ describe("CLI success contracts", () => {
       expect(result.stderr, name).toContain(message);
     }
     expect(sdkCalls.chroma).not.toHaveBeenCalled();
-    expect(sdkCalls.inspect).not.toHaveBeenCalled();
   });
 });

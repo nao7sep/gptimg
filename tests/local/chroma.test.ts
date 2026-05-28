@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { detect } from "../../src/local/chroma/detect.js";
 import { runChroma } from "../../src/local/chroma/index.js";
-import { runInspect } from "../../src/local/inspect/index.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.resolve(HERE, "..", "fixtures");
@@ -29,12 +28,6 @@ describe("chroma: green-disk", () => {
     expect(res.stats.keySource).toBe("auto");
   });
 
-  it("produces the same stats via inspect (read-only)", async () => {
-    const det = await detect({ in: fixture("green-disk.png") });
-    const insp = await runInspect({ in: fixture("green-disk.png") });
-    expect(insp.removedFraction).toBeCloseTo(det.stats.removedFraction, 6);
-    expect(insp.regionsRemoved.length).toBe(det.stats.regionsRemoved.length);
-  });
 });
 
 describe("chroma: noisy-bg", () => {

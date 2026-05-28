@@ -17,7 +17,6 @@ import { createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
-import { applyPatch } from "../recipe/applyPatch.js";
 import { applySet } from "../recipe/applySet.js";
 import { loadRecipe } from "../recipe/load.js";
 import { validateEditSection } from "../recipe/schemas.js";
@@ -79,7 +78,6 @@ export async function editImpl(
     });
 
     let recipe = await loadRecipe(recipePath);
-    if (args.patch) recipe = applyPatch(recipe, args.patch);
     if (args.set?.length) recipe = await applySet(recipe, "edit", args.set);
     const network = await resolveNetworkForCall(profile, recipe, logger);
     const section = validateEditSection(recipe.edit);

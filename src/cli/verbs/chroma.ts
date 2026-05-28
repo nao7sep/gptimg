@@ -23,8 +23,6 @@ interface ChromaCliOpts {
   outName?: string;
   maskName?: string;
   mask?: boolean;
-  verify?: string;
-  verifyThreshold?: number;
   recipe?: string;
   log?: string;
   overwrite?: boolean;
@@ -82,12 +80,6 @@ export function registerChroma(program: Command): void {
     .option("--out-name <name>", "Output filename")
     .option("--mask-name <name>", "Mask output filename")
     .option("--no-mask", "Do not write a mask file")
-    .option("--verify <text>", "Run vision verification after chroma")
-    .option(
-      "--verify-threshold <n>",
-      "Trigger verify when removedFraction > this (default 0)",
-      parseFloatOpt("--verify-threshold"),
-    )
     .option("--recipe <path>", "Path to recipe JSON file")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite existing output files");
@@ -107,8 +99,6 @@ export function registerChroma(program: Command): void {
         outDir: opts.outDir,
         outName: opts.outName,
         maskName: opts.mask === false ? false : opts.maskName,
-        verify: opts.verify,
-        verifyThreshold: opts.verifyThreshold,
         recipe: opts.recipe,
         log: opts.log,
         overwrite: opts.overwrite,

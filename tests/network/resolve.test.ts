@@ -4,16 +4,15 @@ import { resolveNetworkConfig } from "../../src/network/resolve.js";
 
 describe("resolveNetworkConfig", () => {
   it("returns defaults when nothing is provided", () => {
-    const cfg = resolveNetworkConfig(undefined, undefined);
+    const cfg = resolveNetworkConfig(undefined);
     expect(cfg).toEqual(NETWORK_DEFAULTS);
   });
 
-  it("layers profile over defaults", () => {
-    const cfg = resolveNetworkConfig(
-      { imageGenerate: { timeout: 1234 } },
-      undefined,
-    );
-    expect(cfg.imageGenerate.timeout).toBe(1234);
+  it("recipe values override defaults per leaf", () => {
+    const cfg = resolveNetworkConfig({
+      imageGenerate: { timeout: 9999 },
+    });
+    expect(cfg.imageGenerate.timeout).toBe(9999);
     expect(cfg.imageGenerate.maxRetries).toBe(
       NETWORK_DEFAULTS.imageGenerate.maxRetries,
     );
@@ -22,25 +21,15 @@ describe("resolveNetworkConfig", () => {
     );
   });
 
-  it("recipe wins over profile (last-wins per leaf)", () => {
-    const cfg = resolveNetworkConfig(
-      { imageGenerate: { timeout: 1000, maxRetries: 5 } },
-      { imageGenerate: { timeout: 9999 } },
-    );
-    expect(cfg.imageGenerate.timeout).toBe(9999);
-    expect(cfg.imageGenerate.maxRetries).toBe(5); // not overridden by recipe
-  });
-
   it("replaces arrays rather than concatenating", () => {
-    const cfg = resolveNetworkConfig(
-      { imageGenerate: { retryIntervals: [10, 20, 30] } },
-      { imageGenerate: { retryIntervals: [99] } },
-    );
+    const cfg = resolveNetworkConfig({
+      imageGenerate: { retryIntervals: [99] },
+    });
     expect(cfg.imageGenerate.retryIntervals).toEqual([99]);
   });
 
   it("each category resolves independently", () => {
-    const cfg = resolveNetworkConfig(undefined, {
+    const cfg = resolveNetworkConfig({
       imageVision: { timeout: 1500 },
     });
     expect(cfg.imageVision.timeout).toBe(1500);
@@ -49,16 +38,13 @@ describe("resolveNetworkConfig", () => {
   });
 
   it("ignores malformed fields and falls back to defaults", () => {
-    const cfg = resolveNetworkConfig(
-      undefined,
-      {
-        imageGenerate: {
-          timeout: "not a number" as unknown as number,
-          maxRetries: -3,
-          retryIntervals: [1, "bad" as unknown as number, 3],
-        },
+    const cfg = resolveNetworkConfig({
+      imageGenerate: {
+        timeout: "not a number" as unknown as number,
+        maxRetries: -3,
+        retryIntervals: [1, "bad" as unknown as number, 3],
       },
-    );
+    });
     expect(cfg.imageGenerate.timeout).toBe(
       NETWORK_DEFAULTS.imageGenerate.timeout,
     );
@@ -71,10 +57,9 @@ describe("resolveNetworkConfig", () => {
   });
 
   it("accepts maxRetries=0 and retryIntervals=[]", () => {
-    const cfg = resolveNetworkConfig(
-      undefined,
-      { imageDownload: { maxRetries: 0, retryIntervals: [] } },
-    );
+    const cfg = resolveNetworkConfig({
+      imageDownload: { maxRetries: 0, retryIntervals: [] },
+    });
     expect(cfg.imageDownload.maxRetries).toBe(0);
     expect(cfg.imageDownload.retryIntervals).toEqual([]);
   });

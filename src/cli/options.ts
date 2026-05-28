@@ -10,8 +10,7 @@ export function addAiCommonOptions(cmd: Command): Command {
     .option(
       "--set <expr...>",
       "Override recipe values: dot.path=value (repeatable; values JSON-parsed; @file form supported)",
-    )
-    .option("--patch <json>", "Deep-merge a JSON object into the recipe");
+    );
 }
 
 /** Adds `--overwrite` for verbs that produce image outputs (generate, edit). */

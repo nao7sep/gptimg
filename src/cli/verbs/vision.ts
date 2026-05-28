@@ -13,7 +13,6 @@ interface VisionCliOpts {
   outDir?: string;
   outName?: string;
   set?: string[];
-  patch?: string;
 }
 
 export function registerVision(program: Command): void {
@@ -47,7 +46,6 @@ export function registerVision(program: Command): void {
         outDir: opts.outDir,
         outName: opts.outName,
         set: opts.set,
-        patch: opts.patch,
       },
       { signal: getAbortSignal() },
     );

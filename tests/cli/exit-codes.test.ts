@@ -193,15 +193,15 @@ describe("CLI exit codes", () => {
   });
 
   it("returns 5 for local operation errors", async () => {
-    const inspect = await run([
-      "inspect",
+    const chromaMissing = await run([
+      "chroma",
       "--in",
       path.join(tmp, "missing.png"),
       "--log",
-      path.join(tmp, "inspect.log"),
+      path.join(tmp, "chroma-missing.log"),
     ]);
-    expect(inspect.code).toBe(5);
-    expect(parseError(inspect.stderr).error.type).toBe("localOp");
+    expect(chromaMissing.code).toBe(5);
+    expect(parseError(chromaMissing.stderr).error.type).toBe("localOp");
 
     const edit = await run([
       "edit",
@@ -256,7 +256,7 @@ describe("CLI exit codes", () => {
     const logDir = path.join(tmp, "log-dir");
     await mkdir(logDir);
     const badLog = await run([
-      "inspect",
+      "chroma",
       "--in",
       fixture("green-disk.png"),
       "--log",

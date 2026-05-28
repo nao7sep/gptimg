@@ -29,10 +29,10 @@ describe("SDK abort errors", () => {
     ctrl.abort(new Error("stop"));
 
     await expect(
-      sdk.inspect(
+      sdk.chroma(
         {
           in: fixture("green-disk.png"),
-          log: path.join(tmp, "inspect.log"),
+          log: path.join(tmp, "chroma.log"),
         },
         { signal: ctrl.signal },
       ),
@@ -44,10 +44,10 @@ describe("SDK abort errors", () => {
     });
 
     await expect(
-      sdk.inspect(
+      sdk.chroma(
         {
           in: fixture("green-disk.png"),
-          log: path.join(tmp, "inspect-2.log"),
+          log: path.join(tmp, "chroma-2.log"),
         },
         { signal: ctrl.signal },
       ),

@@ -16,11 +16,9 @@ import { createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
-import { applyPatch } from "../recipe/applyPatch.js";
 import { applySet } from "../recipe/applySet.js";
 import { loadRecipe } from "../recipe/load.js";
 import { validateChromaSection, validateGenerateSection } from "../recipe/schemas.js";
-import { CHROMA_BACKDROP_INSTRUCTION } from "../local/chroma/defaults.js";
 import { writeSidecar } from "../sidecar/write.js";
 import { nullBase64InResponse } from "../sidecar/nullBase64.js";
 import { getProvider } from "../providers/index.js";
@@ -46,10 +44,6 @@ export interface GenerateContext {
   logDir: string;
 }
 
-function renderBackdropInstruction(template: string, color: string): string {
-  return template.replace(/\{color\}/g, color);
-}
-
 export async function generateImpl(
   ctx: GenerateContext,
   args: GenerateArgs,
@@ -71,22 +65,16 @@ export async function generateImpl(
     });
 
     let recipe = await loadRecipe(recipePath);
-    if (args.patch) recipe = applyPatch(recipe, args.patch);
     if (args.set?.length) recipe = await applySet(recipe, "generate", args.set);
     const network = await resolveNetworkForCall(profile, recipe, logger);
     const section = validateGenerateSection(recipe.generate);
     const chromaSection = validateChromaSection(recipe.chroma);
 
     const params: Record<string, unknown> = { ...section };
-    let promptToSend = args.prompt;
     const chromaColor =
       typeof chromaSection.color === "string" && chromaSection.color.length > 0
         ? chromaSection.color
         : null;
-    if (chromaColor) {
-      const template = chromaSection.backdropInstruction ?? CHROMA_BACKDROP_INSTRUCTION;
-      promptToSend = `${args.prompt}${renderBackdropInstruction(template, chromaColor)}`;
-    }
 
     const n = typeof section.n === "number" && section.n > 0 ? section.n : 1;
     await logger.info("request", "calling provider.generate", {
@@ -97,7 +85,7 @@ export async function generateImpl(
 
     const provider = getProvider(profile.provider);
     const providerResult = await provider.generate({
-      prompt: promptToSend,
+      prompt: args.prompt,
       params,
       profile: resolved,
       network: {
@@ -195,7 +183,7 @@ export async function generateImpl(
 
     const requestRecord: Record<string, unknown> = {
       ...params,
-      prompt: promptToSend,
+      prompt: args.prompt,
       n,
     };
     if (chromaColor) requestRecord.chroma = { color: chromaColor };

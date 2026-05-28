@@ -10,7 +10,6 @@ import {
 import { loadProfile } from "./profile/load.js";
 import { resolveProfile } from "./profile/resolve.js";
 import { clearApiKey, setApiKey } from "./profile/setApiKey.js";
-import { applyPatch } from "./recipe/applyPatch.js";
 import { applySet } from "./recipe/applySet.js";
 import { loadRecipe } from "./recipe/load.js";
 import { mergeRecipes } from "./recipe/merge.js";
@@ -29,15 +28,12 @@ import type {
   GenerateArgs,
   GenerateResult,
   GptImgOptions,
-  InspectArgs,
-  InspectResult,
   VisionArgs,
   VisionResult,
 } from "./types.js";
 import { chromaImpl } from "./verbs/chroma.js";
 import { editImpl } from "./verbs/edit.js";
 import { generateImpl } from "./verbs/generate.js";
-import { inspectImpl } from "./verbs/inspect.js";
 import type { VerbCallOptions } from "./verbs/options.js";
 import { visionImpl } from "./verbs/vision.js";
 
@@ -58,7 +54,6 @@ export class GptImg {
     load: loadRecipe,
     merge: mergeRecipes,
     applySet,
-    applyPatch,
   };
 
   readonly sidecar = {
@@ -111,9 +106,5 @@ export class GptImg {
 
   chroma(args: ChromaArgs, opts?: VerbCallOptions): Promise<ChromaResult> {
     return chromaImpl(this.ctx, args, opts);
-  }
-
-  inspect(args: InspectArgs, opts?: VerbCallOptions): Promise<InspectResult> {
-    return inspectImpl(this.ctx, args, opts);
   }
 }

@@ -35,7 +35,6 @@ Each successful image-producing call writes durable artifacts:
 | sidecar JSON | Resolved request, redacted provider response, output file hashes |
 | JSONL log | Stage-by-stage trace for debugging |
 | mask PNG | Chroma removal mask |
-| verify preview | Checkerboard preview used for vision checks |
 
 The SDK returns structured objects and never writes to stdout/stderr. Every SDK method accepts `{ signal?: AbortSignal }` as a second argument.
 
@@ -50,7 +49,7 @@ The SDK returns structured objects and never writes to stdout/stderr. Every SDK 
 - Treat `partial: true` from `generate` or `edit` as recoverable when at least one file was written.
 - Prefer recipes for stable project defaults and `--set` for task-specific overrides.
 - Keep network overrides under `network.imageGenerate`, `network.imageVision`, or `network.imageDownload`; network config is strict and typo-sensitive.
-- Use `vision` for semantic quality checks and `inspect` for chroma-region decisions.
+- Use `vision` for any semantic quality check, including on a chroma output.
 
 ## Generate And Verify
 
@@ -132,54 +131,33 @@ Definitions:
 - `preserveInterior: false` (default): every key-colored pixel becomes transparent — including interior pockets like donut holes or hair gaps.
 - `preserveInterior: true`: border-connected key regions become transparent; interior key-colored regions stay opaque with their original color.
 - `touchesBorder: false`: an interior candidate region; this may be a background hole or accidental subject content.
-- `subjectKeyCollisionRisk: true`: key-like pixels remain outside the accepted background. This is a warning to inspect, not an automatic failure.
+- `subjectKeyCollisionRisk: true`: key-like pixels remain outside the accepted background. This is a warning to review, not an automatic failure.
 
 ### Interior-Preservation Workflow
 
 Use `--preserve-interior` when the subject legitimately contains key-colored regions: donut holes you want to keep, a rainbow stamp with green segments, a green tie surrounded by non-green clothing.
 
 1. Keep the original image as source of truth.
-2. Inspect the original with `--preserve-interior` to see which interior regions would be preserved.
-3. Inspect the original without `--preserve-interior` to see the aggressive (default) accounting.
-4. Decide which behavior fits the subject.
-5. Run `chroma` with the matching flag on the original.
-6. Verify the final output with local alpha checks, final inspect, and a checkerboard preview.
+2. Decide which behavior fits the subject (default removal vs. preserve interior).
+3. Run `chroma` with the matching flag on the original.
+4. Verify the final output with `vision` against the criterion that matters.
 
 Example:
 
 ```sh
-gptimg inspect \
-  --in donut-original.png \
-  --key from-sidecar \
-  --preserve-interior \
-  > 01-inspect-preserve.json
-
-gptimg inspect \
-  --in donut-original.png \
-  --key from-sidecar \
-  > 02-inspect-aggressive.json
-
 gptimg chroma \
   --in donut-original.png \
   --key from-sidecar \
   --preserve-interior \
   --out-name donut-final.png \
   --mask-name donut-final-mask.png \
-  --verify "background is transparent; the donut hole stays opaque; subject edges are smooth" \
-  > 03-chroma-final.json
+  > 01-chroma-final.json
 
-gptimg inspect \
+gptimg vision \
   --in donut-final.png \
-  --key '#00ff00' \
-  > 04-inspect-final.json
+  --check "background is transparent; the donut hole stays opaque; subject edges are smooth" \
+  > 02-vision-final.json
 ```
-
-Expected final checks:
-
-- `03-chroma-final.json.alphaVerify.ok === true`
-- `03-chroma-final.json.verify.ok === true`, when `--verify` is used
-- `04-inspect-final.json.stats.removedPixels === 0` for the explicit key
-- no visible green halo in the verify preview
 
 ### Do Not Chain Settings Through Chroma Outputs
 
@@ -189,13 +167,7 @@ Do not use an already background-removed image as the final source for a new str
 
 ## Verification Loops
 
-Use both local and semantic checks:
-
-- `inspect` answers: are key-colored regions still present?
-- local `alphaVerify` answers: is the alpha structure plausible?
-- `vision` answers: does the subject still look correct?
-
-Good chroma verification prompt:
+Use `vision` for any semantic check on a chroma output. Good chroma verification prompt:
 
 ```text
 The subject has a fully transparent background, including intended holes. The subject remains intact, colored details are preserved, and edges are smooth without visible key-color halos or cut-out damage.
@@ -244,7 +216,6 @@ gptimg generate "logo" \
 
 Scoping rules:
 
-- `--patch` deep-merges a JSON object at the recipe root.
 - Bare `--set size=1024x1024` applies to the current verb section.
 - `--set network.imageGenerate.timeout=...` applies at the recipe root.
 - `network` is strict: unknown categories and unknown budget fields fail before the provider call.
@@ -257,14 +228,14 @@ A skill that wraps `gptimg` should:
 - Save each command's stdout JSON to a file next to the artifacts.
 - Keep original inputs and generated originals.
 - Use deterministic artifact names such as `01-generate.json`, `subject-original.png`, `subject-final.png`.
-- Parse `files`, `sidecarPath`, `logPath`, `partial`, `stats`, `alphaVerify`, and `verify` from stdout JSON.
+- Parse `files`, `sidecarPath`, `logPath`, `partial`, and `stats` from stdout JSON.
 - Treat `subjectKeyCollisionRisk` and interior `touchesBorder: false` regions as review points.
-- Prefer final chroma renders from the original image after inspection, not from diagnostic intermediates.
-- Use `vision` on checkerboard previews for final visual quality.
+- Prefer final chroma renders from the original image, not from diagnostic intermediates.
+- Use `vision` on chroma outputs for final visual quality.
 - Escalate to the user when interior key-like regions overlap plausible subject content.
 
 Minimal skill prompt snippet:
 
 ```text
-Use gptimg artifacts as durable state. Keep original images. Before chroma removal, inspect the original. If the subject has interior key-colored content that must be kept (donut hole, intentional green segment), use `--preserve-interior`; otherwise the default removes all key-colored pixels. When changing chroma settings, rerun from the original image. Do not use already background-removed intermediates as final sources. Verify final outputs with inspect and vision.
+Use gptimg artifacts as durable state. Keep original images. If the subject has interior key-colored content that must be kept (donut hole, intentional green segment), use `--preserve-interior`; otherwise the default removes all key-colored pixels. When changing chroma settings, rerun from the original image. Do not use already background-removed intermediates as final sources. Verify final outputs with vision.
 ```

@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { RecipeError } from "../../src/errors.js";
-import { applyPatch } from "../../src/recipe/applyPatch.js";
 import { mergeRecipes } from "../../src/recipe/merge.js";
 import type { Recipe } from "../../src/types.js";
 
@@ -49,54 +47,3 @@ describe("mergeRecipes", () => {
   });
 });
 
-describe("applyPatch", () => {
-  it("deep-merges a JSON string into the recipe", () => {
-    const base: Recipe = { generate: { size: "old", n: 1 } };
-    const out = applyPatch(base, '{"generate":{"size":"new"}}');
-    expect(out.generate?.size).toBe("new");
-    expect(out.generate?.n).toBe(1);
-  });
-
-  it("deep-merges nested objects without mutating the base recipe", () => {
-    const base: Recipe = {
-      generate: {
-        network: {
-          imageGenerate: {
-            timeout: 1000,
-            retryIntervals: [1, 2],
-          },
-        },
-      },
-    };
-    const snapshot = JSON.stringify(base);
-
-    const out = applyPatch(
-      base,
-      '{"generate":{"network":{"imageGenerate":{"maxRetries":4}}}}',
-    );
-
-    expect(out.generate?.network).toEqual({
-      imageGenerate: {
-        timeout: 1000,
-        retryIntervals: [1, 2],
-        maxRetries: 4,
-      },
-    });
-    expect(JSON.stringify(base)).toBe(snapshot);
-  });
-
-  it("throws on invalid JSON", () => {
-    expect(() => applyPatch({}, "{not-json")).toThrow(RecipeError);
-    try {
-      applyPatch({}, "{not-json");
-    } catch (err) {
-      expect((err as RecipeError).code).toBe("patch.invalidJson");
-    }
-  });
-
-  it("throws when the patch is not a JSON object", () => {
-    expect(() => applyPatch({}, "[1,2,3]")).toThrow(RecipeError);
-    expect(() => applyPatch({}, "null")).toThrow(RecipeError);
-    expect(() => applyPatch({}, '"string"')).toThrow(RecipeError);
-  });
-});

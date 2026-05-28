@@ -6,9 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hash } from "../../src/image/hash.js";
 import { detect } from "../../src/local/chroma/detect.js";
-import { GptImg } from "../../src/gptimg.js";
 import { runChroma } from "../../src/local/chroma/index.js";
-import { runInspect } from "../../src/local/inspect/index.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.resolve(HERE, "..", "fixtures");
@@ -65,36 +63,6 @@ describe("chroma option paths", () => {
       errorType: "localOp",
       code: "image.decodeFailed",
     });
-  });
-
-  it("runInspect is read-only", async () => {
-    const input = path.join(tmp, "in.png");
-    await copyFile(fixture("green-disk.png"), input);
-
-    const stats = await runInspect({ in: input });
-
-    expect(stats.removedFraction).toBeGreaterThan(0.75);
-    expect(existsSync(path.join(tmp, "in-chroma.png"))).toBe(false);
-    expect(existsSync(path.join(tmp, "in-mask.png"))).toBe(false);
-  });
-
-  it("SDK inspect writes stats to its log", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: path.join(tmp, "logs") });
-    const input = path.join(tmp, "inspect-input.png");
-    await copyFile(fixture("green-disk.png"), input);
-
-    const result = await sdk.inspect({ in: input });
-
-    const entries = (await readFile(result.logPath, "utf-8"))
-      .trimEnd()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { stage: string; data?: unknown });
-    expect(entries).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ stage: "resolve" }),
-        expect.objectContaining({ stage: "stats" }),
-      ]),
-    );
   });
 
   it("writes custom output names without modifying the original input", async () => {

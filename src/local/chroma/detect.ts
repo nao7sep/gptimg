@@ -6,7 +6,6 @@ import type {
   ChromaArgs,
   ChromaRegionSummary,
   ChromaStats,
-  InspectArgs,
 } from "../../types.js";
 import {
   distanceMap,
@@ -57,10 +56,6 @@ export interface DetectionResult {
   accepted: Uint8Array;
   keyResolution: KeyResolution;
   stats: ChromaStats;
-}
-
-function isChromaArgsInput(x: DetectionInput | InspectArgs): x is DetectionInput {
-  return true;
 }
 
 async function loadKeyFromSidecar(inputPath: string): Promise<string> {
@@ -137,9 +132,6 @@ export async function detect(
   opts: { signal?: AbortSignal | undefined } = {},
 ): Promise<DetectionResult> {
   const { signal } = opts;
-  if (!isChromaArgsInput(args)) {
-    throw new LocalOpError("image.formatUnknown", "Invalid detection input");
-  }
   const preserveInterior = args.preserveInterior ?? CHROMA_DEFAULTS.preserveInterior;
   const innerThreshold = args.innerThreshold ?? CHROMA_DEFAULTS.innerThreshold;
   const borderSample = args.borderSample ?? CHROMA_DEFAULTS.borderSample;

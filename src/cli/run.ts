@@ -6,7 +6,6 @@ import { registerGenerate } from "./verbs/generate.js";
 import { registerEdit } from "./verbs/edit.js";
 import { registerVision } from "./verbs/vision.js";
 import { registerChroma } from "./verbs/chroma.js";
-import { registerInspect } from "./verbs/inspect.js";
 import { registerProfile } from "./verbs/profile.js";
 
 export function createProgram(): Command {
@@ -24,7 +23,6 @@ export function createProgram(): Command {
   registerEdit(program);
   registerVision(program);
   registerChroma(program);
-  registerInspect(program);
   registerProfile(program);
 
   return program;

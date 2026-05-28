@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { NetworkSchema } from "../network/schema.js";
 
 export const ProfileSchema = z
   .object({
@@ -8,7 +7,6 @@ export const ProfileSchema = z
     apiKeyEnv: z.string().optional(),
     organization: z.string().optional(),
     project: z.string().optional(),
-    network: NetworkSchema.optional(),
   })
   .strict();
 

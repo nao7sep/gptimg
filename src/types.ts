@@ -4,8 +4,6 @@ export interface Profile {
   apiKeyEnv?: string;
   organization?: string;
   project?: string;
-  /** Per-category network budgets. See src/network/defaults.ts. */
-  network?: Record<string, unknown>;
 }
 
 export interface ResolvedProfile {
@@ -49,11 +47,6 @@ export interface ChromaRecipe {
   borderSample?: number;
   fillHoles?: boolean;
   strictConfidence?: number;
-  verifyThreshold?: number;
-  /** Suffix appended to the user's generate prompt. `{color}` is replaced with the resolved key. */
-  backdropInstruction?: string;
-  /** Suffix appended to the user's `--verify` text when chroma triggers a vision check. */
-  verifyInstruction?: string;
   [key: string]: unknown;
 }
 
@@ -91,7 +84,7 @@ export type LogStage =
   | "retry"
   | "cancelled"
   | "error";
-export type LogVerb = "generate" | "edit" | "vision" | "chroma" | "inspect";
+export type LogVerb = "generate" | "edit" | "vision" | "chroma";
 
 export interface LogEntry {
   ts: string;
@@ -122,7 +115,6 @@ export interface GenerateArgs {
   recipe?: string;
   log?: string;
   set?: string[];
-  patch?: string;
   overwrite?: boolean;
 }
 
@@ -147,7 +139,6 @@ export interface VisionArgs {
   recipe?: string;
   log?: string;
   set?: string[];
-  patch?: string;
   outDir?: string;
   outName?: string;
 }
@@ -193,23 +184,6 @@ export interface ChromaStats {
   };
 }
 
-export interface ChromaAlphaVerifyMetrics {
-  transparentComponentCount: number;
-  borderTransparentArea: number;
-  interiorTransparentArea: number;
-  partialAlphaPixels: number;
-  boundaryPixels: number;
-  boundaryKeyDominantPixels: number;
-  boundaryKeyDominantRatio: number;
-}
-
-export interface ChromaAlphaVerifyResult {
-  ok: boolean;
-  score: number;
-  reasons: string[];
-  metrics: ChromaAlphaVerifyMetrics;
-}
-
 export interface ChromaArgs {
   in: string;
   /** When true, keep interior key-colored regions opaque (donut hole, intentional green subject content). */
@@ -225,8 +199,6 @@ export interface ChromaArgs {
   outName?: string;
   /** Mask filename, or `false` to disable mask output. */
   maskName?: string | false;
-  verify?: string;
-  verifyThreshold?: number;
   recipe?: string;
   log?: string;
   overwrite?: boolean;
@@ -238,27 +210,6 @@ export interface ChromaResult {
     image: string;
     mask: string | null;
   };
-  stats: ChromaStats;
-  alphaVerify?: ChromaAlphaVerifyResult;
-  verify?: VisionResult & { previewPath?: string };
-  logPath: string;
-}
-
-export type InspectArgs = Pick<
-  ChromaArgs,
-  | "in"
-  | "preserveInterior"
-  | "key"
-  | "innerThreshold"
-  | "metric"
-  | "borderSample"
-  | "strictConfidence"
-  | "recipe"
-  | "log"
->;
-
-export interface InspectResult {
-  input: string;
   stats: ChromaStats;
   logPath: string;
 }

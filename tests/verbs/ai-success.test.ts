@@ -94,8 +94,12 @@ describe("AI verb implementations with mocked provider", () => {
         prompt: "a green disk",
         outDir,
         outName: "gen",
-        patch: '{"generate":{"quality":"low"},"chroma":{"color":"#00ff00"}}',
-        set: ["n=2", "model=param-model"],
+        set: [
+          "generate.quality=low",
+          "chroma.color=#00ff00",
+          "n=2",
+          "model=param-model",
+        ],
       });
 
       expect(stdout).not.toHaveBeenCalled();
@@ -120,8 +124,7 @@ describe("AI verb implementations with mocked provider", () => {
       });
       expect(call?.params).not.toHaveProperty("chromaKey");
       expect(call?.params).not.toHaveProperty("chroma");
-      expect(call?.prompt).toContain("a green disk");
-      expect(call?.prompt).toContain("solid #00ff00 chroma-key background");
+      expect(call?.prompt).toBe("a green disk");
 
       const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as {
         request: Record<string, unknown>;
@@ -147,7 +150,7 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("generate layers recipe file, patch, and set with a custom profile path", async () => {
+  it("generate layers recipe file and --set with a custom profile path", async () => {
     const profilePath = path.join(tmp, "custom-profile.json");
     const recipePath = path.join(tmp, "recipe.json");
     await writeFile(
@@ -180,7 +183,6 @@ describe("AI verb implementations with mocked provider", () => {
       recipe: recipePath,
       outDir: path.join(tmp, "layered-out"),
       outName: "layered",
-      patch: '{"generate":{"quality":"patch-quality","n":2}}',
       set: ["quality=set-quality", "n=3", "edit.size=set-edit-size"],
     });
 
@@ -336,8 +338,7 @@ describe("AI verb implementations with mocked provider", () => {
       recipe,
       outDir: path.join(tmp, "recipe-edit-out"),
       outName: "recipe-edit",
-      patch: '{"edit":{"n":2}}',
-      set: ["size=edit-from-set"],
+      set: ["size=edit-from-set", "n=2"],
     });
 
     const call = providerCalls.edit.mock.calls[0]?.[0];
@@ -690,60 +691,4 @@ describe("AI verb implementations with mocked provider", () => {
     });
   });
 
-  it("chroma verify runs only when the removed fraction exceeds the threshold", async () => {
-    const input = path.join(tmp, "chroma-input.png");
-    await copyFile(fixture("green-disk.png"), input);
-    providerCalls.vision.mockResolvedValue({
-      raw: {},
-      verdict: { ok: true, score: 1, reasons: ["verified"] },
-    });
-
-    const verified = await sdk.chroma({
-      in: input,
-      outDir: path.join(tmp, "chroma-verify"),
-      outName: "verified.png",
-      maskName: false,
-      verify: "background removed",
-      verifyThreshold: 0.1,
-    });
-
-    expect(verified.verify).toMatchObject({ ok: true, score: 1 });
-    expect(verified.alphaVerify?.metrics.borderTransparentArea).toBeGreaterThan(0);
-    expect(verified.verify?.logPath).toBe(verified.logPath);
-    expect(verified.verify?.sidecarPath).toBe(
-      path.join(tmp, "chroma-verify", "verified-verify.json"),
-    );
-    expect(verified.verify?.previewPath).toBe(
-      path.join(tmp, "chroma-verify", "verified-verify-preview.png"),
-    );
-    expect(providerCalls.vision.mock.calls[0]?.[0].images[0]).toEqual(
-      expect.objectContaining({ format: "png" }),
-    );
-    const sharedLog = lines(await readFile(verified.logPath, "utf-8"));
-    expect(sharedLog).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ verb: "chroma", stage: "request" }),
-        expect.objectContaining({
-          verb: "chroma",
-          stage: "stats",
-          msg: "local alpha verification complete",
-        }),
-        expect.objectContaining({ verb: "vision", stage: "request" }),
-        expect.objectContaining({ verb: "vision", stage: "response" }),
-      ]),
-    );
-    expect(providerCalls.vision).toHaveBeenCalledTimes(1);
-
-    const skipped = await sdk.chroma({
-      in: input,
-      outDir: path.join(tmp, "chroma-verify"),
-      outName: "skipped.png",
-      maskName: false,
-      verify: "background removed",
-      verifyThreshold: 1,
-    });
-
-    expect(skipped.verify).toBeUndefined();
-    expect(providerCalls.vision).toHaveBeenCalledTimes(1);
-  });
 });

@@ -23,8 +23,6 @@ export type {
   GenerateRecipe,
   GenerateResult,
   GptImgOptions,
-  InspectArgs,
-  InspectResult,
   LogEntry,
   LogHandle,
   LogLevel,

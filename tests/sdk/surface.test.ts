@@ -40,9 +40,6 @@ describe("GptImg SDK surface", () => {
     expect(sdk.recipe.merge({}, { vision: { shrink: { width: 1, height: 1 } } })).toEqual({
       vision: { shrink: { width: 1, height: 1 } },
     });
-    expect(sdk.recipe.applyPatch({}, '{"edit":{"size":"1024x1024"}}')).toEqual({
-      edit: { size: "1024x1024" },
-    });
 
     expect(typeof sdk.sidecar.read).toBe("function");
     expect(typeof sdk.sidecar.write).toBe("function");

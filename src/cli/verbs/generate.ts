@@ -11,7 +11,6 @@ interface GenerateCliOpts {
   outDir?: string;
   outName?: string;
   set?: string[];
-  patch?: string;
   overwrite?: boolean;
 }
 
@@ -35,7 +34,6 @@ export function registerGenerate(program: Command): void {
         outDir: opts.outDir,
         outName: opts.outName,
         set: opts.set,
-        patch: opts.patch,
         overwrite: opts.overwrite,
       },
       { signal: getAbortSignal() },

@@ -1,20 +1,9 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProfileError, RecipeError } from "../../src/errors.js";
-import type { Logger } from "../../src/log/index.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { RecipeError } from "../../src/errors.js";
 import { NETWORK_DEFAULTS, fetchWithBudget, resolveNetworkForCall } from "../../src/network/index.js";
 import { NetworkSchema, formatNetworkZodError } from "../../src/network/schema.js";
-
-function testLogger(): Logger {
-  return {
-    handle: { path: "test.log", verb: "generate" },
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    close: vi.fn(),
-  };
-}
 
 function listen(
   handler: http.RequestListener,
@@ -29,20 +18,7 @@ function listen(
 }
 
 describe("resolveNetworkForCall", () => {
-  it("rejects invalid profile.network values", async () => {
-    await expect(
-      resolveNetworkForCall(
-        {
-          provider: "openai",
-          apiKey: "sk-test",
-          network: { imageGenerate: { timeout: "slow" } },
-        },
-        undefined,
-      ),
-    ).rejects.toBeInstanceOf(ProfileError);
-  });
-
-  it("rejects invalid recipe.network values after overrides", async () => {
+  it("rejects invalid recipe.network values", async () => {
     for (const [name, recipe] of [
       [
         "unknown category",
@@ -67,20 +43,12 @@ describe("resolveNetworkForCall", () => {
     }
   });
 
-  it("does not log deprecation warnings for current profile shapes", async () => {
-    const logger = testLogger();
-
-    await resolveNetworkForCall(
-      {
-        provider: "openai",
-        apiKey: "sk-test",
-        network: { imageGenerate: { timeout: 1234 } },
-      },
+  it("returns defaults when no recipe.network is provided", async () => {
+    const cfg = await resolveNetworkForCall(
+      { provider: "openai", apiKey: "sk-test" },
       undefined,
-      logger,
     );
-
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(cfg).toEqual(NETWORK_DEFAULTS);
   });
 });
 

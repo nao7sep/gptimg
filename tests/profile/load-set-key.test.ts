@@ -29,7 +29,6 @@ describe("loadProfile", () => {
         provider: "openai",
         organization: "org-local",
         project: "proj-local",
-        network: { imageGenerate: { timeout: 1000 } },
       }) + "\n",
     );
 
@@ -37,7 +36,6 @@ describe("loadProfile", () => {
       provider: "openai",
       organization: "org-local",
       project: "proj-local",
-      network: { imageGenerate: { timeout: 1000 } },
     });
   });
 
@@ -59,13 +57,9 @@ describe("loadProfile", () => {
       ["missing-provider", {}],
       ["empty-provider", { provider: "" }],
       ["unknown-field", { provider: "openai", model: "gpt-image-2" }],
+      ["legacy-network-field", { provider: "openai", network: { imageGenerate: { timeout: 1000 } } }],
       ["legacy-timeout", { provider: "openai", timeout: 1234 }],
       ["legacy-max-retries", { provider: "openai", maxRetries: 4 }],
-      ["unknown-network-category", { provider: "openai", network: { typo: {} } }],
-      [
-        "unknown-network-field",
-        { provider: "openai", network: { imageGenerate: { retryInterval: 1000 } } },
-      ],
     ]) {
       const file = path.join(tmp, `${name}.json`);
       await writeFile(file, JSON.stringify(value));
@@ -168,7 +162,6 @@ describe("setApiKey / clearApiKey", () => {
         apiKeyEnv: "GPTIMG_TEST_KEY",
         organization: "org-local",
         project: "proj-local",
-        network: { imageGenerate: { timeout: 1000 } },
       }) + "\n",
     );
 
@@ -182,14 +175,12 @@ describe("setApiKey / clearApiKey", () => {
       apiKeyEnv: string;
       organization: string;
       project: string;
-      network: unknown;
     };
     expect(profile).toMatchObject({
       provider: "openai",
       apiKeyEnv: "GPTIMG_TEST_KEY",
       organization: "org-local",
       project: "proj-local",
-      network: { imageGenerate: { timeout: 1000 } },
     });
     expect(deobfuscate(profile.apiKey)).toBe("sk-local-secret");
   });

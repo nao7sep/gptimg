@@ -31,30 +31,26 @@ function pickBudget(input: unknown): Partial<NetworkBudget> {
 
 function mergeBudget(
   recipe: Partial<NetworkBudget>,
-  profile: Partial<NetworkBudget>,
   defaults: NetworkBudget,
 ): NetworkBudget {
   return {
-    timeout: recipe.timeout ?? profile.timeout ?? defaults.timeout,
-    maxRetries: recipe.maxRetries ?? profile.maxRetries ?? defaults.maxRetries,
-    retryIntervals:
-      recipe.retryIntervals ?? profile.retryIntervals ?? defaults.retryIntervals,
+    timeout: recipe.timeout ?? defaults.timeout,
+    maxRetries: recipe.maxRetries ?? defaults.maxRetries,
+    retryIntervals: recipe.retryIntervals ?? defaults.retryIntervals,
   };
 }
 
 /**
- * Resolve the final network config by layering: code defaults < profile.network <
- * recipe.network. The last-defined value of each leaf wins (no array merging).
+ * Resolve the final network config by layering code defaults with recipe.network.
+ * The recipe value of each leaf wins when present (no array merging).
  */
 export function resolveNetworkConfig(
-  profileNetwork: NetworkPartial | undefined,
   recipeNetwork: NetworkPartial | undefined,
 ): NetworkConfig {
   const out = {} as NetworkConfig;
   for (const name of NETWORK_BUDGET_NAMES) {
     const recipeBudget = recipeNetwork ? pickBudget(recipeNetwork[name]) : {};
-    const profileBudget = profileNetwork ? pickBudget(profileNetwork[name]) : {};
-    out[name] = mergeBudget(recipeBudget, profileBudget, NETWORK_DEFAULTS[name]);
+    out[name] = mergeBudget(recipeBudget, NETWORK_DEFAULTS[name]);
   }
   return out;
 }

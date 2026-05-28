@@ -16,7 +16,6 @@ Core operating rules:
 - Keep the original generated or input image. Treat chroma outputs as derived artifacts.
 - Use task-specific `--out-dir` / `--out-name` values. Use `--overwrite` only when intentionally replacing an artifact group.
 - Treat `partial: true` from `generate` / `edit` as recoverable when at least one file was written.
-- Run `inspect` before destructive chroma removal when subject content may contain key-like colors.
 - For subjects with intentional interior key-colored content (donut hole, green segment, green clothing surrounded by non-green), pass `--preserve-interior` to keep those regions opaque.
 - When changing chroma key, threshold, `--preserve-interior`, or fill strategy, rerun from the original image. Do not use an already background-removed image as the final source unless intentionally experimenting.
 
@@ -90,17 +89,15 @@ gptimg edit "remove the background" --in input.png --out-dir ./out --out-name ed
 Chroma workflow for subjects with intentional key-colored content (donut holes, green segments of a rainbow stamp, a green tie):
 
 ```sh
-# Inspect first to see which interior regions would be affected.
-gptimg inspect --in donut-original.png --key from-sidecar --preserve-interior
-
 # Run chroma with --preserve-interior to keep interior key-colored regions
 # opaque. Without the flag, all key-colored pixels become transparent.
 gptimg chroma \
   --in donut-original.png \
   --key from-sidecar \
-  --preserve-interior \
-  --verify "background is transparent; the donut hole stays opaque; subject edges are smooth"
+  --preserve-interior
 ```
+
+To check the result, run `gptimg vision` against the output with whatever criterion you care about.
 
 ## CLI Reference
 
@@ -115,9 +112,9 @@ gptimg generate "logo" \
 
 Outputs `<stem>.<ext>` for one image, or indexed filenames such as `<stem>-1.png` / `<stem>-01.png` when multiple images are written. A `<stem>.json` sidecar captures the resolved request and provider response with base64 image fields nulled.
 
-The artifact group for a single `generate`/`edit` invocation is `<stem>.<ext>` plus `<stem>-<digits>.<ext>` siblings plus the `<stem>.json` sidecar in `--out-dir`. Without `--overwrite`, any existing group member blocks with `output.exists`. With `--overwrite`, the run will replace only the files it plans to write; if prior-run group members exist that the new plan would *not* replace (for example, `<stem>-01.png` … `<stem>-10.png` left over from `n=10` when the new run uses `n=2`), the command halts with `output.staleSiblings` rather than silently leaving orphans behind a sidecar that no longer describes them. Delete the listed files or pick a fresh `--out-name`. Chroma-derived siblings (`<stem>-mask.png`, `<stem>-chroma.png`, `<stem>-verify-preview.png`) are not part of the generate/edit group and are never touched by this check.
+The artifact group for a single `generate`/`edit` invocation is `<stem>.<ext>` plus `<stem>-<digits>.<ext>` siblings plus the `<stem>.json` sidecar in `--out-dir`. Without `--overwrite`, any existing group member blocks with `output.exists`. With `--overwrite`, the run will replace only the files it plans to write; if prior-run group members exist that the new plan would *not* replace (for example, `<stem>-01.png` … `<stem>-10.png` left over from `n=10` when the new run uses `n=2`), the command halts with `output.staleSiblings` rather than silently leaving orphans behind a sidecar that no longer describes them. Delete the listed files or pick a fresh `--out-name`. Chroma-derived siblings (`<stem>-mask.png`, `<stem>-chroma.png`) are not part of the generate/edit group and are never touched by this check.
 
-If `recipe.chroma.color` is set, `generate` appends the configured chroma backdrop instruction to the prompt and records the color in the sidecar so later `chroma --key from-sidecar` can reuse it.
+If `recipe.chroma.color` is set, `generate` records the color in the sidecar so later `chroma --key from-sidecar` can reuse it.
 
 ### `edit`
 
@@ -152,19 +149,11 @@ gptimg chroma --in image.png --key from-sidecar
 gptimg chroma --in donut.png --preserve-interior
 ```
 
-Local only; no API call unless `--verify` is provided.
+Local only; no API call.
 
 Algorithm: the chroma background is detected with a Gaussian color model in LAB and per-pixel α is derived from the linear-RGB spill ratio `α = 1 − spill / key_strength`, where `spill = max(0, key_channel − max(other_channels))`. A pure-key pixel is fully transparent regardless of where it sits. For partial-α pixels the foreground color is inpainted by iterated dilation from confirmed-opaque pixels, so edges fade as the real subject color rather than as a dark Vlahos clip or a green halo.
 
 By default, every key-colored pixel becomes transparent — including interior regions like donut holes or intentional green subject content. Pass `--preserve-interior` to force interior key-colored regions to stay opaque. Border-connected key regions are always removed.
-
-### `inspect`
-
-```sh
-gptimg inspect --in image.png --key from-sidecar
-```
-
-Runs the chroma detection pipeline without writing images. Use it to decide whether removal is safe and which regions would be affected. Pass `--preserve-interior` to mirror the chroma run's region accounting.
 
 ## SDK
 
@@ -220,11 +209,9 @@ Key defaults and overrides:
 | Vision system prompt | `src/providers/openai/defaults.ts` | `recipe.vision.systemPrompt` |
 | Vision shrink target | `src/verbs/defaults.ts` | `recipe.vision.shrink` |
 | Chroma options | `src/local/chroma/defaults.ts` | `recipe.chroma.*` or chroma CLI/SDK args |
-| Chroma backdrop prompt | `src/local/chroma/defaults.ts` | `recipe.chroma.backdropInstruction` |
-| Chroma verify suffix | `src/local/chroma/defaults.ts` | `recipe.chroma.verifyInstruction` |
-| Network budgets | `src/network/defaults.ts` | `profile.network.*`, `recipe.network.*`, `--patch`, or `--set` |
+| Network budgets | `src/network/defaults.ts` | `recipe.network.*` or `--set network.<category>.<field>=...` |
 
-Network budgets are strict and can be set in `profile.network`, `recipe.network`, `--patch`, or `--set`:
+Network budgets are strict and can be set in `recipe.network` or `--set`:
 
 | Category | Used by | Default timeout | Default retries | Default intervals |
 |---|---|---|---|---|
@@ -249,15 +236,15 @@ Retry behavior:
 Recipe overrides:
 
 ```sh
-# Layered last-wins: file -> --patch -> --set
+# Layered last-wins: recipe file -> --set
 gptimg generate "x" \
-  --patch '{"generate":{"size":"1024x1024"}}' \
+  --set size=1024x1024 \
   --set quality=high \
   --set tools.0.type=image_generation \
   --set mask=@./mask.json
 ```
 
-`--patch` is recipe-rooted. Bare `--set` keys are scoped under the current verb; paths beginning with `generate`, `edit`, `vision`, `chroma`, or `network` are recipe-rooted.
+Bare `--set` keys are scoped under the current verb; paths beginning with `generate`, `edit`, `vision`, `chroma`, or `network` are recipe-rooted.
 
 ## Artifacts
 
@@ -268,7 +255,6 @@ gptimg generate "x" \
 | `<utc>-gptimg.jsonl` | Per-invocation JSONL log |
 | `<input-stem>-chroma.png` | Chroma RGBA result |
 | `<input-stem>-mask.png` | Chroma alpha mask |
-| `<output-stem>-verify-preview.png` | Checkerboard preview used by chroma vision verification |
 
 Sidecars store basenames for image entries so an image + sidecar pair can be moved together.
 
