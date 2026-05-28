@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -84,6 +84,10 @@ describe("CLI exit codes", () => {
       badProviderPath,
       JSON.stringify({ provider: "nope", apiKey: "test-key" }) + "\n",
     );
+    if (process.platform !== "win32") {
+      await chmod(profilePath, 0o600);
+      await chmod(badProviderPath, 0o600);
+    }
   });
 
   afterEach(async () => {

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -55,13 +55,15 @@ describe("AI verb implementations with mocked provider", () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-ai-verbs-"));
     sdk = new GptImg({ profileDir: tmp, logDir: path.join(tmp, "logs") });
     png = new Uint8Array(await readFile(fixture("green-disk.png")));
+    const defaultProfile = path.join(tmp, "profile.json");
     await writeFile(
-      path.join(tmp, "profile.json"),
+      defaultProfile,
       JSON.stringify({
         provider: "openai",
         apiKey: obfuscate("sk-profile-only"),
       }) + "\n",
     );
+    if (process.platform !== "win32") await chmod(defaultProfile, 0o600);
   });
 
   afterEach(async () => {
@@ -155,6 +157,7 @@ describe("AI verb implementations with mocked provider", () => {
         apiKey: obfuscate("sk-custom-profile"),
       }) + "\n",
     );
+    if (process.platform !== "win32") await chmod(profilePath, 0o600);
     await writeFile(
       recipePath,
       JSON.stringify({
@@ -359,6 +362,81 @@ describe("AI verb implementations with mocked provider", () => {
 
     await expect(
       sdk.generate({ prompt: "third", outDir, outName: "same", overwrite: true }),
+    ).resolves.toMatchObject({ partial: false });
+  });
+
+  it("generate refuses --overwrite when stale indexed siblings from a prior n exist", async () => {
+    providerCalls.generate.mockResolvedValue({
+      raw: {
+        data: [
+          { b64_json: Buffer.from(png).toString("base64") },
+          { b64_json: Buffer.from(png).toString("base64") },
+          { b64_json: Buffer.from(png).toString("base64") },
+        ],
+      },
+      images: [{ data: png }, { data: png }, { data: png }],
+    });
+    const outDir = path.join(tmp, "stale-out");
+
+    await sdk.generate({
+      prompt: "wider run",
+      outDir,
+      outName: "same",
+      set: ["n=3"],
+    });
+    expect(existsSync(path.join(outDir, "same-1.png"))).toBe(true);
+    expect(existsSync(path.join(outDir, "same-2.png"))).toBe(true);
+    expect(existsSync(path.join(outDir, "same-3.png"))).toBe(true);
+
+    providerCalls.generate.mockResolvedValue({
+      raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
+      images: [{ data: png }],
+    });
+
+    await expect(
+      sdk.generate({
+        prompt: "narrower run",
+        outDir,
+        outName: "same",
+        overwrite: true,
+      }),
+    ).rejects.toMatchObject({
+      code: "output.staleSiblings",
+      errorType: "localOp",
+    });
+
+    expect(existsSync(path.join(outDir, "same-1.png"))).toBe(true);
+    expect(existsSync(path.join(outDir, "same-2.png"))).toBe(true);
+    expect(existsSync(path.join(outDir, "same-3.png"))).toBe(true);
+  });
+
+  it("generate --overwrite succeeds when the prior group exactly matches the new plan", async () => {
+    providerCalls.generate.mockResolvedValue({
+      raw: {
+        data: [
+          { b64_json: Buffer.from(png).toString("base64") },
+          { b64_json: Buffer.from(png).toString("base64") },
+        ],
+      },
+      images: [{ data: png }, { data: png }],
+    });
+    const outDir = path.join(tmp, "matching-overwrite");
+
+    await sdk.generate({
+      prompt: "first",
+      outDir,
+      outName: "same",
+      set: ["n=2"],
+    });
+
+    await expect(
+      sdk.generate({
+        prompt: "second",
+        outDir,
+        outName: "same",
+        set: ["n=2"],
+        overwrite: true,
+      }),
     ).resolves.toMatchObject({ partial: false });
   });
 

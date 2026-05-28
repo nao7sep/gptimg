@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,6 +6,9 @@ import { ProfileError } from "../../src/errors.js";
 import { loadProfile } from "../../src/profile/load.js";
 import { deobfuscate, isObfuscated } from "../../src/profile/obfuscate.js";
 import { clearApiKey, setApiKey } from "../../src/profile/setApiKey.js";
+
+const POSIX = process.platform !== "win32";
+const describePosix = POSIX ? describe : describe.skip;
 
 describe("loadProfile", () => {
   let tmp: string;
@@ -75,6 +78,60 @@ describe("loadProfile", () => {
   it("reports missing profiles as profile.notFound", async () => {
     await expect(loadProfile(path.join(tmp, "missing.json"))).rejects.toMatchObject({
       code: "profile.notFound",
+    });
+  });
+});
+
+describePosix("loadProfile insecure-mode halt (POSIX)", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-profile-mode-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("rejects loading a profile that holds apiKey when mode is group/world-readable", async () => {
+    const file = path.join(tmp, "loose.json");
+    await writeFile(
+      file,
+      JSON.stringify({ provider: "openai", apiKey: "sk-loose" }) + "\n",
+    );
+    await chmod(file, 0o644);
+
+    await expect(loadProfile(file)).rejects.toMatchObject({
+      code: "profile.insecureMode",
+      errorType: "profile",
+    });
+  });
+
+  it("accepts apiKey-bearing profiles at mode 0o600", async () => {
+    const file = path.join(tmp, "tight.json");
+    await writeFile(
+      file,
+      JSON.stringify({ provider: "openai", apiKey: "sk-tight" }) + "\n",
+    );
+    await chmod(file, 0o600);
+
+    await expect(loadProfile(file)).resolves.toMatchObject({
+      provider: "openai",
+      apiKey: "sk-tight",
+    });
+  });
+
+  it("does not check mode when apiKey is absent (apiKeyEnv-only profiles)", async () => {
+    const file = path.join(tmp, "env-only.json");
+    await writeFile(
+      file,
+      JSON.stringify({ provider: "openai", apiKeyEnv: "OPENAI_API_KEY" }) + "\n",
+    );
+    await chmod(file, 0o644);
+
+    await expect(loadProfile(file)).resolves.toMatchObject({
+      provider: "openai",
+      apiKeyEnv: "OPENAI_API_KEY",
     });
   });
 });
@@ -183,5 +240,24 @@ describe("setApiKey / clearApiKey", () => {
     await expect(clearApiKey(tmp)).rejects.toMatchObject({
       code: "profile.readFailed",
     });
+  });
+
+  it.skipIf(!POSIX)("writes the profile with owner-only mode (0o600)", async () => {
+    await setApiKey(file, "sk-mode-check");
+    const st = await stat(file);
+    expect(st.mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(!POSIX)("tightens mode to 0o600 when re-saving a previously loose profile", async () => {
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(
+      file,
+      JSON.stringify({ provider: "openai", apiKeyEnv: "OPENAI_API_KEY" }) + "\n",
+    );
+    await chmod(file, 0o644);
+
+    await setApiKey(file, "sk-replacing");
+    const st = await stat(file);
+    expect(st.mode & 0o777).toBe(0o600);
   });
 });

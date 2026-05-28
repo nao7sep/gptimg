@@ -1,12 +1,17 @@
 import path from "node:path";
 import pLimit from "p-limit";
+import { LocalOpError } from "../errors.js";
 import { hash } from "../image/hash.js";
 import { detectFormat } from "../image/detectFormat.js";
 import {
-  assertOutputPathsAvailable,
   ensureOutputDir,
   writeOutputBytes,
 } from "../internal/output-files.js";
+import {
+  assertOutputGroupAvailable,
+  createOutputGroup,
+  sidecarPath as outputGroupSidecarPath,
+} from "../internal/output-group.js";
 import { createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
@@ -16,7 +21,7 @@ import { applySet } from "../recipe/applySet.js";
 import { loadRecipe } from "../recipe/load.js";
 import { validateChromaSection, validateGenerateSection } from "../recipe/schemas.js";
 import { CHROMA_BACKDROP_INSTRUCTION } from "../local/chroma/defaults.js";
-import { sidecarPathForStem, writeSidecar } from "../sidecar/write.js";
+import { writeSidecar } from "../sidecar/write.js";
 import { nullBase64InResponse } from "../sidecar/nullBase64.js";
 import { getProvider } from "../providers/index.js";
 import type {
@@ -148,8 +153,18 @@ export async function generateImpl(
     ).filter((item): item is NonNullable<typeof item> => item !== null);
 
     const stemPath = path.join(outDir, stem);
-    const sidecarPath = sidecarPathForStem(stemPath);
-    assertOutputPathsAvailable(
+    const imageExts = new Set(plannedImages.map((item) => item.fmt.extension));
+    if (imageExts.size > 1) {
+      throw new LocalOpError(
+        "output.mixedExtensions",
+        `Provider returned images with mixed extensions (${[...imageExts].join(", ")}); the artifact group requires a single image format.`,
+      );
+    }
+    const groupExt = plannedImages[0]?.fmt.extension ?? "png";
+    const group = createOutputGroup(outDir, stem, groupExt);
+    const sidecarPath = outputGroupSidecarPath(group);
+    assertOutputGroupAvailable(
+      group,
       [...plannedImages.map((item) => item.filePath), sidecarPath],
       overwrite,
     );

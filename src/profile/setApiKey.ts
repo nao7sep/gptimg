@@ -22,7 +22,10 @@ async function writeProfile(filePath: string, profile: Profile): Promise<void> {
   await ensureDir(filePath);
   const text = JSON.stringify(profile, null, 2) + "\n";
   try {
-    await writeFileAtomic(filePath, text, { encoding: "utf-8" });
+    // 0o600: the profile may hold secrets (apiKey today, tokens later) and is
+    // owner-only by contract. Setting the mode unconditionally keeps the
+    // invariant from drifting if new sensitive fields are added.
+    await writeFileAtomic(filePath, text, { encoding: "utf-8", mode: 0o600 });
   } catch (err) {
     throw new ProfileError(
       "profile.writeFailed",
@@ -41,7 +44,9 @@ async function writeProfile(filePath: string, profile: Profile): Promise<void> {
 export async function setApiKey(filePath: string, rawKey: string): Promise<void> {
   let profile: Profile;
   try {
-    profile = await loadProfile(filePath);
+    // Skip the insecure-mode halt: this write path immediately rewrites the
+    // file at 0o600, so an existing loose-mode profile is being repaired.
+    profile = await loadProfile(filePath, { enforceMode: false });
   } catch (err) {
     if (err instanceof ProfileError && err.code === "profile.notFound") {
       profile = { provider: "openai" };
@@ -60,7 +65,10 @@ export async function setApiKey(filePath: string, rawKey: string): Promise<void>
 export async function clearApiKey(filePath: string): Promise<void> {
   let profile: Profile;
   try {
-    profile = await loadProfile(filePath);
+    // Skip the insecure-mode halt: removing the apiKey is the remediation
+    // for a loose-mode profile that holds one. Forcing the user to chmod
+    // first would block the very action that fixes the leak.
+    profile = await loadProfile(filePath, { enforceMode: false });
   } catch (err) {
     if (err instanceof ProfileError && err.code === "profile.notFound") {
       return;

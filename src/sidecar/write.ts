@@ -12,7 +12,7 @@ import type { Sidecar } from "../types.js";
  *
  * @returns the absolute or relative sidecar path that was written.
  */
-export function sidecarPathForStem(stem: string): string {
+function sidecarPathForStem(stem: string): string {
   return `${stem}.json`;
 }
 

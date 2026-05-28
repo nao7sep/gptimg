@@ -16,7 +16,10 @@ export function addAiCommonOptions(cmd: Command): Command {
 
 /** Adds `--overwrite` for verbs that produce image outputs (generate, edit). */
 export function addOverwriteOption(cmd: Command): Command {
-  return cmd.option("--overwrite", "Overwrite existing output images and sidecar");
+  return cmd.option(
+    "--overwrite",
+    "Replace the artifact group for <out-name> in <out-dir>. Refuses when prior-run siblings exist that this run will not overwrite (output.staleSiblings); delete them or pick a fresh --out-name.",
+  );
 }
 
 export function collectMultiInput(value: string, prev: string[] = []): string[] {

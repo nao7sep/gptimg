@@ -44,7 +44,8 @@ The SDK returns structured objects and never writes to stdout/stderr. Every SDK 
 - Create a task-specific output directory for every image job.
 - Use stable `--out-name` values that describe the artifact role, such as `donut-original`, `donut-final`, or `logo-verify`.
 - Keep the original generated or input image. Treat `chroma` outputs as derived artifacts.
-- Do not use `--overwrite` unless intentionally replacing an artifact group.
+- Do not use `--overwrite` unless intentionally replacing an artifact group. `--overwrite` is group-scoped: it allows the planned files to replace existing siblings, but halts with `output.staleSiblings` if a prior run left indexed files the new plan would not replace (for example, `n=10` followed by `--overwrite` with `n=2`). Delete the listed orphans or choose a fresh `--out-name`.
+- A profile that stores `apiKey` must be owner-only on POSIX (mode `0600`). `gptimg profile set-key` writes it that way; hand-authored profiles need `chmod 600`. Loading a loose-mode profile that carries an `apiKey` halts with `profile.insecureMode` (exit code 3).
 - Parse stdout JSON for success. Use logs and sidecars for trace/debug context, not primary success detection.
 - Treat `partial: true` from `generate` or `edit` as recoverable when at least one file was written.
 - Prefer recipes for stable project defaults and `--set` for task-specific overrides.

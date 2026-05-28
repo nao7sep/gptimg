@@ -31,7 +31,10 @@ export function registerProfile(program: Command): void {
 
   const setKey = profile
     .command("set-key")
-    .description("Set the apiKey in a profile (stored obfuscated; other fields preserved)")
+    .description(
+      "Set the apiKey in a profile (stored obfuscated; other fields preserved). " +
+        "The profile file is written with owner-only permissions (POSIX mode 0600).",
+    )
     .option("--key <value>", "API key value (warning: visible in shell history)")
     .option("--stdin", "Read the API key from stdin")
     .option("--path <path>", "Profile file path (default: ~/.gptimg/profile.json)");

@@ -34,7 +34,8 @@ The build emits `dist/`; the CLI entry is `bin/gptimg.js`. Add `bin/` to `PATH` 
 Set up a profile:
 
 ```sh
-# Store the key in the profile (obfuscated on disk).
+# Store the key in the profile. The file is written with owner-only
+# permissions (POSIX mode 0600) and the key is obfuscated on disk.
 gptimg profile set-key --key sk-...
 
 # Or reference an environment variable instead.
@@ -46,6 +47,10 @@ EOF
 When both `apiKeyEnv` and `apiKey` are present, the environment variable wins. `profile clear-key` removes only stored `apiKey`; a missing profile file or missing key is a no-op, while unreadable profile paths are errors.
 
 Profile files are strict JSON objects. Supported top-level keys are `provider`, `apiKey`, `apiKeyEnv`, `organization`, `project`, and `network`. For org-scoped OpenAI accounts, `organization` and `project` are passed through to the OpenAI SDK.
+
+### Profile file permissions
+
+On POSIX systems, a profile containing `apiKey` must be owner-only (mode `0600`). `gptimg profile set-key` writes the file with that mode automatically; if you hand-author `~/.gptimg/profile.json` and include `apiKey`, run `chmod 600 ~/.gptimg/profile.json` after writing. Loading a loose-mode profile that carries `apiKey` halts with `profile.insecureMode` (exit code 3) and prints the file mode plus the chmod command to run. Profiles that use only `apiKeyEnv` (no stored key) are not subject to this check. The mode check is POSIX-only and is skipped on Windows. If your key was already exposed because the file was loose-mode, rotate it; `clear-key` removes it from the profile but cannot undo prior reads.
 
 Defaults live under `~/.gptimg/`:
 
@@ -109,6 +114,8 @@ gptimg generate "logo" \
 ```
 
 Outputs `<stem>.<ext>` for one image, or indexed filenames such as `<stem>-1.png` / `<stem>-01.png` when multiple images are written. A `<stem>.json` sidecar captures the resolved request and provider response with base64 image fields nulled.
+
+The artifact group for a single `generate`/`edit` invocation is `<stem>.<ext>` plus `<stem>-<digits>.<ext>` siblings plus the `<stem>.json` sidecar in `--out-dir`. Without `--overwrite`, any existing group member blocks with `output.exists`. With `--overwrite`, the run will replace only the files it plans to write; if prior-run group members exist that the new plan would *not* replace (for example, `<stem>-01.png` … `<stem>-10.png` left over from `n=10` when the new run uses `n=2`), the command halts with `output.staleSiblings` rather than silently leaving orphans behind a sidecar that no longer describes them. Delete the listed files or pick a fresh `--out-name`. Chroma-derived siblings (`<stem>-mask.png`, `<stem>-chroma.png`, `<stem>-verify-preview.png`) are not part of the generate/edit group and are never touched by this check.
 
 If `recipe.chroma.color` is set, `generate` appends the configured chroma backdrop instruction to the prompt and records the color in the sidecar so later `chroma --key from-sidecar` can reuse it.
 
