@@ -6,12 +6,16 @@
  * resolved key color before being sent to the AI.
  */
 export const CHROMA_DEFAULTS = {
-  mode: "outer" as const,
+  /**
+   * Default false: interior key-colored regions are removed (e.g. tiny gaps
+   * between hair strands disappear cleanly). Set to true to keep interior
+   * key-colored regions opaque (donut hole, intentional green subject).
+   */
+  preserveInterior: false,
   key: "auto" as const,
   innerThreshold: 5,
   metric: "lab_de76" as const,
   borderSample: 4,
-  despill: true,
   fillHoles: true,
   verifyThreshold: 0,
 } as const;

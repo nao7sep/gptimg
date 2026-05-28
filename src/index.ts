@@ -13,7 +13,6 @@ export type {
   ChromaRecipe,
   ChromaKeySource,
   ChromaMetric,
-  ChromaMode,
   ChromaRegionSummary,
   ChromaResult,
   ChromaStats,

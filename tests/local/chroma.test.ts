@@ -45,24 +45,30 @@ describe("chroma: noisy-bg", () => {
 });
 
 describe("chroma: donut", () => {
-  it("mode=outer keeps the hole opaque (one bordering region)", async () => {
-    const res = await detect({ in: fixture("donut.png"), mode: "outer" });
-    expect(res.stats.mode).toBe("outer");
+  it("preserveInterior keeps the hole's component out of the accepted set", async () => {
+    const res = await detect({
+      in: fixture("donut.png"),
+      preserveInterior: true,
+    });
+    expect(res.stats.preserveInterior).toBe(true);
     expect(res.stats.regionsRemoved.length).toBe(1);
     expect(res.stats.regionsRemoved[0]?.touchesBorder).toBe(true);
   });
 
-  it("mode=all removes the hole too (more regions, larger fraction)", async () => {
-    const outer = await detect({ in: fixture("donut.png"), mode: "outer" });
-    const all = await detect({ in: fixture("donut.png"), mode: "all" });
-    expect(all.stats.regionsRemoved.length).toBeGreaterThan(
-      outer.stats.regionsRemoved.length,
+  it("default (no preserveInterior) accepts the interior hole as background too", async () => {
+    const kept = await detect({
+      in: fixture("donut.png"),
+      preserveInterior: true,
+    });
+    const removed = await detect({ in: fixture("donut.png") });
+    expect(removed.stats.regionsRemoved.length).toBeGreaterThan(
+      kept.stats.regionsRemoved.length,
     );
-    expect(all.stats.removedFraction).toBeGreaterThan(
-      outer.stats.removedFraction,
+    expect(removed.stats.removedFraction).toBeGreaterThan(
+      kept.stats.removedFraction,
     );
     expect(
-      all.stats.regionsRemoved.some((r) => r.touchesBorder === false),
+      removed.stats.regionsRemoved.some((r) => r.touchesBorder === false),
     ).toBe(true);
   });
 });
@@ -71,7 +77,7 @@ describe("chroma: subject-collision", () => {
   it("flags subjectKeyCollisionRisk when a key-colored region is rejected", async () => {
     const res = await detect({
       in: fixture("subject-collision.png"),
-      mode: "outer",
+      preserveInterior: true,
     });
     expect(res.stats.subjectKeyCollisionRisk).toBe(true);
   });

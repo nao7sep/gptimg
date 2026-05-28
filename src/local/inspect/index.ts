@@ -12,7 +12,7 @@ export async function runInspect(
   const result = await detect(
     {
       in: args.in,
-      mode: args.mode,
+      preserveInterior: args.preserveInterior,
       key: args.key,
       innerThreshold: args.innerThreshold,
       metric: args.metric,

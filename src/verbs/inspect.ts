@@ -17,7 +17,9 @@ export interface InspectContext {
 
 function applyRecipeDefaults(args: InspectArgs, section: ChromaRecipe): InspectArgs {
   const merged: InspectArgs = { ...args };
-  if (merged.mode === undefined && section.mode !== undefined) merged.mode = section.mode;
+  if (merged.preserveInterior === undefined && section.preserveInterior !== undefined) {
+    merged.preserveInterior = section.preserveInterior;
+  }
   if (
     merged.key === undefined &&
     typeof section.color === "string" &&
@@ -55,7 +57,7 @@ export async function inspectImpl(
 
     await logger.info("resolve", "inspect start", {
       input: resolved.in,
-      mode: resolved.mode ?? "outer",
+      preserveInterior: resolved.preserveInterior ?? false,
       key: resolved.key ?? "auto",
     });
     const stats = await runInspect(resolved, { signal });

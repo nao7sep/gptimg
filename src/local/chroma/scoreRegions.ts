@@ -1,8 +1,8 @@
-import type { ChromaMode } from "../../types.js";
 import type { ComponentProps } from "./components.js";
 
 export interface ScoreInput {
-  mode: ChromaMode;
+  /** When true, reject components that don't touch the image border. */
+  preserveInterior: boolean;
   totalPixels: number;
   innerThreshold: number;
   /** Optional higher confidence gate for stricter region acceptance. */
@@ -39,7 +39,7 @@ export function scoreRegions(
     const c = components[i]!;
     const confidence = regionConfidence(c.meanDistance, input.innerThreshold);
     let accepted = c.area >= minArea && confidence >= strict;
-    if (accepted && input.mode === "outer" && !c.touchesBorder) {
+    if (accepted && input.preserveInterior && !c.touchesBorder) {
       accepted = false;
     }
     out.push({ props: c, accepted, confidence });

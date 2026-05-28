@@ -43,10 +43,10 @@ export interface VisionRecipe {
 
 export interface ChromaRecipe {
   color?: string;
-  mode?: ChromaMode;
+  /** When true, interior key-colored regions are kept opaque. Default false. */
+  preserveInterior?: boolean;
   innerThreshold?: number;
   borderSample?: number;
-  despill?: boolean;
   fillHoles?: boolean;
   strictConfidence?: number;
   verifyThreshold?: number;
@@ -166,7 +166,6 @@ export interface VisionResult extends VisionVerdict {
   logPath: string;
 }
 
-export type ChromaMode = "outer" | "all";
 /** Distance metric in LAB color space. Single value today; widened when alternatives ship. */
 export type ChromaMetric = "lab_de76";
 export type ChromaKeySource = "auto" | "sidecar" | "explicit";
@@ -180,7 +179,8 @@ export interface ChromaRegionSummary {
 export interface ChromaStats {
   key: string;
   keySource: ChromaKeySource;
-  mode: ChromaMode;
+  /** Echo of the runtime preserveInterior choice. */
+  preserveInterior: boolean;
   removedPixels: number;
   removedFraction: number;
   regionsRemoved: ChromaRegionSummary[];
@@ -212,13 +212,13 @@ export interface ChromaAlphaVerifyResult {
 
 export interface ChromaArgs {
   in: string;
-  mode?: ChromaMode;
+  /** When true, keep interior key-colored regions opaque (donut hole, intentional green subject content). */
+  preserveInterior?: boolean;
   /** "auto" | "from-sidecar" | "#rrggbb" */
   key?: string;
   innerThreshold?: number;
   metric?: ChromaMetric;
   borderSample?: number;
-  despill?: boolean;
   fillHoles?: boolean;
   strictConfidence?: number;
   outDir?: string;
@@ -247,7 +247,7 @@ export interface ChromaResult {
 export type InspectArgs = Pick<
   ChromaArgs,
   | "in"
-  | "mode"
+  | "preserveInterior"
   | "key"
   | "innerThreshold"
   | "metric"

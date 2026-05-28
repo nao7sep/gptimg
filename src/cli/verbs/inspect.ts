@@ -2,7 +2,7 @@ import { InvalidArgumentError, Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
-import type { ChromaMetric, ChromaMode } from "../../types.js";
+import type { ChromaMetric } from "../../types.js";
 
 function parseKeyOpt(v: string): string {
   if (v === "auto" || v === "from-sidecar") return v;
@@ -12,7 +12,7 @@ function parseKeyOpt(v: string): string {
 
 interface InspectCliOpts {
   in: string;
-  mode?: ChromaMode;
+  preserveInterior?: boolean;
   key?: string;
   innerThreshold?: number;
   metric?: ChromaMetric;
@@ -42,11 +42,9 @@ export function registerInspect(program: Command): void {
     .command("inspect")
     .description("Detect chroma regions and report stats only (no writes)")
     .requiredOption("--in <path>", "Input image path")
-    .addOption(
-      new Option("--mode <mode>", "Detection mode (default: outer)").choices([
-        "outer",
-        "all",
-      ]),
+    .option(
+      "--preserve-interior",
+      "When reporting accepted background regions, exclude regions that don't touch the image border.",
     )
     .option(
       "--key <value>",
@@ -79,7 +77,7 @@ export function registerInspect(program: Command): void {
     const result = await sdk.inspect(
       {
         in: opts.in,
-        mode: opts.mode,
+        preserveInterior: opts.preserveInterior,
         key: opts.key,
         innerThreshold: opts.innerThreshold,
         metric: opts.metric,

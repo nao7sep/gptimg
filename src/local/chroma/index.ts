@@ -51,14 +51,14 @@ export async function runChroma(
   const totalPixels = width * height;
 
   throwIfAborted(signal);
-  const applyDecontamination = args.despill ?? CHROMA_DEFAULTS.despill;
+  const preserveInterior = args.preserveInterior ?? CHROMA_DEFAULTS.preserveInterior;
   const matted = solveMatting(
     rgba,
     width,
     height,
     accepted,
     keyResolution.hex,
-    { applyDecontamination },
+    { preserveInterior },
   );
 
   const inDir = path.dirname(args.in);

@@ -37,7 +37,7 @@ export function throwIfAborted(signal: AbortSignal | undefined): void {
 
 export interface DetectionInput {
   in: string;
-  mode?: ChromaArgs["mode"];
+  preserveInterior?: boolean;
   key?: ChromaArgs["key"];
   innerThreshold?: number;
   metric?: ChromaArgs["metric"];
@@ -140,7 +140,7 @@ export async function detect(
   if (!isChromaArgsInput(args)) {
     throw new LocalOpError("image.formatUnknown", "Invalid detection input");
   }
-  const mode = args.mode ?? CHROMA_DEFAULTS.mode;
+  const preserveInterior = args.preserveInterior ?? CHROMA_DEFAULTS.preserveInterior;
   const innerThreshold = args.innerThreshold ?? CHROMA_DEFAULTS.innerThreshold;
   const borderSample = args.borderSample ?? CHROMA_DEFAULTS.borderSample;
   const fillHoles = args.fillHoles ?? CHROMA_DEFAULTS.fillHoles;
@@ -168,7 +168,7 @@ export async function detect(
   );
   const props = computeComponentProps(labels, numComponents, width, height, distance);
   const scored = scoreRegions(props, {
-    mode,
+    preserveInterior,
     totalPixels,
     innerThreshold,
     strictConfidence: args.strictConfidence,
@@ -202,7 +202,7 @@ export async function detect(
   const stats: ChromaStats = {
     key: keyRes.hex,
     keySource: keyRes.source,
-    mode,
+    preserveInterior,
     removedPixels,
     removedFraction,
     regionsRemoved,

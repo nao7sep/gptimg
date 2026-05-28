@@ -34,7 +34,9 @@ export interface ChromaContext {
  */
 function applyRecipeDefaults(args: ChromaArgs, section: ChromaRecipe): ChromaArgs {
   const merged: ChromaArgs = { ...args };
-  if (merged.mode === undefined && section.mode !== undefined) merged.mode = section.mode;
+  if (merged.preserveInterior === undefined && section.preserveInterior !== undefined) {
+    merged.preserveInterior = section.preserveInterior;
+  }
   if (
     (merged.key === undefined || merged.key === "auto") &&
     typeof section.color === "string" &&
@@ -49,9 +51,6 @@ function applyRecipeDefaults(args: ChromaArgs, section: ChromaRecipe): ChromaArg
   }
   if (merged.borderSample === undefined && section.borderSample !== undefined) {
     merged.borderSample = section.borderSample;
-  }
-  if (merged.despill === undefined && section.despill !== undefined) {
-    merged.despill = section.despill;
   }
   if (merged.fillHoles === undefined && section.fillHoles !== undefined) {
     merged.fillHoles = section.fillHoles;
@@ -83,7 +82,7 @@ export async function chromaImpl(
 
     await logger.info("resolve", "chroma start", {
       input: resolved.in,
-      mode: resolved.mode ?? "outer",
+      preserveInterior: resolved.preserveInterior ?? false,
       key: resolved.key ?? "auto",
     });
 
@@ -101,7 +100,7 @@ export async function chromaImpl(
     if (resolved.verify && out.stats.removedFraction > verifyThreshold) {
       alphaVerify = await verifyChromaAlpha(out.imagePath, {
         key: out.stats.key,
-        mode: out.stats.mode,
+        preserveInterior: out.stats.preserveInterior,
         expectInteriorTransparency: out.stats.regionsRemoved.some(
           (region) => !region.touchesBorder,
         ),

@@ -2,7 +2,7 @@ import { InvalidArgumentError, Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
-import type { ChromaMetric, ChromaMode } from "../../types.js";
+import type { ChromaMetric } from "../../types.js";
 
 function parseKeyOpt(v: string): string {
   if (v === "auto" || v === "from-sidecar") return v;
@@ -12,12 +12,11 @@ function parseKeyOpt(v: string): string {
 
 interface ChromaCliOpts {
   in: string;
-  mode?: ChromaMode;
+  preserveInterior?: boolean;
   key?: string;
   innerThreshold?: number;
   metric?: ChromaMetric;
   borderSample?: number;
-  despill?: boolean;
   fillHoles?: boolean;
   strictConfidence?: number;
   outDir?: string;
@@ -51,11 +50,9 @@ export function registerChroma(program: Command): void {
     .command("chroma")
     .description("Detect and remove a chroma-key background (local, no API)")
     .requiredOption("--in <path>", "Input image path")
-    .addOption(
-      new Option("--mode <mode>", "Detection mode (default: outer)").choices([
-        "outer",
-        "all",
-      ]),
+    .option(
+      "--preserve-interior",
+      "Keep interior key-colored regions opaque (e.g. donut holes, intentional green subject content). Default removes them.",
     )
     .option(
       "--key <value>",
@@ -75,7 +72,6 @@ export function registerChroma(program: Command): void {
       "Border depth for auto key detection",
       parseIntOpt("--border-sample"),
     )
-    .option("--no-despill", "Disable color decontamination of the matted foreground")
     .option("--no-fill-holes", "Disable morphological close for hole-filling")
     .option(
       "--strict-confidence <n>",
@@ -101,12 +97,11 @@ export function registerChroma(program: Command): void {
     const result = await sdk.chroma(
       {
         in: opts.in,
-        mode: opts.mode,
+        preserveInterior: opts.preserveInterior,
         key: opts.key,
         innerThreshold: opts.innerThreshold,
         metric: opts.metric,
         borderSample: opts.borderSample,
-        despill: opts.despill,
         fillHoles: opts.fillHoles,
         strictConfidence: opts.strictConfidence,
         outDir: opts.outDir,

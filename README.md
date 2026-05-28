@@ -17,8 +17,8 @@ Core operating rules:
 - Use task-specific `--out-dir` / `--out-name` values. Use `--overwrite` only when intentionally replacing an artifact group.
 - Treat `partial: true` from `generate` / `edit` as recoverable when at least one file was written.
 - Run `inspect` before destructive chroma removal when subject content may contain key-like colors.
-- For chroma interiors, compare `inspect --mode outer` and `inspect --mode all` on the original image.
-- When changing chroma `mode`, key, threshold, despill, or fill strategy, rerun from the original image. Do not use an already background-removed image as the final source unless intentionally experimenting.
+- For subjects with intentional interior key-colored content (donut hole, green segment, green clothing surrounded by non-green), pass `--preserve-interior` to keep those regions opaque.
+- When changing chroma key, threshold, `--preserve-interior`, or fill strategy, rerun from the original image. Do not use an already background-removed image as the final source unless intentionally experimenting.
 
 ## Quick Start
 
@@ -82,22 +82,19 @@ Edit an existing image:
 gptimg edit "remove the background" --in input.png --out-dir ./out --out-name edited
 ```
 
-Safe chroma workflow for subjects with holes or key-like colors:
+Chroma workflow for subjects with intentional key-colored content (donut holes, green segments of a rainbow stamp, a green tie):
 
 ```sh
-# 1. Inspect the original. Outer mode is safer because it ignores interior pockets.
-gptimg inspect --in donut-original.png --key from-sidecar --mode outer
+# Inspect first to see which interior regions would be affected.
+gptimg inspect --in donut-original.png --key from-sidecar --preserve-interior
 
-# 2. Inspect the original again with all mode to discover interior candidates.
-gptimg inspect --in donut-original.png --key from-sidecar --mode all
-
-# 3. If the non-border regions are true background holes, render the final
-#    all-mode chroma result from the original, not from an outer-mode output.
+# Run chroma with --preserve-interior to keep interior key-colored regions
+# opaque. Without the flag, all key-colored pixels become transparent.
 gptimg chroma \
   --in donut-original.png \
   --key from-sidecar \
-  --mode all \
-  --verify "background is transparent, including the donut hole; subject edges are smooth"
+  --preserve-interior \
+  --verify "background is transparent; the donut hole stays opaque; subject edges are smooth"
 ```
 
 ## CLI Reference
@@ -144,21 +141,23 @@ gptimg chroma --in image.png
 # Use the hint stored in the sibling sidecar.
 gptimg chroma --in image.png --key from-sidecar
 
-# Remove interior chroma-key regions too.
-gptimg chroma --in donut.png --mode all
+# Keep interior key-colored regions opaque (donut hole, intentional green subject content).
+gptimg chroma --in donut.png --preserve-interior
 ```
 
-Local only; no API call unless `--verify` is provided. It detects the chroma background with a region-aware Gaussian color model in LAB, then extracts the subject by alpha matting in linear-light RGB with spill suppression.
+Local only; no API call unless `--verify` is provided.
 
-Default `outer` mode removes only key regions connected to the border. `all` mode also removes interior regions, such as donut holes or mug handles, but should be used only after confirming that those interior regions are background rather than subject content.
+Algorithm: the chroma background is detected with a Gaussian color model in LAB and per-pixel α is derived from the linear-RGB spill ratio `α = 1 − spill / key_strength`, where `spill = max(0, key_channel − max(other_channels))`. A pure-key pixel is fully transparent regardless of where it sits. For partial-α pixels the foreground color is inpainted by iterated dilation from confirmed-opaque pixels, so edges fade as the real subject color rather than as a dark Vlahos clip or a green halo.
+
+By default, every key-colored pixel becomes transparent — including interior regions like donut holes or intentional green subject content. Pass `--preserve-interior` to force interior key-colored regions to stay opaque. Border-connected key regions are always removed.
 
 ### `inspect`
 
 ```sh
-gptimg inspect --in image.png --key from-sidecar --mode outer
+gptimg inspect --in image.png --key from-sidecar
 ```
 
-Runs the chroma detection pipeline without writing images. Use it to decide whether removal is safe and which regions would be affected.
+Runs the chroma detection pipeline without writing images. Use it to decide whether removal is safe and which regions would be affected. Pass `--preserve-interior` to mirror the chroma run's region accounting.
 
 ## SDK
 

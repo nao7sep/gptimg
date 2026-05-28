@@ -128,22 +128,21 @@ Chroma removal is local and fast, but the decision to remove interior key-colore
 
 Definitions:
 
-- `outer`: removes only accepted key-colored regions connected to the image border.
-- `all`: removes outer regions and interior key-colored regions.
+- `preserveInterior: false` (default): every key-colored pixel becomes transparent — including interior pockets like donut holes or hair gaps.
+- `preserveInterior: true`: border-connected key regions become transparent; interior key-colored regions stay opaque with their original color.
 - `touchesBorder: false`: an interior candidate region; this may be a background hole or accidental subject content.
-- `subjectKeyCollisionRisk: true`: key-like pixels remain outside the accepted outer background. This is a warning to inspect, not automatic failure.
+- `subjectKeyCollisionRisk: true`: key-like pixels remain outside the accepted background. This is a warning to inspect, not an automatic failure.
 
-### Safe Interior Workflow
+### Interior-Preservation Workflow
 
-Use this for donuts, mugs with handles, product cutouts, gaps, holes, and any subject that may contain green-ish, blue-ish, or key-like colors.
+Use `--preserve-interior` when the subject legitimately contains key-colored regions: donut holes you want to keep, a rainbow stamp with green segments, a green tie surrounded by non-green clothing.
 
 1. Keep the original image as source of truth.
-2. Inspect the original in `outer` mode.
-3. Inspect the original in `all` mode.
-4. Compare `regionsRemoved`. New `all` regions with `touchesBorder: false` are interior candidates.
-5. Decide whether those candidates are true background holes or subject content.
-6. If safe, run the final `chroma --mode all` on the original image.
-7. Verify the final output with local alpha checks, final inspect, and a checkerboard preview.
+2. Inspect the original with `--preserve-interior` to see which interior regions would be preserved.
+3. Inspect the original without `--preserve-interior` to see the aggressive (default) accounting.
+4. Decide which behavior fits the subject.
+5. Run `chroma` with the matching flag on the original.
+6. Verify the final output with local alpha checks, final inspect, and a checkerboard preview.
 
 Example:
 
@@ -151,28 +150,26 @@ Example:
 gptimg inspect \
   --in donut-original.png \
   --key from-sidecar \
-  --mode outer \
-  > 01-inspect-outer.json
+  --preserve-interior \
+  > 01-inspect-preserve.json
 
 gptimg inspect \
   --in donut-original.png \
   --key from-sidecar \
-  --mode all \
-  > 02-inspect-all.json
+  > 02-inspect-aggressive.json
 
 gptimg chroma \
   --in donut-original.png \
   --key from-sidecar \
-  --mode all \
+  --preserve-interior \
   --out-name donut-final.png \
   --mask-name donut-final-mask.png \
-  --verify "background is transparent, including the hole; subject edges are smooth" \
+  --verify "background is transparent; the donut hole stays opaque; subject edges are smooth" \
   > 03-chroma-final.json
 
 gptimg inspect \
   --in donut-final.png \
   --key '#00ff00' \
-  --mode all \
   > 04-inspect-final.json
 ```
 
@@ -183,28 +180,11 @@ Expected final checks:
 - `04-inspect-final.json.stats.removedPixels === 0` for the explicit key
 - no visible green halo in the verify preview
 
-### Do Not Chain Mode Changes Through Chroma Outputs
+### Do Not Chain Settings Through Chroma Outputs
 
-If changing chroma `mode`, key, threshold, despill, or fill strategy, rerun from the original image.
+If changing chroma key, threshold, `--preserve-interior`, or fill strategy, rerun from the original image.
 
-Do not use an already background-removed image as the final source for a new strategy. The current chroma pipeline computes a fresh alpha matte from the input pixels; it does not compose with existing alpha. In practice, running `mode=all` on an `outer` output can remove an interior hole while turning the already-transparent outside opaque or black.
-
-Diagnostic intermediates are useful, but final renders should come from the original source unless the tool gains an explicit alpha-preserving compose mode.
-
-### Diagnostic No-Despill Pass
-
-`--no-despill` can preserve key-colored pixels for inspection after an outer pass:
-
-```sh
-gptimg chroma \
-  --in donut-original.png \
-  --key from-sidecar \
-  --mode outer \
-  --no-despill \
-  --out-name donut-outer-diagnostic.png
-```
-
-Use this only as a diagnostic intermediate. It may leave green rim/spill and should not be treated as final output.
+Do not use an already background-removed image as the final source for a new strategy. The chroma pipeline computes a fresh alpha matte from the input pixels; it does not compose with existing alpha.
 
 ## Verification Loops
 
@@ -243,7 +223,7 @@ Use recipe files for stable defaults:
   },
   "chroma": {
     "color": "#00ff00",
-    "mode": "outer"
+    "preserveInterior": false
   },
   "network": {
     "imageGenerate": { "timeout": 300000 },
@@ -285,5 +265,5 @@ A skill that wraps `gptimg` should:
 Minimal skill prompt snippet:
 
 ```text
-Use gptimg artifacts as durable state. Keep original images. Before chroma removal, inspect the original in outer mode. If interior key regions are possible, inspect the original in all mode and compare non-border regions. When changing chroma mode or strategy, rerun from the original image. Do not use already background-removed intermediates as final sources. Verify final outputs with inspect and vision.
+Use gptimg artifacts as durable state. Keep original images. Before chroma removal, inspect the original. If the subject has interior key-colored content that must be kept (donut hole, intentional green segment), use `--preserve-interior`; otherwise the default removes all key-colored pixels. When changing chroma settings, rerun from the original image. Do not use already background-removed intermediates as final sources. Verify final outputs with inspect and vision.
 ```

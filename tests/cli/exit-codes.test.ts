@@ -109,11 +109,11 @@ describe("CLI exit codes", () => {
       "chroma",
       "--in",
       fixture("green-disk.png"),
-      "--mode",
+      "--metric",
       "bad",
     ]);
     expect(badChoice.code).toBe(2);
-    expect(badChoice.stderr).toContain("Allowed choices are outer, all");
+    expect(badChoice.stderr).toContain("Allowed choices are lab_de76");
   });
 
   it("returns 2 for CLI-owned usage validation", async () => {

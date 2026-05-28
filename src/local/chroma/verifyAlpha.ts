@@ -1,9 +1,9 @@
 import { loadRawRGBA, writeRGBA } from "../../image/bridge.js";
-import type { ChromaAlphaVerifyResult, ChromaMode } from "../../types.js";
+import type { ChromaAlphaVerifyResult } from "../../types.js";
 
 interface VerifyAlphaOptions {
   key: string;
-  mode: ChromaMode;
+  preserveInterior: boolean;
   expectInteriorTransparency: boolean;
 }
 
@@ -121,7 +121,8 @@ export async function verifyChromaAlpha(
   if (borderTransparentArea === 0) reasons.push("No transparent border background was detected");
   if (partialAlphaPixels === 0) reasons.push("No partial-alpha pixels were detected for smooth edges");
   if (opts.expectInteriorTransparency && interiorTransparentArea === 0) {
-    reasons.push(`${opts.mode} mode removed an interior region but no interior transparent area was detected`);
+    const desc = opts.preserveInterior ? "with --preserve-interior off" : "without --preserve-interior";
+    reasons.push(`an interior region was removed ${desc} but no interior transparent area was detected`);
   }
   if (boundaryKeyDominantRatio > 0.5) {
     reasons.push(
