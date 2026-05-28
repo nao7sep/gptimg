@@ -6,7 +6,6 @@ import type {
   EditRecipe,
   GenerateRecipe,
   Recipe,
-  RecipeVerb,
   VisionRecipe,
 } from "../types.js";
 
@@ -120,15 +119,4 @@ export function validateRecipe(input: unknown): Recipe {
     );
   }
   return r.data as Recipe;
-}
-
-export function sectionValidator(verb: RecipeVerb): (input: unknown) => unknown {
-  switch (verb) {
-    case "generate":
-      return validateGenerateSection;
-    case "edit":
-      return validateEditSection;
-    case "vision":
-      return validateVisionSection;
-  }
 }

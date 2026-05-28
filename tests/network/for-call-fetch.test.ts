@@ -117,11 +117,42 @@ describe("network schema errors", () => {
 describe("fetchWithBudget", () => {
   const servers: http.Server[] = [];
 
+  /**
+   * Listen on a request handler that holds the first `holdCount` requests
+   * open until the client disconnects (i.e. its per-attempt timeout
+   * aborts), then responds 200 with `okBody` for every subsequent request.
+   *
+   * Holding the connection open means the budget timeout is the only thing
+   * that can terminate the fetch — there is no scheduler race between a
+   * delayed server response and a small client timeout.
+   */
+  async function listenHoldThenOk(
+    holdCount: number,
+    okBody = "ok",
+  ): Promise<{ server: http.Server; baseURL: string; calls: () => number }> {
+    let calls = 0;
+    const { server, baseURL } = await listen((req, res) => {
+      calls += 1;
+      if (calls <= holdCount) {
+        // Hold the request open. When the client aborts, the socket closes;
+        // the handler exits without writing — no resources to release.
+        req.on("close", () => {});
+        return;
+      }
+      res.writeHead(200);
+      res.end(okBody);
+    });
+    return { server, baseURL, calls: () => calls };
+  }
+
   afterEach(async () => {
     await Promise.all(
       servers.map(
         (server) =>
           new Promise<void>((resolve, reject) => {
+            // Drop any sockets the held-open tests left dangling so
+            // server.close() does not wait on them.
+            server.closeAllConnections();
             server.close((err) => (err ? reject(err) : resolve()));
           }),
       ),
@@ -206,17 +237,12 @@ describe("fetchWithBudget", () => {
   });
 
   it("uses the budget timeout to abort slow responses", async () => {
-    const { server, baseURL } = await listen((_req, res) => {
-      setTimeout(() => {
-        res.writeHead(200);
-        res.end("late");
-      }, 50);
-    });
+    const { server, baseURL } = await listenHoldThenOk(1);
     servers.push(server);
 
     await expect(
       fetchWithBudget(baseURL, {
-        timeout: 5,
+        timeout: 100,
         maxRetries: 0,
         retryIntervals: [],
       }),
@@ -226,28 +252,16 @@ describe("fetchWithBudget", () => {
   });
 
   it("retries per-attempt timeout failures", async () => {
-    let calls = 0;
-    const { server, baseURL } = await listen((_req, res) => {
-      calls += 1;
-      if (calls === 1) {
-        setTimeout(() => {
-          res.writeHead(200);
-          res.end("late");
-        }, 50);
-        return;
-      }
-      res.writeHead(200);
-      res.end("ok");
-    });
+    const { server, baseURL, calls } = await listenHoldThenOk(1);
     servers.push(server);
 
     await expect(
       fetchWithBudget(baseURL, {
-        timeout: 5,
+        timeout: 100,
         maxRetries: 1,
         retryIntervals: [],
       }),
     ).resolves.toEqual(new Uint8Array(Buffer.from("ok")));
-    expect(calls).toBe(2);
+    expect(calls()).toBe(2);
   });
 });

@@ -12,8 +12,6 @@ export const ProfileSchema = z
   })
   .strict();
 
-export type ProfileSchemaType = z.infer<typeof ProfileSchema>;
-
 export function formatProfileZodError(err: z.ZodError): string {
   return err.issues
     .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)

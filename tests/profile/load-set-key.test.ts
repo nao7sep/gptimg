@@ -260,4 +260,50 @@ describe("setApiKey / clearApiKey", () => {
     const st = await stat(file);
     expect(st.mode & 0o777).toBe(0o600);
   });
+
+  it.skipIf(!POSIX)("setApiKey replaces the key on a loose-mode profile that already carries apiKey", async () => {
+    // The strict load path would refuse this profile. set-key is part of the
+    // remediation, so it must accept the file, replace the key, and tighten
+    // the mode in one step. This pins the contract that modify paths never
+    // halt on insecureMode for the very file they are about to fix.
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(
+      file,
+      JSON.stringify({ provider: "openai", apiKey: "stale-key-on-disk" }) + "\n",
+    );
+    await chmod(file, 0o644);
+
+    await expect(setApiKey(file, "sk-fresh")).resolves.toBeUndefined();
+
+    const st = await stat(file);
+    expect(st.mode & 0o777).toBe(0o600);
+    const profile = await loadProfile(file);
+    expect(typeof profile.apiKey).toBe("string");
+    expect(deobfuscate(profile.apiKey as string)).toBe("sk-fresh");
+  });
+
+  it.skipIf(!POSIX)("clearApiKey removes the key on a loose-mode profile that carries apiKey", async () => {
+    // Same remediation contract for clear-key: must succeed on the exact
+    // file that the strict load would reject, and must end at 0o600 with no
+    // apiKey field.
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(
+      file,
+      JSON.stringify({
+        provider: "openai",
+        apiKey: "leaked-key",
+        apiKeyEnv: "OPENAI_API_KEY",
+      }) + "\n",
+    );
+    await chmod(file, 0o644);
+
+    await expect(clearApiKey(file)).resolves.toBeUndefined();
+
+    const st = await stat(file);
+    expect(st.mode & 0o777).toBe(0o600);
+    await expect(loadProfile(file)).resolves.toEqual({
+      provider: "openai",
+      apiKeyEnv: "OPENAI_API_KEY",
+    });
+  });
 });

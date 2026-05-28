@@ -1,4 +1,4 @@
-import { Command, InvalidArgumentError, Option } from "commander";
+import { Command } from "commander";
 
 export function addAiCommonOptions(cmd: Command): Command {
   return cmd
@@ -24,20 +24,4 @@ export function addOverwriteOption(cmd: Command): Command {
 
 export function collectMultiInput(value: string, prev: string[] = []): string[] {
   return [...prev, value];
-}
-
-export function intOption(name: string, desc: string): Option {
-  return new Option(name, desc).argParser((v) => {
-    const n = parseInt(v, 10);
-    if (Number.isNaN(n)) throw new InvalidArgumentError("not a number");
-    return n;
-  });
-}
-
-export function floatOption(name: string, desc: string): Option {
-  return new Option(name, desc).argParser((v) => {
-    const n = parseFloat(v);
-    if (Number.isNaN(n)) throw new InvalidArgumentError("not a number");
-    return n;
-  });
 }

@@ -1,5 +1,4 @@
 import sharp from "sharp";
-import { Image } from "image-js";
 import { LocalOpError } from "../errors.js";
 
 export interface RawImage {
@@ -27,24 +26,6 @@ export async function loadRawRGBA(path: string): Promise<RawImage> {
     height: info.height,
     channels: 4,
   };
-}
-
-export function rawRGBAToImageJs(raw: RawImage): Image {
-  const colorModel = raw.channels === 4 ? "RGBA" : raw.channels === 3 ? "RGB" : "GREY";
-  return new Image(raw.width, raw.height, { data: raw.data, colorModel });
-}
-
-/**
- * Wrap a binary mask (Uint8Array of 0 or 255 values, length = width*height)
- * as an image-js GREY Image. Use `.mask({ threshold: 0 })` on the result
- * to obtain a binary Mask suitable for ROI / morphology operations.
- */
-export function uint8MaskToGreyImage(
-  mask: Uint8Array,
-  width: number,
-  height: number,
-): Image {
-  return new Image(width, height, { data: mask, colorModel: "GREY" });
 }
 
 export async function writeRGBA(
