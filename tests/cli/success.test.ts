@@ -7,7 +7,9 @@ const sdkCalls = vi.hoisted(() => ({
   generate: vi.fn(),
   edit: vi.fn(),
   vision: vi.fn(),
-  chroma: vi.fn(),
+  mask: vi.fn(),
+  compose: vi.fn(),
+  combine: vi.fn(),
   setApiKey: vi.fn(),
   clearApiKey: vi.fn(),
 }));
@@ -22,7 +24,9 @@ vi.mock("../../src/gptimg.js", () => ({
     generate = sdkCalls.generate;
     edit = sdkCalls.edit;
     vision = sdkCalls.vision;
-    chroma = sdkCalls.chroma;
+    mask = sdkCalls.mask;
+    compose = sdkCalls.compose;
+    combine = sdkCalls.combine;
   },
 }));
 
@@ -93,7 +97,29 @@ describe("CLI success contracts", () => {
     sdkCalls.generate.mockResolvedValue({ files: [], sidecarPath: "s.json", logPath: "l.jsonl", partial: false });
     sdkCalls.edit.mockResolvedValue({ files: [], sidecarPath: "e.json", logPath: "l.jsonl", partial: false });
     sdkCalls.vision.mockResolvedValue({ ok: true, score: 1, reasons: ["ok"], raw: {}, sidecarPath: "v.json", logPath: "l.jsonl" });
-    sdkCalls.chroma.mockResolvedValue({ input: "in.png", outputs: { image: "out.png", mask: null }, stats: {}, logPath: "l.jsonl" });
+    sdkCalls.mask.mockResolvedValue({
+      input: "in.png",
+      output: "in-mask.png",
+      stats: { key: "#00ff00", keySource: "explicit", preserveInterior: false, removedPixels: 0, removedFraction: 0, width: 1, height: 1 },
+      logPath: "l.jsonl",
+    });
+    sdkCalls.compose.mockResolvedValue({
+      input: "in.png",
+      mask: "in-mask.png",
+      output: "in-composed.png",
+      width: 1,
+      height: 1,
+      over: "transparent",
+      logPath: "l.jsonl",
+    });
+    sdkCalls.combine.mockResolvedValue({
+      inputs: ["a.png", "b.png"],
+      output: "a-union.png",
+      width: 1,
+      height: 1,
+      op: "union",
+      logPath: "l.jsonl",
+    });
     sdkCalls.setApiKey.mockResolvedValue(undefined);
     sdkCalls.clearApiKey.mockResolvedValue(undefined);
   });
@@ -208,27 +234,73 @@ describe("CLI success contracts", () => {
     );
   });
 
-  it("chroma maps local options and boolean toggles", async () => {
+  it("mask maps key, preserve-interior, and dry-run flags", async () => {
     const result = await run([
-      "chroma",
+      "mask",
       "--in",
       "in.png",
       "--key",
       "#00ff00",
       "--preserve-interior",
-      "--no-fill-holes",
-      "--no-mask",
+      "--dry-run",
     ]);
 
     expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout).outputs.mask).toBeNull();
-    expect(sdkCalls.chroma).toHaveBeenCalledWith(
+    expect(JSON.parse(result.stdout).output).toBe("in-mask.png");
+    expect(sdkCalls.mask).toHaveBeenCalledWith(
       expect.objectContaining({
         in: "in.png",
+        method: "chroma",
         key: "#00ff00",
         preserveInterior: true,
-        fillHoles: false,
-        maskName: false,
+        dryRun: true,
+      }),
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("compose forwards --over and --decontaminate", async () => {
+    const result = await run([
+      "compose",
+      "--in",
+      "in.png",
+      "--mask",
+      "in-mask.png",
+      "--over",
+      "#ffffff",
+      "--decontaminate",
+      "#00ff00",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).output).toBe("in-composed.png");
+    expect(sdkCalls.compose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        in: "in.png",
+        mask: "in-mask.png",
+        over: "#ffffff",
+        decontaminate: "#00ff00",
+      }),
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("combine forwards op and repeated --in inputs", async () => {
+    const result = await run([
+      "combine",
+      "union",
+      "--in",
+      "a.png",
+      "--in",
+      "b.png",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).output).toBe("a-union.png");
+    expect(sdkCalls.combine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: "union",
+        inputs: ["a.png", "b.png"],
       }),
       { signal: expect.any(AbortSignal) },
     );
@@ -276,7 +348,17 @@ describe("CLI success contracts", () => {
         args: ["vision", "--in", "in.png", "--check", "ok"],
         fn: sdkCalls.vision,
       },
-      { name: "chroma", args: ["chroma", "--in", "in.png"], fn: sdkCalls.chroma },
+      { name: "mask", args: ["mask", "--in", "in.png"], fn: sdkCalls.mask },
+      {
+        name: "compose",
+        args: ["compose", "--in", "in.png", "--mask", "m.png"],
+        fn: sdkCalls.compose,
+      },
+      {
+        name: "combine",
+        args: ["combine", "invert", "--in", "a.png"],
+        fn: sdkCalls.combine,
+      },
     ];
 
     for (const item of cases) {
@@ -301,24 +383,29 @@ describe("CLI success contracts", () => {
   it("reports usage errors for invalid local option parsers", async () => {
     const cases = [
       [
-        "bad chroma key",
-        ["chroma", "--in", "in.png", "--key", "green"],
+        "bad mask key",
+        ["mask", "--in", "in.png", "--key", "green"],
         "must be 'auto', 'from-sidecar', or '#rrggbb'",
       ],
       [
-        "bad chroma float",
-        ["chroma", "--in", "in.png", "--inner-threshold", "wide"],
-        "--inner-threshold: not a number",
-      ],
-      [
-        "bad chroma int",
-        ["chroma", "--in", "in.png", "--border-sample", "large"],
+        "bad mask border-sample",
+        ["mask", "--in", "in.png", "--border-sample", "large"],
         "--border-sample: not a number",
       ],
       [
-        "bad chroma choice",
-        ["chroma", "--in", "in.png", "--metric", "rgb"],
-        "Allowed choices are lab_de76",
+        "bad mask method choice",
+        ["mask", "--in", "in.png", "--method", "ai"],
+        "Allowed choices are chroma",
+      ],
+      [
+        "bad compose decontaminate",
+        ["compose", "--in", "in.png", "--mask", "m.png", "--decontaminate", "green"],
+        "--decontaminate: must be #rrggbb",
+      ],
+      [
+        "bad combine op",
+        ["combine", "unknown-op", "--in", "a.png"],
+        "invalid op 'unknown-op'",
       ],
     ] as const;
 
@@ -327,6 +414,8 @@ describe("CLI success contracts", () => {
       expect(result.code, name).toBe(2);
       expect(result.stderr, name).toContain(message);
     }
-    expect(sdkCalls.chroma).not.toHaveBeenCalled();
+    expect(sdkCalls.mask).not.toHaveBeenCalled();
+    expect(sdkCalls.compose).not.toHaveBeenCalled();
+    expect(sdkCalls.combine).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,8 @@
 # GptImg
 
-TypeScript SDK + CLI for AI image generation, vision verification, and local chroma-key post-processing. It is designed for human CLI use and for AI agents or skills that need durable artifacts: timestamped images, JSON sidecars, and JSONL logs.
+TypeScript SDK + CLI for AI image generation, vision verification, and local mask/compose post-processing. It is designed for human CLI use and for AI agents or skills that need durable artifacts: timestamped images, JSON sidecars, and JSONL logs.
+
+Each toy does one observable operation. Workflows are user-composed: `mask` produces a mask, `compose` applies a mask to an image, `combine` does set operations on masks. The chroma-key path is one mask producer among (eventually) several.
 
 Personal tool. v1 ships OpenAI only; the provider boundary exists but no second provider is shipped.
 
@@ -13,11 +15,11 @@ Most automated use should start with the agent manual:
 Core operating rules:
 
 - Parse CLI stdout JSON for success; runtime errors are JSON on stderr.
-- Keep the original generated or input image. Treat chroma outputs as derived artifacts.
-- Use task-specific `--out-dir` / `--out-name` values. Use `--overwrite` only when intentionally replacing an artifact group.
+- Keep the original generated or input image. Treat masks and composites as derived artifacts you can regenerate.
+- Use task-specific `--out-dir` / `--out-name` values. Use `--overwrite` only when intentionally replacing an artifact.
 - Treat `partial: true` from `generate` / `edit` as recoverable when at least one file was written.
-- For subjects with intentional interior key-colored content (donut hole, green segment, green clothing surrounded by non-green), pass `--preserve-interior` to keep those regions opaque.
-- When changing chroma key, threshold, `--preserve-interior`, or fill strategy, rerun from the original image. Do not use an already background-removed image as the final source unless intentionally experimenting.
+- For subjects with intentional interior key-colored content (donut hole, green segment, green clothing surrounded by non-green), pass `--preserve-interior` to `mask --method chroma` to keep those regions opaque.
+- Always run `mask` against the original image. If you want different mask parameters, rerun from the original — do not pass a previous mask or composite back through `mask`.
 
 ## Quick Start
 
@@ -86,18 +88,18 @@ Edit an existing image:
 gptimg edit "remove the background" --in input.png --out-dir ./out --out-name edited
 ```
 
-Chroma workflow for subjects with intentional key-colored content (donut holes, green segments of a rainbow stamp, a green tie):
+Remove a chroma-key background:
 
 ```sh
-# Run chroma with --preserve-interior to keep interior key-colored regions
-# opaque. Without the flag, all key-colored pixels become transparent.
-gptimg chroma \
-  --in donut-original.png \
-  --key from-sidecar \
-  --preserve-interior
+gptimg mask --in donut.png --key from-sidecar --preserve-interior \
+  --out-name donut-mask.png
+
+gptimg compose --in donut.png --mask donut-mask.png \
+  --decontaminate "#00ff00" \
+  --out-name donut-cutout.png
 ```
 
-To check the result, run `gptimg vision` against the output with whatever criterion you care about.
+To check the result, run `gptimg vision` against the composite with whatever criterion you care about.
 
 ## CLI Reference
 
@@ -112,9 +114,9 @@ gptimg generate "logo" \
 
 Outputs `<stem>.<ext>` for one image, or indexed filenames such as `<stem>-1.png` / `<stem>-01.png` when multiple images are written. A `<stem>.json` sidecar captures the resolved request and provider response with base64 image fields nulled.
 
-The artifact group for a single `generate`/`edit` invocation is `<stem>.<ext>` plus `<stem>-<digits>.<ext>` siblings plus the `<stem>.json` sidecar in `--out-dir`. Without `--overwrite`, any existing group member blocks with `output.exists`. With `--overwrite`, the run will replace only the files it plans to write; if prior-run group members exist that the new plan would *not* replace (for example, `<stem>-01.png` … `<stem>-10.png` left over from `n=10` when the new run uses `n=2`), the command halts with `output.staleSiblings` rather than silently leaving orphans behind a sidecar that no longer describes them. Delete the listed files or pick a fresh `--out-name`. Chroma-derived siblings (`<stem>-mask.png`, `<stem>-chroma.png`) are not part of the generate/edit group and are never touched by this check.
+The artifact group for a single `generate`/`edit` invocation is `<stem>.<ext>` plus `<stem>-<digits>.<ext>` siblings plus the `<stem>.json` sidecar in `--out-dir`. Without `--overwrite`, any existing group member blocks with `output.exists`. With `--overwrite`, the run will replace only the files it plans to write; if prior-run group members exist that the new plan would *not* replace (for example, `<stem>-01.png` … `<stem>-10.png` left over from `n=10` when the new run uses `n=2`), the command halts with `output.staleSiblings` rather than silently leaving orphans behind a sidecar that no longer describes them. Delete the listed files or pick a fresh `--out-name`. Mask and composite siblings are not part of the generate/edit group and are never touched by this check.
 
-If `recipe.chroma.color` is set, `generate` records the color in the sidecar so later `chroma --key from-sidecar` can reuse it.
+If `recipe.chroma.color` is set, `generate` records the color in the sidecar so later `mask --key from-sidecar` can reuse it.
 
 ### `edit`
 
@@ -136,24 +138,81 @@ Returns `{ ok, score, reasons }` from a structured `json_schema` response. Image
 
 Vision detail can be configured with `recipe.vision.detail` or `--set detail=low|high|original|auto`. By default, detail is left unset so the model can choose automatically. `original` requires a model that supports it; the default vision model does not.
 
-### `chroma`
+### `mask`
 
 ```sh
 # Auto-detect the chroma key from the image border.
-gptimg chroma --in image.png
+gptimg mask --in image.png
 
 # Use the hint stored in the sibling sidecar.
-gptimg chroma --in image.png --key from-sidecar
+gptimg mask --in image.png --key from-sidecar
 
 # Keep interior key-colored regions opaque (donut hole, intentional green subject content).
-gptimg chroma --in donut.png --preserve-interior
+gptimg mask --in donut.png --preserve-interior
+
+# Compute stats without writing a file.
+gptimg mask --in image.png --dry-run
 ```
 
-Local only; no API call.
+Local only; no API call. Produces a grayscale alpha mask the same size as the input. Currently only `--method chroma` is implemented; AI segmentation will land as a second method.
 
-Algorithm: the chroma background is detected with a Gaussian color model in LAB and per-pixel α is derived from the linear-RGB spill ratio `α = 1 − spill / key_strength`, where `spill = max(0, key_channel − max(other_channels))`. A pure-key pixel is fully transparent regardless of where it sits. For partial-α pixels the foreground color is inpainted by iterated dilation from confirmed-opaque pixels, so edges fade as the real subject color rather than as a dark Vlahos clip or a green halo.
+Chroma method algorithm: the key is taken as `--key` (or detected as the linear-RGB average of border pixels for `--key auto`). Per-pixel α is then `clamp(1 − spill / key_strength)` where spill is `max(0, C[key] − max(C[other_1], C[other_2]))` for a primary key (R/G/B), or `max(0, min(C[other_1], C[other_2]) − C[suppressed])` for a secondary key (C/M/Y). A pure-key pixel is fully transparent; a pixel with no key contamination is opaque. With `--preserve-interior`, a flood fill from the border identifies border-connected transparent pixels; any α≈0 pixel not reached by the fill (the inside of a donut hole, for example) is forced back to opaque.
 
-By default, every key-colored pixel becomes transparent — including interior regions like donut holes or intentional green subject content. Pass `--preserve-interior` to force interior key-colored regions to stay opaque. Border-connected key regions are always removed.
+### `compose`
+
+```sh
+# Apply mask to image, write transparent RGBA.
+gptimg compose --in image.png --mask image-mask.png
+
+# Flatten over a solid color.
+gptimg compose --in image.png --mask image-mask.png --over "#ffffff"
+
+# Flatten over another image.
+gptimg compose --in image.png --mask image-mask.png --over background.png
+
+# Decontaminate spill on partial-alpha pixels using a known key color.
+gptimg compose --in image.png --mask image-mask.png --decontaminate "#00ff00"
+```
+
+Local only. Writes RGBA when `--over` is omitted; flattens to opaque RGB when `--over` is given. `--decontaminate` inpaints clean foreground color into partial-α pixels by iterated dilation from confirmed-opaque sources, suppressing visible halos for the specified key.
+
+### `combine`
+
+```sh
+# Union of two masks (pixelwise max).
+gptimg combine union --in a.png --in b.png
+
+# Intersection (pixelwise min).
+gptimg combine intersect --in a.png --in b.png
+
+# Set difference (a − b).
+gptimg combine subtract --in a.png --in b.png
+
+# Invert a single mask.
+gptimg combine invert --in a.png
+
+# Feather a mask with N 3×3 box-blur passes.
+gptimg combine feather --in a.png --radius 2
+```
+
+Local only. The donut-hole workflow uses `combine`:
+
+```sh
+# Whole donut shape (a model that segments salient subject would put the hole inside).
+gptimg mask --in donut.png --method chroma --key "#00ff00" \
+  --preserve-interior --out-name donut-shape.png
+
+# Just the hole (and exterior bg): chroma without --preserve-interior.
+gptimg mask --in donut.png --method chroma --key "#00ff00" \
+  --out-name donut-keyed.png
+
+# Subtract the keyed regions from the shape → donut with a transparent hole.
+gptimg combine subtract --in donut-shape.png --in donut-keyed.png \
+  --out-name donut-final-mask.png
+
+gptimg compose --in donut.png --mask donut-final-mask.png \
+  --out-name donut-cutout.png
+```
 
 ## SDK
 
@@ -167,7 +226,11 @@ const verdict = await sdk.vision({
   in: gen.files[0].path,
   check: "subject is centered and well-lit",
 });
-const chroma = await sdk.chroma({ in: gen.files[0].path });
+const mask = await sdk.mask({ in: gen.files[0].path });
+const cutout = await sdk.compose({
+  in: gen.files[0].path,
+  mask: mask.output!,
+});
 ```
 
 All SDK verbs return data objects and never write to stdout/stderr. Each method accepts `{ signal?: AbortSignal }` as a second argument.
@@ -176,7 +239,7 @@ Building blocks are exposed for composition:
 
 ```ts
 sdk.profile.load / resolve / setApiKey / clearApiKey
-sdk.recipe.load / merge / applySet / applyPatch
+sdk.recipe.load / merge / applySet
 sdk.sidecar.read / write
 sdk.image.hash / detectFormat / shrinkForVision
 sdk.log.open / append / close / createLogger
@@ -253,14 +316,15 @@ Bare `--set` keys are scoped under the current verb; paths beginning with `gener
 | `<stem>.<ext>`, `<stem>-N.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
 | `<stem>.json` | Sidecar with resolved request, redacted response, SHA-256 file table |
 | `<utc>-gptimg.jsonl` | Per-invocation JSONL log |
-| `<input-stem>-chroma.png` | Chroma RGBA result |
-| `<input-stem>-mask.png` | Chroma alpha mask |
+| `<input-stem>-mask.png` | `mask` output (grayscale alpha) |
+| `<input-stem>-composed.png` | `compose` output (RGBA or flattened RGB) |
+| `<input-stem>-<op>.png` | `combine` output (grayscale alpha) |
 
 Sidecars store basenames for image entries so an image + sidecar pair can be moved together.
 
 ## Cancellation
 
-Every SDK method accepts an optional `AbortSignal`. On abort, the SDK rejects with `AbortError` (`errorType: "abort"`, `code: "cancelled"`), closes in-flight HTTP requests, cancels URL downloads, breaks out of retry sleeps, stops chroma at the next phase boundary, and skips sidecar writes that would be incomplete.
+Every SDK method accepts an optional `AbortSignal`. On abort, the SDK rejects with `AbortError` (`errorType: "abort"`, `code: "cancelled"`), closes in-flight HTTP requests, cancels URL downloads, breaks out of retry sleeps, stops local operations at the next phase boundary, and skips sidecar writes that would be incomplete.
 
 Cancellation cannot stop OpenAI server-side inference after the request has been accepted; billing may still occur. It also cannot interrupt a `sharp` decode mid-stage or reverse an atomic write that has already begun.
 

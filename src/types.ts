@@ -39,16 +39,23 @@ export interface VisionRecipe {
   [key: string]: unknown;
 }
 
-export interface ChromaRecipe {
+/** Defaults for `mask --method chroma` and the implicit chroma backdrop record on `generate`. */
+export interface MaskRecipe {
+  /** Chroma key color, "#rrggbb". Also recorded in the sidecar when `generate` runs. */
   color?: string;
   /** When true, interior key-colored regions are kept opaque. Default false. */
   preserveInterior?: boolean;
-  innerThreshold?: number;
+  /** Border-sample depth in pixels for `--key auto`. */
   borderSample?: number;
-  fillHoles?: boolean;
-  strictConfidence?: number;
   [key: string]: unknown;
 }
+
+/**
+ * `chroma` is the historical name; the recipe slot stays under `recipe.chroma`
+ * so existing recipe files keep working. `MaskRecipe` is the type alias used
+ * by Phase 2 code paths.
+ */
+export type ChromaRecipe = MaskRecipe;
 
 export interface Recipe {
   generate?: GenerateRecipe;
@@ -84,7 +91,13 @@ export type LogStage =
   | "retry"
   | "cancelled"
   | "error";
-export type LogVerb = "generate" | "edit" | "vision" | "chroma";
+export type LogVerb =
+  | "generate"
+  | "edit"
+  | "vision"
+  | "mask"
+  | "compose"
+  | "combine";
 
 export interface LogEntry {
   ts: string;
@@ -157,60 +170,92 @@ export interface VisionResult extends VisionVerdict {
   logPath: string;
 }
 
-/** Distance metric in LAB color space. Single value today; widened when alternatives ship. */
-export type ChromaMetric = "lab_de76";
+// ----- mask / compose / combine -----
+
+export type MaskMethod = "chroma";
 export type ChromaKeySource = "auto" | "sidecar" | "explicit";
 
-export interface ChromaRegionSummary {
-  area: number;
-  meanConfidence: number;
-  touchesBorder: boolean;
-}
-
-export interface ChromaStats {
+export interface MaskStats {
+  /** Resolved key color as `#rrggbb`. */
   key: string;
   keySource: ChromaKeySource;
-  /** Echo of the runtime preserveInterior choice. */
   preserveInterior: boolean;
   removedPixels: number;
   removedFraction: number;
-  regionsRemoved: ChromaRegionSummary[];
-  meanConfidence: number;
-  noKeyDetected: boolean;
-  subjectKeyCollisionRisk: boolean;
-  bgModel: {
-    meanLab: [number, number, number];
-    covEigs: [number, number, number];
-  };
+  width: number;
+  height: number;
 }
 
-export interface ChromaArgs {
+export interface MaskArgs {
   in: string;
-  /** When true, keep interior key-colored regions opaque (donut hole, intentional green subject content). */
-  preserveInterior?: boolean;
-  /** "auto" | "from-sidecar" | "#rrggbb" */
+  method?: MaskMethod;
+  /** "auto" | "from-sidecar" | "#rrggbb" — chroma-method only. */
   key?: string;
-  innerThreshold?: number;
-  metric?: ChromaMetric;
+  preserveInterior?: boolean;
   borderSample?: number;
-  fillHoles?: boolean;
-  strictConfidence?: number;
+  /** Skip writing the mask; emit stats only. */
+  dryRun?: boolean;
   outDir?: string;
   outName?: string;
-  /** Mask filename, or `false` to disable mask output. */
-  maskName?: string | false;
   recipe?: string;
   log?: string;
   overwrite?: boolean;
 }
 
-export interface ChromaResult {
+export interface MaskResult {
   input: string;
-  outputs: {
-    image: string;
-    mask: string | null;
-  };
-  stats: ChromaStats;
+  /** Null when dryRun was set. */
+  output: string | null;
+  stats: MaskStats;
+  logPath: string;
+}
+
+export interface ComposeArgs {
+  in: string;
+  mask: string;
+  /**
+   * "transparent" | "#rrggbb" | "<path-to-image>" — flatten target.
+   * Omit for transparent output.
+   */
+  over?: string;
+  /** Optional decontamination: spill key as `#rrggbb`. */
+  decontaminate?: string;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface ComposeResult {
+  input: string;
+  mask: string;
+  output: string;
+  width: number;
+  height: number;
+  over: "transparent" | "color" | "image";
+  logPath: string;
+}
+
+export type CombineOp = "union" | "intersect" | "subtract" | "invert" | "feather";
+
+export interface CombineArgs {
+  op: CombineOp;
+  /** 1 input for `invert`/`feather`, 2 inputs for the binary ops. */
+  inputs: string[];
+  /** Feather radius (number of 3×3 box-blur passes). Ignored for other ops. */
+  radius?: number;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface CombineResult {
+  inputs: string[];
+  output: string;
+  width: number;
+  height: number;
+  op: CombineOp;
   logPath: string;
 }
 

@@ -110,14 +110,14 @@ describe("CLI exit codes", () => {
     expect(missingArg.stderr).toContain("missing required argument 'prompt'");
 
     const badChoice = await run([
-      "chroma",
+      "mask",
       "--in",
       fixture("green-disk.png"),
-      "--metric",
-      "bad",
+      "--method",
+      "ai",
     ]);
     expect(badChoice.code).toBe(2);
-    expect(badChoice.stderr).toContain("Allowed choices are lab_de76");
+    expect(badChoice.stderr).toContain("Allowed choices are chroma");
   });
 
   it("returns 2 for CLI-owned usage validation", async () => {
@@ -126,7 +126,7 @@ describe("CLI exit codes", () => {
     expect(missingKey.stderr).toContain("No API key provided");
 
     const badNumber = await run([
-      "chroma",
+      "mask",
       "--in",
       fixture("green-disk.png"),
       "--border-sample",
@@ -193,15 +193,15 @@ describe("CLI exit codes", () => {
   });
 
   it("returns 5 for local operation errors", async () => {
-    const chromaMissing = await run([
-      "chroma",
+    const maskMissing = await run([
+      "mask",
       "--in",
       path.join(tmp, "missing.png"),
       "--log",
-      path.join(tmp, "chroma-missing.log"),
+      path.join(tmp, "mask-missing.log"),
     ]);
-    expect(chromaMissing.code).toBe(5);
-    expect(parseError(chromaMissing.stderr).error.type).toBe("localOp");
+    expect(maskMissing.code).toBe(5);
+    expect(parseError(maskMissing.stderr).error.type).toBe("localOp");
 
     const edit = await run([
       "edit",
@@ -256,7 +256,7 @@ describe("CLI exit codes", () => {
     const logDir = path.join(tmp, "log-dir");
     await mkdir(logDir);
     const badLog = await run([
-      "chroma",
+      "mask",
       "--in",
       fixture("green-disk.png"),
       "--log",
@@ -268,7 +268,7 @@ describe("CLI exit codes", () => {
     const fileAsDir = path.join(tmp, "file-as-dir");
     await writeFile(fileAsDir, "");
     const badOutDir = await run([
-      "chroma",
+      "mask",
       "--in",
       fixture("green-disk.png"),
       "--out-dir",
@@ -280,29 +280,24 @@ describe("CLI exit codes", () => {
     expect(parseError(badOutDir.stderr).error.code).toBe("output.mkdirFailed");
   });
 
-  it("keeps successful chroma output on stdout", async () => {
-    const outPath = path.join(tmp, "out.png");
-    const maskPath = path.join(tmp, "mask.png");
+  it("keeps successful mask output on stdout", async () => {
+    const outPath = path.join(tmp, "out-mask.png");
     const result = await run([
-      "chroma",
+      "mask",
       "--in",
       fixture("green-disk.png"),
       "--out-name",
       outPath,
-      "--mask-name",
-      maskPath,
       "--log",
-      path.join(tmp, "chroma.log"),
+      path.join(tmp, "mask.log"),
     ]);
 
     expect(result.code).toBe(0);
     expect(result.stderr).toBe("");
     const payload = JSON.parse(result.stdout) as {
-      outputs: { image: string; mask: string | null };
+      output: string;
     };
-    expect(payload.outputs.image).toBe(outPath);
-    expect(payload.outputs.mask).toBe(maskPath);
+    expect(payload.output).toBe(outPath);
     expect(existsSync(outPath)).toBe(true);
-    expect(existsSync(maskPath)).toBe(true);
   });
 });

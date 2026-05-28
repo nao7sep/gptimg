@@ -49,7 +49,7 @@ export async function writeRGBA(
   }
 }
 
-/** Write a binary mask (0/255) as a single-channel PNG. */
+/** Write a grayscale mask (0..255) as a single-channel PNG. */
 export async function writeMaskPNG(
   mask: Uint8Array,
   width: number,
@@ -69,4 +69,30 @@ export async function writeMaskPNG(
       { cause: err },
     );
   }
+}
+
+/**
+ * Load a grayscale mask PNG (0..255). If the file has multiple channels they
+ * are flattened to luminance. Alpha channels in the file are ignored.
+ */
+export async function loadMaskPNG(path: string): Promise<RawImage> {
+  let out;
+  try {
+    out = await sharp(path).grayscale().removeAlpha().raw().toBuffer({
+      resolveWithObject: true,
+    });
+  } catch (err) {
+    throw new LocalOpError(
+      "image.decodeFailed",
+      `Failed to decode mask at ${path}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
+  const { data, info } = out;
+  return {
+    data: new Uint8Array(data),
+    width: info.width,
+    height: info.height,
+    channels: 1,
+  };
 }

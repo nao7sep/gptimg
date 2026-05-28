@@ -1,0 +1,65 @@
+import { InvalidArgumentError, type Command } from "commander";
+import { GptImg } from "../../gptimg.js";
+import { getAbortSignal } from "../abort.js";
+import { emit } from "../output.js";
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+function parseHexOpt(name: string) {
+  return (v: string): string => {
+    if (!HEX_RE.test(v)) {
+      throw new InvalidArgumentError(`${name}: must be #rrggbb`);
+    }
+    return v;
+  };
+}
+
+interface ComposeCliOpts {
+  in: string;
+  mask: string;
+  over?: string;
+  decontaminate?: string;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export function registerCompose(program: Command): void {
+  const cmd = program
+    .command("compose")
+    .description("Apply a mask to an image. Optionally flatten over a color or background image.")
+    .requiredOption("--in <path>", "Input image path")
+    .requiredOption("--mask <path>", "Mask PNG (grayscale, same size as --in)")
+    .option(
+      "--over <value>",
+      "Flatten target: '#rrggbb' for solid color, or a path to another image. Omit for transparent output.",
+    )
+    .option(
+      "--decontaminate <#rrggbb>",
+      "Suppress spill from this key color on partial-alpha pixels.",
+      parseHexOpt("--decontaminate"),
+    )
+    .option("--out-dir <dir>", "Output directory (default: same as input)")
+    .option("--out-name <name>", "Output filename (default: <input-stem>-composed.png)")
+    .option("--log <path>", "Path to log JSONL file")
+    .option("--overwrite", "Overwrite an existing output file");
+
+  cmd.action(async (opts: ComposeCliOpts) => {
+    const sdk = new GptImg();
+    const result = await sdk.compose(
+      {
+        in: opts.in,
+        mask: opts.mask,
+        over: opts.over,
+        decontaminate: opts.decontaminate,
+        outDir: opts.outDir,
+        outName: opts.outName,
+        log: opts.log,
+        overwrite: opts.overwrite,
+      },
+      { signal: getAbortSignal() },
+    );
+    emit(result);
+  });
+}

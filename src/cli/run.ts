@@ -2,18 +2,20 @@ import { Command } from "commander";
 import { installSigintHandler } from "./abort.js";
 import { emitError } from "./output.js";
 import { exitCodeFor } from "./exitCodes.js";
-import { registerGenerate } from "./verbs/generate.js";
+import { registerCombine } from "./verbs/combine.js";
+import { registerCompose } from "./verbs/compose.js";
 import { registerEdit } from "./verbs/edit.js";
-import { registerVision } from "./verbs/vision.js";
-import { registerChroma } from "./verbs/chroma.js";
+import { registerGenerate } from "./verbs/generate.js";
+import { registerMask } from "./verbs/mask.js";
 import { registerProfile } from "./verbs/profile.js";
+import { registerVision } from "./verbs/vision.js";
 
 export function createProgram(): Command {
   const program = new Command();
   program
     .name("gptimg")
     .description(
-      "AI image generation, vision, and local chroma-key post-processing.",
+      "AI image generation, vision, and local mask + compose post-processing.",
     )
     .version("0.1.0")
     .showHelpAfterError()
@@ -22,7 +24,9 @@ export function createProgram(): Command {
   registerGenerate(program);
   registerEdit(program);
   registerVision(program);
-  registerChroma(program);
+  registerMask(program);
+  registerCompose(program);
+  registerCombine(program);
   registerProfile(program);
 
   return program;

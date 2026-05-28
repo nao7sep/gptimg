@@ -21,19 +21,25 @@ import {
   defaultProfilePath,
 } from "./internal/paths.js";
 import type {
-  ChromaArgs,
-  ChromaResult,
+  CombineArgs,
+  CombineResult,
+  ComposeArgs,
+  ComposeResult,
   EditArgs,
   EditResult,
   GenerateArgs,
   GenerateResult,
   GptImgOptions,
+  MaskArgs,
+  MaskResult,
   VisionArgs,
   VisionResult,
 } from "./types.js";
-import { chromaImpl } from "./verbs/chroma.js";
+import { combineImpl } from "./verbs/combine.js";
+import { composeImpl } from "./verbs/compose.js";
 import { editImpl } from "./verbs/edit.js";
 import { generateImpl } from "./verbs/generate.js";
+import { maskImpl } from "./verbs/mask.js";
 import type { VerbCallOptions } from "./verbs/options.js";
 import { visionImpl } from "./verbs/vision.js";
 
@@ -104,7 +110,15 @@ export class GptImg {
     return visionImpl(this.ctx, args, opts);
   }
 
-  chroma(args: ChromaArgs, opts?: VerbCallOptions): Promise<ChromaResult> {
-    return chromaImpl(this.ctx, args, opts);
+  mask(args: MaskArgs, opts?: VerbCallOptions): Promise<MaskResult> {
+    return maskImpl(this.ctx, args, opts);
+  }
+
+  compose(args: ComposeArgs, opts?: VerbCallOptions): Promise<ComposeResult> {
+    return composeImpl(this.ctx, args, opts);
+  }
+
+  combine(args: CombineArgs, opts?: VerbCallOptions): Promise<CombineResult> {
+    return combineImpl(this.ctx, args, opts);
   }
 }
