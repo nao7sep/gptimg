@@ -249,7 +249,9 @@ describe("CLI success contracts", () => {
     expect(sdkCalls.mask).toHaveBeenCalledWith(
       expect.objectContaining({
         in: "in.png",
-        method: "chroma",
+        // CLI passes undefined for an omitted --method; the SDK applies the
+        // "chroma" default (the CLI no longer owns a commander default).
+        method: undefined,
         key: "#00ff00",
         preserveInterior: true,
         dryRun: true,

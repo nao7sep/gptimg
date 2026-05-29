@@ -9,6 +9,7 @@
 
 import sharp from "sharp";
 import { LocalOpError, toAbortError } from "../errors.js";
+import { fitLongerSide } from "../image/aspect.js";
 import type { ResampleKernel } from "../types.js";
 
 export const RESIZE_DEFAULTS = {
@@ -22,22 +23,12 @@ const KERNELS: readonly ResampleKernel[] = [
   "lanczos2",
   "lanczos3",
 ];
+// Higher than upscale's cap (8192): resize is a single sharp resample with no
+// model and no large intermediate, so a bigger target is cheap.
 const MAX_TO_SIZE = 16384;
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
-}
-
-/** Longer side := toSize, aspect preserved, each axis at least 1 px. */
-function targetDims(
-  width: number,
-  height: number,
-  toSize: number,
-): { w: number; h: number } {
-  if (width >= height) {
-    return { w: toSize, h: Math.max(1, Math.round((toSize * height) / width)) };
-  }
-  return { w: Math.max(1, Math.round((toSize * width) / height)), h: toSize };
 }
 
 export interface ResizeRunArgs {
@@ -101,7 +92,7 @@ export async function runResize(
   }
   throwIfAborted(signal);
 
-  const { w, h } = targetDims(meta.width, meta.height, args.toSize);
+  const { w, h } = fitLongerSide(meta.width, meta.height, args.toSize);
 
   try {
     await sharp(args.in)

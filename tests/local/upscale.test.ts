@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runUpscale, type RgbUpscaler } from "../../src/local/upscale.js";
-import { planTiles } from "../../src/local/models/swin2sr.js";
+import {
+  planTiles,
+  tileAndStitch,
+  SWIN2SR_SCALE,
+  type PaddedModelRun,
+} from "../../src/local/models/swin2sr.js";
 import type { ResampleKernel } from "../../src/types.js";
 
 async function writeRawPng(
@@ -98,6 +103,86 @@ describe("planTiles", () => {
     const bottomRight = specs[3]!;
     expect(bottomRight.leftCtx).toBe(32);
     expect(bottomRight.topCtx).toBe(32);
+  });
+});
+
+// Deterministic ×4 of a /8-aligned interleaved-RGB buffer (stands in for ONNX).
+const nearestPaddedX4: PaddedModelRun = async (rgb, pw, ph) => {
+  const S = SWIN2SR_SCALE;
+  const ow = pw * S;
+  const oh = ph * S;
+  const out = new Uint8Array(ow * oh * 3);
+  for (let y = 0; y < oh; y++) {
+    const sy = (y / S) | 0;
+    for (let x = 0; x < ow; x++) {
+      const sx = (x / S) | 0;
+      const s = (sy * pw + sx) * 3;
+      const d = (y * ow + x) * 3;
+      out[d] = rgb[s]!;
+      out[d + 1] = rgb[s + 1]!;
+      out[d + 2] = rgb[s + 2]!;
+    }
+  }
+  return out;
+};
+
+function rgbPattern(W: number, H: number): Uint8Array {
+  const out = new Uint8Array(W * H * 3);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 3;
+      out[i] = (x * 7) & 255;
+      out[i + 1] = (y * 5) & 255;
+      out[i + 2] = ((x ^ y) * 3) & 255;
+    }
+  }
+  return out;
+}
+
+function nearestWholeX4(rgb: Uint8Array, W: number, H: number): Uint8Array {
+  const S = SWIN2SR_SCALE;
+  const ow = W * S;
+  const oh = H * S;
+  const out = new Uint8Array(ow * oh * 3);
+  for (let y = 0; y < oh; y++) {
+    const sy = (y / S) | 0;
+    for (let x = 0; x < ow; x++) {
+      const sx = (x / S) | 0;
+      const s = (sy * W + sx) * 3;
+      const d = (y * ow + x) * 3;
+      out[d] = rgb[s]!;
+      out[d + 1] = rgb[s + 1]!;
+      out[d + 2] = rgb[s + 2]!;
+    }
+  }
+  return out;
+}
+
+describe("tileAndStitch", () => {
+  // For a deterministic per-tile ×4, the seam-cropped tiled stitch must be
+  // byte-identical to a single-pass ×4 of the whole image — this exercises
+  // extractRegion, the /8 reflect-pad + crop, and the leftCtx/topCtx placement
+  // (the path the runUpscale tests bypass via an injected whole-image upscaler).
+  it.each([
+    [13, 13, 256], // single tile, non-/8 (triggers pad+crop)
+    [200, 200, 256], // 2×2 tiles, /8 sizes
+    [37, 29, 96], // multi-tile + non-/8 fed widths
+    [64, 64, 72], // min tile → many small tiles
+  ])("reconstructs %ix%i (tile=%i) identically to a single pass", async (W, H, tile) => {
+    const src = rgbPattern(W, H);
+    const tiled = await tileAndStitch(src, W, H, tile, nearestPaddedX4);
+    const whole = nearestWholeX4(src, W, H);
+    expect(tiled.width).toBe(W * SWIN2SR_SCALE);
+    expect(tiled.height).toBe(H * SWIN2SR_SCALE);
+    expect(tiled.tiles).toBe(planTiles(W, H, tile, 32).length);
+    let firstDiff = -1;
+    for (let i = 0; i < whole.length; i++) {
+      if (tiled.rgb[i] !== whole[i]) {
+        firstDiff = i;
+        break;
+      }
+    }
+    expect(firstDiff).toBe(-1);
   });
 });
 
@@ -204,5 +289,17 @@ describe("runUpscale", () => {
         upscaler: nearestX4,
       }),
     ).rejects.toMatchObject({ code: "args.invalid" });
+  });
+
+  it("reports image.decodeFailed for a missing input even with valid args", async () => {
+    // Valid args pass validation; the failure must come from loadRawRGBA,
+    // before the (injected) upscaler is ever reached.
+    await expect(
+      runUpscale(
+        { in: path.join(tmp, "nope.png"), out: path.join(tmp, "o.png"), toSize: 128 },
+        tmp,
+        { upscaler: nearestX4 },
+      ),
+    ).rejects.toMatchObject({ errorType: "localOp", code: "image.decodeFailed" });
   });
 });

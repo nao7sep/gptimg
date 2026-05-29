@@ -14,6 +14,7 @@
 
 import sharp from "sharp";
 import { LocalOpError, toAbortError } from "../errors.js";
+import { fitLongerSide } from "../image/aspect.js";
 import { loadRawRGBA, writeRGBA } from "../image/bridge.js";
 import type { Logger } from "../log/index.js";
 import type { NetworkBudget } from "../network/defaults.js";
@@ -37,6 +38,8 @@ const KERNELS: readonly ResampleKernel[] = [
   "lanczos2",
   "lanczos3",
 ];
+// Lower than resize's cap (16384): upscale runs the ×4 model + holds a 4×
+// intermediate, so it is far more memory-heavy per output pixel.
 const MAX_TO_SIZE = 8192;
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -88,18 +91,6 @@ function splitRGBA(
     alpha[p] = data[s + 3]!;
   }
   return { rgb, alpha };
-}
-
-/** Longer side := toSize, aspect preserved, each axis at least 1 px. */
-function targetDims(
-  width: number,
-  height: number,
-  toSize: number,
-): { w: number; h: number } {
-  if (width >= height) {
-    return { w: toSize, h: Math.max(1, Math.round((toSize * height) / width)) };
-  }
-  return { w: Math.max(1, Math.round((toSize * width) / height)), h: toSize };
 }
 
 export async function runUpscale(
@@ -156,7 +147,7 @@ export async function runUpscale(
   const up = await upscaler(rgb, width, height);
   throwIfAborted(signal);
 
-  const { w: finalW, h: finalH } = targetDims(width, height, toSize);
+  const { w: finalW, h: finalH } = fitLongerSide(width, height, toSize);
 
   try {
     const rgbResized = await sharp(Buffer.from(up.rgb), {
@@ -170,6 +161,9 @@ export async function runUpscale(
       raw: { width, height, channels: 1 },
     })
       .resize(finalW, finalH, { fit: "fill", kernel })
+      // Force single-channel output: sharp can widen a 1-channel raw buffer to
+      // 3 channels during resampling, which would desync the RGBA recombine
+      // below (same lesson as birefnet.ts:resizeAlphaUp).
       .toColourspace("b-w")
       .raw()
       .toBuffer();

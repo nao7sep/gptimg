@@ -60,7 +60,7 @@ export function registerUpscale(program: Command): void {
     )
     .option(
       "--tile <px>",
-      "Max model-input edge per pass — the memory knob (larger = fewer passes, more RAM). Default 256.",
+      "Approx. model-input edge per pass — the memory knob (larger = fewer passes, more RAM). Default 256.",
       parsePositiveIntOpt("--tile"),
     )
     .option("--recipe <path>", "Path to recipe JSON file (for network.modelDownload)")

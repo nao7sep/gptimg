@@ -10,8 +10,10 @@
  *      padding back off.
  *   2. Memory grows ~quadratically with input area (a 256² input peaks ~4.4 GB
  *      on CPU). So we tile: the image is processed in overlapping regions whose
- *      fed size is bounded by `tile`, and the overlap context is cropped off on
- *      merge so the result is seam-free. An overlap of 32 px keeps the worst-
+ *      fed size is ~`tile` (constraint 1's /8 reflect-padding can push the
+ *      actual model input a few px higher), and the overlap context is cropped
+ *      off on merge so the result is seam-free. An overlap of 32 px keeps the
+ *      worst-
  *      case (hard high-frequency edges) within ~6/255 of a single-pass result
  *      and is visually identical on real content.
  *
@@ -118,11 +120,75 @@ function extractRegion(
   return out;
 }
 
-/** Run one tile: reflect-pad to /8, infer, return the 4× result cropped to 4×(fw,fh). */
-async function upscaleTile(
+/**
+ * Upscale a /8-aligned interleaved-RGB buffer (pw × ph) by ×4, returning the
+ * result as interleaved-RGB u8 (4·pw × 4·ph), clamped to [0,255]. This is the
+ * only model-touching seam; `tileAndStitch` is injected with one of these so
+ * the tiling/pad/crop/stitch geometry can be tested without loading ONNX.
+ */
+export type PaddedModelRun = (
+  rgb: Uint8Array,
+  pw: number,
+  ph: number,
+) => Promise<Uint8Array>;
+
+/** Build the real ONNX-backed model runner (NCHW [0,1] in, clamped u8 ×4 out). */
+function makeOnnxRun(
   session: ort.InferenceSession,
   inputName: string,
   outputName: string,
+): PaddedModelRun {
+  return async (rgb, pw, ph) => {
+    const n = pw * ph;
+    const input = new Float32Array(3 * n);
+    for (let p = 0, i = 0; p < n; p++, i += 3) {
+      input[p] = rgb[i]! / 255;
+      input[n + p] = rgb[i + 1]! / 255;
+      input[2 * n + p] = rgb[i + 2]! / 255;
+    }
+
+    const outputs = await session.run({
+      [inputName]: new ort.Tensor("float32", input, [1, 3, ph, pw]),
+    });
+    const tensor = outputs[outputName];
+    if (!tensor) {
+      throw new LocalOpError(
+        "model.loadFailed",
+        `Swin2SR session produced no output named ${outputName}.`,
+      );
+    }
+    const ow = pw * SWIN2SR_SCALE;
+    const oh = ph * SWIN2SR_SCALE;
+    const dims = tensor.dims;
+    if (
+      dims.length !== 4 ||
+      dims[0] !== 1 ||
+      dims[1] !== 3 ||
+      Number(dims[2]) !== oh ||
+      Number(dims[3]) !== ow
+    ) {
+      throw new LocalOpError(
+        "model.outputShape",
+        `Swin2SR output shape unexpected: got [${dims.join(",")}], expected [1,3,${oh},${ow}].`,
+      );
+    }
+
+    const data = tensor.data as Float32Array;
+    const plane = ow * oh;
+    const res = new Uint8Array(plane * 3);
+    for (let q = 0, d = 0; q < plane; q++, d += 3) {
+      for (let c = 0; c < 3; c++) {
+        const v = data[c * plane + q]!;
+        res[d + c] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255);
+      }
+    }
+    return res;
+  };
+}
+
+/** Reflect-pad a fed region to /8, run the model, crop back to exactly 4×(fw,fh). */
+async function upscaleTile(
+  runPadded: PaddedModelRun,
   rgb: Uint8Array,
   fw: number,
   fh: number,
@@ -139,54 +205,14 @@ async function upscaleTile(
     );
   }
 
-  const n = pw * ph;
-  const input = new Float32Array(3 * n);
-  for (let p = 0, i = 0; p < n; p++, i += 3) {
-    input[p] = fed[i]! / 255;
-    input[n + p] = fed[i + 1]! / 255;
-    input[2 * n + p] = fed[i + 2]! / 255;
-  }
-
-  const outputs = await session.run({
-    [inputName]: new ort.Tensor("float32", input, [1, 3, ph, pw]),
-  });
-  const tensor = outputs[outputName];
-  if (!tensor) {
-    throw new LocalOpError(
-      "model.loadFailed",
-      `Swin2SR session produced no output named ${outputName}.`,
-    );
-  }
-  const dims = tensor.dims;
-  if (
-    dims.length !== 4 ||
-    dims[0] !== 1 ||
-    dims[1] !== 3 ||
-    Number(dims[2]) !== ph * SWIN2SR_SCALE ||
-    Number(dims[3]) !== pw * SWIN2SR_SCALE
-  ) {
-    throw new LocalOpError(
-      "model.outputShape",
-      `Swin2SR output shape unexpected: got [${dims.join(",")}], expected [1,3,${ph * SWIN2SR_SCALE},${pw * SWIN2SR_SCALE}].`,
-    );
-  }
-
-  const data = tensor.data as Float32Array;
-  const OW = Number(dims[3]);
-  const ON = OW * Number(dims[2]);
-  // Crop off the reflect-padding: keep only 4×(fw, fh).
+  const up = await runPadded(fed, pw, ph); // 4·pw × 4·ph interleaved u8
+  const OW = pw * SWIN2SR_SCALE;
   const cw = fw * SWIN2SR_SCALE;
   const ch = fh * SWIN2SR_SCALE;
   const res = new Uint8Array(cw * ch * 3);
   for (let y = 0; y < ch; y++) {
-    for (let x = 0; x < cw; x++) {
-      const src = y * OW + x;
-      const dst = (y * cw + x) * 3;
-      for (let c = 0; c < 3; c++) {
-        const v = data[c * ON + src]!;
-        res[dst + c] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255);
-      }
-    }
+    const srcStart = y * OW * 3;
+    res.set(up.subarray(srcStart, srcStart + cw * 3), y * cw * 3);
   }
   return res;
 }
@@ -199,9 +225,47 @@ export interface Swin2srOutput {
 }
 
 /**
+ * Tile `rgb` (width × height), upscale each region ×4 via `runPadded`, and
+ * stitch the seam-cropped interiors into a single ×4 canvas. Pure given
+ * `runPadded` (no model/network), so the geometry is unit-testable; the real
+ * pipeline injects an ONNX-backed runner.
+ */
+export async function tileAndStitch(
+  rgb: Uint8Array,
+  width: number,
+  height: number,
+  tile: number,
+  runPadded: PaddedModelRun,
+  signal?: AbortSignal | undefined,
+): Promise<Swin2srOutput> {
+  const outW = width * SWIN2SR_SCALE;
+  const outH = height * SWIN2SR_SCALE;
+  const out = new Uint8Array(outW * outH * 3);
+  const specs = planTiles(width, height, tile, OVERLAP);
+
+  for (const s of specs) {
+    throwIfAborted(signal);
+    const fed = extractRegion(rgb, width, s.fx0, s.fy0, s.fw, s.fh);
+    const up = await upscaleTile(runPadded, fed, s.fw, s.fh);
+    const upW = s.fw * SWIN2SR_SCALE;
+    // Copy this region's interior (skip the context margin) into the canvas.
+    const rowBytes = s.tw * SWIN2SR_SCALE * 3;
+    for (let y = 0; y < s.th * SWIN2SR_SCALE; y++) {
+      const srcStart = ((s.topCtx * SWIN2SR_SCALE + y) * upW + s.leftCtx * SWIN2SR_SCALE) * 3;
+      const dstStart = ((s.iy * SWIN2SR_SCALE + y) * outW + s.ix * SWIN2SR_SCALE) * 3;
+      out.set(up.subarray(srcStart, srcStart + rowBytes), dstStart);
+    }
+  }
+
+  return { rgb: out, width: outW, height: outH, tiles: specs.length };
+}
+
+/**
  * Upscale interleaved-RGB `rgb` (width × height) by ×4, tiling as needed. The
  * model is downloaded + cached on first use. `tile` bounds the per-pass fed
- * edge (memory); the seamless overlap is fixed.
+ * edge in source px (the memory knob); a fed region is reflect-padded up to the
+ * model's window (8 px), so the actual model input may be slightly larger. The
+ * seam-cropped overlap is fixed.
  */
 export async function runSwin2srX4(
   rgb: Uint8Array,
@@ -232,24 +296,12 @@ export async function runSwin2srX4(
     );
   }
 
-  const outW = width * SWIN2SR_SCALE;
-  const outH = height * SWIN2SR_SCALE;
-  const out = new Uint8Array(outW * outH * 3);
-  const specs = planTiles(width, height, tile, OVERLAP);
-
-  for (const s of specs) {
-    throwIfAborted(signal);
-    const fed = extractRegion(rgb, width, s.fx0, s.fy0, s.fw, s.fh);
-    const up = await upscaleTile(session, inputName, outputName, fed, s.fw, s.fh);
-    const upW = s.fw * SWIN2SR_SCALE;
-    // Copy this region's interior (skip the context margin) into the canvas.
-    const rowBytes = s.tw * SWIN2SR_SCALE * 3;
-    for (let y = 0; y < s.th * SWIN2SR_SCALE; y++) {
-      const srcStart = ((s.topCtx * SWIN2SR_SCALE + y) * upW + s.leftCtx * SWIN2SR_SCALE) * 3;
-      const dstStart = ((s.iy * SWIN2SR_SCALE + y) * outW + s.ix * SWIN2SR_SCALE) * 3;
-      out.set(up.subarray(srcStart, srcStart + rowBytes), dstStart);
-    }
-  }
-
-  return { rgb: out, width: outW, height: outH, tiles: specs.length };
+  return tileAndStitch(
+    rgb,
+    width,
+    height,
+    tile,
+    makeOnnxRun(session, inputName, outputName),
+    signal,
+  );
 }

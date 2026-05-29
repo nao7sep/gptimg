@@ -51,10 +51,8 @@ export function registerMask(program: Command): void {
     .addOption(
       new Option(
         "--method <name>",
-        "Mask producer. 'ai' uses BiRefNet (~1-1.5GB RSS per process); run sequentially.",
-      )
-        .choices(["chroma", "ai"])
-        .default("chroma"),
+        "Mask producer. 'ai' uses BiRefNet (~1-1.5GB RSS per process); run sequentially. Default chroma.",
+      ).choices(["chroma", "ai"]),
     )
     .option(
       "--key <value>",
