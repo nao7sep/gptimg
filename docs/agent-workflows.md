@@ -23,9 +23,9 @@ Usage errors come from Commander and are plain text. Use exit codes to branch:
 | 0 | success |
 | 2 | usage error |
 | 3 | profile or recipe error |
-| 4 | provider/API error |
-| 5 | local file/decode/output/log error |
-| 130 | cancellation |
+| 4 | provider error |
+| 5 | local operation error |
+| 130 | cancelled by `Ctrl-C` / abort |
 
 Each successful call writes durable artifacts:
 
@@ -49,7 +49,7 @@ The SDK returns structured objects and never writes to stdout/stderr. Every SDK 
 - Parse stdout JSON for success. Use logs and sidecars for trace/debug context, not primary success detection.
 - Treat `partial: true` from `generate` or `edit` as recoverable when at least one file was written.
 - Prefer recipes for stable project defaults and `--set` for task-specific overrides.
-- Keep network overrides under `network.imageGenerate`, `network.imageVision`, or `network.imageDownload`; network config is strict and typo-sensitive.
+- Keep network overrides under `network.imageGenerate`, `network.imageVision`, `network.imageDownload`, or `network.modelDownload`; network config is strict and typo-sensitive.
 - Always run `mask` against the original image. If you want different mask parameters, rerun from the original — do not pass a previous mask or composite back through `mask`.
 - Use `vision` for any semantic quality check, including on a composite.
 

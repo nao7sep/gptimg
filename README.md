@@ -8,18 +8,11 @@ Personal tool. v1 ships OpenAI only; the provider boundary exists but no second 
 
 ## AI Agent Usage
 
-Most automated use should start with the agent manual:
+Automated and agent-driven use should start with the agent manual, which covers workflows, artifact handling, and branching logic:
 
 - [Agent workflows and best practices](docs/agent-workflows.md)
 
-Core operating rules:
-
-- Parse CLI stdout JSON for success; runtime errors are JSON on stderr.
-- Keep the original generated or input image. Treat masks and composites as derived artifacts you can regenerate.
-- Use task-specific `--out-dir` / `--out-name` values. Use `--overwrite` only when intentionally replacing an artifact.
-- Treat `partial: true` from `generate` / `edit` as recoverable when at least one file was written.
-- For subjects with intentional interior key-colored content (donut hole, green segment, green clothing surrounded by non-green), pass `--preserve-interior` to `mask --method chroma` to keep those regions opaque.
-- Always run `mask` against the original image. If you want different mask parameters, rerun from the original — do not pass a previous mask or composite back through `mask`.
+The CLI is built for it: every command prints one JSON object (success on stdout, errors on stderr) and signals outcome via [exit code](#exit-codes).
 
 ## Quick Start
 
@@ -61,6 +54,7 @@ Defaults live under `~/.gptimg/`:
 | `~/.gptimg/recipe.json` | Per-verb parameters (optional; missing is fine) |
 | `~/.gptimg/output/` | Generated images |
 | `~/.gptimg/logs/` | One JSONL file per invocation |
+| `~/.gptimg/models/` | Cached AI mask model(s) (override with `GPTIMG_MODELS_DIR`) |
 
 ## Common Workflows
 
