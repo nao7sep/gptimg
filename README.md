@@ -1,6 +1,6 @@
 # GptImg
 
-TypeScript SDK + CLI for AI image generation, vision verification, and local mask/compose post-processing. It is designed for human CLI use and for AI agents or skills that need durable artifacts: timestamped images, JSON sidecars, and JSONL logs.
+TypeScript SDK + CLI for AI image generation, vision verification, and a local image-processing pipeline: masking, compositing, mask algebra, cropping, gradient backplates, layering, super-resolution upscaling, and resizing. It is designed for human CLI use and for AI agents or skills that need durable artifacts: timestamped images, JSON sidecars, and JSONL logs.
 
 Each toy does one observable operation. Workflows are user-composed: `mask` produces a mask, `compose` applies a mask to an image, `combine` does set operations on masks. The chroma-key path is one mask producer among (eventually) several.
 
@@ -150,6 +150,8 @@ Returns `{ ok, score, reasons }` from a structured `json_schema` response. Image
 
 Vision detail can be configured with `recipe.vision.detail` or `--set detail=low|high|original|auto`. By default, detail is left unset so the model can choose automatically. `original` requires a model that supports it; the default vision model does not.
 
+Each run writes a JSON sidecar (`<out-dir>/<stem>.json`; the stem defaults to a UTC timestamp, override with `--out-name`) recording the request, verdict, and raw response. Pass `--overwrite` to replace an existing sidecar at an explicit `--out-name`; the availability check runs before the (paid) API call so a collision fails fast without spending.
+
 ### `mask`
 
 ```sh
@@ -254,7 +256,7 @@ gptimg trim --in cutout.png
 gptimg trim --in cutout.png --margin 0.10 --square --out-name content.png
 ```
 
-Local only. Loads the input as RGBA, finds the tightest rect of pixels with alpha > 0, re-pads by `--margin × max(bbox.width, bbox.height)`, and optionally extends the shorter axis to make the output square. Fully-transparent input → exit 5 (`image.formatUnknown`). Default output name `<input-stem>-trim.png`.
+Local only. Loads the input as RGBA, finds the tightest rect of pixels with alpha > 0, re-pads by `--margin × max(bbox.width, bbox.height)`, and optionally extends the shorter axis to make the output square. Fully-transparent input → exit 5 (`image.noContent`). Default output name `<input-stem>-trim.png`.
 
 ### `backplate`
 

@@ -52,7 +52,11 @@ import { editImpl } from "./verbs/edit.js";
 import { generateImpl } from "./verbs/generate.js";
 import { layerImpl } from "./verbs/layer.js";
 import { maskImpl } from "./verbs/mask.js";
-import { installModelImpl, listModelsImpl } from "./verbs/model.js";
+import {
+  installAllModelsImpl,
+  installModelImpl,
+  listModelsImpl,
+} from "./verbs/model.js";
 import type { ModelInstallOptions } from "./verbs/model.js";
 import type { VerbCallOptions } from "./verbs/options.js";
 import { resizeImpl } from "./verbs/resize.js";
@@ -103,6 +107,8 @@ export class GptImg {
   readonly model = {
     install: (key: ModelKey, opts?: ModelInstallOptions): Promise<ModelInstallResult> =>
       installModelImpl(this.ctx, key, opts),
+    installAll: (opts?: ModelInstallOptions): Promise<ModelInstallResult[]> =>
+      installAllModelsImpl(this.ctx, opts),
     list: (): ModelListEntry[] => listModelsImpl(this.ctx),
   };
 

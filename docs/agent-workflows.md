@@ -191,6 +191,24 @@ The AI method runs BiRefNet locally via ONNX Runtime. The model is lazily fetche
 
 `compose --remove-bleed "#rrggbb"` cleans the named background color out of subject pixels. Spill suppression on all kept pixels (chromatic keys) plus alpha-aware edge recovery on partial-α pixels (any key, including gray). Off by default. Use when subject pixels carry visible tint from the background they were photographed against.
 
+## Icon Composition
+
+Five additional local verbs turn a cutout into a finished app icon. They are independent toys composed into a sequence — there is no monolithic `make-icon`.
+
+- `trim` — crop an RGBA cutout to its alpha bounding box and re-pad by a relative margin (fraction of the longer side, so every subject gets the same visual breathing room). `--square` extends the shorter axis with transparent pixels (the squircle backplate expects square content).
+- `upscale` — learned ×4 super-resolution (Swin2SR ONNX) to enlarge small content crisply, then resample to `--to-size` (default 1024, longer side). Alpha is preserved. Use this **only to enlarge**; it always runs the model. Lazily downloads the model on first use (pre-fetch with `gptimg model install swin2sr`); ~4.4 GB peak RAM at the default `--tile 256`, so run upscales sequentially, not in parallel.
+- `resize` — plain, model-free resample to `--to-size`, any direction. Use this to **shrink** (a learned model adds nothing for downscaling) — do not use `upscale` to downscale, as it would still run the full ×4 model and is not pixel-equivalent to a clean resample.
+- `backplate` — synthesize a square gradient plate (`--shape rect|squircle`, required `--from`/`--to`) on transparent padding — the icon's bottom layer.
+- `layer` — alpha source-over composite of a top RGBA (the content) onto a base RGBA (the backplate). Unlike `compose --over <image>` (which flattens to opaque RGB), `layer` preserves the base's transparency outside the top.
+
+Documented end-to-end icon sequence:
+
+```sh
+generate → mask → compose (transparent) → trim --square → [upscale] → backplate → layer
+```
+
+The `[upscale]` step is optional — skip it when content already arrives at sufficient resolution (gpt-image outputs 1024² directly). Verify the final icon with `vision` like any other composite.
+
 ## Verification Loops
 
 Use `vision` for any semantic check on a composite. Good prompt:

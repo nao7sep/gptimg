@@ -29,18 +29,16 @@ export function registerModel(program: Command): void {
           code: "commander.invalidArgument",
         });
       }
-      const targets = name !== undefined ? [name as ModelKey] : keys;
       const sdk = new GptImg();
-      const results = [];
-      for (const key of targets) {
-        results.push(
-          await sdk.model.install(key, {
-            force: opts.force,
-            recipe: opts.recipe,
-            signal: getAbortSignal(),
-          }),
-        );
-      }
+      const installOpts = {
+        force: opts.force,
+        recipe: opts.recipe,
+        signal: getAbortSignal(),
+      };
+      const results =
+        name !== undefined
+          ? [await sdk.model.install(name as ModelKey, installOpts)]
+          : await sdk.model.installAll(installOpts);
       emit(results);
     });
 

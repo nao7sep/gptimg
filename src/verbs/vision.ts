@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
 import { ensureOutputDir } from "../internal/output-files.js";
+import { assertSingleFileAvailable } from "../internal/local-verb.js";
 import { Logger, createLogger, safeLogError } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
@@ -120,6 +121,14 @@ export async function visionImpl(
     const { shrink: configuredShrink, detail, ...params } = section;
     const shrink = configuredShrink ?? VISION_DEFAULTS.shrink;
 
+    // Resolve + guard the sidecar path before the (paid) provider call so a
+    // name collision fails fast without spending, like generate/edit.
+    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
+    await ensureOutputDir(outDir);
+    const stem = args.outName ?? defaultStem(ts);
+    const stemPath = path.join(outDir, stem);
+    assertSingleFileAvailable(`${stemPath}.json`, args.overwrite ?? false);
+
     const inputs = Array.isArray(args.in) ? args.in : [args.in];
     const prepared = await Promise.all(
       inputs.map((p) => prepareImage(p, shrink, detail, logger)),
@@ -152,11 +161,6 @@ export async function visionImpl(
       ok: providerResult.verdict.ok,
       score: providerResult.verdict.score,
     });
-
-    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
-    await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem(ts);
-    const stemPath = path.join(outDir, stem);
 
     const sidecar: Sidecar = {
       request: {

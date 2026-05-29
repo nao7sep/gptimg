@@ -162,6 +162,8 @@ export interface VisionArgs {
   set?: string[];
   outDir?: string;
   outName?: string;
+  /** Overwrite an existing sidecar at the resolved stem. Default false. */
+  overwrite?: boolean;
 }
 
 export type VisionDetail = "low" | "high" | "original" | "auto";

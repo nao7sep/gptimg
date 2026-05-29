@@ -21,7 +21,7 @@ function createProgram(): Command {
   program
     .name("gptimg")
     .description(
-      "AI image generation, vision, and local mask + compose post-processing.",
+      "AI image generation, vision, and local post-processing (mask, compose, combine, trim, backplate, layer, upscale, resize).",
     )
     .version("0.1.0")
     .showHelpAfterError()

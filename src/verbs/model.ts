@@ -42,6 +42,17 @@ export async function installModelImpl(
   return { key, name: entry.name, path: installedPath, forced: opts.force ?? false };
 }
 
+export async function installAllModelsImpl(
+  ctx: ModelContext,
+  opts: ModelInstallOptions = {},
+): Promise<ModelInstallResult[]> {
+  const results: ModelInstallResult[] = [];
+  for (const key of Object.keys(MODELS) as ModelKey[]) {
+    results.push(await installModelImpl(ctx, key, opts));
+  }
+  return results;
+}
+
 export function listModelsImpl(ctx: ModelContext): ModelListEntry[] {
   const cacheDir = defaultModelsDir(ctx.profileDir);
   return (Object.keys(MODELS) as ModelKey[]).map((key) => {

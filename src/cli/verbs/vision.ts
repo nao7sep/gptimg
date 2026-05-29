@@ -13,6 +13,7 @@ interface VisionCliOpts {
   outDir?: string;
   outName?: string;
   set?: string[];
+  overwrite?: boolean;
 }
 
 export function registerVision(program: Command): void {
@@ -27,6 +28,7 @@ export function registerVision(program: Command): void {
     .requiredOption("--check <text>", "Criterion to verify");
 
   addAiCommonOptions(cmd);
+  cmd.option("--overwrite", "Overwrite an existing sidecar at the resolved stem");
 
   cmd.action(async (opts: VisionCliOpts) => {
     if (!opts.in?.length) {
@@ -46,6 +48,7 @@ export function registerVision(program: Command): void {
         outDir: opts.outDir,
         outName: opts.outName,
         set: opts.set,
+        overwrite: opts.overwrite,
       },
       { signal: getAbortSignal() },
     );
