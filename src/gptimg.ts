@@ -36,8 +36,12 @@ import type {
   LayerResult,
   MaskArgs,
   MaskResult,
+  ResizeArgs,
+  ResizeResult,
   TrimArgs,
   TrimResult,
+  UpscaleArgs,
+  UpscaleResult,
   VisionArgs,
   VisionResult,
 } from "./types.js";
@@ -51,7 +55,9 @@ import { maskImpl } from "./verbs/mask.js";
 import { installModelImpl, listModelsImpl } from "./verbs/model.js";
 import type { ModelInstallOptions } from "./verbs/model.js";
 import type { VerbCallOptions } from "./verbs/options.js";
+import { resizeImpl } from "./verbs/resize.js";
 import { trimImpl } from "./verbs/trim.js";
+import { upscaleImpl } from "./verbs/upscale.js";
 import { visionImpl } from "./verbs/vision.js";
 import type { ModelKey } from "./local/models/registry.js";
 import type { ModelInstallResult, ModelListEntry } from "./types.js";
@@ -152,5 +158,13 @@ export class GptImg {
 
   layer(args: LayerArgs, opts?: VerbCallOptions): Promise<LayerResult> {
     return layerImpl(this.ctx, args, opts);
+  }
+
+  upscale(args: UpscaleArgs, opts?: VerbCallOptions): Promise<UpscaleResult> {
+    return upscaleImpl(this.ctx, args, opts);
+  }
+
+  resize(args: ResizeArgs, opts?: VerbCallOptions): Promise<ResizeResult> {
+    return resizeImpl(this.ctx, args, opts);
   }
 }

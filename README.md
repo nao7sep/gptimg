@@ -101,11 +101,14 @@ Build an app icon from a generated cutout:
 # 1. Trim the cutout to its alpha bbox + 8% relative margin, force square canvas.
 gptimg trim --in cutout.png --margin 0.08 --square --out-name content.png
 
-# 2. Synthesize a 1024² squircle backplate with a brand gradient.
+# 2. (Optional) If the cutout is small, AI-upscale it to fill the icon crisply.
+gptimg upscale --in content.png --to-size 1024 --out-name content.png --overwrite
+
+# 3. Synthesize a 1024² squircle backplate with a brand gradient.
 gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030" \
   --shape squircle --out-name plate.png
 
-# 3. Composite the content onto the plate (top scaled to 62% of the plate side).
+# 4. Composite the content onto the plate (top scaled to 62% of the plate side).
 gptimg layer --base plate.png --top content.png --scale 0.62 \
   --out-name icon.png
 ```
@@ -281,6 +284,39 @@ Local only. Source-over alpha-composite of `--top` onto `--base`. Unlike `compos
 
 `--scale` resizes top so its longer side = `scale × min(baseW, baseH)`, preserving aspect. `--gravity` (default `center`) accepts the nine sharp compass directions. `--top-offset x,y` overrides `--gravity` with an explicit pixel offset of top's top-left corner from base's top-left. Output canvas is always the base size. Default output name `<base-stem>-layered.png`.
 
+### `upscale`
+
+```sh
+# Learned ×4 super-resolution, then resample to 1024 (longer side). Alpha preserved.
+gptimg upscale --in content.png --to-size 1024
+
+# Pick the resampling kernel for the post-×4 resize; lower the memory ceiling.
+gptimg upscale --in content.png --to-size 800 --kernel mitchell --tile 192
+
+# Pre-fetch the model for offline use.
+gptimg model install swin2sr
+```
+
+Local only. Enlarges small content (a cropped subject, logo, illustration) so it can fill a larger icon crisply, using the [Swin2SR](https://huggingface.co/onnx-community/swin2SR-realworld-sr-x4-64-bsrgan-psnr-ONNX) real-world ×4 model via ONNX Runtime. The model is native ×4 and **distortion-optimized** (PSNR), so it enlarges faithfully rather than hallucinating texture the way a perceptual GAN would — the right trade for clean art. The OpenAI API is not a substitute: `edit` re-renders and changes content.
+
+`--to-size` (default 1024) sets the **final** longer side; the model runs ×4 at the source's native size, then the result is resampled to the target. To get 2×, just run ×4 and let the downscale halve it — there is no native ×2 path. `--kernel` (default `lanczos3`; also `nearest`, `cubic`, `mitchell`, `lanczos2`) is the resampler for that resize. The model is RGB-only, so alpha is resampled separately and recombined — transparency survives. Default output name `<input-stem>-upscale.png`.
+
+`--tile` (default 256) is the memory knob: the maximum model-input edge processed per pass. Swin2SR memory grows ~quadratically with input area (~4.4GB peak at 256px on CPU), so large inputs are split into overlapping tiles whose seams are cropped away (a 32px context overlap keeps the worst case within ~6/255 of a single-pass result — visually identical on real content). Lower `--tile` to reduce peak RAM at the cost of more passes; raise it (more RAM) for fewer passes.
+
+> To **shrink** an image, use `resize` (below), not `upscale`. Even when `--to-size` is smaller than the source, `upscale` still runs the full ×4 model first (the download is one-time, but the inference compute + RAM are paid every call) and then shrinks the result — wasteful and not pixel-equivalent to a plain resample. `upscale` is for enlarging small content with the learned model.
+
+### `resize`
+
+```sh
+# Plain (model-free) resample to 512 on the longer side; alpha preserved.
+gptimg resize --in big.png --to-size 512
+
+# Pick the kernel.
+gptimg resize --in photo.png --to-size 256 --kernel mitchell
+```
+
+Local only, no model. One sharp resample to `--to-size` (the longer side; aspect preserved), in either direction. This is the cheap counterpart to `upscale`: milliseconds and a few MB, with no 54MB model download or GBs of RAM. Use it to **downscale** (where a learned model adds nothing — classical kernels are already optimal for shrinking) or for quick enlargement where super-resolution quality isn't needed; reach for `upscale` only when enlarging small content and you want the learned ×4. `--to-size` is required; `--kernel` (default `lanczos3`; also `nearest`, `cubic`, `mitchell`, `lanczos2`) selects the resampler. Alpha is preserved. Default output name `<input-stem>-resize.png`.
+
 ### `model`
 
 Manage the local AI model cache (used by `mask --method ai`).
@@ -289,8 +325,9 @@ Manage the local AI model cache (used by `mask --method ai`).
 # Download all known models into the cache (verified against the pinned sha256).
 gptimg model install
 
-# Install a specific model.
+# Install a specific model (birefnet = AI mask, swin2sr = upscale).
 gptimg model install birefnet
+gptimg model install swin2sr
 
 # Re-download and replace even if cached (use when a file is corrupt/outdated).
 gptimg model install birefnet --force
@@ -321,6 +358,8 @@ const cutout = await sdk.compose({
 
 // Icon pipeline.
 const trim = await sdk.trim({ in: cutout.output, margin: 0.08, square: true });
+// Optional: AI-upscale a small cutout so it fills the icon crisply.
+const big = await sdk.upscale({ in: trim.output, toSize: 1024 });
 const plate = await sdk.backplate({
   size: 1024,
   from: "#3a4a6a",
@@ -329,7 +368,7 @@ const plate = await sdk.backplate({
 });
 const icon = await sdk.layer({
   base: plate.output,
-  top: trim.output,
+  top: big.output,
   scale: 0.62,
 });
 ```
@@ -420,13 +459,15 @@ Bare `--set` keys are scoped under the current verb; paths beginning with `gener
 | `<stem>.<ext>`, `<stem>-N.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
 | `<stem>.json` | Sidecar with resolved request, redacted response, SHA-256 file table |
 | `<utc>-gptimg.jsonl` | Per-invocation JSONL log |
-| `~/.gptimg/models/<model>.onnx` | Lazily fetched AI mask model (BiRefNet today) |
+| `~/.gptimg/models/<model>.onnx` | Lazily fetched AI models (BiRefNet for `mask --method ai`, Swin2SR for `upscale`) |
 | `<input-stem>-mask.png` | `mask` output (grayscale alpha) |
 | `<input-stem>-composed.png` | `compose` output (RGBA or flattened RGB) |
 | `<input-stem>-<op>.png` | `combine` output (grayscale alpha) |
 | `<input-stem>-trim.png` | `trim` output (cropped to alpha bbox + relative margin) |
 | `backplate-<size>.png` | `backplate` output (squircle/rect plate on transparent canvas) |
 | `<base-stem>-layered.png` | `layer` output (top alpha-composited onto base) |
+| `<input-stem>-upscale.png` | `upscale` output (×4 super-resolution resampled to target, alpha preserved) |
+| `<input-stem>-resize.png` | `resize` output (plain model-free resample, alpha preserved) |
 
 Sidecars store basenames for image entries so an image + sidecar pair can be moved together.
 

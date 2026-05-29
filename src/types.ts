@@ -102,7 +102,9 @@ export type LogVerb =
   | "combine"
   | "trim"
   | "backplate"
-  | "layer";
+  | "layer"
+  | "upscale"
+  | "resize";
 
 export interface LogEntry {
   ts: string;
@@ -407,6 +409,82 @@ export interface LayerResult {
   /** Resolved placement. One of `gravity` or `topOffset` is null. */
   gravity: LayerGravity | null;
   topOffset: LayerOffset | null;
+  logPath: string;
+}
+
+// ----- resample (shared by upscale + resize) -----
+
+/** Resampling kernel for image resize (sharp kernels). */
+export type ResampleKernel =
+  | "nearest"
+  | "cubic"
+  | "mitchell"
+  | "lanczos2"
+  | "lanczos3";
+
+// ----- upscale -----
+
+export interface UpscaleArgs {
+  /** Input RGBA image (e.g. a trimmed content cutout). */
+  in: string;
+  /** Final output longer-side length in px (aspect preserved). Default 1024. */
+  toSize?: number;
+  /** Resampling kernel for the resize after the model's ×4. Default "lanczos3". */
+  kernel?: ResampleKernel;
+  /** Max model-input edge per pass — the memory knob. Default 256. */
+  tile?: number;
+  recipe?: string;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface UpscaleResult {
+  input: string;
+  output: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  /** Size after the model's native ×4, before resampling to the target. */
+  modelWidth: number;
+  modelHeight: number;
+  /** Final output size (longer side = toSize, aspect preserved). */
+  width: number;
+  height: number;
+  toSize: number;
+  kernel: ResampleKernel;
+  /** Resolved tile (model-input edge) used. */
+  tile: number;
+  /** Number of model passes (tiles) the source was split into. */
+  tiles: number;
+  logPath: string;
+}
+
+// ----- resize -----
+
+export interface ResizeArgs {
+  /** Input image (any format sharp reads); alpha preserved if present. */
+  in: string;
+  /** Output longer-side length in px (aspect preserved). Required. */
+  toSize: number;
+  /** Resampling kernel. Default "lanczos3". */
+  kernel?: ResampleKernel;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface ResizeResult {
+  input: string;
+  output: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  /** Final output size (longer side = toSize, aspect preserved). */
+  width: number;
+  height: number;
+  toSize: number;
+  kernel: ResampleKernel;
   logPath: string;
 }
 

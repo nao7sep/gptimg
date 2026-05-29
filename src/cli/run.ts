@@ -11,7 +11,9 @@ import { registerLayer } from "./verbs/layer.js";
 import { registerMask } from "./verbs/mask.js";
 import { registerModel } from "./verbs/model.js";
 import { registerProfile } from "./verbs/profile.js";
+import { registerResize } from "./verbs/resize.js";
 import { registerTrim } from "./verbs/trim.js";
+import { registerUpscale } from "./verbs/upscale.js";
 import { registerVision } from "./verbs/vision.js";
 
 function createProgram(): Command {
@@ -34,6 +36,8 @@ function createProgram(): Command {
   registerTrim(program);
   registerBackplate(program);
   registerLayer(program);
+  registerUpscale(program);
+  registerResize(program);
   registerModel(program);
   registerProfile(program);
 
