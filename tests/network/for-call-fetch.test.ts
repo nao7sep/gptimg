@@ -175,6 +175,41 @@ describe("fetchWithBudget", () => {
     expect(calls).toBe(1);
   });
 
+  it("retries transient Cloudflare-origin 5xx (520)", async () => {
+    let calls = 0;
+    const { server, baseURL } = await listen((_req, res) => {
+      calls += 1;
+      if (calls === 1) {
+        res.writeHead(520);
+        res.end("cf edge");
+        return;
+      }
+      res.writeHead(200);
+      res.end("ok");
+    });
+    servers.push(server);
+
+    await expect(
+      fetchWithBudget(baseURL, { timeout: 1000, maxRetries: 1, retryIntervals: [] }),
+    ).resolves.toEqual(new Uint8Array(Buffer.from("ok")));
+    expect(calls).toBe(2);
+  });
+
+  it("does not retry persistent Cloudflare 526 (invalid SSL certificate)", async () => {
+    let calls = 0;
+    const { server, baseURL } = await listen((_req, res) => {
+      calls += 1;
+      res.writeHead(526);
+      res.end("bad cert");
+    });
+    servers.push(server);
+
+    await expect(
+      fetchWithBudget(baseURL, { timeout: 1000, maxRetries: 2, retryIntervals: [] }),
+    ).rejects.toMatchObject({ status: 526 });
+    expect(calls).toBe(1);
+  });
+
   it("aborts when the parent signal is already aborted", async () => {
     const { server, baseURL } = await listen((_req, res) => {
       res.writeHead(200);

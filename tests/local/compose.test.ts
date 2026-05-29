@@ -87,6 +87,16 @@ describe("runCompose", () => {
     const composed = await readRGBA(outPath);
     expect(composed[3]).toBe(0);
     expect(composed[(W * H - 1) * 4 + 3]).toBe(255);
+    // Fully-transparent pixels must carry no hidden RGB (clean cutout):
+    // alpha-ignoring viewers should not see the original background.
+    expect(composed[0]).toBe(0);
+    expect(composed[1]).toBe(0);
+    expect(composed[2]).toBe(0);
+    // An opaque pixel keeps the source RGB.
+    const last = (W * H - 1) * 4;
+    expect(composed[last]).toBe(200);
+    expect(composed[last + 1]).toBe(150);
+    expect(composed[last + 2]).toBe(50);
   });
 
   it("flattens over a solid color when --over is a hex string", async () => {

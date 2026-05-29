@@ -217,8 +217,9 @@ gptimg mask --in donut.png --method chroma --key "#00ff00" \
 gptimg mask --in donut.png --method chroma --key "#00ff00" \
   --out-name donut-keyed.png
 
-# Subtract the keyed regions from the shape → donut with a transparent hole.
-gptimg combine subtract --in donut-shape.png --in donut-keyed.png \
+# Intersect: keep only pixels both masks agree are subject → donut ring (the
+# hole is excluded because the keyed mask marks it transparent).
+gptimg combine intersect --in donut-shape.png --in donut-keyed.png \
   --out-name donut-final-mask.png
 
 gptimg compose --in donut.png --mask donut-final-mask.png \

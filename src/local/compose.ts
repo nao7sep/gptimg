@@ -260,10 +260,21 @@ export async function runCompose(
     const g = getG(p);
     const b = getB(p);
     if (over.kind === "transparent") {
-      out[i] = r;
-      out[i + 1] = g;
-      out[i + 2] = b;
-      out[i + 3] = a;
+      // Zero RGB where alpha=0 so a cutout carries no hidden background.
+      // Alpha-honoring viewers are unaffected; alpha-ignoring renderers no
+      // longer reveal the original background. Partial-α edge pixels keep
+      // their RGB — that's the correct straight-alpha shape for compositing.
+      if (a === 0) {
+        out[i] = 0;
+        out[i + 1] = 0;
+        out[i + 2] = 0;
+        out[i + 3] = 0;
+      } else {
+        out[i] = r;
+        out[i + 1] = g;
+        out[i + 2] = b;
+        out[i + 3] = a;
+      }
     } else if (over.kind === "color") {
       const t = a / 255;
       out[i] = Math.round(r * t + over.r * (1 - t));

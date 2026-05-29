@@ -135,7 +135,7 @@ gptimg vision \
 
 ### Donut hole (interior key-colored region transparent)
 
-The `mask` verb produces a mask whose interior regions are either preserved or removed depending on `--preserve-interior`. Use `combine subtract` to carve a hole out of a shape:
+The `mask` verb produces a mask whose interior regions are either preserved or removed depending on `--preserve-interior`. Use `combine intersect` to keep only the ring (both masks agree it is subject) while letting the hole stay transparent:
 
 ```sh
 # Full shape (donut + hole filled in as subject).
@@ -149,7 +149,7 @@ gptimg mask \
   --out-name donut-keyed.png
 
 # Donut with a transparent hole.
-gptimg combine subtract --in donut-shape.png --in donut-keyed.png \
+gptimg combine intersect --in donut-shape.png --in donut-keyed.png \
   --out-name donut-final-mask.png
 
 gptimg compose --in donut.png --mask donut-final-mask.png \
@@ -263,5 +263,5 @@ A skill that wraps `gptimg` should:
 Minimal skill prompt snippet:
 
 ```text
-Use gptimg artifacts as durable state. Keep original images. To remove a background: run `mask` to produce an alpha mask, then `compose` to apply it. For subjects with intentional interior key-colored content (donut hole, intentional green segment), produce both a preserve-interior mask and a default mask, then `combine subtract` them before `compose`. When changing parameters, rerun `mask` from the original image. Verify final composites with `vision`.
+Use gptimg artifacts as durable state. Keep original images. To remove a background: run `mask` to produce an alpha mask, then `compose` to apply it. For subjects with intentional interior key-colored content (donut hole, intentional green segment), produce both a preserve-interior mask and a default mask, then `combine intersect` them before `compose`. When changing parameters, rerun `mask` from the original image. Verify final composites with `vision`.
 ```

@@ -2,7 +2,17 @@ import type { Logger } from "../log/index.js";
 import { toAbortError } from "../errors.js";
 import type { NetworkBudget, NetworkBudgetName } from "./defaults.js";
 
-const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 429, 500, 502, 503, 504]);
+// Standard transient statuses plus Cloudflare-origin 5xx codes. 520-524 are
+// transient connection/timeout failures; 525 (SSL handshake) is often a
+// transient network blip; 530 is an ambiguous origin/DNS error that is
+// frequently transient. 526 (invalid SSL certificate) and 501 are persistent
+// config errors and are intentionally NOT retried — retrying cannot fix them.
+// (527 is the retired Railgun error and no longer issued.)
+const RETRYABLE_HTTP_STATUSES = new Set([
+  408, 409, 429,
+  500, 502, 503, 504,
+  520, 521, 522, 523, 524, 525, 530,
+]);
 const RETRYABLE_NETWORK_CODES = new Set([
   "ECONNRESET",
   "ETIMEDOUT",
