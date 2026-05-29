@@ -20,6 +20,7 @@ import { loadKeyFromSidecar } from "./sidecar-key.js";
 import {
   analyzeKey,
   linearizeRGBA,
+  linearToSRGBByte,
   parseHex,
   SRGB_TO_LINEAR_LUT,
   spillAlpha,
@@ -72,13 +73,13 @@ function normalizeHex(hex: string): string {
   return `#${m[1]!.toLowerCase()}`;
 }
 
-/** Average border pixels (in linear-RGB) and convert back to sRGB hex. */
-function detectBorderKey(
+/** Average border pixels in linear-light RGB. */
+function detectBorderLinear(
   rgba: Uint8Array,
   width: number,
   height: number,
   depth: number,
-): string {
+): [number, number, number] {
   const d = Math.max(1, Math.min(depth, Math.floor(Math.min(width, height) / 2)));
   let sumR = 0;
   let sumG = 0;
@@ -97,44 +98,12 @@ function detectBorderKey(
     for (let x = 0; x < d && x < width; x++) sample(x, y);
     for (let x = Math.max(d, width - d); x < width; x++) sample(x, y);
   }
-  const avgR = sumR / count;
-  const avgG = sumG / count;
-  const avgB = sumB / count;
-  const linearToSRGB = (v: number): number => {
-    if (v <= 0) return 0;
-    if (v >= 1) return 255;
-    const s = v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
-    return Math.max(0, Math.min(255, Math.round(s * 255)));
-  };
-  const r = linearToSRGB(avgR);
-  const g = linearToSRGB(avgG);
-  const b = linearToSRGB(avgB);
-  const hex = (n: number): string => n.toString(16).padStart(2, "0");
-  return `#${hex(r)}${hex(g)}${hex(b)}`;
+  return [sumR / count, sumG / count, sumB / count];
 }
 
-async function resolveKey(
-  rgba: Uint8Array,
-  width: number,
-  height: number,
-  sourcePath: string | undefined,
-  options: ChromaMaskOptions,
-): Promise<{ hex: string; source: ChromaKeySource }> {
-  const keyArg = options.key ?? CHROMA_DEFAULTS.key;
-  if (keyArg === "auto") {
-    const depth = options.borderSample ?? CHROMA_DEFAULTS.borderSample;
-    return { hex: detectBorderKey(rgba, width, height, depth), source: "auto" };
-  }
-  if (keyArg === "from-sidecar") {
-    if (!sourcePath) {
-      throw new LocalOpError(
-        "image.formatUnknown",
-        "from-sidecar requires an input file path; pass it via chromaMaskFromFile().",
-      );
-    }
-    return { hex: normalizeHex(await loadKeyFromSidecar(sourcePath)), source: "sidecar" };
-  }
-  return { hex: normalizeHex(keyArg), source: "explicit" };
+function linearToHex([r, g, b]: [number, number, number]): string {
+  const hex = (n: number): string => n.toString(16).padStart(2, "0");
+  return `#${hex(linearToSRGBByte(r))}${hex(linearToSRGBByte(g))}${hex(linearToSRGBByte(b))}`;
 }
 
 /**
@@ -232,14 +201,62 @@ export async function chromaMask(
 ): Promise<ChromaMaskResult> {
   throwIfAborted(signal);
   const preserveInterior = options.preserveInterior ?? CHROMA_DEFAULTS.preserveInterior;
-  const { hex, source } = await resolveKey(rgba, width, height, sourcePath, options);
+  const borderDepth = options.borderSample ?? CHROMA_DEFAULTS.borderSample;
+  // Sample the border in linear light once. It is the "auto" key for that
+  // path AND the empirical strength estimator that keeps from-sidecar /
+  // explicit robust to an AI-painted bg that drifts from the recorded hex.
+  const borderLinear = detectBorderLinear(rgba, width, height, borderDepth);
 
-  const linear = parseHex(hex).map((v) => SRGB_TO_LINEAR_LUT[v]!) as [
+  // Resolve the hex by source. The hex carries user intent (which color
+  // family — green, magenta, etc.); the topology comes from it.
+  const keyArg = options.key ?? CHROMA_DEFAULTS.key;
+  let hex: string;
+  let source: ChromaKeySource;
+  if (keyArg === "auto") {
+    hex = linearToHex(borderLinear);
+    source = "auto";
+  } else if (keyArg === "from-sidecar") {
+    if (!sourcePath) {
+      throw new LocalOpError(
+        "image.formatUnknown",
+        "from-sidecar requires an input file path; pass it via chromaMaskFromFile().",
+      );
+    }
+    hex = normalizeHex(await loadKeyFromSidecar(sourcePath));
+    source = "sidecar";
+  } else {
+    hex = normalizeHex(keyArg);
+    source = "explicit";
+  }
+
+  const hexLinear = parseHex(hex).map((v) => SRGB_TO_LINEAR_LUT[v]!) as [
     number,
     number,
     number,
   ];
-  const topology: KeyTopology = analyzeKey(linear);
+  let topology: KeyTopology = analyzeKey(hexLinear);
+
+  // Strength refinement: when the border's empirical topology matches the
+  // hex's, use the border's strength. This decouples "which color family"
+  // (from hex, the user's intent) from "how much spill a perfect bg pixel
+  // produces" (from the actual bg). It is what makes from-sidecar / explicit
+  // robust to an AI-painted backdrop that came out close to but not exactly
+  // the recorded color. When topologies disagree we honor the hex unchanged
+  // (the bg is not what the user said it should be).
+  if (topology !== null) {
+    const borderTopology = analyzeKey(borderLinear);
+    if (
+      borderTopology !== null &&
+      ((topology.kind === "primary" &&
+        borderTopology.kind === "primary" &&
+        borderTopology.channel === topology.channel) ||
+        (topology.kind === "secondary" &&
+          borderTopology.kind === "secondary" &&
+          borderTopology.suppressed === topology.suppressed))
+    ) {
+      topology = { ...topology, strength: borderTopology.strength };
+    }
+  }
 
   const n = width * height;
   let alpha: Uint8Array;

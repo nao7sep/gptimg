@@ -135,6 +135,35 @@ describe("chromaMask: spill formula", () => {
     const subject = 16 * W + 16;
     expect(res.alpha[subject]).toBe(255);
   });
+
+  it("uses border-derived strength so a drifted bg keys cleanly (stated #ff00ff, actual ≈ #fa01df)", async () => {
+    // The h02 failure mode: an explicit / from-sidecar key states the ideal
+    // hex, but the AI-painted bg drifts (here #fa01df = 250,1,223 — B=223
+    // instead of 255). Before the fix, strength came from the ideal hex
+    // (1.0) and the drifted bg only reached ~0.745 spill → α≈23, not 0.
+    // After the fix, strength comes from the actual border average → α=0.
+    const W = 32;
+    const H = 32;
+    const rgba = new Uint8Array(W * H * 4);
+    for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+      rgba[i] = 250;
+      rgba[i + 1] = 1;
+      rgba[i + 2] = 223;
+      rgba[i + 3] = 255;
+    }
+    for (let y = 12; y < 20; y++) {
+      for (let x = 12; x < 20; x++) {
+        const i = (y * W + x) * 4;
+        rgba[i] = 50;
+        rgba[i + 1] = 50;
+        rgba[i + 2] = 50;
+      }
+    }
+    const res = await chromaMask(rgba, W, H, { key: "#ff00ff" });
+    expect(res.alpha[0]).toBe(0);
+    const subject = 16 * W + 16;
+    expect(res.alpha[subject]).toBe(255);
+  });
 });
 
 describe("chromaMask: preserveInterior", () => {
