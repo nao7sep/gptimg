@@ -42,6 +42,19 @@ export type KeyTopology =
   | null;
 
 /**
+ * Smallest linear-light value the brightest channel may have before a key is
+ * considered too dark/achromatic to classify.
+ */
+const MIN_KEY_STRENGTH = 0.05;
+
+/**
+ * Smallest linear-light separation between channels for a key to count as
+ * chromatic. Below this the channels are too close to name a dominant or
+ * suppressed one, so the key is treated as achromatic.
+ */
+const MIN_CHANNEL_GAP = 0.05;
+
+/**
  * Classify a key color as primary (one dominant channel — R/G/B), secondary
  * (one suppressed channel — C/M/Y), or neither. Achromatic or very dark keys
  * return null; callers should leave such images untouched.
@@ -51,7 +64,7 @@ export function analyzeKey(linear: [number, number, number]): KeyTopology {
   const max = Math.max(a, b, c);
   const min = Math.min(a, b, c);
   const mid = a + b + c - max - min;
-  if (max < 0.05) return null;
+  if (max < MIN_KEY_STRENGTH) return null;
   let maxIdx: 0 | 1 | 2 = 0;
   let minIdx: 0 | 1 | 2 = 0;
   for (const i of [1, 2] as const) {
@@ -60,10 +73,10 @@ export function analyzeKey(linear: [number, number, number]): KeyTopology {
   }
   const primaryGap = max - mid;
   const secondaryGap = mid - min;
-  if (primaryGap >= secondaryGap && primaryGap >= 0.05) {
+  if (primaryGap >= secondaryGap && primaryGap >= MIN_CHANNEL_GAP) {
     return { kind: "primary", channel: maxIdx, strength: max };
   }
-  if (secondaryGap > primaryGap && secondaryGap >= 0.05) {
+  if (secondaryGap > primaryGap && secondaryGap >= MIN_CHANNEL_GAP) {
     return { kind: "secondary", suppressed: minIdx, strength: mid - min };
   }
   return null;

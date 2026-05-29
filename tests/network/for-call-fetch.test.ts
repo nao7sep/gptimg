@@ -19,7 +19,7 @@ function listen(
 }
 
 describe("resolveNetworkForCall", () => {
-  it("rejects invalid recipe.network values", async () => {
+  it("rejects invalid recipe.network values", () => {
     for (const [name, recipe] of [
       [
         "unknown category",
@@ -34,21 +34,12 @@ describe("resolveNetworkForCall", () => {
         { network: { imageGenerate: { timeout: "slow" } } },
       ],
     ]) {
-      await expect(
-        resolveNetworkForCall(
-          { provider: "openai", apiKey: "sk-test" },
-          recipe,
-        ),
-        name,
-      ).rejects.toBeInstanceOf(RecipeError);
+      expect(() => resolveNetworkForCall(recipe), name).toThrow(RecipeError);
     }
   });
 
-  it("returns defaults when no recipe.network is provided", async () => {
-    const cfg = await resolveNetworkForCall(
-      { provider: "openai", apiKey: "sk-test" },
-      undefined,
-    );
+  it("returns defaults when no recipe.network is provided", () => {
+    const cfg = resolveNetworkForCall(undefined);
     expect(cfg).toEqual(NETWORK_DEFAULTS);
   });
 });

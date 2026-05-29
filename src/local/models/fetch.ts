@@ -5,13 +5,16 @@
  *   - ensureModel(entry, cacheDir) returns the absolute path to the cached
  *     model file. If the file is already present, it is returned with no
  *     network call.
- *   - Otherwise the file is downloaded to a per-process unique partial path
- *     (`<final>.partial.<pid>.<random>`) and then published to the final
- *     name via POSIX `link()`, which is atomic and fails with EEXIST if
- *     another concurrent caller published first. Concurrent callers waste
- *     bandwidth (each downloads to its own partial) but never corrupt the
- *     cache: only the winning `link()` becomes the final file, all losers
+ *   - Otherwise the file is downloaded under the `modelDownload` network
+ *     budget (per-attempt timeout + bounded retries) to a per-process unique
+ *     partial path (`<final>.partial.<pid>.<random>`) and then published to
+ *     the final name via POSIX `link()`, which is atomic and fails with
+ *     EEXIST if another concurrent caller published first. Concurrent callers
+ *     waste bandwidth (each downloads to its own partial) but never corrupt
+ *     the cache: only the winning `link()` becomes the final file, all losers
  *     unlink their partial and return the published path.
+ *   - Each retry attempt downloads to a fresh partial, so a half-written file
+ *     from a failed attempt never poisons the next one.
  *   - One-line progress notes go to stderr; stdout stays clean for JSON
  *     output.
  *
@@ -24,33 +27,46 @@ import { link, mkdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { LocalOpError, toAbortError } from "../../errors.js";
+import type { Logger } from "../../log/index.js";
+import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.js";
+import { combineSignals, HttpStatusError } from "../../network/http.js";
+import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { ModelEntry } from "./registry.js";
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
 }
 
-async function downloadTo(
+function finishWrite(stream: ReturnType<typeof createWriteStream>): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    stream.end((err: Error | null | undefined) => (err ? reject(err) : resolve()));
+  });
+}
+
+/**
+ * One download attempt. Streams `url` to `destPath`, bounded by `timeoutMs`
+ * (the whole attempt, via a combined abort signal). Throws a status- or
+ * code-bearing error so the retry layer can classify retryability; a fired
+ * timeout surfaces as a TimeoutError (retryable). A parent-signal abort is
+ * surfaced as AbortError so it is never mistaken for a retryable failure.
+ */
+async function downloadAttempt(
   url: string,
   destPath: string,
-  signal: AbortSignal | undefined,
-): Promise<number> {
+  timeoutMs: number,
+  parentSignal: AbortSignal | undefined,
+): Promise<void> {
+  const signal = combineSignals(parentSignal, timeoutMs);
+
   let response: Response;
   try {
     response = await fetch(url, { signal });
   } catch (err) {
-    if (signal?.aborted) throw toAbortError(signal.reason);
-    throw new LocalOpError(
-      "model.downloadFailed",
-      `Failed to fetch ${url}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    if (parentSignal?.aborted) throw toAbortError(parentSignal.reason);
+    throw err;
   }
   if (!response.ok || !response.body) {
-    throw new LocalOpError(
-      "model.downloadFailed",
-      `Failed to fetch ${url}: HTTP ${response.status}`,
-    );
+    throw new HttpStatusError(response.status, response.headers, "");
   }
 
   const total = Number(response.headers.get("content-length") ?? 0);
@@ -62,8 +78,7 @@ async function downloadTo(
 
   try {
     const reader = response.body.getReader();
-    while (true) {
-      throwIfAborted(signal);
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       received += value.length;
@@ -78,17 +93,16 @@ async function downloadTo(
         }
       }
     }
-  } finally {
-    await new Promise<void>((resolve, reject) => {
-      stream.end((err: Error | null | undefined) => (err ? reject(err) : resolve()));
-    });
+  } catch (err) {
+    await finishWrite(stream).catch(() => undefined);
+    if (parentSignal?.aborted) throw toAbortError(parentSignal.reason);
+    throw err;
   }
 
+  await finishWrite(stream);
   process.stderr.write(
     `gptimg: downloaded ${received} bytes to ${path.basename(destPath)}\n`,
   );
-
-  return received;
 }
 
 function partialPathFor(finalPath: string): string {
@@ -99,9 +113,14 @@ function partialPathFor(finalPath: string): string {
 export async function ensureModel(
   entry: ModelEntry,
   cacheDir: string,
-  opts: { signal?: AbortSignal | undefined } = {},
+  opts: {
+    signal?: AbortSignal | undefined;
+    budget?: NetworkBudget;
+    logger?: Logger;
+  } = {},
 ): Promise<string> {
-  const { signal } = opts;
+  const { signal, logger } = opts;
+  const budget = opts.budget ?? NETWORK_DEFAULTS.modelDownload;
   throwIfAborted(signal);
 
   await mkdir(cacheDir, { recursive: true });
@@ -120,15 +139,28 @@ export async function ensureModel(
     await unlink(legacyPartial).catch(() => undefined);
   }
 
-  // Each caller writes to its own partial path; no shared filename, so
-  // concurrent downloads never interleave bytes on the same file.
-  const partialPath = partialPathFor(finalPath);
-
+  let partialPath: string;
   try {
-    await downloadTo(entry.url, partialPath, signal);
+    partialPath = await callWithRetry(
+      { budgetName: "modelDownload", budget, signal, logger },
+      async () => {
+        const p = partialPathFor(finalPath);
+        try {
+          await downloadAttempt(entry.url, p, budget.timeout, signal);
+        } catch (err) {
+          await unlink(p).catch(() => undefined);
+          throw err;
+        }
+        return p;
+      },
+    );
   } catch (err) {
-    await unlink(partialPath).catch(() => undefined);
-    throw err;
+    if (isAbortError(err)) throw err;
+    throw new LocalOpError(
+      "model.downloadFailed",
+      `Failed to download ${entry.url}: ${(err as Error).message}`,
+      { cause: err },
+    );
   }
 
   // POSIX link() is atomic: it succeeds (final name now references our

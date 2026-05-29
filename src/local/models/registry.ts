@@ -22,11 +22,21 @@ export interface ModelEntry {
  * upstream BiRefNet (https://huggingface.co/ZhengPeng7/BiRefNet). FP16
  * variant — about 490 MB, quality close to FP32 for matting work.
  *
- * The URL targets `main`. Swap `main` for a `<commit-sha>` after the first
- * verified download to lock the version.
+ * Pinned to an immutable commit so the download is reproducible. The file at
+ * this commit is sha256
+ * 3654c741eb80bd926ada8fed1713b506ccf8d30eb1f6487e87eb9f234f33df09
+ * (489,666,272 bytes) — verified byte-identical to the version this build was
+ * validated against. To adopt a new revision, bump `name` and repin `url` to
+ * the new commit.
+ *
+ * This is the model we have verified, not necessarily the best one available.
+ * Newer BiRefNet exports (or other matting models entirely) may give better
+ * cutouts; treat swapping it as an open option, but re-validate against the
+ * test images before changing the pin — output quality is the gate, not
+ * novelty.
  */
 export const BIREFNET: ModelEntry = {
   name: "birefnet-general-fp16-v1.onnx",
-  url: "https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/main/onnx/model_fp16.onnx",
+  url: "https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/534d3c82d3bb8b2f0867db6dfbc3a525b8e42f67/onnx/model_fp16.onnx",
   inputSize: 1024,
 };

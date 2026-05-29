@@ -70,7 +70,9 @@ function parseVerdict(raw: string | null | undefined): VisionVerdict {
     ) {
       return {
         ok: parsed.ok,
-        score: parsed.score,
+        // The schema declares score as a number but does not bound it; clamp
+        // so a stray out-of-range value can't propagate to callers.
+        score: Math.max(0, Math.min(1, parsed.score)),
         reasons: parsed.reasons.map((r: unknown) => String(r)),
       };
     }

@@ -5,6 +5,8 @@
 
 import { toAbortError } from "../errors.js";
 import { loadRawRGBA } from "../image/bridge.js";
+import type { Logger } from "../log/index.js";
+import type { NetworkBudget } from "../network/defaults.js";
 import { runBirefnet } from "./models/birefnet.js";
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -34,7 +36,11 @@ export interface AiMaskResult {
 export async function aiMaskFromFile(
   args: AiMaskRunArgs,
   cacheDir: string,
-  opts: { signal?: AbortSignal | undefined } = {},
+  opts: {
+    signal?: AbortSignal | undefined;
+    budget?: NetworkBudget;
+    logger?: Logger;
+  } = {},
 ): Promise<AiMaskResult> {
   const { signal } = opts;
   throwIfAborted(signal);
@@ -42,13 +48,7 @@ export async function aiMaskFromFile(
   const image = await loadRawRGBA(args.in);
   throwIfAborted(signal);
 
-  const result = await runBirefnet(
-    image.data,
-    image.width,
-    image.height,
-    cacheDir,
-    signal,
-  );
+  const result = await runBirefnet(image.data, image.width, image.height, cacheDir, opts);
 
   let removedPixels = 0;
   const n = result.width * result.height;

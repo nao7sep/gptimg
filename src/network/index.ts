@@ -1,6 +1,5 @@
 import { RecipeError } from "../errors.js";
-import type { Logger } from "../log/index.js";
-import type { Profile, Recipe } from "../types.js";
+import type { Recipe } from "../types.js";
 import type { NetworkConfig } from "./defaults.js";
 import { formatZodError } from "../internal/zodError.js";
 import { resolveNetworkConfig } from "./resolve.js";
@@ -18,11 +17,9 @@ export { fetchWithBudget } from "./fetch.js";
  * Resolve the final NetworkConfig for a single call. recipe.network is the
  * sole override path; code defaults fill in anything unspecified.
  */
-export async function resolveNetworkForCall(
-  _profile: Profile,
+export function resolveNetworkForCall(
   recipe: Recipe | undefined,
-  _logger?: Logger,
-): Promise<NetworkConfig> {
+): NetworkConfig {
   const recipeNetwork = recipe?.network;
   if (recipeNetwork === undefined) {
     return resolveNetworkConfig(undefined);

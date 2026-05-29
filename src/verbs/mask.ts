@@ -6,6 +6,7 @@ import { ensureOutputDir } from "../internal/output-files.js";
 import { createLogger, safeLogError } from "../log/index.js";
 import { aiMaskFromFile } from "../local/ai-mask.js";
 import { chromaMaskFromFile } from "../local/chroma/mask.js";
+import { resolveNetworkForCall } from "../network/index.js";
 import { loadRecipe } from "../recipe/load.js";
 import { validateChromaSection } from "../recipe/schemas.js";
 import type {
@@ -83,6 +84,7 @@ export async function maskImpl(
 
   try {
     const method = args.method ?? "chroma";
+    const recipe = await loadRecipe(recipePath);
 
     let alpha: Uint8Array;
     let width: number;
@@ -92,7 +94,6 @@ export async function maskImpl(
     let resolvedPreserveInterior: boolean | undefined;
 
     if (method === "chroma") {
-      const recipe = await loadRecipe(recipePath);
       const chromaSection = validateChromaSection(recipe.chroma);
       const resolved = applyChromaRecipeDefaults(args, chromaSection);
       resolvedKey = resolved.key;
@@ -121,6 +122,7 @@ export async function maskImpl(
       height = result.height;
       stats = result.stats;
     } else if (method === "ai") {
+      const network = resolveNetworkForCall(recipe);
       await logger.info("resolve", "mask start", {
         input: args.in,
         method,
@@ -131,7 +133,7 @@ export async function maskImpl(
       const result = await aiMaskFromFile(
         { in: args.in },
         cacheDir,
-        { signal },
+        { signal, budget: network.modelDownload, logger },
       );
       alpha = result.alpha;
       width = result.width;

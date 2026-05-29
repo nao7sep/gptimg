@@ -115,7 +115,7 @@ export async function visionImpl(
 
     let recipe = await loadRecipe(recipePath);
     if (args.set?.length) recipe = await applySet(recipe, "vision", args.set);
-    const network = await resolveNetworkForCall(profile, recipe, logger);
+    const network = resolveNetworkForCall(recipe);
     const section = validateVisionSection(recipe.vision);
     const { shrink: configuredShrink, detail, ...params } = section;
     const shrink = configuredShrink ?? VISION_DEFAULTS.shrink;

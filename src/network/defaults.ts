@@ -14,22 +14,32 @@ export interface NetworkBudget {
   retryIntervals: number[];
 }
 
-export type NetworkBudgetName = "imageGenerate" | "imageVision" | "imageDownload";
+export type NetworkBudgetName =
+  | "imageGenerate"
+  | "imageVision"
+  | "imageDownload"
+  | "modelDownload";
 
 export const NETWORK_BUDGET_NAMES: readonly NetworkBudgetName[] = [
   "imageGenerate",
   "imageVision",
   "imageDownload",
+  "modelDownload",
 ];
 
 export const NETWORK_DEFAULTS: Record<NetworkBudgetName, NetworkBudget> = {
   imageGenerate: { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageVision:   { timeout: 120_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageDownload: { timeout:  30_000, maxRetries: 2, retryIntervals: [  500, 1_500] },
+  // Large one-shot file (the BiRefNet weights are ~490 MB). `timeout` is the
+  // per-attempt ceiling for the whole streamed download, generous enough for a
+  // slow link but finite so a stalled connection retries instead of hanging.
+  modelDownload: { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
 };
 
 export interface NetworkConfig {
   imageGenerate: NetworkBudget;
   imageVision: NetworkBudget;
   imageDownload: NetworkBudget;
+  modelDownload: NetworkBudget;
 }

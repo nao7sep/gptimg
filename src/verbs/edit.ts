@@ -80,7 +80,7 @@ export async function editImpl(
 
     let recipe = await loadRecipe(recipePath);
     if (args.set?.length) recipe = await applySet(recipe, "edit", args.set);
-    const network = await resolveNetworkForCall(profile, recipe, logger);
+    const network = resolveNetworkForCall(recipe);
     const section = validateEditSection(recipe.edit);
     const params: Record<string, unknown> = { ...section };
 

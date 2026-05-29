@@ -13,6 +13,7 @@ export const NetworkSchema = z
     imageGenerate: NetworkBudgetSchema.optional(),
     imageVision: NetworkBudgetSchema.optional(),
     imageDownload: NetworkBudgetSchema.optional(),
+    modelDownload: NetworkBudgetSchema.optional(),
   })
   .strict();
 
