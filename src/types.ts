@@ -99,7 +99,10 @@ export type LogVerb =
   | "vision"
   | "mask"
   | "compose"
-  | "combine";
+  | "combine"
+  | "trim"
+  | "backplate"
+  | "layer";
 
 export interface LogEntry {
   ts: string;
@@ -259,6 +262,153 @@ export interface ComposeResult {
 }
 
 export type CombineOp = "union" | "intersect" | "subtract" | "invert" | "feather";
+
+// ----- trim -----
+
+/** The tightest rect of non-transparent (alpha > 0) pixels in an RGBA image. */
+export interface AlphaBBox {
+  /** Top-left x in source coordinates. */
+  x: number;
+  /** Top-left y in source coordinates. */
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface TrimArgs {
+  in: string;
+  /** Margin to re-pad, as a fraction of the longer bbox side. 0..1. Default 0.08. */
+  margin?: number;
+  /** Extend the shorter axis with transparent pixels to make the output square. */
+  square?: boolean;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface TrimResult {
+  input: string;
+  output: string;
+  /** The detected alpha bounding box in the source image. */
+  bbox: AlphaBBox;
+  /** The resolved margin fraction. */
+  margin: number;
+  /** Margin in pixels (round(margin * max(bbox.width, bbox.height))). */
+  marginPx: number;
+  /** Final output width (bbox.width + 2*marginPx, possibly extended for --square). */
+  width: number;
+  /** Final output height. */
+  height: number;
+  square: boolean;
+  logPath: string;
+}
+
+// ----- backplate -----
+
+/**
+ * Corner shape for the squircle backplate.
+ * - "rect": circular-arc rounded corners (standard SVG rounded rect).
+ * - "squircle": quarter-superellipse corners (smoother continuous curvature,
+ *   closer to the macOS dock icon shape).
+ */
+export type BackplateShape = "rect" | "squircle";
+
+export interface BackplateArgs {
+  /** Output PNG side length in pixels. Default 1024. */
+  size?: number;
+  /** Content side length as a fraction of `size` (the squircle occupies this). Default 0.80. */
+  content?: number;
+  /** Corner radius as a fraction of the content side (0..0.5). Default 0.225. */
+  radius?: number;
+  /** Gradient start color, "#rrggbb". Required. */
+  from: string;
+  /** Gradient end color, "#rrggbb". Required. */
+  to: string;
+  /** CSS-style gradient angle in degrees (0 = bottom→top, 90 = left→right, 180 = top→bottom). Default 135. */
+  angle?: number;
+  /** Corner shape. Default "rect". */
+  shape?: BackplateShape;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface BackplateResult {
+  output: string;
+  size: number;
+  /** Resolved content side as a fraction of `size`. */
+  content: number;
+  /** Resolved corner radius as a fraction of the content side. */
+  radius: number;
+  shape: BackplateShape;
+  /** Resolved gradient start color, "#rrggbb". */
+  from: string;
+  /** Resolved gradient end color, "#rrggbb". */
+  to: string;
+  angle: number;
+  logPath: string;
+}
+
+// ----- layer -----
+
+/**
+ * Where to anchor the top image on the base when no explicit pixel offset is
+ * given. Matches sharp's compass directions.
+ */
+export type LayerGravity =
+  | "center"
+  | "north"
+  | "south"
+  | "east"
+  | "west"
+  | "northeast"
+  | "northwest"
+  | "southeast"
+  | "southwest";
+
+export interface LayerOffset {
+  /** Pixel offset of the top image's top-left corner from the base's top-left. */
+  x: number;
+  y: number;
+}
+
+export interface LayerArgs {
+  /** Base RGBA image (the bottom layer, e.g. a backplate). */
+  base: string;
+  /** Top RGBA image (the foreground, e.g. trimmed content). */
+  top: string;
+  /**
+   * Resize the top image so its longer side equals `scale * min(baseW, baseH)`.
+   * Preserves aspect ratio. Omit to keep top at its native size.
+   */
+  scale?: number;
+  /** Placement anchor. Default "center". Ignored when `topOffset` is given. */
+  gravity?: LayerGravity;
+  /** Explicit pixel offset of the top image (overrides `gravity`). */
+  topOffset?: LayerOffset;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface LayerResult {
+  base: string;
+  top: string;
+  output: string;
+  /** Final output size (= base size; layer never changes the canvas). */
+  width: number;
+  height: number;
+  /** Size of the top image as composited (after `scale`, if any). */
+  topWidth: number;
+  topHeight: number;
+  /** Resolved placement. One of `gravity` or `topOffset` is null. */
+  gravity: LayerGravity | null;
+  topOffset: LayerOffset | null;
+  logPath: string;
+}
 
 export interface CombineArgs {
   op: CombineOp;

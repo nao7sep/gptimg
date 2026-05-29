@@ -20,7 +20,7 @@ export async function loadKeyFromSidecar(inputPath: string): Promise<string> {
   const chroma = req?.chroma as { color?: string } | undefined;
   if (!chroma || typeof chroma.color !== "string") {
     throw new LocalOpError(
-      "image.formatUnknown",
+      "sidecar.malformed",
       `Sidecar at ${stemFull}.json does not contain request.chroma.color`,
     );
   }

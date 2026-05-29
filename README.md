@@ -95,6 +95,21 @@ gptimg compose --in donut.png --mask donut-mask.png \
 
 To check the result, run `gptimg vision` against the composite with whatever criterion you care about.
 
+Build an app icon from a generated cutout:
+
+```sh
+# 1. Trim the cutout to its alpha bbox + 8% relative margin, force square canvas.
+gptimg trim --in cutout.png --margin 0.08 --square --out-name content.png
+
+# 2. Synthesize a 1024² squircle backplate with a brand gradient.
+gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030" \
+  --shape squircle --out-name plate.png
+
+# 3. Composite the content onto the plate (top scaled to 62% of the plate side).
+gptimg layer --base plate.png --top content.png --scale 0.62 \
+  --out-name icon.png
+```
+
 ## CLI Reference
 
 ### `generate`
@@ -226,6 +241,46 @@ gptimg compose --in donut.png --mask donut-final-mask.png \
   --out-name donut-cutout.png
 ```
 
+### `trim`
+
+```sh
+# Crop to alpha bbox + 8% relative margin (default).
+gptimg trim --in cutout.png
+
+# Force square canvas (extend the shorter axis with transparent pixels).
+gptimg trim --in cutout.png --margin 0.10 --square --out-name content.png
+```
+
+Local only. Loads the input as RGBA, finds the tightest rect of pixels with alpha > 0, re-pads by `--margin × max(bbox.width, bbox.height)`, and optionally extends the shorter axis to make the output square. Fully-transparent input → exit 5 (`image.formatUnknown`). Default output name `<input-stem>-trim.png`.
+
+### `backplate`
+
+```sh
+# Default: 1024² rounded-rect plate with the given gradient.
+gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030"
+
+# Continuous-curvature squircle (closer to the macOS dock icon shape).
+gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030" --shape squircle
+```
+
+Local only. Synthesizes a square PNG containing a centered rounded shape (rect or squircle) filled with a linear gradient on transparent padding — the bottom layer of the icon pipeline.
+
+`--from` and `--to` are required. `--size` defaults to 1024, `--content` (plate side as fraction of canvas) to 0.80, `--radius` (fraction of content side) to 0.225, `--angle` (CSS deg; 0=bottom→top, 90=left→right) to 135, and `--shape` to `rect`. Without `--out-dir`, output goes to the current working directory; default filename `backplate-<size>.png`.
+
+### `layer`
+
+```sh
+# Composite content centered on the plate, scaled to 62% of plate side.
+gptimg layer --base plate.png --top content.png --scale 0.62
+
+# Explicit pixel placement (overrides --gravity).
+gptimg layer --base plate.png --top content.png --top-offset 120,200
+```
+
+Local only. Source-over alpha-composite of `--top` onto `--base`. Unlike `compose --over <image>` (which flattens to opaque RGB driven by a single-channel mask), `layer` preserves the base's transparency outside the top.
+
+`--scale` resizes top so its longer side = `scale × min(baseW, baseH)`, preserving aspect. `--gravity` (default `center`) accepts the nine sharp compass directions. `--top-offset x,y` overrides `--gravity` with an explicit pixel offset of top's top-left corner from base's top-left. Output canvas is always the base size. Default output name `<base-stem>-layered.png`.
+
 ### `model`
 
 Manage the local AI model cache (used by `mask --method ai`).
@@ -262,6 +317,20 @@ const mask = await sdk.mask({ in: gen.files[0].path });
 const cutout = await sdk.compose({
   in: gen.files[0].path,
   mask: mask.output!,
+});
+
+// Icon pipeline.
+const trim = await sdk.trim({ in: cutout.output, margin: 0.08, square: true });
+const plate = await sdk.backplate({
+  size: 1024,
+  from: "#3a4a6a",
+  to: "#1a2030",
+  shape: "squircle",
+});
+const icon = await sdk.layer({
+  base: plate.output,
+  top: trim.output,
+  scale: 0.62,
 });
 ```
 
@@ -355,6 +424,9 @@ Bare `--set` keys are scoped under the current verb; paths beginning with `gener
 | `<input-stem>-mask.png` | `mask` output (grayscale alpha) |
 | `<input-stem>-composed.png` | `compose` output (RGBA or flattened RGB) |
 | `<input-stem>-<op>.png` | `combine` output (grayscale alpha) |
+| `<input-stem>-trim.png` | `trim` output (cropped to alpha bbox + relative margin) |
+| `backplate-<size>.png` | `backplate` output (squircle/rect plate on transparent canvas) |
+| `<base-stem>-layered.png` | `layer` output (top alpha-composited onto base) |
 
 Sidecars store basenames for image entries so an image + sidecar pair can be moved together.
 

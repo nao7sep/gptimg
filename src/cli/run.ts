@@ -2,13 +2,16 @@ import { Command } from "commander";
 import { installSigintHandler } from "./abort.js";
 import { emitError } from "./output.js";
 import { exitCodeFor } from "./exitCodes.js";
+import { registerBackplate } from "./verbs/backplate.js";
 import { registerCombine } from "./verbs/combine.js";
 import { registerCompose } from "./verbs/compose.js";
 import { registerEdit } from "./verbs/edit.js";
 import { registerGenerate } from "./verbs/generate.js";
+import { registerLayer } from "./verbs/layer.js";
 import { registerMask } from "./verbs/mask.js";
 import { registerModel } from "./verbs/model.js";
 import { registerProfile } from "./verbs/profile.js";
+import { registerTrim } from "./verbs/trim.js";
 import { registerVision } from "./verbs/vision.js";
 
 function createProgram(): Command {
@@ -28,6 +31,9 @@ function createProgram(): Command {
   registerMask(program);
   registerCompose(program);
   registerCombine(program);
+  registerTrim(program);
+  registerBackplate(program);
+  registerLayer(program);
   registerModel(program);
   registerProfile(program);
 

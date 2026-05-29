@@ -45,7 +45,7 @@ export async function combineImpl(
   try {
     if (!args.inputs.length) {
       throw new LocalOpError(
-        "image.formatUnknown",
+        "args.invalid",
         `combine ${args.op} requires at least one input.`,
       );
     }

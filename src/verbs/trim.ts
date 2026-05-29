@@ -4,73 +4,67 @@ import {
   resolveOutputPath,
   withVerbLogger,
 } from "../internal/local-verb.js";
-import {
-  parseOverColor,
-  runCompose,
-  type ComposeOver,
-} from "../local/compose.js";
-import type { ComposeArgs, ComposeResult } from "../types.js";
+import { runTrim } from "../local/trim.js";
+import type { TrimArgs, TrimResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
 
-export interface ComposeContext {
+export interface TrimContext {
   profileDir: string;
   logDir: string;
 }
 
 function defaultOutputName(input: string): string {
-  return `${inferStem(input)}-composed.png`;
+  return `${inferStem(input)}-trim.png`;
 }
 
-export async function composeImpl(
-  ctx: ComposeContext,
-  args: ComposeArgs,
+export async function trimImpl(
+  ctx: TrimContext,
+  args: TrimArgs,
   opts: VerbCallOptions = {},
-): Promise<ComposeResult> {
+): Promise<TrimResult> {
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "compose", args.log, async (logger) => {
+  return withVerbLogger(ctx, "trim", args.log, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       outName: defaultOutputName(args.in),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    const over: ComposeOver | undefined = args.over
-      ? parseOverColor(args.over)
-      : undefined;
-
-    await logger.info("resolve", "compose start", {
+    await logger.info("resolve", "trim start", {
       input: args.in,
-      mask: args.mask,
       out: outPath,
-      over: over?.kind ?? "transparent",
-      removeBleed: args.removeBleed ?? null,
+      margin: args.margin ?? null,
+      square: args.square ?? false,
     });
 
-    const result = await runCompose(
+    const result = await runTrim(
       {
         in: args.in,
-        mask: args.mask,
         out: outPath,
-        over,
-        removeBleed: args.removeBleed,
+        margin: args.margin,
+        square: args.square,
       },
       { signal },
     );
-    await logger.info("write", "wrote composed image", {
+
+    await logger.info("write", "wrote trimmed image", {
       path: result.output,
       width: result.width,
       height: result.height,
-      over: result.over,
+      bbox: result.bbox,
+      marginPx: result.marginPx,
     });
 
     return {
       input: args.in,
-      mask: args.mask,
       output: result.output,
+      bbox: result.bbox,
+      margin: result.margin,
+      marginPx: result.marginPx,
       width: result.width,
       height: result.height,
-      over: result.over,
+      square: result.square,
       logPath: logger.handle.path,
     };
   });

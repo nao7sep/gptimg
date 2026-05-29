@@ -31,7 +31,7 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 function expectInputs(op: CombineOp, inputs: string[], want: number): void {
   if (inputs.length !== want) {
     throw new LocalOpError(
-      "image.formatUnknown",
+      "args.invalid",
       `combine ${op} expects exactly ${want} input(s); got ${inputs.length}.`,
     );
   }
@@ -47,7 +47,7 @@ async function loadSameSize(paths: string[]): Promise<{
   for (let i = 1; i < masks.length; i++) {
     if (masks[i]!.width !== first.width || masks[i]!.height !== first.height) {
       throw new LocalOpError(
-        "image.formatUnknown",
+        "image.sizeMismatch",
         `combine inputs differ in size: ${paths[0]} is ${first.width}x${first.height}, ${paths[i]} is ${masks[i]!.width}x${masks[i]!.height}.`,
       );
     }
@@ -157,7 +157,7 @@ export async function runCombine(
     const radius = args.radius ?? 1;
     if (radius < 0 || !Number.isFinite(radius)) {
       throw new LocalOpError(
-        "image.formatUnknown",
+        "args.invalid",
         `feather radius must be a non-negative integer; got ${radius}.`,
       );
     }

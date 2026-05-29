@@ -80,7 +80,7 @@ async function loadOverImage(
   const img = await loadRawRGBA(path);
   if (img.width !== width || img.height !== height) {
     throw new LocalOpError(
-      "image.formatUnknown",
+      "image.sizeMismatch",
       `over-image size ${img.width}x${img.height} does not match input ${width}x${height}.`,
     );
   }
@@ -213,7 +213,7 @@ export async function runCompose(
   const mask = await loadMaskPNG(args.mask);
   if (mask.width !== image.width || mask.height !== image.height) {
     throw new LocalOpError(
-      "image.formatUnknown",
+      "image.sizeMismatch",
       `mask size ${mask.width}x${mask.height} does not match image ${image.width}x${image.height}.`,
     );
   }

@@ -66,7 +66,7 @@ function normalizeHex(hex: string): string {
   const m = HEX_RE.exec(hex);
   if (!m) {
     throw new LocalOpError(
-      "image.formatUnknown",
+      "args.invalid",
       `Invalid hex color: ${hex}. Expected #rrggbb.`,
     );
   }
@@ -218,7 +218,7 @@ export async function chromaMask(
   } else if (keyArg === "from-sidecar") {
     if (!sourcePath) {
       throw new LocalOpError(
-        "image.formatUnknown",
+        "args.invalid",
         "from-sidecar requires an input file path; pass it via chromaMaskFromFile().",
       );
     }
