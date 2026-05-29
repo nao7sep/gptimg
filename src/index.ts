@@ -1,4 +1,5 @@
 export { GptImg } from "./gptimg.js";
+export type { ModelKey } from "./local/models/registry.js";
 export {
   AbortError,
   GptImgError,
@@ -35,6 +36,8 @@ export type {
   MaskRecipe,
   MaskResult,
   MaskStats,
+  ModelInstallResult,
+  ModelListEntry,
   OutputFile,
   Profile,
   Recipe,

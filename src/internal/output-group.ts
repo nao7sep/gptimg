@@ -142,3 +142,24 @@ export function assertOutputGroupAvailable(
     );
   }
 }
+
+/**
+ * Fail-fast availability pre-check, usable BEFORE the image format is known.
+ * The per-image sidecars (.json) are the extension-independent identity of an
+ * output group, so checking them lets generate/edit reject a conflicting stem
+ * before spending on a provider call. The full image+sidecar check
+ * (assertOutputGroupAvailable) still runs after the response as the authority.
+ */
+export function assertStemAvailable(
+  dir: string,
+  stem: string,
+  count: number,
+  allowOverwrite: boolean,
+): void {
+  const sidecarGroup = createOutputGroup(dir, stem, SIDECAR_EXT);
+  assertOutputGroupAvailable(
+    sidecarGroup,
+    plannedSidecarPaths(sidecarGroup, count, count),
+    allowOverwrite,
+  );
+}

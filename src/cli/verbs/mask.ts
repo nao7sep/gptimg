@@ -2,15 +2,6 @@ import { InvalidArgumentError, Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
-import { ensureModel } from "../../local/models/fetch.js";
-import { BIREFNET } from "../../local/models/registry.js";
-import { resolveNetworkForCall } from "../../network/index.js";
-import { loadRecipe } from "../../recipe/load.js";
-import {
-  DEFAULT_PROFILE_DIR,
-  defaultModelsDir,
-  defaultRecipePath,
-} from "../../internal/paths.js";
 import type { MaskMethod } from "../../types.js";
 
 const KEY_RE = /^#[0-9a-fA-F]{6}$/;
@@ -112,21 +103,4 @@ export function registerMask(program: Command): void {
     );
     emit(result);
   });
-
-  cmd
-    .command("install-model")
-    .description(
-      "Pre-fetch the AI mask model into the cache so the first --method ai call is offline-fast.",
-    )
-    .option("--recipe <path>", "Path to recipe JSON file (for network.modelDownload)")
-    .action(async (opts: { recipe?: string }) => {
-      const cacheDir = defaultModelsDir(DEFAULT_PROFILE_DIR);
-      const recipePath = opts.recipe ?? defaultRecipePath(DEFAULT_PROFILE_DIR);
-      const network = resolveNetworkForCall(await loadRecipe(recipePath));
-      const finalPath = await ensureModel(BIREFNET, cacheDir, {
-        signal: getAbortSignal(),
-        budget: network.modelDownload,
-      });
-      emit({ model: BIREFNET.name, path: finalPath });
-    });
 }

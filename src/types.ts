@@ -281,6 +281,23 @@ export interface CombineResult {
   logPath: string;
 }
 
+// ----- model management -----
+
+export interface ModelInstallResult {
+  key: string;
+  name: string;
+  path: string;
+  forced: boolean;
+}
+
+export interface ModelListEntry {
+  key: string;
+  name: string;
+  path: string;
+  cached: boolean;
+  sizeBytes?: number;
+}
+
 export interface GptImgOptions {
   profileDir?: string;
   logDir?: string;

@@ -22,10 +22,10 @@
  * registry entry to a specific HuggingFace commit when locking a version.
  */
 
-import { createWriteStream, existsSync } from "node:fs";
-import { link, mkdir, unlink } from "node:fs/promises";
+import { createReadStream, createWriteStream, existsSync } from "node:fs";
+import { link, mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { LocalOpError, toAbortError } from "../../errors.js";
 import type { Logger } from "../../log/index.js";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.js";
@@ -40,6 +40,16 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 function finishWrite(stream: ReturnType<typeof createWriteStream>): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     stream.end((err: Error | null | undefined) => (err ? reject(err) : resolve()));
+  });
+}
+
+function fileSha256(filePath: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const h = createHash("sha256");
+    const s = createReadStream(filePath);
+    s.on("error", reject);
+    s.on("data", (chunk) => h.update(chunk));
+    s.on("end", () => resolve(h.digest("hex")));
   });
 }
 
@@ -117,16 +127,19 @@ export async function ensureModel(
     signal?: AbortSignal | undefined;
     budget?: NetworkBudget;
     logger?: Logger;
+    /** Re-download and replace even if the file is already cached. */
+    force?: boolean;
   } = {},
 ): Promise<string> {
   const { signal, logger } = opts;
+  const force = opts.force ?? false;
   const budget = opts.budget ?? NETWORK_DEFAULTS.modelDownload;
   throwIfAborted(signal);
 
   await mkdir(cacheDir, { recursive: true });
   const finalPath = path.join(cacheDir, entry.name);
 
-  if (existsSync(finalPath)) {
+  if (!force && existsSync(finalPath)) {
     return finalPath;
   }
 
@@ -161,6 +174,27 @@ export async function ensureModel(
       `Failed to download ${entry.url}: ${(err as Error).message}`,
       { cause: err },
     );
+  }
+
+  // Verify the pinned hash before publishing. A mismatch means the pinned URL
+  // changed or the download is corrupt — fail loudly rather than cache bad
+  // bytes. Non-retryable: a fully-downloaded-but-wrong file won't fix itself.
+  if (entry.sha256) {
+    const got = await fileSha256(partialPath);
+    if (got !== entry.sha256) {
+      await unlink(partialPath).catch(() => undefined);
+      throw new LocalOpError(
+        "model.checksumMismatch",
+        `Downloaded ${entry.name} has sha256 ${got}, expected ${entry.sha256}. ` +
+          `The pinned URL may have changed or the download is corrupt.`,
+      );
+    }
+  }
+
+  if (force) {
+    // Deliberate reinstall: atomically replace whatever is there.
+    await rename(partialPath, finalPath);
+    return finalPath;
   }
 
   // POSIX link() is atomic: it succeeds (final name now references our

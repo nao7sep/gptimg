@@ -1,5 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -164,6 +165,65 @@ describe("ensureModel", () => {
       });
       expect(existsSync(path.join(tmp, entry.name))).toBe(false);
       expect(existsSync(path.join(tmp, `${entry.name}.partial`))).toBe(false);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("rejects a sha256 mismatch and does not publish", async () => {
+    const body = Buffer.from(new Uint8Array([9, 8, 7, 6]));
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200);
+      res.end(body);
+    });
+    try {
+      const entry: ModelEntry = {
+        name: "verify-bad.bin",
+        url: baseURL,
+        inputSize: 0,
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+      };
+      await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
+        code: "model.checksumMismatch",
+      });
+      expect(existsSync(path.join(tmp, entry.name))).toBe(false);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("accepts a matching sha256", async () => {
+    const body = Buffer.from(new Uint8Array([1, 1, 2, 3, 5, 8]));
+    const sha = createHash("sha256").update(body).digest("hex");
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200);
+      res.end(body);
+    });
+    try {
+      const entry: ModelEntry = { name: "verify-ok.bin", url: baseURL, inputSize: 0, sha256: sha };
+      const finalPath = await ensureModel(entry, tmp);
+      expect(existsSync(finalPath)).toBe(true);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("force re-downloads and replaces the cached file", async () => {
+    let hits = 0;
+    const { server, baseURL } = await listen((_req, res) => {
+      hits += 1;
+      res.writeHead(200);
+      res.end(Buffer.from(hits === 1 ? "AAAA" : "BBBB"));
+    });
+    try {
+      const entry: ModelEntry = { name: "force.bin", url: baseURL, inputSize: 0 };
+      const p1 = await ensureModel(entry, tmp);
+      expect((await readFile(p1)).toString()).toBe("AAAA");
+      await ensureModel(entry, tmp); // cached: no new fetch
+      expect(hits).toBe(1);
+      const p2 = await ensureModel(entry, tmp, { force: true });
+      expect((await readFile(p2)).toString()).toBe("BBBB");
+      expect(hits).toBe(2);
     } finally {
       await closeServer(server);
     }

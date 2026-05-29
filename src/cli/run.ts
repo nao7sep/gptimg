@@ -7,6 +7,7 @@ import { registerCompose } from "./verbs/compose.js";
 import { registerEdit } from "./verbs/edit.js";
 import { registerGenerate } from "./verbs/generate.js";
 import { registerMask } from "./verbs/mask.js";
+import { registerModel } from "./verbs/model.js";
 import { registerProfile } from "./verbs/profile.js";
 import { registerVision } from "./verbs/vision.js";
 
@@ -27,6 +28,7 @@ function createProgram(): Command {
   registerMask(program);
   registerCompose(program);
   registerCombine(program);
+  registerModel(program);
   registerProfile(program);
 
   return program;

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assertOutputGroupAvailable,
+  assertStemAvailable,
   createOutputGroup,
   plannedSidecarPaths,
   sidecarPathFor,
@@ -140,6 +141,23 @@ describe("OutputGroup", () => {
       const planned = [path.join(tmp, "stem.png"), path.join(tmp, "stem.json")];
       expect(() => assertOutputGroupAvailable(group, planned, false)).not.toThrow();
       expect(() => assertOutputGroupAvailable(group, planned, true)).not.toThrow();
+    });
+  });
+
+  describe("assertStemAvailable (pre-call fail-fast)", () => {
+    it("passes when no sidecars exist", () => {
+      expect(() => assertStemAvailable(tmp, "stem", 2, false)).not.toThrow();
+    });
+
+    it("throws output.exists without overwrite when a sidecar is present", async () => {
+      await writeFile(path.join(tmp, "stem.json"), "");
+      expect(() => assertStemAvailable(tmp, "stem", 1, false)).toThrow(/Output exists/);
+    });
+
+    it("throws on stale prior sidecars under overwrite when the plan shrinks", async () => {
+      await writeFile(path.join(tmp, "stem-1.json"), "");
+      await writeFile(path.join(tmp, "stem-2.json"), "");
+      expect(() => assertStemAvailable(tmp, "stem", 1, true)).toThrow(/prior run/);
     });
   });
 });

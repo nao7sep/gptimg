@@ -10,6 +10,7 @@ import {
 } from "../internal/output-files.js";
 import {
   assertOutputGroupAvailable,
+  assertStemAvailable,
   createOutputGroup,
   plannedSidecarPaths,
   sidecarPathFor,
@@ -92,6 +93,15 @@ export async function editImpl(
     await assertReadableImage(args.in, "input");
     if (args.mask) await assertReadableImage(args.mask, "mask");
 
+    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
+    await ensureOutputDir(outDir);
+    const stem = args.outName ?? defaultStem(ts);
+    const overwrite = args.overwrite ?? false;
+    // Fail fast before the paid provider call when the stem already conflicts
+    // (sidecars identify the group independent of image format). The full
+    // image+sidecar check still runs after the response as the authority.
+    assertStemAvailable(outDir, stem, n, overwrite);
+
     await logger.info("request", "calling provider.edit", {
       provider: profile.provider,
       model: params.model ?? null,
@@ -118,10 +128,6 @@ export async function editImpl(
       itemCount: providerResult.images.length,
     });
 
-    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
-    await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem(ts);
-    const overwrite = args.overwrite ?? false;
     const limit = pLimit(4);
     let partial = false;
     const suffixCount = Math.max(n, providerResult.images.length);

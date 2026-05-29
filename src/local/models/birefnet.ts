@@ -12,7 +12,6 @@
  *      dimensions, quantize to Uint8Array.
  */
 
-import os from "node:os";
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
 import { LocalOpError } from "../../errors.js";
@@ -20,76 +19,10 @@ import type { Logger } from "../../log/index.js";
 import type { NetworkBudget } from "../../network/defaults.js";
 import { ensureModel } from "./fetch.js";
 import { BIREFNET } from "./registry.js";
+import { loadSession } from "./session.js";
 
 const IMAGENET_MEAN = [0.485, 0.456, 0.406];
 const IMAGENET_STD = [0.229, 0.224, 0.225];
-
-const ONNX_THREADS_ENV = "GPTIMG_ONNX_INTRA_OP_THREADS";
-const ONNX_EP_ENV = "GPTIMG_ONNX_EP";
-
-let cachedSession: ort.InferenceSession | null = null;
-let cachedSessionPath: string | null = null;
-
-/**
- * Cap the intra-op thread pool per session. ONNX Runtime's CPU EP defaults
- * to one thread per core, which is fine for a single inference but pathological
- * when the same machine runs multiple gptimg processes — each session grabs
- * all cores and they thrash the scheduler. Halving the core count per session
- * keeps a single call fast while letting parallel callers coexist without
- * total oversubscription. A single core minimum keeps tiny VMs working.
- * `GPTIMG_ONNX_INTRA_OP_THREADS` overrides the count for explicit tuning.
- */
-function intraOpThreadCount(): number {
-  const override = process.env[ONNX_THREADS_ENV];
-  if (override !== undefined && override.length > 0) {
-    const n = Number(override);
-    if (!Number.isInteger(n) || n < 1) {
-      throw new LocalOpError(
-        "model.loadFailed",
-        `${ONNX_THREADS_ENV} must be a positive integer; got "${override}".`,
-      );
-    }
-    return n;
-  }
-  const cpus = os.cpus()?.length ?? 1;
-  return Math.max(1, Math.floor(cpus / 2));
-}
-
-/**
- * Execution providers for the ONNX session. Defaults to CPU (the only EP
- * guaranteed present in onnxruntime-node). `GPTIMG_ONNX_EP` takes a
- * comma-separated, priority-ordered list (e.g. `coreml,cpu`) for users whose
- * build ships an accelerated EP; an unavailable EP fails loudly at session
- * creation.
- */
-function executionProviders(): string[] {
-  const override = process.env[ONNX_EP_ENV];
-  if (override === undefined) return ["cpu"];
-  const eps = override
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => s.length > 0);
-  return eps.length > 0 ? eps : ["cpu"];
-}
-
-async function loadSession(modelPath: string): Promise<ort.InferenceSession> {
-  if (cachedSession && cachedSessionPath === modelPath) return cachedSession;
-  try {
-    cachedSession = await ort.InferenceSession.create(modelPath, {
-      executionProviders: executionProviders(),
-      intraOpNumThreads: intraOpThreadCount(),
-      interOpNumThreads: 1,
-    });
-    cachedSessionPath = modelPath;
-    return cachedSession;
-  } catch (err) {
-    throw new LocalOpError(
-      "model.loadFailed",
-      `Failed to load BiRefNet ONNX session: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
-}
 
 async function resizeRGB(
   rgba: Uint8Array,

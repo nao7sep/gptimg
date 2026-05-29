@@ -108,7 +108,7 @@ gptimg generate "logo" \
 
 Outputs `<stem>.<ext>` for one image, or indexed filenames such as `<stem>-1.png` / `<stem>-01.png` when multiple images are written. **One sidecar JSON is written per image** — `<stem>.json` for n=1, `<stem>-NN.json` for n>1 — each carrying the resolved request, the provider response (base64 nulled), and a single-element `files` entry describing the image it sits next to. This makes every image fully self-describing; downstream commands like `mask --key from-sidecar` look up the sidecar at the literal image stem with no filename-pattern mangling.
 
-The artifact group for a single `generate`/`edit` invocation is `<stem>.<ext>` plus `<stem>-<digits>.<ext>` image siblings plus the matching `<stem>.json` / `<stem>-<digits>.json` per-image sidecars in `--out-dir`. Without `--overwrite`, any existing group member blocks with `output.exists`. With `--overwrite`, the run will replace only the files it plans to write; if prior-run group members exist that the new plan would *not* replace (for example, `<stem>-01.png` … `<stem>-10.png` left over from `n=10` when the new run uses `n=2`), the command halts with `output.staleSiblings` rather than silently leaving orphans behind. Delete the listed files or pick a fresh `--out-name`. Mask and composite siblings are not part of the generate/edit group and are never touched by this check.
+The artifact group for a single `generate`/`edit` invocation is `<stem>.<ext>` plus `<stem>-<digits>.<ext>` image siblings plus the matching `<stem>.json` / `<stem>-<digits>.json` per-image sidecars in `--out-dir`. Without `--overwrite`, any existing group member blocks with `output.exists`. With `--overwrite`, the run will replace only the files it plans to write; if prior-run group members exist that the new plan would *not* replace (for example, `<stem>-01.png` … `<stem>-10.png` left over from `n=10` when the new run uses `n=2`), the command halts with `output.staleSiblings` rather than silently leaving orphans behind. Delete the listed files or pick a fresh `--out-name`. Mask and composite siblings are not part of the generate/edit group and are never touched by this check. The availability check runs *before* the provider call, so a conflicting stem fails fast (`output.exists` / `output.staleSiblings`) without spending on generation.
 
 If `recipe.chroma.color` is set, `generate` records the color in each per-image sidecar so later `mask --key from-sidecar` can reuse it.
 
@@ -150,8 +150,8 @@ gptimg mask --in image.png --dry-run
 # AI method (BiRefNet via ONNX Runtime). First call downloads the model into ~/.gptimg/models/.
 gptimg mask --in image.png --method ai
 
-# Pre-fetch the AI model for offline use.
-gptimg mask install-model
+# Pre-fetch the AI model for offline use (see `model install` below).
+gptimg model install
 ```
 
 Local only; no API call. Produces a grayscale alpha mask the same size as the input. Two methods are available:
@@ -161,7 +161,7 @@ Local only; no API call. Produces a grayscale alpha mask the same size as the in
 
 Chroma method algorithm: the key is taken as `--key` (or detected as the linear-RGB average of border pixels for `--key auto`). Per-pixel α is then `clamp(1 − spill / (key_strength · saturationRatio))` where spill is `max(0, C[key] − max(C[other_1], C[other_2]))` for a primary key (R/G/B), or `max(0, min(C[other_1], C[other_2]) − C[suppressed])` for a secondary key (C/M/Y). `--saturation-ratio` (or `recipe.chroma.saturationRatio`, default `0.82`) controls the spill ratio at which near-key pixels snap to α=0; lower values are more aggressive on background haze, higher values preserve more subject detail at the edges. A pure-key pixel is fully transparent; a pixel with no key contamination is opaque. With `--preserve-interior`, a flood fill from the border identifies border-connected transparent pixels; any α≈0 pixel not reached by the fill (the inside of a donut hole, for example) is forced back to opaque.
 
-AI method algorithm: the input is resized to 1024×1024, ImageNet-normalized, and fed to BiRefNet through ONNX Runtime. Per-stage logits are read at the model's native output resolution (validated against `[1,1,H,W]` so a mismatched export fails loudly), sigmoid-mapped, then resized back to the source dimensions and returned as the alpha buffer. The model weights are lazily fetched on first use from the URL pinned in `src/local/models/registry.ts`. Cached file lives at `~/.gptimg/models/birefnet-general-fp16-v1.onnx` (or `$GPTIMG_MODELS_DIR/birefnet-general-fp16-v1.onnx`). Run `gptimg mask install-model` to pre-fetch. The fetcher downloads to a process-unique partial path and publishes via POSIX `link()`, so concurrent callers waste bandwidth but never corrupt the cache. The download runs under the `modelDownload` network budget (per-attempt timeout + bounded retries; each retry re-downloads to a fresh partial), tunable via `recipe.network.modelDownload`. Version reproducibility is handled by pinning the registry URL to a specific HuggingFace commit (`/resolve/<commit-sha>/...`); no hash maintenance.
+AI method algorithm: the input is resized to 1024×1024, ImageNet-normalized, and fed to BiRefNet through ONNX Runtime. Per-stage logits are read at the model's native output resolution (validated against `[1,1,H,W]` so a mismatched export fails loudly), sigmoid-mapped, then resized back to the source dimensions and returned as the alpha buffer. The model weights are lazily fetched on first use from the URL pinned in `src/local/models/registry.ts`. Cached file lives at `~/.gptimg/models/birefnet-general-fp16-v1.onnx` (or `$GPTIMG_MODELS_DIR/birefnet-general-fp16-v1.onnx`). Run `gptimg model install` to pre-fetch. The fetcher downloads to a process-unique partial path and publishes via POSIX `link()`, so concurrent callers waste bandwidth but never corrupt the cache. The download runs under the `modelDownload` network budget (per-attempt timeout + bounded retries; each retry re-downloads to a fresh partial), tunable via `recipe.network.modelDownload`. Version reproducibility comes from pinning the registry URL to a specific HuggingFace commit (`/resolve/<commit-sha>/...`), and each download is verified against the model's pinned sha256 — a mismatch fails with `model.checksumMismatch` rather than caching bad bytes.
 
 ONNX Runtime can be tuned with two environment variables: `GPTIMG_ONNX_INTRA_OP_THREADS` overrides the per-session intra-op thread count (default: half the cores), and `GPTIMG_ONNX_EP` sets a comma-separated, priority-ordered execution-provider list (default `cpu`; e.g. `coreml,cpu` on builds that ship the CoreML provider). An unavailable provider fails loudly at session creation.
 
@@ -224,6 +224,26 @@ gptimg combine subtract --in donut-shape.png --in donut-keyed.png \
 gptimg compose --in donut.png --mask donut-final-mask.png \
   --out-name donut-cutout.png
 ```
+
+### `model`
+
+Manage the local AI model cache (used by `mask --method ai`).
+
+```sh
+# Download all known models into the cache (verified against the pinned sha256).
+gptimg model install
+
+# Install a specific model.
+gptimg model install birefnet
+
+# Re-download and replace even if cached (use when a file is corrupt/outdated).
+gptimg model install birefnet --force
+
+# Show known models and whether each is cached.
+gptimg model list
+```
+
+Local model files are fetched lazily on first `mask --method ai` too; `model install` just pre-fetches. Downloads run under `recipe.network.modelDownload` and are verified against the pinned sha256 (mismatch → `model.checksumMismatch`).
 
 ## SDK
 
@@ -292,7 +312,7 @@ Network budgets are strict and can be set in `recipe.network` or `--set`:
 | `imageGenerate` | `images.generate`, `images.edit` | 600,000 ms | 2 | `[2000, 5000]` ms |
 | `imageVision` | `chat.completions.create` | 120,000 ms | 2 | `[2000, 5000]` ms |
 | `imageDownload` | URL-to-bytes fallback | 30,000 ms | 2 | `[500, 1500]` ms |
-| `modelDownload` | BiRefNet fetch (`mask --method ai`, `install-model`) | 600,000 ms | 2 | `[2000, 5000]` ms |
+| `modelDownload` | model fetch (`mask --method ai`, `model install`) | 600,000 ms | 2 | `[2000, 5000]` ms |
 
 For `modelDownload`, `timeout` bounds the whole streamed download per attempt — finite so a stalled connection retries instead of hanging, but generous because the weights are large (~490 MB).
 

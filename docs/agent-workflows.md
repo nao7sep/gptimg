@@ -172,7 +172,7 @@ gptimg compose --in scene.png --mask ./out/task-004/scene-mask.png \
   > ./out/task-004/02-compose.json
 ```
 
-The AI method runs BiRefNet locally via ONNX Runtime. The model is lazily fetched into `~/.gptimg/models/` on first use (override with `GPTIMG_MODELS_DIR`). For offline machines or CI, pre-fetch with `gptimg mask install-model`.
+The AI method runs BiRefNet locally via ONNX Runtime. The model is lazily fetched into `~/.gptimg/models/` on first use (override with `GPTIMG_MODELS_DIR`). For offline machines or CI, pre-fetch with `gptimg model install` (`--force` re-downloads; verified against the pinned sha256).
 
 **Resource caution — do not parallelize `--method ai` carelessly.** Every `--method ai` process loads the BiRefNet ONNX session (~500MB) plus inference buffers, peaking around **1–1.5GB RSS** per process in native memory (V8's GC doesn't see it). Running many in parallel pushes the host into swap thrashing and can crash the desktop session — a 24GB machine should run AI masks **sequentially** (shell `&&`, not `&`). The chroma method, by contrast, is light (~100–200MB) and parallel-safe. ONNX Runtime's per-session intra-op thread pool is already capped to half the available cores so multiple sessions don't fight for the CPU, but the memory ceiling is the binding constraint. If you must batch many AI masks, run them one at a time.
 

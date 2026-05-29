@@ -9,6 +9,7 @@ import {
 } from "../internal/output-files.js";
 import {
   assertOutputGroupAvailable,
+  assertStemAvailable,
   createOutputGroup,
   plannedSidecarPaths,
   sidecarPathFor,
@@ -78,6 +79,17 @@ export async function generateImpl(
         : null;
 
     const n = typeof section.n === "number" && section.n > 0 ? section.n : 1;
+
+    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
+    await ensureOutputDir(outDir);
+    const stem = args.outName ?? defaultStem(ts);
+    const overwrite = args.overwrite ?? false;
+    // Fail fast before the paid provider call when the stem already carries a
+    // conflicting prior run. The per-image sidecars identify the group
+    // independent of the image format, so this is checkable pre-response; the
+    // full image+sidecar check still runs after the response as the authority.
+    assertStemAvailable(outDir, stem, n, overwrite);
+
     await logger.info("request", "calling provider.generate", {
       provider: profile.provider,
       model: params.model ?? null,
@@ -99,11 +111,6 @@ export async function generateImpl(
     await logger.info("response", "provider.generate returned", {
       itemCount: providerResult.images.length,
     });
-
-    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
-    await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem(ts);
-    const overwrite = args.overwrite ?? false;
 
     const items = providerResult.images;
     const limit = pLimit(4);

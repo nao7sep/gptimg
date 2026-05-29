@@ -40,10 +40,15 @@ import { composeImpl } from "./verbs/compose.js";
 import { editImpl } from "./verbs/edit.js";
 import { generateImpl } from "./verbs/generate.js";
 import { maskImpl } from "./verbs/mask.js";
+import { installModelImpl, listModelsImpl } from "./verbs/model.js";
+import type { ModelInstallOptions } from "./verbs/model.js";
 import type { VerbCallOptions } from "./verbs/options.js";
 import { visionImpl } from "./verbs/vision.js";
+import type { ModelKey } from "./local/models/registry.js";
+import type { ModelInstallResult, ModelListEntry } from "./types.js";
 
 export type { VerbCallOptions } from "./verbs/options.js";
+export type { ModelInstallOptions } from "./verbs/model.js";
 
 export class GptImg {
   readonly profileDir: string;
@@ -78,6 +83,12 @@ export class GptImg {
     append: appendLog,
     close: closeLog,
     createLogger,
+  };
+
+  readonly model = {
+    install: (key: ModelKey, opts?: ModelInstallOptions): Promise<ModelInstallResult> =>
+      installModelImpl(this.ctx, key, opts),
+    list: (): ModelListEntry[] => listModelsImpl(this.ctx),
   };
 
   constructor(opts: GptImgOptions = {}) {

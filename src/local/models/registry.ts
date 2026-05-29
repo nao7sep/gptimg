@@ -15,6 +15,11 @@ export interface ModelEntry {
   name: string;
   url: string;
   inputSize: number;
+  /**
+   * Pinned content hash, verified after download. Optional so ad-hoc entries
+   * (e.g. tests) can omit it; every shipped model sets it.
+   */
+  sha256?: string;
 }
 
 /**
@@ -39,4 +44,16 @@ export const BIREFNET: ModelEntry = {
   name: "birefnet-general-fp16-v1.onnx",
   url: "https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/534d3c82d3bb8b2f0867db6dfbc3a525b8e42f67/onnx/model_fp16.onnx",
   inputSize: 1024,
+  sha256: "3654c741eb80bd926ada8fed1713b506ccf8d30eb1f6487e87eb9f234f33df09",
 };
+
+/**
+ * Registry of installable models, keyed by short name. `model install <name>`
+ * and `model list` resolve against this map; add a `ModelEntry` here (with its
+ * pinned `url` and `sha256`) to make a new model installable.
+ */
+export const MODELS = {
+  birefnet: BIREFNET,
+} as const;
+
+export type ModelKey = keyof typeof MODELS;
