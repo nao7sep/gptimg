@@ -147,6 +147,14 @@ describe("runShadow", () => {
     ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
   });
 
+  it("rejects an offset beyond the cap", async () => {
+    const src = path.join(tmp, "src.png");
+    await writeCenteredSquare(src, 64, 32);
+    await expect(
+      runShadow({ in: src, out: path.join(tmp, "o.png"), offset: { x: 1_000_000, y: 0 } }),
+    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
+  });
+
   it("rejects a blur below sharp's usable range (but accepts 0)", async () => {
     const src = path.join(tmp, "src.png");
     await writeCenteredSquare(src, 64, 32);

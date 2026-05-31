@@ -24,6 +24,20 @@ async function writeSquare(
     .toFile(filePath);
 }
 
+/** Parse an .icns and return its entry OSType codes (excluding the "TOC " block). */
+function icnsEntryTypes(buf: Buffer): string[] {
+  const types: string[] = [];
+  let off = 8; // skip "icns" magic + total-length header
+  while (off + 8 <= buf.length) {
+    const type = buf.toString("ascii", off, off + 4);
+    const len = buf.readUInt32BE(off + 4);
+    if (len < 8) break;
+    if (type !== "TOC ") types.push(type);
+    off += len;
+  }
+  return types;
+}
+
 describe("planIconOutputs", () => {
   it("plans the three core files by default", () => {
     const plan = planIconOutputs("/out", "icon", false);
@@ -89,6 +103,19 @@ describe("runIcon", () => {
     expect(pngMeta.width).toBe(1024);
     expect(pngMeta.height).toBe(1024);
     expect(pngMeta.format).toBe("png");
+  });
+
+  it("packs every ICNS entry, including the largest retina sizes", async () => {
+    const master = path.join(tmp, "master.png");
+    await writeSquare(master, 1024);
+
+    const res = await runIcon({ in: master, outDir: tmp });
+    const types = icnsEntryTypes(await readFile(res.icns));
+    // All seven rows of ICNS_ENTRIES, ten codes total. ic14 (512@2x) and ic10
+    // (1024) are written last and were dropped before addFromPng was awaited.
+    expect(types.sort()).toEqual(
+      ["ic04", "ic05", "ic07", "ic08", "ic09", "ic10", "ic11", "ic12", "ic13", "ic14"].sort(),
+    );
   });
 
   it("emits the sized-PNG set with correct dimensions when pngs=true", async () => {

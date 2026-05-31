@@ -185,13 +185,13 @@ export async function runIcon(
     const icns = new IconIcns();
     icns.toc = true;
     for (const { size, types } of ICNS_ENTRIES) {
-      icns.addFromPng(await render(size), types, false);
+      await icns.addFromPng(await render(size), types, false);
       throwIfAborted(signal);
     }
 
     const ico = new IconIco();
     for (const size of ICO_SIZES) {
-      ico.addFromPng(await render(size), size >= 256, false);
+      await ico.addFromPng(await render(size), size >= 256, false);
       throwIfAborted(signal);
     }
 

@@ -52,6 +52,10 @@ describe("parseOverColor", () => {
       path: "/tmp/bg.png",
     });
   });
+
+  it("rejects a bare 6-hex value (forgotten #) instead of treating it as a path", () => {
+    expect(() => parseOverColor("aabbcc")).toThrow(/missing the leading "#"/);
+  });
 });
 
 describe("runCompose", () => {

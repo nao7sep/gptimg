@@ -31,12 +31,19 @@ function parseSpreadOpt(v: string): number {
   return n;
 }
 
+const MAX_OFFSET = 10000;
+
 function parseOffsetOpt(v: string): ShadowOffset {
   const m = /^(-?\d+),(-?\d+)$/.exec(v.trim());
   if (!m) {
     throw new InvalidArgumentError('--offset: must be "x,y" integers');
   }
-  return { x: Number(m[1]!), y: Number(m[2]!) };
+  const x = Number(m[1]!);
+  const y = Number(m[2]!);
+  if (Math.abs(x) > MAX_OFFSET || Math.abs(y) > MAX_OFFSET) {
+    throw new InvalidArgumentError(`--offset: components must be within ±${MAX_OFFSET}`);
+  }
+  return { x, y };
 }
 
 interface ShadowCliOpts {

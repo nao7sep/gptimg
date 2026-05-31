@@ -61,6 +61,14 @@ export function parseOverColor(value: string): ComposeOver {
     const [r, g, b] = parseHex(value);
     return { kind: "color", r, g, b };
   }
+  // Six bare hex digits is almost certainly a color with a forgotten "#" — fail
+  // with that hint rather than silently treating it as an image path.
+  if (/^[0-9a-fA-F]{6}$/.test(value)) {
+    throw new LocalOpError(
+      "args.invalid",
+      `compose: --over "${value}" looks like a hex color but is missing the leading "#"; use "#${value}".`,
+    );
+  }
   return { kind: "image", path: value };
 }
 

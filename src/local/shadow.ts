@@ -33,6 +33,9 @@ const MAX_BLUR = 1000;
 /** Upper bound on `spread` so padding can't explode the canvas into an OOM. */
 const MAX_SPREAD = 1024;
 
+/** Upper bound on |offset|, same reason: a huge offset would balloon the canvas. */
+const MAX_OFFSET = 10000;
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
 }
@@ -129,6 +132,12 @@ export async function runShadow(
     throw new LocalOpError(
       "args.invalid",
       `shadow: offset must be integers; got (${offset.x}, ${offset.y}).`,
+    );
+  }
+  if (Math.abs(offset.x) > MAX_OFFSET || Math.abs(offset.y) > MAX_OFFSET) {
+    throw new LocalOpError(
+      "args.invalid",
+      `shadow: offset components must be within ±${MAX_OFFSET}; got (${offset.x}, ${offset.y}).`,
     );
   }
   if (!Number.isFinite(opacity) || opacity <= 0 || opacity > 1) {
