@@ -209,10 +209,10 @@ export async function chromaMask(
         "from-sidecar requires an input file path; pass it via chromaMaskFromFile().",
       );
     }
-    hex = normalizeHex(await loadKeyFromSidecar(sourcePath));
+    hex = normalizeHex(await loadKeyFromSidecar(sourcePath), "sidecar key");
     source = "sidecar";
   } else {
-    hex = normalizeHex(keyArg);
+    hex = normalizeHex(keyArg, "--key");
     source = "explicit";
   }
 

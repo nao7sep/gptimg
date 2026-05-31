@@ -6,19 +6,19 @@
 import { LocalOpError } from "./errors.js";
 
 /**
- * Matches a 6-digit hex color, leading "#" optional. Capture group 1 is the
- * six hex digits (no "#").
+ * Matches a "#rrggbb" hex color — the leading "#" is required. Capture group 1
+ * is the six hex digits (no "#").
  */
-export const HEX_RE = /^#?([0-9a-fA-F]{6})$/;
+export const HEX_RE = /^#([0-9a-fA-F]{6})$/;
 
-/** True if `value` is a 6-digit hex color (leading "#" optional). */
+/** True if `value` is a "#rrggbb" hex color. */
 export function isHexColor(value: string): boolean {
   return HEX_RE.test(value);
 }
 
 /**
- * Parse a hex color to an [r, g, b] byte triple. Assumes a valid 6-digit hex
- * (optionally "#"-prefixed); validate with `isHexColor`/`normalizeHex` first.
+ * Parse a hex color to an [r, g, b] byte triple. Assumes a valid "#rrggbb" hex;
+ * validate with `isHexColor`/`normalizeHex` first.
  */
 export function parseHex(hex: string): [number, number, number] {
   const h = hex.startsWith("#") ? hex.slice(1) : hex;

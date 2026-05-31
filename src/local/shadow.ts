@@ -26,6 +26,13 @@ export const SHADOW_DEFAULTS = {
   keepCanvas: false,
 } as const;
 
+/** sharp's accepted gaussian blur sigma range; `0` means "no blur". */
+const MIN_BLUR = 0.3;
+const MAX_BLUR = 1000;
+
+/** Upper bound on `spread` so padding can't explode the canvas into an OOM. */
+const MAX_SPREAD = 1024;
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
 }
@@ -112,10 +119,10 @@ export async function runShadow(
   const spread = args.spread ?? SHADOW_DEFAULTS.spread;
   const keepCanvas = args.keepCanvas ?? SHADOW_DEFAULTS.keepCanvas;
 
-  if (!Number.isFinite(blur) || blur < 0) {
+  if (!Number.isFinite(blur) || (blur !== 0 && (blur < MIN_BLUR || blur > MAX_BLUR))) {
     throw new LocalOpError(
       "args.invalid",
-      `shadow: blur must be >= 0; got ${blur}.`,
+      `shadow: blur must be 0 or between ${MIN_BLUR} and ${MAX_BLUR}; got ${blur}.`,
     );
   }
   if (!Number.isInteger(offset.x) || !Number.isInteger(offset.y)) {
@@ -130,10 +137,10 @@ export async function runShadow(
       `shadow: opacity must be in (0, 1]; got ${opacity}.`,
     );
   }
-  if (!Number.isInteger(spread) || spread < 0) {
+  if (!Number.isInteger(spread) || spread < 0 || spread > MAX_SPREAD) {
     throw new LocalOpError(
       "args.invalid",
-      `shadow: spread must be a non-negative integer; got ${spread}.`,
+      `shadow: spread must be an integer in [0, ${MAX_SPREAD}]; got ${spread}.`,
     );
   }
 

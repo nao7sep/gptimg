@@ -77,6 +77,12 @@ export function planIconOutputs(
   name: string,
   pngs: boolean,
 ): IconPlan {
+  if (name.length === 0 || path.basename(name) !== name) {
+    throw new LocalOpError(
+      "args.invalid",
+      `icon: name must be a plain filename stem (no path separators); got "${name}".`,
+    );
+  }
   const icns = path.join(outDir, `${name}.icns`);
   const ico = path.join(outDir, `${name}.ico`);
   const png = path.join(outDir, `${name}.png`);

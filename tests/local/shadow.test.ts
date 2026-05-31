@@ -138,4 +138,24 @@ describe("runShadow", () => {
       runShadow({ in: src, out: path.join(tmp, "o.png"), spread: -2 }),
     ).rejects.toMatchObject({ code: "args.invalid" });
   });
+
+  it("rejects a spread beyond the cap", async () => {
+    const src = path.join(tmp, "src.png");
+    await writeCenteredSquare(src, 64, 32);
+    await expect(
+      runShadow({ in: src, out: path.join(tmp, "o.png"), spread: 100000 }),
+    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
+  });
+
+  it("rejects a blur below sharp's usable range (but accepts 0)", async () => {
+    const src = path.join(tmp, "src.png");
+    await writeCenteredSquare(src, 64, 32);
+    await expect(
+      runShadow({ in: src, out: path.join(tmp, "o.png"), blur: 0.2 }),
+    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
+
+    // 0 is valid: it means "no blur".
+    const res = await runShadow({ in: src, out: path.join(tmp, "ok.png"), blur: 0 });
+    expect(res.blur).toBe(0);
+  });
 });
