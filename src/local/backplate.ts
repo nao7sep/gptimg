@@ -10,6 +10,7 @@
  */
 
 import sharp from "sharp";
+import { normalizeHex } from "../color.js";
 import { LocalOpError, toAbortError } from "../errors.js";
 import type { BackplateShape } from "../types.js";
 
@@ -21,21 +22,8 @@ export const BACKPLATE_DEFAULTS = {
   shape: "rect" as BackplateShape,
 } as const;
 
-const HEX_RE = /^#?([0-9a-fA-F]{6})$/;
-
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
-}
-
-function normalizeHex(hex: string, name: string): string {
-  const m = HEX_RE.exec(hex);
-  if (!m) {
-    throw new LocalOpError(
-      "args.invalid",
-      `backplate: ${name} must be #rrggbb; got "${hex}".`,
-    );
-  }
-  return `#${m[1]!.toLowerCase()}`;
 }
 
 /**

@@ -1,18 +1,8 @@
-import { InvalidArgumentError, type Command } from "commander";
+import { type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
-
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-
-function parseHexOpt(name: string) {
-  return (v: string): string => {
-    if (!HEX_RE.test(v)) {
-      throw new InvalidArgumentError(`${name}: must be #rrggbb`);
-    }
-    return v;
-  };
-}
+import { hexOption } from "../parsers.js";
 
 interface ComposeCliOpts {
   in: string;
@@ -38,7 +28,7 @@ export function registerCompose(program: Command): void {
     .option(
       "--remove-bleed <#rrggbb>",
       "Remove this bg color from subject pixels. Chromatic spill suppression on all kept pixels plus alpha-aware edge recovery at partial-α pixels.",
-      parseHexOpt("--remove-bleed"),
+      hexOption("--remove-bleed"),
     )
     .option("--out-dir <dir>", "Output directory (default: same as input)")
     .option("--out-name <name>", "Output filename (default: <input-stem>-composed.png)")

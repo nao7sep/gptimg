@@ -103,6 +103,8 @@ export type LogVerb =
   | "trim"
   | "backplate"
   | "layer"
+  | "shadow"
+  | "icon"
   | "upscale"
   | "resize";
 
@@ -414,6 +416,57 @@ export interface LayerResult {
   logPath: string;
 }
 
+// ----- shadow -----
+
+export interface ShadowOffset {
+  /** Pixel displacement of the shadow from the subject. May be negative. */
+  x: number;
+  y: number;
+}
+
+export interface ShadowArgs {
+  /** RGBA image with transparency; its alpha shape casts the shadow. */
+  in: string;
+  /** Gaussian blur sigma for the shadow edge, in pixels. Default 12. */
+  blur?: number;
+  /** Shadow displacement from the subject. Default { x: 0, y: 8 }. */
+  offset?: ShadowOffset;
+  /** Shadow color, "#rrggbb". Default "#000000". */
+  color?: string;
+  /** Peak shadow opacity, (0, 1]. Default 0.35. */
+  opacity?: number;
+  /** Grow the shadow shape outward by this many pixels before blurring. Default 0. */
+  spread?: number;
+  /**
+   * Keep the output canvas at the input's dimensions, clipping any shadow that
+   * falls outside. Default false → the canvas grows so the shadow is never cut.
+   */
+  keepCanvas?: boolean;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface ShadowResult {
+  input: string;
+  output: string;
+  /** Final canvas size (grown to fit the shadow unless `keepCanvas`). */
+  width: number;
+  height: number;
+  /** Source image dimensions. */
+  sourceWidth: number;
+  sourceHeight: number;
+  blur: number;
+  offset: ShadowOffset;
+  /** Resolved shadow color, "#rrggbb". */
+  color: string;
+  opacity: number;
+  spread: number;
+  keepCanvas: boolean;
+  logPath: string;
+}
+
 // ----- resample (shared by upscale + resize) -----
 
 /** Resampling kernel for image resize (sharp kernels). */
@@ -487,6 +540,39 @@ export interface ResizeResult {
   height: number;
   toSize: number;
   kernel: ResampleKernel;
+  logPath: string;
+}
+
+// ----- icon -----
+
+export interface IconArgs {
+  /**
+   * Square master PNG, at least 1024×1024 — e.g. the vision-approved icon from
+   * the backplate/layer pipeline. Smaller sizes are downsampled from it.
+   */
+  in: string;
+  /** Base filename stem for outputs. Default "icon" → icon.icns/.ico/.png. */
+  name?: string;
+  /** Also emit the loose sized-PNG set `<name>-<size>.png` (16…1024). Default false. */
+  pngs?: boolean;
+  /** Output directory. Default: same as `in`. */
+  outDir?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface IconResult {
+  input: string;
+  /** Every file written, absolute paths (icns, ico, png, then any sized PNGs). */
+  outputs: string[];
+  icns: string;
+  ico: string;
+  png: string;
+  /** The sized-PNG set paths. Empty unless `pngs` was set. */
+  pngs: string[];
+  /** Source master dimensions. */
+  width: number;
+  height: number;
   logPath: string;
 }
 

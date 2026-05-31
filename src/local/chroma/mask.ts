@@ -13,6 +13,7 @@
  * No LAB Gaussian, no connected components, no region scoring. Single pass.
  */
 
+import { normalizeHex, parseHex } from "../../color.js";
 import { LocalOpError, toAbortError } from "../../errors.js";
 import { loadRawRGBA } from "../../image/bridge.js";
 import { CHROMA_DEFAULTS } from "./defaults.js";
@@ -21,13 +22,10 @@ import {
   analyzeKey,
   linearizeRGBA,
   linearToSRGBByte,
-  parseHex,
   SRGB_TO_LINEAR_LUT,
   spillAlpha,
   type KeyTopology,
 } from "./spill.js";
-
-const HEX_RE = /^#?([0-9a-fA-F]{6})$/;
 
 export type ChromaKeySpec = "auto" | "from-sidecar" | string;
 export type ChromaKeySource = "auto" | "sidecar" | "explicit";
@@ -60,17 +58,6 @@ export interface ChromaMaskResult {
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
-}
-
-function normalizeHex(hex: string): string {
-  const m = HEX_RE.exec(hex);
-  if (!m) {
-    throw new LocalOpError(
-      "args.invalid",
-      `Invalid hex color: ${hex}. Expected #rrggbb.`,
-    );
-  }
-  return `#${m[1]!.toLowerCase()}`;
 }
 
 /** Average border pixels in linear-light RGB. */

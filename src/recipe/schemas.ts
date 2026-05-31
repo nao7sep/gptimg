@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HEX_RE } from "../color.js";
 import { RecipeError } from "../errors.js";
 import { formatZodError } from "../internal/zodError.js";
 import { NetworkSchema } from "../network/schema.js";
@@ -9,8 +10,6 @@ import type {
   Recipe,
   VisionRecipe,
 } from "../types.js";
-
-const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 const IMAGE_PARAMS_SHAPE = {
   model: z.string().optional(),
@@ -39,7 +38,7 @@ const VisionRecipeSchema = z
 
 const ChromaRecipeSchema = z
   .object({
-    color: z.string().regex(HEX_COLOR_RE, "Must be a #rrggbb hex color").optional(),
+    color: z.string().regex(HEX_RE, "Must be a #rrggbb hex color").optional(),
     preserveInterior: z.boolean().optional(),
     borderSample: z.number().int().positive().optional(),
     saturationRatio: z.number().positive().max(1).optional(),

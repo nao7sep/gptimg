@@ -3,17 +3,7 @@ import { GptImg } from "../../gptimg.js";
 import type { BackplateShape } from "../../types.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
-
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-
-function parseHexOpt(name: string) {
-  return (v: string): string => {
-    if (!HEX_RE.test(v)) {
-      throw new InvalidArgumentError(`${name}: must be #rrggbb`);
-    }
-    return v;
-  };
-}
+import { hexOption } from "../parsers.js";
 
 function parsePositiveIntOpt(name: string) {
   return (v: string): number => {
@@ -70,8 +60,8 @@ export function registerBackplate(program: Command): void {
     .description(
       "Synthesize a centered rounded/squircle plate filled with a linear gradient on a transparent square canvas.",
     )
-    .requiredOption("--from <#rrggbb>", "Gradient start color", parseHexOpt("--from"))
-    .requiredOption("--to <#rrggbb>", "Gradient end color", parseHexOpt("--to"))
+    .requiredOption("--from <#rrggbb>", "Gradient start color", hexOption("--from"))
+    .requiredOption("--to <#rrggbb>", "Gradient end color", hexOption("--to"))
     .option(
       "--size <px>",
       "Output canvas side in pixels. Default 1024.",

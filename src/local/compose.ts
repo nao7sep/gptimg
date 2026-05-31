@@ -28,6 +28,7 @@
  *   nothing).
  */
 
+import { isHexColor, parseHex } from "../color.js";
 import { LocalOpError, toAbortError } from "../errors.js";
 import { loadMaskPNG, loadRawRGBA, writeRGBA } from "../image/bridge.js";
 import {
@@ -35,7 +36,6 @@ import {
   analyzeKey,
   linearToSRGBByte,
   linearizeRGBA,
-  parseHex,
 } from "./chroma/spill.js";
 
 export type ComposeOver =
@@ -56,18 +56,10 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
 }
 
-const HEX_RE = /^#?([0-9a-fA-F]{6})$/;
-
 export function parseOverColor(value: string): ComposeOver {
-  const m = HEX_RE.exec(value);
-  if (m) {
-    const h = m[1]!;
-    return {
-      kind: "color",
-      r: parseInt(h.slice(0, 2), 16),
-      g: parseInt(h.slice(2, 4), 16),
-      b: parseInt(h.slice(4, 6), 16),
-    };
+  if (isHexColor(value)) {
+    const [r, g, b] = parseHex(value);
+    return { kind: "color", r, g, b };
   }
   return { kind: "image", path: value };
 }

@@ -193,21 +193,23 @@ The AI method runs BiRefNet locally via ONNX Runtime. The model is lazily fetche
 
 ## Icon Composition
 
-Five additional local verbs turn a cutout into a finished app icon. They are independent toys composed into a sequence — there is no monolithic `make-icon`.
+Seven additional local verbs turn a cutout into a finished app icon. They are independent toys composed into a sequence — there is no monolithic `make-icon`.
 
 - `trim` — crop an RGBA cutout to its alpha bounding box and re-pad by a relative margin (fraction of the longer side, so every subject gets the same visual breathing room). `--square` extends the shorter axis with transparent pixels (the squircle backplate expects square content).
 - `upscale` — learned ×4 super-resolution (Swin2SR ONNX) to enlarge small content crisply, then resample to `--to-size` (default 1024, longer side). Alpha is preserved. Use this **only to enlarge**; it always runs the model. Lazily downloads the model on first use (pre-fetch with `gptimg model install swin2sr`); ~4.4 GB peak RAM at the default `--tile 256`, so run upscales sequentially, not in parallel.
 - `resize` — plain, model-free resample to `--to-size`, any direction. Use this to **shrink** (a learned model adds nothing for downscaling) — do not use `upscale` to downscale, as it would still run the full ×4 model and is not pixel-equivalent to a clean resample.
 - `backplate` — synthesize a square gradient plate (`--shape rect|squircle`, required `--from`/`--to`) on transparent padding — the icon's bottom layer.
 - `layer` — alpha source-over composite of a top RGBA (the content) onto a base RGBA (the backplate). Unlike `compose --over <image>` (which flattens to opaque RGB), `layer` preserves the base's transparency outside the top.
+- `shadow` — cast a soft drop shadow from a cutout's alpha shape and composite the subject on top (`--blur`/`--offset`/`--color`/`--opacity`/`--spread`). The canvas grows to fit the shadow unless `--keep-canvas`. Optional depth pass before `layer`/`icon`, or a standalone polish for stamps.
+- `icon` — pack a square master PNG (≥1024²) into `icon.icns` (macOS) + `icon.ico` (Windows) + a 1024² `icon.png`; `--pngs` also emits a sized PNG set. Same bytes for every toolchain — placement (Electron `build/`, Tauri `src-tauri/icons/`, .NET `<ApplicationIcon>`) is the caller's job.
 
 Documented end-to-end icon sequence:
 
 ```sh
-generate → mask → compose (transparent) → trim --square → [upscale] → backplate → layer
+generate → mask → compose (transparent) → trim --square → [upscale] → backplate → layer → [shadow] → icon
 ```
 
-The `[upscale]` step is optional — skip it when content already arrives at sufficient resolution (gpt-image outputs 1024² directly). Verify the final icon with `vision` like any other composite.
+The `[upscale]` and `[shadow]` steps are optional — skip `[upscale]` when content already arrives at sufficient resolution (gpt-image outputs 1024² directly), and use `[shadow]` only when the artwork wants depth under it. When you do add a shadow before `icon`, pass `--keep-canvas` so the master stays square. Verify the final icon with `vision` like any other composite.
 
 ## Verification Loops
 

@@ -7,11 +7,13 @@ import { registerCombine } from "./verbs/combine.js";
 import { registerCompose } from "./verbs/compose.js";
 import { registerEdit } from "./verbs/edit.js";
 import { registerGenerate } from "./verbs/generate.js";
+import { registerIcon } from "./verbs/icon.js";
 import { registerLayer } from "./verbs/layer.js";
 import { registerMask } from "./verbs/mask.js";
 import { registerModel } from "./verbs/model.js";
 import { registerProfile } from "./verbs/profile.js";
 import { registerResize } from "./verbs/resize.js";
+import { registerShadow } from "./verbs/shadow.js";
 import { registerTrim } from "./verbs/trim.js";
 import { registerUpscale } from "./verbs/upscale.js";
 import { registerVision } from "./verbs/vision.js";
@@ -21,7 +23,7 @@ function createProgram(): Command {
   program
     .name("gptimg")
     .description(
-      "AI image generation, vision, and local post-processing (mask, compose, combine, trim, backplate, layer, upscale, resize).",
+      "AI image generation, vision, and local post-processing (mask, compose, combine, trim, backplate, layer, shadow, icon, upscale, resize).",
     )
     .version("0.1.0")
     .showHelpAfterError()
@@ -36,6 +38,8 @@ function createProgram(): Command {
   registerTrim(program);
   registerBackplate(program);
   registerLayer(program);
+  registerShadow(program);
+  registerIcon(program);
   registerUpscale(program);
   registerResize(program);
   registerModel(program);

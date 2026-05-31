@@ -32,12 +32,16 @@ import type {
   GenerateArgs,
   GenerateResult,
   GptImgOptions,
+  IconArgs,
+  IconResult,
   LayerArgs,
   LayerResult,
   MaskArgs,
   MaskResult,
   ResizeArgs,
   ResizeResult,
+  ShadowArgs,
+  ShadowResult,
   TrimArgs,
   TrimResult,
   UpscaleArgs,
@@ -50,8 +54,10 @@ import { combineImpl } from "./verbs/combine.js";
 import { composeImpl } from "./verbs/compose.js";
 import { editImpl } from "./verbs/edit.js";
 import { generateImpl } from "./verbs/generate.js";
+import { iconImpl } from "./verbs/icon.js";
 import { layerImpl } from "./verbs/layer.js";
 import { maskImpl } from "./verbs/mask.js";
+import { shadowImpl } from "./verbs/shadow.js";
 import {
   installAllModelsImpl,
   installModelImpl,
@@ -164,6 +170,14 @@ export class GptImg {
 
   layer(args: LayerArgs, opts?: VerbCallOptions): Promise<LayerResult> {
     return layerImpl(this.ctx, args, opts);
+  }
+
+  shadow(args: ShadowArgs, opts?: VerbCallOptions): Promise<ShadowResult> {
+    return shadowImpl(this.ctx, args, opts);
+  }
+
+  icon(args: IconArgs, opts?: VerbCallOptions): Promise<IconResult> {
+    return iconImpl(this.ctx, args, opts);
   }
 
   upscale(args: UpscaleArgs, opts?: VerbCallOptions): Promise<UpscaleResult> {

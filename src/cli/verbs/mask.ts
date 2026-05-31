@@ -1,14 +1,13 @@
 import { InvalidArgumentError, Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
+import { isHexColor } from "../../color.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
 import type { MaskMethod } from "../../types.js";
 
-const KEY_RE = /^#[0-9a-fA-F]{6}$/;
-
 function parseKeyOpt(v: string): string {
   if (v === "auto" || v === "from-sidecar") return v;
-  if (KEY_RE.test(v)) return v;
+  if (isHexColor(v)) return v;
   throw new InvalidArgumentError("must be 'auto', 'from-sidecar', or '#rrggbb'");
 }
 

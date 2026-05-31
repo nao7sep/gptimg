@@ -27,15 +27,6 @@ export function linearToSRGBByte(v: number): number {
   return Math.max(0, Math.min(255, Math.round(s * 255)));
 }
 
-export function parseHex(hex: string): [number, number, number] {
-  const h = hex.startsWith("#") ? hex.slice(1) : hex;
-  return [
-    parseInt(h.slice(0, 2), 16),
-    parseInt(h.slice(2, 4), 16),
-    parseInt(h.slice(4, 6), 16),
-  ];
-}
-
 export type KeyTopology =
   | { kind: "primary"; channel: 0 | 1 | 2; strength: number }
   | { kind: "secondary"; suppressed: 0 | 1 | 2; strength: number }

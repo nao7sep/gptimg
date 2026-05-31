@@ -1,6 +1,6 @@
 # GptImg
 
-TypeScript SDK + CLI for AI image generation, vision verification, and a local image-processing pipeline: masking, compositing, mask algebra, cropping, gradient backplates, layering, super-resolution upscaling, and resizing. It is designed for human CLI use and for AI agents or skills that need durable artifacts: timestamped images, JSON sidecars, and JSONL logs.
+TypeScript SDK + CLI for AI image generation, vision verification, and a local image-processing pipeline: masking, compositing, mask algebra, cropping, gradient backplates, layering, drop shadows, macOS/Windows icon packing, super-resolution upscaling, and resizing. It is designed for human CLI use and for AI agents or skills that need durable artifacts: timestamped images, JSON sidecars, and JSONL logs.
 
 Each toy does one observable operation. Workflows are user-composed: `mask` produces a mask, `compose` applies a mask to an image, `combine` does set operations on masks. The chroma-key path is one mask producer among (eventually) several.
 
@@ -111,6 +111,9 @@ gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030" \
 # 4. Composite the content onto the plate (top scaled to 62% of the plate side).
 gptimg layer --base plate.png --top content.png --scale 0.62 \
   --out-name icon.png
+
+# 5. Pack the master into platform icons: icon.icns (macOS) + icon.ico (Windows).
+gptimg icon --in icon.png --out-dir build/
 ```
 
 ## CLI Reference
@@ -286,6 +289,37 @@ Local only. Source-over alpha-composite of `--top` onto `--base`. Unlike `compos
 
 `--scale` resizes top so its longer side = `scale × min(baseW, baseH)`, preserving aspect. `--gravity` (default `center`) accepts the nine sharp compass directions. `--top-offset x,y` overrides `--gravity` with an explicit pixel offset of top's top-left corner from base's top-left. Output canvas is always the base size. Default output name `<base-stem>-layered.png`.
 
+### `shadow`
+
+```sh
+# Soft drop shadow under a cutout (canvas grows so nothing is clipped).
+gptimg shadow --in cutout.png
+
+# Tuned shadow, kept at the input dimensions.
+gptimg shadow --in cutout.png --blur 20 --offset 0,16 \
+  --color "#101820" --opacity 0.4 --spread 4 --keep-canvas
+```
+
+Local only. Casts a drop shadow from the input's alpha shape and composites the original subject back on top. Pipeline: extract alpha → grow by `--spread` px (square dilation) → tint to `--color` at `--opacity` → gaussian-blur by `--blur` → composite shadow then subject onto a transparent canvas.
+
+`--blur` (sigma, default 12), `--offset x,y` (default `0,8`; may be negative), `--color` (`#rrggbb`, default `#000000`), `--opacity` (`(0,1]`, default 0.35), `--spread` (px, default 0). By default the canvas **grows** so the offset/blurred shadow is never clipped; `--keep-canvas` keeps the input size and clips instead. Default output name `<in-stem>-shadow.png`.
+
+### `icon`
+
+```sh
+# Pack a square master into icon.icns + icon.ico + a 1024² icon.png.
+gptimg icon --in icon.png --out-dir build/
+
+# Also emit the loose sized-PNG set (icon-16.png … icon-1024.png) for Linux/.NET/web.
+gptimg icon --in icon.png --out-dir build/ --pngs
+```
+
+Local only. Packs a square master PNG into the platform-agnostic icon artifacts every desktop toolchain consumes: `icon.icns` (macOS), `icon.ico` (Windows), and a 1024² `icon.png` master copy. The byte-level container encoding is handled by [`@shockpkg/icon-encoder`](https://www.npmjs.com/package/@shockpkg/icon-encoder); sharp renders each size from the master with the toolkit's lanczos3 resample.
+
+The master must be **square and at least 1024×1024** — non-square exits 5 (`args.invalid`), as does a smaller master (the 1024 entry would otherwise be upscaled). The `.icns` packs the modern PNG-based types `ic04`–`ic14` (16…1024 px incl. retina); the `.ico` packs 16/24/32/48/64/128/256 (32-bit BMP below 256, embedded PNG at 256 — the maximally-compatible Windows layout). `--name` (default `icon`) sets the output stem; `--pngs` additionally writes `<name>-<size>.png` for 16/32/48/64/128/256/512/1024. Without `--out-dir`, output goes beside `--in`.
+
+This verb produces the *same* bytes for every toolchain — only the destination differs. Placement is the caller's job: Electron uses `build/icon.icns` + `build/icon.ico`; Tauri's default `bundle.icon` is `icon.icns` + `icon.ico` + `32x32.png`/`128x128.png`/`128x128@2x.png` (all covered by `--pngs`, modulo renaming); .NET/Avalonia points `<ApplicationIcon>` at `icon.ico`.
+
 ### `upscale`
 
 ```sh
@@ -368,11 +402,13 @@ const plate = await sdk.backplate({
   to: "#1a2030",
   shape: "squircle",
 });
-const icon = await sdk.layer({
+const composed = await sdk.layer({
   base: plate.output,
   top: big.output,
   scale: 0.62,
 });
+// Pack the master into platform icons (icon.icns / icon.ico / icon.png).
+const icon = await sdk.icon({ in: composed.output, outDir: "build" });
 ```
 
 All SDK verbs return data objects and never write to stdout/stderr. Each method accepts `{ signal?: AbortSignal }` as a second argument.
@@ -468,6 +504,8 @@ Bare `--set` keys are scoped under the current verb; paths beginning with `gener
 | `<input-stem>-trim.png` | `trim` output (cropped to alpha bbox + relative margin) |
 | `backplate-<size>.png` | `backplate` output (squircle/rect plate on transparent canvas) |
 | `<base-stem>-layered.png` | `layer` output (top alpha-composited onto base) |
+| `<input-stem>-shadow.png` | `shadow` output (subject over a soft drop shadow; canvas grown unless `--keep-canvas`) |
+| `<name>.icns`, `<name>.ico`, `<name>.png` (+ `<name>-<size>.png`) | `icon` output (macOS/Windows containers + master; sized PNGs with `--pngs`) |
 | `<input-stem>-upscale.png` | `upscale` output (×4 super-resolution resampled to target, alpha preserved) |
 | `<input-stem>-resize.png` | `resize` output (plain model-free resample, alpha preserved) |
 
