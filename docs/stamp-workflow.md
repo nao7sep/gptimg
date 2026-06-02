@@ -69,7 +69,7 @@ Always generate at **`quality=medium`**. `high` is significantly more expensive,
 ## Concurrency
 
 - **API calls** — `generate`, `edit`, `vision` — are network-bound and may run **in parallel**, around **5 at a time**, which speeds up generating a batch of candidates.
-- **Local ONNX models** — `mask --method ai` (BiRefNet) and `upscale` (Swin2SR) — load 1.5–4.4 GB of native memory each and must run **strictly one at a time**. Never run two AI masks, two upscales, or one of each in parallel; it can drive the machine into swap and crash the desktop session. (If an `upscale` ever feels unusually slow, check whether something else is competing for the GPU/CPU — e.g. a local image-generation model running at the same time — rather than reaching for a plain resample.)
+- **Local ONNX models** — `mask --method ai` (BiRefNet) and `upscale` (Swin2SR) — load large amounts of native memory (BiRefNet ~1–1.5 GB, Swin2SR up to ~4.4 GB) and must run **strictly one at a time**. Never run two AI masks, two upscales, or one of each in parallel; it can drive the machine into swap and crash the desktop session. (If an `upscale` ever feels unusually slow, check whether something else is competing for the GPU/CPU — e.g. a local image-generation model running at the same time — rather than reaching for a plain resample.)
 
 ## Background removal: chroma key is the default
 
@@ -101,7 +101,7 @@ The crop is what makes a set of stamps feel consistent.
 final margin (px)  =  K / (1 + 2K) × longerEdge
 ```
 
-With **`K = 0.05`** and a **1024** longer edge, that is a uniform **≈44 px** border on all four sides of every stamp — square, tall, or wide alike — with the art filling ~91 % of the canvas. `0.05` is the recommended lock: a clean 5 % that reads as deliberate breathing room without wasting box space. Tighter (`0.04`) reads punchier; looser (`0.08`) leaves more room. Whatever you choose, lock it and the margin is fixed set-wide.
+With **`K = 0.05`** and a **1024** longer edge, that is a uniform **≈47 px** border (46.5 px exactly) on all four sides of every stamp — square, tall, or wide alike — with the art filling ~91 % of the canvas. `0.05` is the recommended lock: a clean 5 % that reads as deliberate breathing room without wasting box space. Tighter (`0.04`) reads punchier; looser (`0.08`) leaves more room. Whatever you choose, lock it and the margin is fixed set-wide.
 
 A tapered subject (a tower, a cone) can *look* like it has more side-space than top/bottom: the bounding box is set by the widest point, so above that the art narrows away from the edges. The margin is still uniform at the bounding box — the apparent gap is the silhouette, not the crop. Uniform-margin cropping is necessarily defined against the bounding box; that is the only scale-invariant, objective choice.
 
@@ -136,18 +136,18 @@ The order matters because the **margin should be measured from the subject, not 
 Instead, **composite the cutout onto a known plate and check that.** Build a solid plate with `backplate` and `layer` the cutout onto it — `layer` honors the cutout's true alpha:
 
 ```sh
-gptimg backplate --size 1200 --from "#9a9a9a" --to "#9a9a9a" --shape rect --content 1.0 --radius 0 --out-name plate-gray.png
-gptimg layer --base plate-gray.png --top <cutout>.png --scale 0.85 --out-name preview-gray.png
+gptimg backplate --size 1200 --from "#9a9a9a" --to "#9a9a9a" --shape rect --content 1.0 --radius 0 --out-name plate-light.png
+gptimg layer --base plate-light.png --top vintage-postmark-cutout.png --scale 0.85 --out-name vintage-postmark-preview-light.png
 
 # a dark plate reveals any key-color fringe:
 gptimg backplate --size 1200 --from "#202020" --to "#202020" --shape rect --content 1.0 --radius 0 --out-name plate-dark.png
-gptimg layer --base plate-dark.png --top <cutout>.png --scale 0.85 --out-name preview-dark.png
+gptimg layer --base plate-dark.png --top vintage-postmark-cutout.png --scale 0.85 --out-name vintage-postmark-preview-dark.png
 ```
 
 A light plate reveals shadows; a dark plate reveals key-color fringe. Check both. **Do not** preview by feeding the cutout to `compose --mask` as its own mask: `compose` reads the mask image's *luminance* (it greyscales and drops alpha), so a glossy subject's dark areas would read as semi-transparent — a misleading preview, not a real defect. To check *opacity* directly, measure the alpha channel rather than eyeballing a composite. Then, for a recorded verdict:
 
 ```sh
-gptimg vision --in preview-gray.png \
+gptimg vision --in vintage-postmark-preview-light.png \
   --check "one centered subject, fully visible, clean edges with no colored fringe; a soft shadow is acceptable" \
   --out-name vintage-postmark-vision
 ```
@@ -160,7 +160,7 @@ These keep a session reproducible and debuggable.
 
 - **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/personal/assets/<project>/stamps/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
 - **The top level holds raw generations and their sidecars only.** Every other file — masks, cutouts, previews, finals — lives in a per-candidate subdirectory. This keeps the originals (the one paid, irreplaceable artifact) trivially findable.
-- **Use descriptive slug filenames — no index numbers.** A "candidate" is a distinct *design* (a different subject, style, or treatment), so it gets its own descriptive slug — `vintage-postmark`, `gold-star`, `wax-seal` — never a numbered variant like `-01`. Leave room for future siblings: `vintage-postmark`, not `postmark`, so a later `modern-postmark` does not force a rename. Work files encode the pipeline role: `vintage-postmark-original.png`, `-mask.png`, `-cutout.png`, `-shadow.png`, `-trim.png`. The **final** carries the clean slug with no stage suffix (`vintage-postmark.png`), so the finished asset is obvious from its name alone — no separate "final" folder is needed.
+- **Use descriptive slug filenames — no index numbers.** A "candidate" is a distinct *design* (a different subject, style, or treatment), so it gets its own descriptive slug — `vintage-postmark`, `gold-star`, `wax-seal` — never a numbered variant like `-01`. Leave room for future siblings: `vintage-postmark`, not `postmark`, so a later `modern-postmark` does not force a rename. Work files encode the pipeline role: `vintage-postmark-original.png`, `-mask.png`, `-cutout.png`, `-trim.png`, `-shadow.png`. The **final** carries the clean slug with no stage suffix (`vintage-postmark.png`), so the finished asset is obvious from its name alone — no separate "final" folder is needed.
 - **If you rename a generated image, fix its sidecar.** The generation sidecar (`<stem>.json`) records the image basename in `files[0].name`; if you rename the PNG you must rename the sidecar *and* update that field, or the image↔sidecar pairing silently breaks. The `sha256` does **not** change — it hashes the bytes, not the name — so it stays valid.
 - **Keep every raw generation and its sidecar.** The sidecar (`<stem>.json`, written by `generate`) holds the prompt and resolved request — it is the recipe to reproduce the art. The post-processing verbs (`mask`, `compose`, `trim`, `resize`, `upscale`, `shadow`) do **not** write sidecars, so record their parameters yourself (see "READMEs").
 - **Never destroy a durable artifact.** Renaming on a name collision is fine — both files survive. Overwriting is not: if something goes wrong, you must still be able to inspect how it was made. Previews are work-in-progress and live in the candidate subdirectory like everything else; they may be regenerated, but do not overwrite originals or finals.
@@ -181,7 +181,7 @@ A staging layout for two candidates (two distinct designs):
     vintage-postmark-cutout.png
     vintage-postmark-trim.png
     vintage-postmark-shadow.png
-    preview-gray.png  preview-dark.png #   verification previews on gray/dark plates (kept)
+    vintage-postmark-preview-light.png  vintage-postmark-preview-dark.png   # verification previews (kept)
     vintage-postmark.png               #   FINAL (clean slug, shadow baked in)
   gold-star/
     ...

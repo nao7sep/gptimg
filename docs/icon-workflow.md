@@ -48,11 +48,14 @@ gptimg shadow  --in "$C/fanned-panes-content.png" --keep-canvas --blur 24 --offs
 
 # 3. Two platform masters from the one content — only the plate --content and the
 #    layer --scale differ (see "Two platforms, two masters" and "Sizing the glyph").
-#    macOS: 0.80 squircle grid, glyph at 0.78.
-gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape squircle --content 0.80 --out-dir "$B" --out-name plate-indigo-mac.png
+#    Corner `--radius 0.305` and `--content 0.87` are *measured* from real macOS
+#    system icons (see "The base (plate)"); the `squircle` shape is squarer and is
+#    the wrong tool here.
+#    macOS: 0.87 plate, glyph at 0.78.
+gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape rect --radius 0.305 --content 0.87 --out-dir "$B" --out-name plate-indigo-mac.png
 gptimg layer --base "$B/plate-indigo-mac.png" --top "$C/fanned-panes-shadow.png" --scale 0.78 --out-dir "$B" --out-name fanned-panes-indigo-mac.png
 #    Windows: fuller 0.92 plate, glyph at 0.86 so it fills the tile.
-gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape squircle --content 0.92 --out-dir "$B" --out-name plate-indigo-win.png
+gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape rect --radius 0.305 --content 0.92 --out-dir "$B" --out-name plate-indigo-win.png
 gptimg layer --base "$B/plate-indigo-win.png" --top "$C/fanned-panes-shadow.png" --scale 0.86 --out-dir "$B" --out-name fanned-panes-indigo-win.png
 
 # 4. Pack each master into its own subdir (so icon.icns/icon.ico don't collide),
@@ -72,7 +75,7 @@ Always generate at **`quality=medium`**. `high` is significantly more expensive,
 ## Concurrency
 
 - **API calls** — `generate`, `edit`, `vision` — are network-bound and may run **in parallel**, around **5 at a time**, which speeds up generating a batch of candidates.
-- **Local ONNX models** — `mask --method ai` (BiRefNet) and `upscale` (Swin2SR) — load 1.5–4.4 GB of native memory each and must run **strictly one at a time**. Never run two in parallel; it can drive the machine into swap and crash the desktop session.
+- **Local ONNX models** — `mask --method ai` (BiRefNet) and `upscale` (Swin2SR) — load large amounts of native memory (BiRefNet ~1–1.5 GB, Swin2SR up to ~4.4 GB) and must run **strictly one at a time**. Never run two in parallel; it can drive the machine into swap and crash the desktop session.
 
 ## Why square (and why this differs from a stamp)
 
@@ -82,30 +85,35 @@ Icons are **forced square** — `trim --square` extends the shorter axis with tr
 
 As with stamps, **chroma key is the default** — it reliably beats the AI matte on the clean, flat art most glyphs are made of (the AI matte tends to *add* edge problems on simple subjects). Generate the glyph on a flat chroma backdrop whose key color is **absent from the art**: `#00ff00` for most glyphs, or magenta `#ff00ff` / another unused hue if the glyph contains green. Then key it out, exactly like a stamp.
 
-Reach for the **AI matte** (`mask --method ai`, BiRefNet, generated on a plain neutral background instead) only in the narrow cases where a glyph genuinely can't be keyed: fine fibers/fur, or colors that unavoidably span every candidate key hue. It is heavy (~1–1.5 GB RAM, run one at a time — see "Concurrency"; pre-fetch with `gptimg model install birefnet`).
+Reach for the **AI matte** (`mask --method ai`, BiRefNet, generated on a plain neutral background instead) only in the narrow cases where a glyph genuinely can't be keyed: **wispy or translucent** fine fibers/fur (a solid, well-defined or stylized fur silhouette keys fine with chroma — reach for the matte only when the edge is genuinely wispy), or colors that unavoidably span every candidate key hue. It is heavy (~1–1.5 GB RAM, run one at a time — see "Concurrency"; pre-fetch with `gptimg model install birefnet`).
 
 ## The base (plate)
 
 `backplate` synthesizes the bottom layer: a centered rounded shape filled with a linear gradient on a transparent square canvas.
 
-- `--shape squircle` matches the macOS continuous-curvature dock shape; `--shape rect` is a plain rounded rectangle.
-- `--from` / `--to` are the gradient endpoints (required); `--angle` is the gradient direction (default 135°, bottom-left → top-right).
+- `--shape rect` is a circular-arc rounded rectangle; `--shape squircle` is a quarter-superellipse (n=4) corner — a *squarer* look. **For a macOS-matching plate use `rect`, not `squircle`** (see the macOS note below).
+- `--from` / `--to` are the gradient endpoints (required); `--angle` is the gradient direction (CSS deg: 0=bottom→top, 90=left→right; default 135° runs `--from` top-left → `--to` bottom-right).
 - `--content` is the plate side as a fraction of the canvas; `--radius` is the corner radius as a fraction of the plate side.
 
-**The defaults are tuned to the macOS icon grid.** On a 1024 artboard, macOS places the rounded body at **824×824 (≈80 % of the canvas, ~100 px transparent padding all around) with a corner radius of ~185 px (≈22.5 % of the body).** `backplate`'s defaults — `--content 0.80`, `--radius 0.225` — reproduce exactly this. The transparent padding is intentional: it is the system's space for the icon's shadow and keeps every app's icon consistently sized.
+**Matching the macOS corner — measured, not guessed.** Both numbers below come from circle-fitting ten real macOS system icons (App Store, Music, Notes, Photos, Reminders, …) at native resolution:
+
+- **`--content 0.87`** — macOS bodies fill ~0.86–0.875 of the canvas (the small remaining margin is the system's space for the drop shadow). The often-quoted "0.80 grid" is *too small*: a 0.80 icon reads visibly smaller than its neighbours in the Dock.
+- **`--shape rect --radius 0.305`** — the macOS corner circle-fits to **0.304 ± 0.01 of the body** with a ~1 % residual, i.e. it is essentially a **circular** arc at that radius. gptimg's `rect` produces a mathematically exact circular corner (`radius × body`, verified), so `rect 0.305` reproduces it.
+
+Two traps that cost real time here: (1) the often-cited "~22.5 % radius" figure is only where the corner *starts*, not its roundness — `rect 0.225` reads too square; and (2) a *diagonal/silhouette* fit overshoots badly (it pushed an earlier guess to 0.38, which renders as a near-circle "ball") — **circle-fit the corner arc instead**. (3) `--shape squircle` is an n=4 superellipse — squarer than macOS and unable to reach 0.30 roundness at any radius, so it is the wrong tool despite the name.
 
 ## Two platforms, two masters
 
-The macOS 80 % grid looks correct on macOS but slightly *small* in a full-bleed Windows context, where icons typically fill their tile. Do not force one compromise master onto both — **make a master per platform**, because the two platforms read **separate files in separate formats** and never share bytes:
+The macOS body (~0.87 of the canvas) looks correct on macOS but a touch *small* in a full-bleed Windows context, where icons typically fill their tile. Do not force one compromise master onto both — **make a master per platform**, because the two platforms read **separate files in separate formats** and never share bytes:
 
-- a **macOS master** with the default `--content 0.80` squircle → packed into **`icon.icns`** (what a `.app` bundle reads),
+- a **macOS master** with `--content 0.87 --shape rect --radius 0.305` → packed into **`icon.icns`** (what a `.app` bundle reads),
 - a **Windows master** with a fuller plate (raise `--content` toward `0.90`–`1.0`, optionally `--shape rect`) → packed into **`icon.ico`** (what an `.exe` embeds).
 
 A `.app` reads exactly one `.icns` and an `.exe` embeds one `.ico`, so each bundle already gets its own file — you simply pack each from the master that suits it. Cross-platform bundlers (Tauri, Electron) reference `.icns` and `.ico` independently, so providing a mac-tuned `icon.icns` and a win-tuned `icon.ico` is all that's required. The shared sized-PNGs (Linux, tray, window-runtime) use one master of your choice — the macOS one is a fine default. Build the content once; only the `backplate`/`layer` steps differ per platform, and those are cheap local composites.
 
 ## Shadow
 
-A soft **contact shadow** under the glyph lifts it off the plate. Cast it on the squared content with `--keep-canvas` so the canvas stays square, sizing the blur/offset to fit within the `trim --square` margin (a `0.10` margin leaves room for a moderate shadow). Then `layer` the shadowed glyph onto the plate. This is a depth cue *on the plate*, not an outer shadow on the icon itself — the OS adds the outer shadow at display time, so do not bake one around the whole squircle.
+A soft **contact shadow** under the glyph lifts it off the plate. Cast it on the squared content with `--keep-canvas` so the canvas stays square, sizing the blur/offset to fit within the `trim --square` margin (a `0.10` margin leaves room for a moderate shadow). Then `layer` the shadowed glyph onto the plate. This is a depth cue *on the plate*, not an outer shadow on the icon itself — the OS adds the outer shadow at display time, so do not bake one around the whole plate.
 
 ## Sizing the glyph
 
@@ -120,14 +128,14 @@ Because of (4) especially, **no geometric number can be authoritative** — the 
 
 **Don't normalize by bounding box.** `layer --scale` sizes the top image by its longer edge, which over-weights extent and is fooled by sparse glyphs (a fanned cluster whose bounding box is mostly empty reads far smaller than its box). Two pro systems make the point: Material and Apple do not use one bounding box — they define **per-shape keylines** (Material's circle keyline is ~11 % larger than its square keyline so the two *look* equal).
 
-**A practical starting metric: optical size.** Estimate the glyph's *optical* size as the equivalent square side of its actual ink — `√(filled-alpha area)`, which for typical glyphs lands near `(width + height) / 2` of the ink's bounding box — expressed as a percentage of the 824 body. This blends mass and extent and uses the real ink, not the box. Then **eyeball it against a familiar reference icon and nudge.**
+**A practical starting metric: optical size.** Estimate the glyph's *optical* size as the equivalent square side of its actual ink — `√(filled-alpha area)`, which for typical glyphs lands near `(width + height) / 2` of the ink's bounding box — expressed as a percentage of the plate body (~890 px on a 1024 canvas at `--content 0.87`). This blends mass and extent and uses the real ink, not the box. Then **eyeball it against a familiar reference icon and nudge.**
 
 **Two archetypes set the target range:**
 
 - **Full-bleed / background-as-shape** (the artwork *is* the plate's fill, edge to edge): ~90–100 % of the body.
 - **Symbol-on-plate** (a distinct glyph floating on a colored plate): ~55–82 % of the body. *Object-cluster* glyphs (stacked notes, overlapping shapes) sit at the high end, ~75–82 %; a single small symbol can sit lower.
 
-For a symbol-on-plate icon, **start around 70–78 % optical, then trust your eyes** — and remember a vivid, high-contrast glyph on a dark plate can be set a little smaller than a muted one and still read as large, thanks to the irradiation effect. In this workflow's validated run, `layer --scale 0.78` read right for the fanned-panes glyph on the macOS 0.80 plate, and `0.86` on the **fuller** 0.92 Windows plate (a fuller plate wants a proportionally larger glyph to fill the tile); `~0.62` read clearly too small. Treat those as **starting points tuned by eye, not fixed recommendations** — the right number depends on the art's design, colors, and style.
+For a symbol-on-plate icon, **start around 70–78 % optical, then trust your eyes** — and remember a vivid, high-contrast glyph on a dark plate can be set a little smaller than a muted one and still read as large, thanks to the irradiation effect. In this workflow's validated run, `layer --scale 0.78` read right for the fanned-panes glyph on the macOS 0.87 plate, and `0.86` on the **fuller** 0.92 Windows plate (a fuller plate wants a proportionally larger glyph to fill the tile); `~0.62` read clearly too small. Treat those as **starting points tuned by eye, not fixed recommendations** — the right number depends on the art's design, colors, and style.
 
 ## Normalizing the content size
 
@@ -153,7 +161,7 @@ Before committing, look at the glyph at the sizes it will actually appear. `gpti
 Unlike a transparent stamp cutout, a composited icon is **opaque**, so `gptimg vision` can judge it directly:
 
 ```sh
-gptimg vision --in indigo/fanned-panes-indigo.png \
+gptimg vision --in "$B/fanned-panes-indigo-mac.png" \
   --check "one centered glyph on a rounded gradient plate, well balanced, not cut off, good contrast" \
   --out-name fanned-panes-vision
 ```
@@ -207,7 +215,7 @@ distinct designs), the keeper split into mac/Windows masters:
     indigo/                               # one base (brand plate)
       README.md                           #   content → icon recipe (records the chosen scales)
       plate-indigo-mac.png  plate-indigo-win.png
-      fanned-panes-indigo-mac.png         #   macOS master (0.80 plate, glyph 0.78)
+      fanned-panes-indigo-mac.png         #   macOS master (0.87 plate, glyph 0.78)
       fanned-panes-indigo-win.png         #   Windows master (0.92 plate, glyph 0.86)
       mac/  icon.icns icon.ico icon.png icon-16.png … icon-1024.png   # pack of the mac master
       win/  icon.icns icon.ico icon.png icon-16.png … icon-1024.png   # pack of the win master

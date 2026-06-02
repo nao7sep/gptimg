@@ -18,7 +18,7 @@ What each verb *does* is defined by the source and `--help`; this README is the 
 - Parse stdout JSON for success; use the JSONL log and sidecars for trace context, not primary success detection. Treat `partial: true` from `generate`/`edit` as recoverable when at least one file was written.
 - Always run `mask` from the **original** image. To change mask parameters, rerun from the original — do not feed a previous mask or composite back through `mask`.
 - `vision` handles any semantic check, but it **cannot see transparency** (it ingests a transparent PNG flattened on black). Composite a cutout onto a known plate first, then vision-check that.
-- The local AI models (`mask --method ai`, `upscale`) load 1.5–4.4 GB each — run them **one at a time**. Network calls (`generate`/`edit`/`vision`) can run in parallel.
+- The local AI models load large native memory (BiRefNet for `mask --method ai` ~1–1.5 GB, Swin2SR for `upscale` up to ~4.4 GB) — run them **one at a time**. Network calls (`generate`/`edit`/`vision`) can run in parallel.
 
 For complete recipes that compose these verbs into finished assets — including the decisions gptimg deliberately does **not** encode (margins, glyph sizing, background-removal choice, directory layout, target-format filenames) — see the workflow guides:
 
@@ -65,7 +65,7 @@ Defaults live under `~/.gptimg/`:
 | `~/.gptimg/recipe.json` | Per-verb parameters (optional; missing is fine) |
 | `~/.gptimg/output/` | Generated images |
 | `~/.gptimg/logs/` | One JSONL file per invocation |
-| `~/.gptimg/models/` | Cached AI mask model(s) (override with `GPTIMG_MODELS_DIR`) |
+| `~/.gptimg/models/` | Cached AI models (BiRefNet for `mask --method ai`, Swin2SR for `upscale`; override with `GPTIMG_MODELS_DIR`) |
 
 ## Common Workflows
 
@@ -114,16 +114,19 @@ gptimg trim --in cutout.png --margin 0.10 --square --out-name content.png
 
 # 2. (Only if the cutout is smaller than its on-plate size) AI-upscale it to that
 #    size so layer never enlarges with a plain kernel. A glyph generated near 1024
-#    is already large enough — skip this. Write a NEW name; don't overwrite content.
+#    is already large enough — skip this step and shadow content.png below instead.
 gptimg upscale --in content.png --to-size 1024 --out-name content-up.png
 
-# 3. Cast a soft contact shadow inside the square canvas so the glyph lifts off the plate.
-gptimg shadow --in content.png --keep-canvas --blur 24 --offset 0,18 \
+# 3. Cast a soft contact shadow inside the square canvas so the glyph lifts off the
+#    plate. Reads content-up.png from step 2 (use content.png if you skipped it).
+gptimg shadow --in content-up.png --keep-canvas --blur 24 --offset 0,18 \
   --opacity 0.32 --color "#0a0a20" --out-name content-shadow.png
 
-# 4. Synthesize a 1024² squircle backplate with a brand gradient.
+# 4. Synthesize a 1024² rounded backplate with a brand gradient.
+#    rect radius 0.305 + content 0.87 ≈ the macOS dock corner AND body size
+#    (both measured); squircle reads squarer.
 gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030" \
-  --shape squircle --out-name plate.png
+  --shape rect --radius 0.305 --content 0.87 --out-name plate.png
 
 # 5. Composite the shadowed content onto the plate (top at ~78% of the plate side —
 #    a starting point; tune by eye per design, color, and style).
@@ -287,13 +290,15 @@ Local only. Loads the input as RGBA, finds the tightest rect of pixels with alph
 # Default: 1024² rounded-rect plate with the given gradient.
 gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030"
 
-# Continuous-curvature squircle (closer to the macOS dock icon shape).
+# Quarter-superellipse (n=4) squircle corner — a squarer alternative to rect.
 gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030" --shape squircle
 ```
 
 Local only. Synthesizes a square PNG containing a centered rounded shape (rect or squircle) filled with a linear gradient on transparent padding — the bottom layer of the icon pipeline.
 
 `--from` and `--to` are required. `--size` defaults to 1024, `--content` (plate side as fraction of canvas) to 0.80, `--radius` (fraction of content side) to 0.225, `--angle` (CSS deg; 0=bottom→top, 90=left→right) to 135, and `--shape` to `rect`. Without `--out-dir`, output goes to the current working directory; default filename `backplate-<size>.png`.
+
+For a macOS-style icon plate, a **circular `rect` at `--radius ≈ 0.305`** of the content side (with `--content ≈ 0.87`) matches the macOS app-icon corner and size — both circle-fit measured from real system icons. `rect` produces a mathematically exact circular corner (`radius × body`). The `squircle` shape draws a quarter-superellipse (n=4) corner — a *squarer* look that can't reach macOS roundness — so use `rect` for the dock.
 
 ### `layer`
 
@@ -429,7 +434,9 @@ const plate = await sdk.backplate({
   size: 1024,
   from: "#3a4a6a",
   to: "#1a2030",
-  shape: "squircle",
+  shape: "rect",
+  radius: 0.305, // ~macOS dock corner (measured)
+  content: 0.87, // ~macOS body size (measured)
 });
 const composed = await sdk.layer({
   base: plate.output,
