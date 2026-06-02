@@ -9,14 +9,14 @@ Target formats this produces for: **Tauri** (`src-tauri/icons/` with framework-s
 ## The pipeline
 
 ```
-generate content → mask → compose → trim --square → (upscale | resize) → [shadow] → backplate → layer → icon → rename
+generate content → mask → compose → trim --square → [upscale if below on-plate size] → shadow → backplate → layer → icon → rename
 ```
 
 A worked example (a cluster of fanned note panels; substitute any glyph):
 
 ```sh
-WORK="$TMPDIR/$(date -u +%Y%m%d-%H%M%S)-utc-panes-icon"
-mkdir -p "$WORK/panes-01/indigo"
+WORK="$TMPDIR/$(date -u +%Y%m%d-%H%M%S)-utc-fanned-panes-icon"
+mkdir -p "$WORK/fanned-panes/indigo"
 cd "$WORK"
 
 # 1. Generate the glyph on a chroma backdrop whose key color is absent from the
@@ -24,38 +24,35 @@ cd "$WORK"
 gptimg generate \
   "three overlapping rounded-rectangle note panels fanned like a hand of cards, \
    vivid coral, teal and amber, flat vector style, centered, on a solid pure green #00ff00 background, no green on the panels, no shadow" \
-  --set size=1024x1024 --set chroma.color=#00ff00 --set quality=medium --out-name panes-01-original
+  --set size=1024x1024 --set chroma.color=#00ff00 --set quality=medium --out-name fanned-panes-original
 
-cd "$WORK/panes-01"
-ORIG="$WORK/panes-01-original.png"
+cd "$WORK/fanned-panes"
+ORIG="$WORK/fanned-panes-original.png"
 
 # 2. Remove the background by keying out the backdrop.
-gptimg mask --in "$ORIG" --key from-sidecar --out-name panes-01-mask.png
-gptimg compose --in "$ORIG" --mask panes-01-mask.png --remove-bleed "#00ff00" --out-name panes-01-cutout.png
+gptimg mask --in "$ORIG" --key from-sidecar --out-name fanned-panes-mask.png
+gptimg compose --in "$ORIG" --mask fanned-panes-mask.png --remove-bleed "#00ff00" --out-name fanned-panes-cutout.png
 
 # 3. Square the glyph, leaving margin for a shadow. (--square is correct for icons.)
-gptimg trim --in panes-01-cutout.png --square --margin 0.10 --out-name panes-01-square.png
+#    A glyph generated near 1024 is already larger than its on-plate size, so no
+#    upscale is needed here — see "Normalizing the content size".
+gptimg trim --in fanned-panes-cutout.png --square --margin 0.10 --out-name fanned-panes-content.png
 
-# 4. Normalize the squared content to 1024: upscale (learned ×4) when the glyph
-#    is smaller than 1024, resize (plain) when larger.
-gptimg upscale --in panes-01-square.png --to-size 1024 \
-  --out-name panes-01-content.png
+# 4. Cast a contact shadow that stays within the square canvas.
+gptimg shadow --in fanned-panes-content.png --keep-canvas --blur 24 --offset 0,18 \
+  --opacity 0.32 --color "#0a0a20" --out-name fanned-panes-shadow.png
 
-# 5. (Optional) Cast a contact shadow that stays within the square canvas.
-gptimg shadow --in panes-01-content.png --keep-canvas --blur 24 --offset 0,18 \
-  --opacity 0.32 --color "#0a0a20" --out-name panes-01-content-shadow.png
-
-# 6. Build the base in the variant subdirectory: a squircle plate with a brand gradient.
+# 5. Build the base in the variant subdirectory: a squircle plate with a brand gradient.
 gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape squircle \
   --out-name indigo/plate-indigo.png
 
-# 7. Composite the glyph onto the plate at a tuned scale (see "Sizing the glyph").
+# 6. Composite the glyph onto the plate at a tuned scale (see "Sizing the glyph").
 #    The final carries a clean slug so it is obvious which file is the master.
-gptimg layer --base indigo/plate-indigo.png --top panes-01-content-shadow.png --scale 0.80 \
-  --out-name indigo/panes-indigo.png
+gptimg layer --base indigo/plate-indigo.png --top fanned-panes-shadow.png --scale 0.78 \
+  --out-name indigo/fanned-panes-indigo.png
 
-# 8. Pack the platform files into the variant dir, then rename per target (see "Packing").
-gptimg icon --in indigo/panes-indigo.png --out-dir indigo --pngs
+# 7. Pack the platform files into the variant dir, then rename per target (see "Packing").
+gptimg icon --in indigo/fanned-panes-indigo.png --out-dir indigo --pngs
 ```
 
 ## Quality: always start at medium
@@ -120,20 +117,20 @@ Because of (4) especially, **no geometric number can be authoritative** — the 
 - **Full-bleed / background-as-shape** (the artwork *is* the plate's fill, edge to edge): ~90–100 % of the body.
 - **Symbol-on-plate** (a distinct glyph floating on a colored plate): ~55–82 % of the body. *Object-cluster* glyphs (stacked notes, overlapping shapes) sit at the high end, ~75–82 %; a single small symbol can sit lower.
 
-For a symbol-on-plate icon, **start around 70–75 % optical, then trust your eyes** — and remember a vivid, high-contrast glyph on a dark plate can be set a little smaller than a muted one and still read as large, thanks to the irradiation effect.
+For a symbol-on-plate icon, **start around 70–78 % optical, then trust your eyes** — and remember a vivid, high-contrast glyph on a dark plate can be set a little smaller than a muted one and still read as large, thanks to the irradiation effect. (In practice ~0.78 `layer --scale` for a fanned-panes glyph reads right; ~0.62 reads too small.)
 
 ## Normalizing the content size
 
-Normalize the squared content to **1024** before compositing, picking the verb by direction:
+The glyph's final size on the plate is `layer --scale × plate-side` (for example `0.78 × 1024 ≈ 800 px`), **not** 1024 — `layer` scales the content *down* onto the plate. So normalization is conditional, not a fixed "resize to 1024" step:
 
-- **`upscale --to-size 1024`** when the cut-out glyph is **smaller** than 1024: the learned ×4 super-resolution (distortion-optimized — it enlarges faithfully rather than hallucinating texture) makes a small glyph genuinely crisp before `layer` scales it onto the plate. Never enlarge by re-generating; that changes the art. `upscale` is one of the two strictly-sequential local models (see "Concurrency").
-- **`resize --to-size 1024`** when the content is already **≥ 1024**: a plain, model-free downscale is clean and instant.
+- **If the cut-out glyph is already at least its on-plate size — the usual case, since it's generated near 1024 and then scaled down — skip this step.** `layer` downscales it cleanly; there is nothing to enlarge.
+- **If the glyph came out smaller than its on-plate size, `upscale` it first** to at least that size. Use the learned ×4 super-resolution for *any* enlargement, however small — never a plain stretch — so `layer` isn't forced to enlarge it with a plain kernel. Never enlarge by re-generating; that changes the art. (`upscale` is one of the two strictly-sequential local models — see "Concurrency".)
 
-Generating at a fixed 1024² keeps this predictable: a centered glyph usually lands below 1024 after `trim --square`, so it is the upscale case and the content is crisp at composite time.
+The icon master is always the plate size (1024); the content only needs to be crisp at the smaller size it occupies on it, so a glyph born near 1024 needs no upscale at all.
 
 ## Iterating bases and sizes cheaply
 
-Only the content generation costs money or time (the chroma mask is a cheap local step). The plate, the gradient, and the glyph scale are **free local composites** — generate the content once, then sweep bases and scales with `backplate` + `layer`. Render a *manageable* grid (not every combination at once), compare, and narrow interactively. "Make the background more vivid" or "try it bigger" is a re-render of the cheap layers, not a new generation. When you do want several content candidates, generate them in parallel (API calls, ~5 at a time).
+Only the content generation costs money or time (the chroma mask is a cheap local step). The plate, the gradient, and the glyph scale are **free local composites** — generate the content once, then sweep bases and scales with `backplate` + `layer`. Render a *manageable* grid (not every combination at once), compare, and narrow interactively. "Make the background more vivid" or "try it bigger" is a re-render of the cheap layers, not a new generation. When you do want several content candidates (different designs/styles), generate them in parallel (API calls, ~5 at a time).
 
 ## Multi-size legibility
 
@@ -144,9 +141,9 @@ Before committing, look at the glyph at the sizes it will actually appear. `gpti
 Unlike a transparent stamp cutout, a composited icon is **opaque**, so `gptimg vision` can judge it directly:
 
 ```sh
-gptimg vision --in indigo/panes-indigo.png \
+gptimg vision --in indigo/fanned-panes-indigo.png \
   --check "one centered glyph on a rounded gradient plate, well balanced, not cut off, good contrast" \
-  --out-name panes-vision
+  --out-name fanned-panes-vision
 ```
 
 Prefer your own eyes for the real judgment and run `gptimg vision` as an additional recorded check — useful so a vision-incapable agent can complete the same work, and harmless to keep.
@@ -175,34 +172,35 @@ These keep a session reproducible and debuggable.
 
 - **Stage in a fresh temp directory** under the OS temp root, named with a UTC timestamp and the task objective: `$TMPDIR/<yyyymmdd-hhmmss-utc>-<objective>/`. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get the timestamp from the OS (`date -u`), not from memory.
 - **The top level holds raw generations and their sidecars only.** Every other file — masks, cutouts, plates, composites, previews, finals, packed icons — lives in a subdirectory. This keeps the originals (the one paid, irreplaceable artifact) trivially findable.
-- **One directory per content candidate; one subdirectory per base.** A candidate's shared content prep (`mask`, `cutout`, squared `content`) lives at the candidate level; each base (plate color/shape) gets its own subdirectory, and the **content size is a filename suffix** within it (sizes are cheap, you make many). The chosen final lives in its base subdirectory too — there is no separate "final" folder; a clean filename (no candidate index / `-sNN` suffix) marks the master.
-- **Use descriptive slug filenames**, never bare timestamps, with room for future siblings. Encode role and candidate index on work files (`panes-01-original.png`, `-01-mask.png`); the final master carries a clean slug (`panes-indigo.png`).
+- **One directory per content candidate; one subdirectory per base.** A "candidate" is a distinct *design* (a different concept or style), named by a descriptive slug. Its shared content prep (`mask`, `cutout`, squared `content`) lives at the candidate level; each base (plate color/shape) gets its own subdirectory, and the **content size is a filename suffix** within it (sizes are cheap, you make many). The chosen final lives in its base subdirectory too — there is no separate "final" folder; a clean filename (no `-sNN` suffix) marks the master.
+- **Use descriptive slug filenames — no index numbers.** Distinguish candidates by concept (`fanned-panes`, `side-panes`, `qd-monogram`), never `-01`. Work files encode the pipeline role (`fanned-panes-original.png`, `-mask.png`, `-content.png`); the final master carries a clean slug (`fanned-panes-indigo.png`).
+- **If you rename a generated image, fix its sidecar.** The generation sidecar (`<stem>.json`) records the image basename in `files[0].name`; if you rename the PNG you must rename the sidecar *and* update that field, or the image↔sidecar pairing silently breaks. The `sha256` does **not** change — it hashes the bytes, not the name.
 - **Keep every raw generation and its sidecar.** The sidecar (`<stem>.json`, written by `generate`) holds the prompt and resolved request — the recipe to reproduce the art. The post-processing verbs (`mask`, `compose`, `trim`, `backplate`, `layer`, `shadow`, `upscale`, `icon`) write **no** sidecars, so record their parameters yourself (see "READMEs").
 - **Never destroy a durable artifact.** Renaming on a collision is fine — both files survive. Overwriting is not: you must be able to inspect how anything was made. Previews are work-in-progress and live in the subdirectories like everything else.
 - **Sign off on the raw generation before processing it.** Generation is the only paid step and the only one that can be "wrong." If a generation is no good, re-prompt — do not invest the pipeline in a reject.
 - **A README at each level.** `<candidate>/README.md` records the raw → content recipe (mask method, trim, shadow, any upscale); `<candidate>/<base>/README.md` records the content → icon recipe (plate `from`/`to`, shape, angle, content fraction, layer scale, chosen size). Free format — enough for another operator to replicate it. These are the human-readable substitute for the sidecars the processing verbs do not emit.
 - **Retention is branch-level.** Any candidate or base you keep retains its *complete* intermediate trail — never prune a keeper's intermediates. A branch you clearly reject (a base you hated, a content candidate that lost) is dropped *whole*.
 
-A staging layout for two content candidates, one with two bases:
+A staging layout for two content candidates (two distinct designs), one with two bases:
 
 ```
-$TMPDIR/<ts-utc>-panes-icon/
-  panes-01-original.png                   # raw + sidecar ONLY at the top level
-  panes-01-original.json                  #   generation sidecar = prompt/provenance
-  panes-02-original.{png,json}
-  panes-01/                               # one content candidate's work
+$TMPDIR/<ts-utc>-quickdeck-icon/
+  fanned-panes-original.png               # raw + sidecar ONLY at the top level
+  fanned-panes-original.json              #   generation sidecar = prompt/provenance
+  side-panes-original.{png,json}          # a second candidate = a different design
+  fanned-panes/                           # one content candidate's work
     README.md                             #   raw → content recipe
-    panes-01-mask.png  panes-01-cutout.png  panes-01-content.png   # shared across all bases
+    fanned-panes-mask.png  fanned-panes-cutout.png  fanned-panes-content.png   # shared across all bases
     indigo/
       README.md                           #   content → icon recipe for this base
       plate-indigo.png
-      panes-indigo-s80.png  panes-indigo-s84.png   # candidate composites (size = suffix)
-      panes-indigo.png                    #   FINAL master (clean name = obvious)
-      panes-indigo.json                   #   provenance sidecar copy
+      fanned-panes-indigo-s78.png  fanned-panes-indigo-s82.png   # candidate composites (size = suffix)
+      fanned-panes-indigo.png             #   FINAL master (clean name = obvious)
+      fanned-panes-indigo.json            #   provenance sidecar copy
       icon.icns  icon.ico  icon.png  32x32.png  128x128.png  128x128@2x.png   # packed + renamed
     slate/
-      README.md  plate-slate.png  panes-slate-s80.png
-  panes-02/
+      README.md  plate-slate.png  fanned-panes-slate-s78.png
+  side-panes/
     ...
 ```
 

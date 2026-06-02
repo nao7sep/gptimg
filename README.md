@@ -109,8 +109,8 @@ To check the result, run `gptimg vision` against the composite with whatever cri
 Build an app icon from a generated cutout:
 
 ```sh
-# 1. Trim the cutout to its alpha bbox + 8% relative margin, force square canvas.
-gptimg trim --in cutout.png --margin 0.08 --square --out-name content.png
+# 1. Trim the cutout to its alpha bbox + 10% relative margin, force square canvas.
+gptimg trim --in cutout.png --margin 0.10 --square --out-name content.png
 
 # 2. (Optional) If the cutout is small, AI-upscale it to fill the icon crisply.
 gptimg upscale --in content.png --to-size 1024 --out-name content.png --overwrite
@@ -119,8 +119,8 @@ gptimg upscale --in content.png --to-size 1024 --out-name content.png --overwrit
 gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030" \
   --shape squircle --out-name plate.png
 
-# 4. Composite the content onto the plate (top scaled to 62% of the plate side).
-gptimg layer --base plate.png --top content.png --scale 0.62 \
+# 4. Composite the content onto the plate (top scaled to ~78% of the plate side).
+gptimg layer --base plate.png --top content.png --scale 0.78 \
   --out-name icon.png
 
 # 5. Pack the master into platform icons: icon.icns (macOS) + icon.ico (Windows).
