@@ -6,13 +6,24 @@ Each toy does one observable operation. Workflows are user-composed: `mask` prod
 
 Personal tool. v1 ships OpenAI only; the provider boundary exists but no second provider is shipped.
 
-## AI Agent Usage
+## Automation and agent use
 
-Automated and agent-driven use should start with the agent manual, which covers workflows, artifact handling, and branching logic:
+The CLI is built to be driven by scripts and AI agents. Every command prints **one JSON object** — success on stdout, a single error object on stderr — and signals outcome via [exit code](#exit-codes), so a caller parses stdout for results and branches on the code. The SDK returns the same data as objects and never writes to stdout/stderr.
 
-- [Agent workflows and best practices](docs/agent-workflows.md)
+What each verb *does* is defined by the source and `--help`; this README is the reference for the **stable contract** a caller builds against — exit codes, the per-image sidecar model, [artifacts](#artifacts), and [cancellation](#cancellation). A few conventions keep automated runs reproducible and debuggable:
 
-The CLI is built for it: every command prints one JSON object (success on stdout, errors on stderr) and signals outcome via [exit code](#exit-codes).
+- Give each job its own output directory. Keep the original generation and its sidecar; masks, cutouts, and composites are derived and can be regenerated.
+- Use stable, descriptive `--out-name` values (`subject-original`, `subject-mask`, `subject-cutout`), not bare timestamps.
+- Don't pass `--overwrite` unless you mean to replace a file. For `generate`/`edit` it is group-scoped: it allows the planned files to replace existing siblings but halts with `output.staleSiblings` if a prior run left indexed files the new plan would not replace.
+- Parse stdout JSON for success; use the JSONL log and sidecars for trace context, not primary success detection. Treat `partial: true` from `generate`/`edit` as recoverable when at least one file was written.
+- Always run `mask` from the **original** image. To change mask parameters, rerun from the original — do not feed a previous mask or composite back through `mask`.
+- `vision` handles any semantic check, but it **cannot see transparency** (it ingests a transparent PNG flattened on black). Composite a cutout onto a known plate first, then vision-check that.
+- The local AI models (`mask --method ai`, `upscale`) load 1.5–4.4 GB each — run them **one at a time**. Network calls (`generate`/`edit`/`vision`) can run in parallel.
+
+For complete recipes that compose these verbs into finished assets — including the decisions gptimg deliberately does **not** encode (margins, glyph sizing, background-removal choice, directory layout, target-format filenames) — see the workflow guides:
+
+- **[Stamp workflow](docs/stamp-workflow.md)** — transparent overlay assets (badges, postmarks, frames, ribbons).
+- **[Icon workflow](docs/icon-workflow.md)** — app icons packed for Tauri / Electron / Avalonia / .NET.
 
 ## Quick Start
 
@@ -115,6 +126,8 @@ gptimg layer --base plate.png --top content.png --scale 0.62 \
 # 5. Pack the master into platform icons: icon.icns (macOS) + icon.ico (Windows).
 gptimg icon --in icon.png --out-dir build/
 ```
+
+> These snippets are quick orientation. For finished-asset recipes — the cropping, sizing, and packing decisions plus the staging conventions — follow the [stamp workflow](docs/stamp-workflow.md) and [icon workflow](docs/icon-workflow.md).
 
 ## CLI Reference
 

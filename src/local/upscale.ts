@@ -114,7 +114,7 @@ export async function runUpscale(
   if (!Number.isInteger(toSize) || toSize < 1 || toSize > MAX_TO_SIZE) {
     throw new LocalOpError(
       "args.invalid",
-      `upscale: to-size must be an integer in [1, ${MAX_TO_SIZE}]; got ${toSize}.`,
+      `upscale: to-size must be an integer in [1..${MAX_TO_SIZE}]; got ${toSize}.`,
     );
   }
   if (!KERNELS.includes(kernel)) {

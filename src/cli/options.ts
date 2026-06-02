@@ -5,8 +5,8 @@ export function addAiCommonOptions(cmd: Command): Command {
     .option("--profile <path>", "Path to profile.json")
     .option("--recipe <path>", "Path to recipe.json")
     .option("--log <path>", "Path to log JSONL file")
-    .option("--out-dir <dir>", "Output directory")
-    .option("--out-name <name>", "Output stem for generated files")
+    .option("--out-dir <dir>", "Output directory (default: ~/.gptimg/output)")
+    .option("--out-name <name>", "Output filename stem (default: a UTC timestamp)")
     .option(
       "--set <expr...>",
       "Override recipe values: dot.path=value (repeatable; values JSON-parsed; @file form supported)",

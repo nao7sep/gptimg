@@ -143,13 +143,13 @@ export async function runShadow(
   if (!Number.isFinite(opacity) || opacity <= 0 || opacity > 1) {
     throw new LocalOpError(
       "args.invalid",
-      `shadow: opacity must be in (0, 1]; got ${opacity}.`,
+      `shadow: opacity must be in (0..1]; got ${opacity}.`,
     );
   }
   if (!Number.isInteger(spread) || spread < 0 || spread > MAX_SPREAD) {
     throw new LocalOpError(
       "args.invalid",
-      `shadow: spread must be an integer in [0, ${MAX_SPREAD}]; got ${spread}.`,
+      `shadow: spread must be an integer in [0..${MAX_SPREAD}]; got ${spread}.`,
     );
   }
 

@@ -80,7 +80,7 @@ export async function runTrim(
   if (!Number.isFinite(margin) || margin < 0 || margin > 1) {
     throw new LocalOpError(
       "args.invalid",
-      `trim: margin must be a number in [0, 1]; got ${margin}.`,
+      `trim: margin must be a number in [0..1]; got ${margin}.`,
     );
   }
 

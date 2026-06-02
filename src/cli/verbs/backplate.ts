@@ -19,7 +19,7 @@ function parseRangeOpt(name: string, min: number, max: number) {
   return (v: string): number => {
     const n = Number(v);
     if (!Number.isFinite(n) || n < min || n > max) {
-      throw new InvalidArgumentError(`${name}: must be in [${min}, ${max}]`);
+      throw new InvalidArgumentError(`${name}: must be in [${min}..${max}]`);
     }
     return n;
   };
@@ -68,12 +68,12 @@ export function registerBackplate(program: Command): void {
       parsePositiveIntOpt("--size"),
     )
     .option(
-      "--content <pct>",
+      "--content <frac>",
       "Content side as a fraction of --size (0..1]. Default 0.80.",
       parseRangeOpt("--content", 0, 1),
     )
     .option(
-      "--radius <pct>",
+      "--radius <frac>",
       "Corner radius as a fraction of the content side [0..0.5]. Default 0.225.",
       parseRangeOpt("--radius", 0, 0.5),
     )

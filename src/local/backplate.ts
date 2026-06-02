@@ -221,13 +221,13 @@ export async function runBackplate(
   if (!Number.isFinite(content) || content <= 0 || content > 1) {
     throw new LocalOpError(
       "args.invalid",
-      `backplate: content must be in (0, 1]; got ${content}.`,
+      `backplate: content must be in (0..1]; got ${content}.`,
     );
   }
   if (!Number.isFinite(radius) || radius < 0 || radius > 0.5) {
     throw new LocalOpError(
       "args.invalid",
-      `backplate: radius must be in [0, 0.5]; got ${radius}.`,
+      `backplate: radius must be in [0..0.5]; got ${radius}.`,
     );
   }
   if (!Number.isFinite(angle)) {

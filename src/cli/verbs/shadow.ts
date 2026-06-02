@@ -18,7 +18,7 @@ function parseNonNegativeNumberOpt(name: string) {
 function parseOpacityOpt(v: string): number {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0 || n > 1) {
-    throw new InvalidArgumentError("--opacity: must be in (0, 1]");
+    throw new InvalidArgumentError("--opacity: must be in (0..1]");
   }
   return n;
 }
@@ -66,7 +66,7 @@ export function registerShadow(program: Command): void {
     .description(
       "Cast a soft drop shadow from an RGBA image's alpha shape and composite the subject on top.",
     )
-    .requiredOption("--in <path>", "RGBA image with transparency")
+    .requiredOption("--in <path>", "Input RGBA image path")
     .option(
       "--blur <px>",
       "Gaussian blur sigma for the shadow edge. Default 12.",
@@ -79,8 +79,8 @@ export function registerShadow(program: Command): void {
     )
     .option("--color <#rrggbb>", "Shadow color. Default #000000.", hexOption("--color"))
     .option(
-      "--opacity <0..1>",
-      "Peak shadow opacity. Default 0.35.",
+      "--opacity <frac>",
+      "Peak shadow opacity (0..1]. Default 0.35.",
       parseOpacityOpt,
     )
     .option(

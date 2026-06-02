@@ -59,7 +59,7 @@ export async function runResize(
   if (!Number.isInteger(args.toSize) || args.toSize < 1 || args.toSize > MAX_TO_SIZE) {
     throw new LocalOpError(
       "args.invalid",
-      `resize: to-size must be an integer in [1, ${MAX_TO_SIZE}]; got ${args.toSize}.`,
+      `resize: to-size must be an integer in [1..${MAX_TO_SIZE}]; got ${args.toSize}.`,
     );
   }
   if (!KERNELS.includes(kernel)) {

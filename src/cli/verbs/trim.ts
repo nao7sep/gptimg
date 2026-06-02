@@ -7,7 +7,7 @@ function parsePctOpt(name: string) {
   return (v: string): number => {
     const n = Number(v);
     if (!Number.isFinite(n) || n < 0 || n > 1) {
-      throw new InvalidArgumentError(`${name}: must be a number in [0, 1]`);
+      throw new InvalidArgumentError(`${name}: must be a number in [0..1]`);
     }
     return n;
   };
@@ -31,7 +31,7 @@ export function registerTrim(program: Command): void {
     )
     .requiredOption("--in <path>", "Input RGBA image path")
     .option(
-      "--margin <pct>",
+      "--margin <frac>",
       "Margin to re-pad, as fraction of the longer bbox side (0..1). Default 0.08.",
       parsePctOpt("--margin"),
     )

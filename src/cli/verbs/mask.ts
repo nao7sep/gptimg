@@ -22,7 +22,7 @@ function parseIntOpt(name: string) {
 function parseSaturationRatioOpt(v: string): number {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0 || n > 1) {
-    throw new InvalidArgumentError("--saturation-ratio: expected a number in (0, 1]");
+    throw new InvalidArgumentError("--saturation-ratio: expected a number in (0..1]");
   }
   return n;
 }
@@ -68,16 +68,16 @@ export function registerMask(program: Command): void {
       parseIntOpt("--border-sample"),
     )
     .option(
-      "--saturation-ratio <n>",
-      "Spill ratio at which near-key pixels saturate to α=0 (0,1]. Chroma method only.",
+      "--saturation-ratio <frac>",
+      "Spill ratio at which near-key pixels saturate to α=0 (0..1]. Chroma method only.",
       parseSaturationRatioOpt,
     )
     .option("--dry-run", "Compute and emit stats without writing the mask file")
     .option("--out-dir <dir>", "Output directory (default: same as input)")
     .option("--out-name <name>", "Output filename (default: <input-stem>-mask.png)")
-    .option("--recipe <path>", "Path to recipe JSON file")
+    .option("--recipe <path>", "Path to recipe.json")
     .option("--log <path>", "Path to log JSONL file")
-    .option("--overwrite", "Overwrite an existing mask file");
+    .option("--overwrite", "Overwrite an existing output file");
 
   cmd.action(async (opts: MaskCliOpts) => {
     const sdk = new GptImg();

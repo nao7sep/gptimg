@@ -63,7 +63,7 @@ export function registerUpscale(program: Command): void {
       "Approx. model-input edge per pass — the memory knob (larger = fewer passes, more RAM). Default 256.",
       parsePositiveIntOpt("--tile"),
     )
-    .option("--recipe <path>", "Path to recipe JSON file (for network.modelDownload)")
+    .option("--recipe <path>", "Path to recipe.json (for network.modelDownload)")
     .option("--out-dir <dir>", "Output directory (default: same as input)")
     .option("--out-name <name>", "Output filename (default: <input-stem>-upscale.png)")
     .option("--log <path>", "Path to log JSONL file")

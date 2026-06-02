@@ -61,7 +61,7 @@ export function registerLayer(program: Command): void {
     .requiredOption("--base <path>", "Base RGBA image path")
     .requiredOption("--top <path>", "Top RGBA image path")
     .option(
-      "--scale <pct>",
+      "--scale <n>",
       "Resize top so its longer side = scale * min(baseW, baseH). Preserves aspect.",
       parseScaleOpt,
     )
