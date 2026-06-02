@@ -20,22 +20,24 @@ generate → mask → compose → trim → shadow --keep-canvas → (upscale to 
 A worked example (a distressed circular postmark; substitute any subject):
 
 ```sh
-WORK="$TMPDIR/$(date -u +%Y%m%d-%H%M%S)-utc-vintage-postmark-stamp"
-mkdir -p "$WORK/vintage-postmark"
-cd "$WORK"
+# Stage in the library path you'll keep this in — NOT a temp dir.
+STAMPS=~/code/personal/assets/fotoready/stamps
+mkdir -p "$STAMPS/vintage-postmark"
+cd "$STAMPS"
 
 # 1. Generate the art as ink/shapes on a flat chroma backdrop, at MEDIUM quality
 #    (see "Quality"). The chroma color is recorded into the sidecar so the mask
-#    step can read it back. Raw image + sidecar stay at the top level.
+#    step can read it back. Pass an absolute --out-dir so the paid generation lands
+#    where you expect; raw image + sidecar stay at the top level.
 gptimg generate \
   "a distressed circular postmark, dark crimson ink, concentric rings and a date, \
    printed directly on a flat solid pure green #00ff00 background, no paper, flat top-down view" \
   --set size=1024x1024 --set chroma.color=#00ff00 --set quality=medium \
-  --out-name vintage-postmark-original
+  --out-dir "$STAMPS" --out-name vintage-postmark-original
 
 # All work-in-progress goes in the candidate's subdirectory.
-cd "$WORK/vintage-postmark"
-ORIG="$WORK/vintage-postmark-original.png"
+cd "$STAMPS/vintage-postmark"
+ORIG="$STAMPS/vintage-postmark-original.png"
 
 # 2. Produce an alpha mask by keying out the backdrop.
 gptimg mask --in "$ORIG" --key from-sidecar --out-name vintage-postmark-mask.png
@@ -80,7 +82,7 @@ Two rules make chroma reliable:
 
 **Reach for the AI matte (`mask --method ai`, BiRefNet) only when:**
 
-- the subject has **fine fibers** — hair, fur, feathers, frayed edges, dense foliage. Chroma keying leaves an *irremovable* halo in the gaps between fibers; this is a fundamental limitation of color keying, not a tuning problem, and professional tools hit the same wall. The AI matte handles these cleanly.
+- the subject has **wispy or translucent fine fibers** — flyaway hair, soft fur, feathers, frayed edges, dense foliage — where individual strands meet the background and light passes between them. Chroma keying leaves an *irremovable* halo in the gaps between such fibers; this is a fundamental limitation of color keying, not a tuning problem, and professional tools hit the same wall. The AI matte handles these cleanly. (A **solid, well-defined** fur silhouette is different: a stylized or semi-realistic animal whose outline reads as one clean edge keys fine with chroma — the cute-cat concealer stamp is a furry subject that keyed cleanly with no fringe. Reach for the AI matte only when the edge is genuinely wispy.)
 - the subject's colors **unavoidably span the key hue**, so no single key color is safe.
 - the source is **not on a clean chroma backdrop** at all.
 
@@ -156,7 +158,7 @@ gptimg vision --in preview-gray.png \
 
 These keep a session reproducible and debuggable.
 
-- **Stage in a fresh temp directory** under the OS temp root, named with a UTC timestamp and the task objective: `$TMPDIR/<yyyymmdd-hhmmss-utc>-<objective>/`. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get the timestamp from the OS (`date -u`), not from memory.
+- **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/personal/assets/<project>/stamps/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
 - **The top level holds raw generations and their sidecars only.** Every other file — masks, cutouts, previews, finals — lives in a per-candidate subdirectory. This keeps the originals (the one paid, irreplaceable artifact) trivially findable.
 - **Use descriptive slug filenames — no index numbers.** A "candidate" is a distinct *design* (a different subject, style, or treatment), so it gets its own descriptive slug — `vintage-postmark`, `gold-star`, `wax-seal` — never a numbered variant like `-01`. Leave room for future siblings: `vintage-postmark`, not `postmark`, so a later `modern-postmark` does not force a rename. Work files encode the pipeline role: `vintage-postmark-original.png`, `-mask.png`, `-cutout.png`, `-shadow.png`, `-trim.png`. The **final** carries the clean slug with no stage suffix (`vintage-postmark.png`), so the finished asset is obvious from its name alone — no separate "final" folder is needed.
 - **If you rename a generated image, fix its sidecar.** The generation sidecar (`<stem>.json`) records the image basename in `files[0].name`; if you rename the PNG you must rename the sidecar *and* update that field, or the image↔sidecar pairing silently breaks. The `sha256` does **not** change — it hashes the bytes, not the name — so it stays valid.
@@ -164,12 +166,12 @@ These keep a session reproducible and debuggable.
 - **Never destroy a durable artifact.** Renaming on a name collision is fine — both files survive. Overwriting is not: if something goes wrong, you must still be able to inspect how it was made. Previews are work-in-progress and live in the candidate subdirectory like everything else; they may be regenerated, but do not overwrite originals or finals.
 - **Sign off on the raw generation before processing it.** Generation is the only paid step and the only one that can be "wrong." If a generation is no good, re-prompt — do not invest the mask/compose/trim pipeline in a reject.
 - **One README per candidate directory.** Write `<candidate>/README.md` recording exactly how the asset was made: the source generation, mask method and key color, `remove-bleed`, shadow parameters, trim margin, normalize verb and target size. The format is free — enough for another operator (human or agent) to replicate it. These READMEs are the human-readable substitute for the sidecars the processing verbs do not emit.
-- **Retention is branch-level.** Any candidate you keep retains its *complete* intermediate trail — never prune a keeper's intermediates. A candidate you clearly reject is dropped *whole*.
+- **Retention is casual and keeper-scoped.** Keep the complete trail of any stamp you decide to keep — raw + sidecar, every pipeline intermediate, the final, and the README. It is fine to keep the **decision scaffolding** too — preview composites (gray/dark plates), contact sheets, any comparison renders; disk is cheap and the goal is to have whatever you might want later, not to be tidy. A candidate you reject outright is dropped *whole*. **When asked to clean up**, delete scaffolding first (renders that only checked or compared options), then anything clearly redundant — but **never** the durable trail of a keeper (raw + sidecar, the pipeline-stage outputs, the final, the README). This is a guide for what is *safe to remove on request*, not a mandate to auto-prune; keep by default.
 
 A staging layout for two candidates (two distinct designs):
 
 ```
-$TMPDIR/<ts-utc>-cute-concealer-stamps/
+~/code/personal/assets/fotoready/stamps/
   vintage-postmark-original.png        # raw + sidecar ONLY at the top level
   vintage-postmark-original.json       #   generation sidecar = prompt/provenance
   gold-star-original.{png,json}        # a second candidate = a different design
@@ -179,7 +181,7 @@ $TMPDIR/<ts-utc>-cute-concealer-stamps/
     vintage-postmark-cutout.png
     vintage-postmark-trim.png
     vintage-postmark-shadow.png
-    preview-gray.png  preview-dark.png #   disposable checks (still inside the subdir)
+    preview-gray.png  preview-dark.png #   verification previews on gray/dark plates (kept)
     vintage-postmark.png               #   FINAL (clean slug, shadow baked in)
   gold-star/
     ...
@@ -188,7 +190,7 @@ $TMPDIR/<ts-utc>-cute-concealer-stamps/
 ## Finalizing and deploying
 
 1. **Pick the keepers** and give each a final descriptive slug, conflict-checked against the destination directory (and any existing set the host app merges by filename) — rename to a free slug if needed so nothing collides.
-2. **Keep the source of truth in your own asset library** — the finished PNG, its provenance sidecar, and the README — at a path you supply.
+2. **The source of truth is already in your asset library** — you staged there, so the finished PNG, its provenance sidecar, and the README are in place; nothing to copy.
 3. **Deploy only the image** into the host application's stamp folder. Bundled stamp sets are typically identified by filename alone, so sidecars and READMEs stay in your library, not in the app. The deployed filename is the descriptive slug.
 
 Destination paths are not part of this workflow — supply them per task.

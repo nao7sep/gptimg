@@ -112,18 +112,25 @@ Build an app icon from a generated cutout:
 # 1. Trim the cutout to its alpha bbox + 10% relative margin, force square canvas.
 gptimg trim --in cutout.png --margin 0.10 --square --out-name content.png
 
-# 2. (Optional) If the cutout is small, AI-upscale it to fill the icon crisply.
-gptimg upscale --in content.png --to-size 1024 --out-name content.png --overwrite
+# 2. (Only if the cutout is smaller than its on-plate size) AI-upscale it to that
+#    size so layer never enlarges with a plain kernel. A glyph generated near 1024
+#    is already large enough — skip this. Write a NEW name; don't overwrite content.
+gptimg upscale --in content.png --to-size 1024 --out-name content-up.png
 
-# 3. Synthesize a 1024² squircle backplate with a brand gradient.
+# 3. Cast a soft contact shadow inside the square canvas so the glyph lifts off the plate.
+gptimg shadow --in content.png --keep-canvas --blur 24 --offset 0,18 \
+  --opacity 0.32 --color "#0a0a20" --out-name content-shadow.png
+
+# 4. Synthesize a 1024² squircle backplate with a brand gradient.
 gptimg backplate --size 1024 --from "#3a4a6a" --to "#1a2030" \
   --shape squircle --out-name plate.png
 
-# 4. Composite the content onto the plate (top scaled to ~78% of the plate side).
-gptimg layer --base plate.png --top content.png --scale 0.78 \
+# 5. Composite the shadowed content onto the plate (top at ~78% of the plate side —
+#    a starting point; tune by eye per design, color, and style).
+gptimg layer --base plate.png --top content-shadow.png --scale 0.78 \
   --out-name icon.png
 
-# 5. Pack the master into platform icons: icon.icns (macOS) + icon.ico (Windows).
+# 6. Pack the master into platform icons: icon.icns (macOS) + icon.ico (Windows).
 gptimg icon --in icon.png --out-dir build/
 ```
 
@@ -291,8 +298,8 @@ Local only. Synthesizes a square PNG containing a centered rounded shape (rect o
 ### `layer`
 
 ```sh
-# Composite content centered on the plate, scaled to 62% of plate side.
-gptimg layer --base plate.png --top content.png --scale 0.62
+# Composite content centered on the plate, scaled to 78% of plate side.
+gptimg layer --base plate.png --top content.png --scale 0.78
 
 # Explicit pixel placement (overrides --gravity).
 gptimg layer --base plate.png --top content.png --top-offset 120,200
@@ -406,9 +413,18 @@ const cutout = await sdk.compose({
 });
 
 // Icon pipeline.
-const trim = await sdk.trim({ in: cutout.output, margin: 0.08, square: true });
-// Optional: AI-upscale a small cutout so it fills the icon crisply.
+const trim = await sdk.trim({ in: cutout.output, margin: 0.1, square: true });
+// Optional: AI-upscale only if the cutout is below its on-plate size.
 const big = await sdk.upscale({ in: trim.output, toSize: 1024 });
+// Contact shadow so the glyph lifts off the plate (kept inside the square canvas).
+const shadow = await sdk.shadow({
+  in: big.output,
+  keepCanvas: true,
+  blur: 24,
+  offset: { x: 0, y: 18 },
+  opacity: 0.32,
+  color: "#0a0a20",
+});
 const plate = await sdk.backplate({
   size: 1024,
   from: "#3a4a6a",
@@ -417,8 +433,8 @@ const plate = await sdk.backplate({
 });
 const composed = await sdk.layer({
   base: plate.output,
-  top: big.output,
-  scale: 0.62,
+  top: shadow.output,
+  scale: 0.78, // starting point; tune by eye per design
 });
 // Pack the master into platform icons (icon.icns / icon.ico / icon.png).
 const icon = await sdk.icon({ in: composed.output, outDir: "build" });

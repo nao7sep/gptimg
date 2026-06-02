@@ -12,48 +12,58 @@ Target formats this produces for: **Tauri** (`src-tauri/icons/` with framework-s
 generate content → mask → compose → trim --square → [upscale if below on-plate size] → shadow → backplate → layer → icon → rename
 ```
 
-A worked example (a cluster of fanned note panels; substitute any glyph):
+A worked example — the actual QuickDeck run this workflow was validated on (a
+cluster of fanned note panels; substitute any glyph). It stages **directly in the
+asset library** so every step is a reviewable git diff (see "Working conventions"):
 
 ```sh
-WORK="$TMPDIR/$(date -u +%Y%m%d-%H%M%S)-utc-fanned-panes-icon"
-mkdir -p "$WORK/fanned-panes/indigo"
-cd "$WORK"
+# Stage in the library path you'll keep this in — NOT a temp dir.
+ICONS=~/code/personal/assets/quickdeck/icons
+mkdir -p "$ICONS/fanned-panes/indigo"
 
 # 1. Generate the glyph on a chroma backdrop whose key color is absent from the
 #    art (these panes have no green, so #00ff00 is safe), at MEDIUM quality.
+#    Pass an absolute --out-dir so a paid generation lands where you expect.
 gptimg generate \
-  "three overlapping rounded-rectangle note panels fanned like a hand of cards, \
-   vivid coral, teal and amber, flat vector style, centered, on a solid pure green #00ff00 background, no green on the panels, no shadow" \
-  --set size=1024x1024 --set chroma.color=#00ff00 --set quality=medium --out-name fanned-panes-original
+  "A modern flat app-icon illustration: three overlapping rounded-rectangle note \
+   panels fanned like a hand of cards, vivid coral, teal and amber, flat vector \
+   style, centered, on a solid pure green #00ff00 background, no green on the \
+   panels, no shadow, no real words" \
+  --set size=1024x1024 --set chroma.color=#00ff00 --set quality=medium \
+  --out-dir "$ICONS" --out-name fanned-panes-original
 
-cd "$WORK/fanned-panes"
-ORIG="$WORK/fanned-panes-original.png"
+ORIG="$ICONS/fanned-panes-original.png"
+C="$ICONS/fanned-panes"            # candidate dir = shared content prep
+B="$C/indigo"                      # base dir = one brand plate
 
-# 2. Remove the background by keying out the backdrop.
-gptimg mask --in "$ORIG" --key from-sidecar --out-name fanned-panes-mask.png
-gptimg compose --in "$ORIG" --mask fanned-panes-mask.png --remove-bleed "#00ff00" --out-name fanned-panes-cutout.png
-
-# 3. Square the glyph, leaving margin for a shadow. (--square is correct for icons.)
+# 2. Shared content prep (used by BOTH platform masters): key out the backdrop,
+#    square the glyph with a shadow margin, cast a contact shadow inside the canvas.
+gptimg mask    --in "$ORIG" --key from-sidecar --out-dir "$C" --out-name fanned-panes-mask.png
+gptimg compose --in "$ORIG" --mask "$C/fanned-panes-mask.png" --remove-bleed "#00ff00" --out-dir "$C" --out-name fanned-panes-cutout.png
+gptimg trim    --in "$C/fanned-panes-cutout.png" --square --margin 0.10 --out-dir "$C" --out-name fanned-panes-content.png
+gptimg shadow  --in "$C/fanned-panes-content.png" --keep-canvas --blur 24 --offset 0,18 \
+  --opacity 0.32 --color "#0a0a20" --out-dir "$C" --out-name fanned-panes-shadow.png
 #    A glyph generated near 1024 is already larger than its on-plate size, so no
 #    upscale is needed here — see "Normalizing the content size".
-gptimg trim --in fanned-panes-cutout.png --square --margin 0.10 --out-name fanned-panes-content.png
 
-# 4. Cast a contact shadow that stays within the square canvas.
-gptimg shadow --in fanned-panes-content.png --keep-canvas --blur 24 --offset 0,18 \
-  --opacity 0.32 --color "#0a0a20" --out-name fanned-panes-shadow.png
+# 3. Two platform masters from the one content — only the plate --content and the
+#    layer --scale differ (see "Two platforms, two masters" and "Sizing the glyph").
+#    macOS: 0.80 squircle grid, glyph at 0.78.
+gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape squircle --content 0.80 --out-dir "$B" --out-name plate-indigo-mac.png
+gptimg layer --base "$B/plate-indigo-mac.png" --top "$C/fanned-panes-shadow.png" --scale 0.78 --out-dir "$B" --out-name fanned-panes-indigo-mac.png
+#    Windows: fuller 0.92 plate, glyph at 0.86 so it fills the tile.
+gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape squircle --content 0.92 --out-dir "$B" --out-name plate-indigo-win.png
+gptimg layer --base "$B/plate-indigo-win.png" --top "$C/fanned-panes-shadow.png" --scale 0.86 --out-dir "$B" --out-name fanned-panes-indigo-win.png
 
-# 5. Build the base in the variant subdirectory: a squircle plate with a brand gradient.
-gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape squircle \
-  --out-name indigo/plate-indigo.png
-
-# 6. Composite the glyph onto the plate at a tuned scale (see "Sizing the glyph").
-#    The final carries a clean slug so it is obvious which file is the master.
-gptimg layer --base indigo/plate-indigo.png --top fanned-panes-shadow.png --scale 0.78 \
-  --out-name indigo/fanned-panes-indigo.png
-
-# 7. Pack the platform files into the variant dir, then rename per target (see "Packing").
-gptimg icon --in indigo/fanned-panes-indigo.png --out-dir indigo --pngs
+# 4. Pack each master into its own subdir (so icon.icns/icon.ico don't collide),
+#    then cherry-pick per target at deploy time (see "Packing").
+gptimg icon --in "$B/fanned-panes-indigo-mac.png" --out-dir "$B/mac" --pngs
+gptimg icon --in "$B/fanned-panes-indigo-win.png" --out-dir "$B/win" --pngs
 ```
+
+The 0.78 / 0.86 scales are **starting points that read right for this glyph**, not
+fixed numbers — tune them by eye per the art's design, color, and style (see
+"Sizing the glyph").
 
 ## Quality: always start at medium
 
@@ -117,7 +127,7 @@ Because of (4) especially, **no geometric number can be authoritative** — the 
 - **Full-bleed / background-as-shape** (the artwork *is* the plate's fill, edge to edge): ~90–100 % of the body.
 - **Symbol-on-plate** (a distinct glyph floating on a colored plate): ~55–82 % of the body. *Object-cluster* glyphs (stacked notes, overlapping shapes) sit at the high end, ~75–82 %; a single small symbol can sit lower.
 
-For a symbol-on-plate icon, **start around 70–78 % optical, then trust your eyes** — and remember a vivid, high-contrast glyph on a dark plate can be set a little smaller than a muted one and still read as large, thanks to the irradiation effect. (In practice ~0.78 `layer --scale` for a fanned-panes glyph reads right; ~0.62 reads too small.)
+For a symbol-on-plate icon, **start around 70–78 % optical, then trust your eyes** — and remember a vivid, high-contrast glyph on a dark plate can be set a little smaller than a muted one and still read as large, thanks to the irradiation effect. In this workflow's validated run, `layer --scale 0.78` read right for the fanned-panes glyph on the macOS 0.80 plate, and `0.86` on the **fuller** 0.92 Windows plate (a fuller plate wants a proportionally larger glyph to fill the tile); `~0.62` read clearly too small. Treat those as **starting points tuned by eye, not fixed recommendations** — the right number depends on the art's design, colors, and style.
 
 ## Normalizing the content size
 
@@ -131,6 +141,8 @@ The icon master is always the plate size (1024); the content only needs to be cr
 ## Iterating bases and sizes cheaply
 
 Only the content generation costs money or time (the chroma mask is a cheap local step). The plate, the gradient, and the glyph scale are **free local composites** — generate the content once, then sweep bases and scales with `backplate` + `layer`. Render a *manageable* grid (not every combination at once), compare, and narrow interactively. "Make the background more vivid" or "try it bigger" is a re-render of the cheap layers, not a new generation. When you do want several content candidates (different designs/styles), generate them in parallel (API calls, ~5 at a time).
+
+These sweep renders are **decision scaffolding** (see "Working conventions"): build a contact sheet or a side-by-side to drive the pick, record the chosen plate and scale in the base README, then keep or drop the extra renders casually. Because each icon uses its **own distinct prompt** rather than micro-variations of one prompt, you converge on one master per platform — there is no numbered series of same-prompt variants to name or retain.
 
 ## Multi-size legibility
 
@@ -170,44 +182,49 @@ The master must be **square and ≥1024×1024** (this workflow produces 1024²).
 
 These keep a session reproducible and debuggable.
 
-- **Stage in a fresh temp directory** under the OS temp root, named with a UTC timestamp and the task objective: `$TMPDIR/<yyyymmdd-hhmmss-utc>-<objective>/`. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get the timestamp from the OS (`date -u`), not from memory.
+- **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/personal/assets/<project>/icons/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: you can commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions, so a human pick that spans sessions would lose its candidates. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
 - **The top level holds raw generations and their sidecars only.** Every other file — masks, cutouts, plates, composites, previews, finals, packed icons — lives in a subdirectory. This keeps the originals (the one paid, irreplaceable artifact) trivially findable.
-- **One directory per content candidate; one subdirectory per base.** A "candidate" is a distinct *design* (a different concept or style), named by a descriptive slug. Its shared content prep (`mask`, `cutout`, squared `content`) lives at the candidate level; each base (plate color/shape) gets its own subdirectory, and the **content size is a filename suffix** within it (sizes are cheap, you make many). The chosen final lives in its base subdirectory too — there is no separate "final" folder; a clean filename (no `-sNN` suffix) marks the master.
-- **Use descriptive slug filenames — no index numbers.** Distinguish candidates by concept (`fanned-panes`, `side-panes`, `qd-monogram`), never `-01`. Work files encode the pipeline role (`fanned-panes-original.png`, `-mask.png`, `-content.png`); the final master carries a clean slug (`fanned-panes-indigo.png`).
+- **One directory per content candidate; one subdirectory per base.** A "candidate" is a distinct *design* (a different concept or style), named by a descriptive slug. Its shared content prep (`mask`, `cutout`, squared `content`, `shadow`) lives at the candidate level; each base (plate color/shape) gets its own subdirectory holding that base's plate(s) and master(s). The chosen master lives in its base subdirectory — there is no separate "final" folder; a clean filename marks it.
+- **Use descriptive slug filenames — no index numbers.** Distinguish candidates by *concept* (`fanned-panes`, `side-panes`, `qd-monogram`), never `-01` — and because each icon gets its **own distinct prompt** rather than micro-variations of one prompt, there is nothing to enumerate. Work files encode the pipeline role (`fanned-panes-original.png`, `-mask.png`, `-content.png`, `-shadow.png`). When you split mac/Windows masters, the `-mac`/`-win` suffix is a **platform tag, not an index** (`fanned-panes-indigo-mac.png`). A few throwaway scale renders while you pick a size are scaffolding — keep only the chosen master and record its scale in the README.
 - **If you rename a generated image, fix its sidecar.** The generation sidecar (`<stem>.json`) records the image basename in `files[0].name`; if you rename the PNG you must rename the sidecar *and* update that field, or the image↔sidecar pairing silently breaks. The `sha256` does **not** change — it hashes the bytes, not the name.
 - **Keep every raw generation and its sidecar.** The sidecar (`<stem>.json`, written by `generate`) holds the prompt and resolved request — the recipe to reproduce the art. The post-processing verbs (`mask`, `compose`, `trim`, `backplate`, `layer`, `shadow`, `upscale`, `icon`) write **no** sidecars, so record their parameters yourself (see "READMEs").
 - **Never destroy a durable artifact.** Renaming on a collision is fine — both files survive. Overwriting is not: you must be able to inspect how anything was made. Previews are work-in-progress and live in the subdirectories like everything else.
 - **Sign off on the raw generation before processing it.** Generation is the only paid step and the only one that can be "wrong." If a generation is no good, re-prompt — do not invest the pipeline in a reject.
 - **A README at each level.** `<candidate>/README.md` records the raw → content recipe (mask method, trim, shadow, any upscale); `<candidate>/<base>/README.md` records the content → icon recipe (plate `from`/`to`, shape, angle, content fraction, layer scale, chosen size). Free format — enough for another operator to replicate it. These are the human-readable substitute for the sidecars the processing verbs do not emit.
-- **Retention is branch-level.** Any candidate or base you keep retains its *complete* intermediate trail — never prune a keeper's intermediates. A branch you clearly reject (a base you hated, a content candidate that lost) is dropped *whole*.
+- **Retention is casual and keeper-scoped.** Keep the complete trail of any asset you decide to keep — raw + sidecar, every pipeline intermediate, the plate(s), the master(s), the packed set, and the READMEs. It is fine to keep the **decision scaffolding** too — contact sheets, scale sweeps, comparison montages, legibility strips, size/DPI references, preview composites; disk is cheap and the goal is to have whatever you might want later, not to be tidy. A candidate you reject outright is dropped *whole*. **When asked to clean up**, delete scaffolding first (the renders that only compared options or informed a pick already recorded in a README), then anything clearly redundant — but **never** the durable trail of a keeper (raw + sidecar, the pipeline-stage outputs that reproduce the asset, the master(s), the packs, the READMEs). This is a guide for what is *safe to remove on request*, not a mandate to auto-prune; keep by default.
 
-A staging layout for two content candidates (two distinct designs), one with two bases:
+A staging layout — rooted in the asset library — for two content candidates (two
+distinct designs), the keeper split into mac/Windows masters:
 
 ```
-$TMPDIR/<ts-utc>-quickdeck-icon/
+~/code/personal/assets/quickdeck/icons/
   fanned-panes-original.png               # raw + sidecar ONLY at the top level
   fanned-panes-original.json              #   generation sidecar = prompt/provenance
   side-panes-original.{png,json}          # a second candidate = a different design
-  fanned-panes/                           # one content candidate's work
+  fanned-panes/                           # the kept candidate's shared content prep
     README.md                             #   raw → content recipe
-    fanned-panes-mask.png  fanned-panes-cutout.png  fanned-panes-content.png   # shared across all bases
-    indigo/
-      README.md                           #   content → icon recipe for this base
-      plate-indigo.png
-      fanned-panes-indigo-s78.png  fanned-panes-indigo-s82.png   # candidate composites (size = suffix)
-      fanned-panes-indigo.png             #   FINAL master (clean name = obvious)
-      fanned-panes-indigo.json            #   provenance sidecar copy
-      icon.icns  icon.ico  icon.png  32x32.png  128x128.png  128x128@2x.png   # packed + renamed
-    slate/
-      README.md  plate-slate.png  fanned-panes-slate-s78.png
-  side-panes/
+    fanned-panes-mask.png  fanned-panes-cutout.png  fanned-panes-content.png  fanned-panes-shadow.png
+    indigo/                               # one base (brand plate)
+      README.md                           #   content → icon recipe (records the chosen scales)
+      plate-indigo-mac.png  plate-indigo-win.png
+      fanned-panes-indigo-mac.png         #   macOS master (0.80 plate, glyph 0.78)
+      fanned-panes-indigo-win.png         #   Windows master (0.92 plate, glyph 0.86)
+      mac/  icon.icns icon.ico icon.png icon-16.png … icon-1024.png   # pack of the mac master
+      win/  icon.icns icon.ico icon.png icon-16.png … icon-1024.png   # pack of the win master
+  side-panes/                             # a rejected candidate is dropped whole
     ...
 ```
 
+The library keeps gptimg's toolchain-agnostic `icon-NN.png` names; renaming to a
+framework's names (`32x32.png`, …) happens only when you deploy into the app (see
+"Packing"). The provenance is the top-level `fanned-panes-original.json`; there is
+no renamed sidecar copy beside the master — a copy under a new name would break the
+image↔sidecar pairing (see "If you rename a generated image, fix its sidecar").
+
 ## Finalizing and deploying
 
-1. **Pick one combination** (content × base × size, and a platform master each if you split mac/Windows). Copy the keeper candidates plus their sidecars and READMEs into your asset library, at a path you supply; the chosen master and its provenance sidecar sit in their base subdirectory under a clean filename.
-2. **Pack** the master(s) with `icon --pngs` and **rename** the outputs for the target framework (see "Packing").
+1. **Pick one combination** (content × base × scale, and a platform master each if you split mac/Windows). Because you staged in the asset library, the keepers and their sidecars and READMEs are already in place — there is nothing to copy; just confirm the chosen master(s) carry clean filenames and the base README records the recipe.
+2. **Pack** the master(s) with `icon --pngs` (one `--out-dir` per master) and **rename** the outputs for the target framework (see "Packing").
 3. **Deploy** the renamed files into the framework's icon directory and wire them up where required (the Tauri `bundle.icon` list; the .NET `<ApplicationIcon>`), replacing any placeholder.
 
 Note an asymmetry with a transparent stamp: a stamp's descriptive slug *is* its deployed filename, but an icon's deployed names are **fixed by the target framework** — the slug only organizes your library. Destination paths are supplied per task, not baked into this workflow.
