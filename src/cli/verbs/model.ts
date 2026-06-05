@@ -7,6 +7,7 @@ import { emit } from "../output.js";
 interface InstallOpts {
   force?: boolean;
   recipe?: string;
+  log?: string;
 }
 
 export function registerModel(program: Command): void {
@@ -22,6 +23,7 @@ export function registerModel(program: Command): void {
     )
     .option("--force", "Re-download and replace even if already cached")
     .option("--recipe <path>", "Path to recipe JSON file (for network.modelDownload)")
+    .option("--log <path>", "Path to log JSONL file")
     .action(async (name: string | undefined, opts: InstallOpts, cmd: Command) => {
       const keys = Object.keys(MODELS) as ModelKey[];
       if (name !== undefined && !keys.includes(name as ModelKey)) {
@@ -33,6 +35,7 @@ export function registerModel(program: Command): void {
       const installOpts = {
         force: opts.force,
         recipe: opts.recipe,
+        log: opts.log,
         ...cliCallOptions(),
       };
       const results =

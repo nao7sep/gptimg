@@ -19,6 +19,8 @@ export interface ModelInstallOptions extends VerbCallOptions {
   /** Re-download and replace even if the model is already cached. */
   force?: boolean;
   recipe?: string;
+  /** Path to log JSONL file. Defaults to <ts>-gptimg.jsonl under the log dir. */
+  log?: string;
 }
 
 export async function installModelImpl(
@@ -36,7 +38,7 @@ export async function installModelImpl(
   const recipePath = opts.recipe ?? defaultRecipePath(ctx.profileDir);
   const budget = resolveNetworkForCall(await loadRecipe(recipePath)).modelDownload;
   const cacheDir = defaultModelsDir(ctx.profileDir);
-  return withVerbLogger(ctx, "model", { onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "model", { log: opts.log, onProgress: opts.onProgress }, async (logger) => {
     const installedPath = await ensureModel(entry, cacheDir, {
       force: opts.force,
       budget,
