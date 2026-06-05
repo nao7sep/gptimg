@@ -64,7 +64,7 @@ export async function maskImpl(
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "mask", args.log, async (logger) => {
+  return withVerbLogger(ctx, "mask", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const method = args.method ?? "chroma";
     const recipe = await loadRecipe(recipePath);
 

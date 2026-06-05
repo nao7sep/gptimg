@@ -27,16 +27,28 @@ export async function appendLog(
     verb?: LogVerb;
     ts?: string;
   },
+  onEvent?: (entry: LogEntry) => void,
 ): Promise<void> {
+  const final: LogEntry = {
+    ts: entry.ts ?? new Date().toISOString(),
+    verb: entry.verb ?? handle.verb,
+    level: entry.level,
+    stage: entry.stage,
+    msg: entry.msg,
+  };
+  if (entry.data) final.data = redact(entry.data);
+  // Fan out progress before the file write so a caller watching live sees the
+  // event immediately. Only info/warn are progress; error is a failure that the
+  // caller learns about through the thrown error, not the progress stream.
+  // Best-effort: a throwing callback must never break the operation.
+  if (onEvent && (final.level === "info" || final.level === "warn")) {
+    try {
+      onEvent(final);
+    } catch {
+      // ignore — progress is advisory
+    }
+  }
   try {
-    const final: LogEntry = {
-      ts: entry.ts ?? new Date().toISOString(),
-      verb: entry.verb ?? handle.verb,
-      level: entry.level,
-      stage: entry.stage,
-      msg: entry.msg,
-    };
-    if (entry.data) final.data = redact(entry.data);
     await appendFile(handle.path, JSON.stringify(final) + "\n", "utf-8");
   } catch (err) {
     throw new LocalOpError(
@@ -59,13 +71,18 @@ export interface Logger {
   close(): Promise<void>;
 }
 
-export async function createLogger(filePath: string, verb: LogVerb): Promise<Logger> {
+export async function createLogger(
+  filePath: string,
+  verb: LogVerb,
+  opts: { onEvent?: (entry: LogEntry) => void } = {},
+): Promise<Logger> {
   const handle = await openLog(filePath, verb);
+  const onEvent = opts.onEvent;
   return {
     handle,
-    info: (stage, msg, data) => appendLog(handle, { level: "info", stage, msg, data }),
-    warn: (stage, msg, data) => appendLog(handle, { level: "warn", stage, msg, data }),
-    error: (stage, msg, data) => appendLog(handle, { level: "error", stage, msg, data }),
+    info: (stage, msg, data) => appendLog(handle, { level: "info", stage, msg, data }, onEvent),
+    warn: (stage, msg, data) => appendLog(handle, { level: "warn", stage, msg, data }, onEvent),
+    error: (stage, msg, data) => appendLog(handle, { level: "error", stage, msg, data }, onEvent),
     close: () => closeLog(handle),
   };
 }

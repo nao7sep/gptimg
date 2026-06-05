@@ -24,7 +24,7 @@ export async function resizeImpl(
 ): Promise<ResizeResult> {
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "resize", args.log, async (logger) => {
+  return withVerbLogger(ctx, "resize", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       outName: defaultOutputName(args.in),

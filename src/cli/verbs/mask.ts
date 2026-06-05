@@ -1,7 +1,7 @@
 import { InvalidArgumentError, Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { isHexColor } from "../../color.js";
-import { getAbortSignal } from "../abort.js";
+import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 import { numberArg } from "../parsers.js";
 import type { MaskMethod } from "../../types.js";
@@ -81,7 +81,7 @@ export function registerMask(program: Command): void {
         log: opts.log,
         overwrite: opts.overwrite,
       },
-      { signal: getAbortSignal() },
+      cliCallOptions(),
     );
     emit(result);
   });

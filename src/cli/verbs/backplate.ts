@@ -1,7 +1,7 @@
 import { Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import type { BackplateShape } from "../../types.js";
-import { getAbortSignal } from "../abort.js";
+import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 import { hexOption, numberArg } from "../parsers.js";
 
@@ -73,7 +73,7 @@ export function registerBackplate(program: Command): void {
         log: opts.log,
         overwrite: opts.overwrite,
       },
-      { signal: getAbortSignal() },
+      cliCallOptions(),
     );
     emit(result);
   });

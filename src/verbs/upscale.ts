@@ -28,7 +28,7 @@ export async function upscaleImpl(
   const signal = opts.signal;
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
 
-  return withVerbLogger(ctx, "upscale", args.log, async (logger) => {
+  return withVerbLogger(ctx, "upscale", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       outName: defaultOutputName(args.in),

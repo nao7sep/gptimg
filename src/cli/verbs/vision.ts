@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
-import { getAbortSignal } from "../abort.js";
+import { cliCallOptions } from "../progress.js";
 import { addAiCommonOptions, collectMultiInput } from "../options.js";
 import { emit } from "../output.js";
 
@@ -50,7 +50,7 @@ export function registerVision(program: Command): void {
         set: opts.set,
         overwrite: opts.overwrite,
       },
-      { signal: getAbortSignal() },
+      cliCallOptions(),
     );
     emit(result);
   });

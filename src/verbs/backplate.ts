@@ -23,7 +23,7 @@ export async function backplateImpl(
 ): Promise<BackplateResult> {
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "backplate", args.log, async (logger) => {
+  return withVerbLogger(ctx, "backplate", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     // Resolve size only — runBackplate resolves the rest. The output name
     // depends on the final size; everything else just goes into the log via
     // result fields after the call.

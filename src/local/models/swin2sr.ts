@@ -237,12 +237,14 @@ export async function tileAndStitch(
   tile: number,
   runPadded: PaddedModelRun,
   signal?: AbortSignal | undefined,
+  logger?: Logger | undefined,
 ): Promise<Swin2srOutput> {
   const outW = width * SWIN2SR_SCALE;
   const outH = height * SWIN2SR_SCALE;
   const out = new Uint8Array(outW * outH * 3);
   const specs = planTiles(width, height, tile, OVERLAP);
 
+  let done = 0;
   for (const s of specs) {
     throwIfAborted(signal);
     const fed = extractRegion(rgb, width, s.fx0, s.fy0, s.fw, s.fh);
@@ -255,6 +257,11 @@ export async function tileAndStitch(
       const dstStart = ((s.iy * SWIN2SR_SCALE + y) * outW + s.ix * SWIN2SR_SCALE) * 3;
       out.set(up.subarray(srcStart, srcStart + rowBytes), dstStart);
     }
+    done++;
+    await logger?.info("infer", `upscaled tile ${done}/${specs.length}`, {
+      tile: done,
+      tiles: specs.length,
+    });
   }
 
   return { rgb: out, width: outW, height: outH, tiles: specs.length };
@@ -303,5 +310,6 @@ export async function runSwin2srX4(
     tile,
     makeOnnxRun(session, inputName, outputName),
     signal,
+    opts.logger,
   );
 }

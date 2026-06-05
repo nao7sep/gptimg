@@ -162,7 +162,7 @@ describe("CLI success contracts", () => {
         set: ["n=1", "quality=low"],
         overwrite: true,
       },
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal), onProgress: expect.any(Function) },
     );
   });
 
@@ -187,7 +187,7 @@ describe("CLI success contracts", () => {
         mask: "mask.png",
         outName: "edited",
       }),
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal), onProgress: expect.any(Function) },
     );
   });
 
@@ -209,7 +209,7 @@ describe("CLI success contracts", () => {
         in: ["a.png", "b.png"],
         check: "both ok",
       }),
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal), onProgress: expect.any(Function) },
     );
   });
 
@@ -229,7 +229,7 @@ describe("CLI success contracts", () => {
         in: "one.png",
         check: "one ok",
       }),
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal), onProgress: expect.any(Function) },
     );
   });
 
@@ -256,7 +256,7 @@ describe("CLI success contracts", () => {
         preserveInterior: true,
         dryRun: true,
       }),
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal), onProgress: expect.any(Function) },
     );
   });
 
@@ -282,7 +282,7 @@ describe("CLI success contracts", () => {
         over: "#ffffff",
         removeBleed: "#00ff00",
       }),
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal), onProgress: expect.any(Function) },
     );
   });
 
@@ -303,7 +303,7 @@ describe("CLI success contracts", () => {
         op: "union",
         inputs: ["a.png", "b.png"],
       }),
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal), onProgress: expect.any(Function) },
     );
   });
 

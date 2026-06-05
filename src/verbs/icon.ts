@@ -20,7 +20,7 @@ export async function iconImpl(
 ): Promise<IconResult> {
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "icon", args.log, async (logger) => {
+  return withVerbLogger(ctx, "icon", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outDir = args.outDir ?? path.dirname(args.in);
     await ensureOutputDir(outDir);
     const name = args.name ?? ICON_DEFAULTS.name;

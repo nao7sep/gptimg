@@ -91,6 +91,8 @@ export type LogStage =
   | "write"
   | "stats"
   | "retry"
+  | "download"
+  | "infer"
   | "cancelled"
   | "error";
 export type LogVerb =
@@ -106,7 +108,8 @@ export type LogVerb =
   | "shadow"
   | "icon"
   | "upscale"
-  | "resize";
+  | "resize"
+  | "model";
 
 export interface LogEntry {
   ts: string;

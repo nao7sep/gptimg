@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { MODELS, type ModelKey } from "../../local/models/registry.js";
-import { getAbortSignal } from "../abort.js";
+import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 
 interface InstallOpts {
@@ -33,7 +33,7 @@ export function registerModel(program: Command): void {
       const installOpts = {
         force: opts.force,
         recipe: opts.recipe,
-        signal: getAbortSignal(),
+        ...cliCallOptions(),
       };
       const results =
         name !== undefined

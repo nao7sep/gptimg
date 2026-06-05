@@ -15,8 +15,9 @@
  *     unlink their partial and return the published path.
  *   - Each retry attempt downloads to a fresh partial, so a half-written file
  *     from a failed attempt never poisons the next one.
- *   - One-line progress notes go to stderr; stdout stays clean for JSON
- *     output.
+ *   - Download progress is reported through the logger (and thus the caller's
+ *     onProgress sink) — never written to a stream directly, so the SDK stays
+ *     stream-silent.
  *
  * No content hashing: version reproducibility is the URL's job — pin the
  * registry entry to a specific HuggingFace commit when locking a version.
@@ -65,6 +66,8 @@ async function downloadAttempt(
   destPath: string,
   timeoutMs: number,
   parentSignal: AbortSignal | undefined,
+  logger: Logger | undefined,
+  name: string,
 ): Promise<void> {
   const signal = combineSignals(parentSignal, timeoutMs);
 
@@ -84,7 +87,7 @@ async function downloadAttempt(
   let lastReported = 0;
   const stream = createWriteStream(destPath);
 
-  process.stderr.write(`gptimg: downloading ${path.basename(destPath)}...\n`);
+  await logger?.info("download", `downloading ${name}`, { name });
 
   try {
     const reader = response.body.getReader();
@@ -99,7 +102,12 @@ async function downloadAttempt(
         const percent = Math.floor((received / total) * 100);
         if (percent >= lastReported + 10) {
           lastReported = percent;
-          process.stderr.write(`gptimg: ${percent}% (${received}/${total} bytes)\n`);
+          await logger?.info("download", `${name} ${percent}% (${received}/${total} bytes)`, {
+            name,
+            percent,
+            received,
+            total,
+          });
         }
       }
     }
@@ -110,9 +118,10 @@ async function downloadAttempt(
   }
 
   await finishWrite(stream);
-  process.stderr.write(
-    `gptimg: downloaded ${received} bytes to ${path.basename(destPath)}\n`,
-  );
+  await logger?.info("download", `downloaded ${name} (${received} bytes)`, {
+    name,
+    bytes: received,
+  });
 }
 
 function partialPathFor(finalPath: string): string {
@@ -159,7 +168,7 @@ export async function ensureModel(
       async () => {
         const p = partialPathFor(finalPath);
         try {
-          await downloadAttempt(entry.url, p, budget.timeout, signal);
+          await downloadAttempt(entry.url, p, budget.timeout, signal, logger, entry.name);
         } catch (err) {
           await unlink(p).catch(() => undefined);
           throw err;

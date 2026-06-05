@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { installSigintHandler } from "./abort.js";
 import { emitError } from "./output.js";
 import { exitCodeFor } from "./exitCodes.js";
+import { setQuiet } from "./progress.js";
 import { registerBackplate } from "./verbs/backplate.js";
 import { registerCombine } from "./verbs/combine.js";
 import { registerCompose } from "./verbs/compose.js";
@@ -26,8 +27,15 @@ function createProgram(): Command {
       "AI image generation, vision, and local post-processing (mask, compose, combine, trim, backplate, layer, shadow, icon, upscale, resize).",
     )
     .version("0.1.0")
+    .option(
+      "--quiet",
+      "Suppress progress output on stderr (stdout still carries the JSON result)",
+    )
     .showHelpAfterError()
-    .exitOverride();
+    .exitOverride()
+    .hook("preAction", () => {
+      setQuiet(Boolean(program.opts().quiet));
+    });
 
   registerGenerate(program);
   registerEdit(program);

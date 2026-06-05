@@ -62,6 +62,39 @@ describe("log helpers", () => {
     ]);
   });
 
+  it("fans out info and warn entries to onEvent, but never error", async () => {
+    const seen: { level: string; stage: string; msg: string }[] = [];
+    const logger = await createLogger(file, "upscale", {
+      onEvent: (e) => seen.push({ level: e.level, stage: e.stage, msg: e.msg }),
+    });
+    await logger.info("infer", "tile 1/2");
+    await logger.warn("retry", "retrying");
+    await logger.error("error", "boom");
+    await logger.close();
+
+    // Error is a failure the caller learns about via the thrown error, not the
+    // progress stream — only info/warn are forwarded.
+    expect(seen).toEqual([
+      { level: "info", stage: "infer", msg: "tile 1/2" },
+      { level: "warn", stage: "retry", msg: "retrying" },
+    ]);
+    // The file still records all three levels.
+    const lines = (await readFile(file, "utf-8")).trimEnd().split("\n");
+    expect(lines).toHaveLength(3);
+  });
+
+  it("a throwing onEvent never breaks the logging call", async () => {
+    const logger = await createLogger(file, "mask", {
+      onEvent: () => {
+        throw new Error("sink blew up");
+      },
+    });
+    await expect(logger.info("resolve", "ok")).resolves.toBeUndefined();
+    await logger.close();
+    const lines = (await readFile(file, "utf-8")).trimEnd().split("\n");
+    expect(lines).toHaveLength(1);
+  });
+
   it("safeLogError preserves the original path when logging fails", async () => {
     const logger: Pick<Logger, "error"> = {
       error: vi.fn().mockRejectedValue(new Error("disk full")),

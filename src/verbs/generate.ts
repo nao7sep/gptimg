@@ -14,7 +14,7 @@ import {
   plannedSidecarPaths,
   sidecarPathFor,
 } from "../internal/output-group.js";
-import { createLogger, safeLogError } from "../log/index.js";
+import { withVerbLogger } from "../internal/local-verb.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
@@ -32,7 +32,6 @@ import type {
 } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
 import {
-  defaultLogPath,
   defaultOutDir,
   defaultProfilePath,
   defaultRecipePath,
@@ -54,11 +53,9 @@ export async function generateImpl(
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
-  const logPath = args.log ?? defaultLogPath(ctx.logDir, ts);
-  const logger = await createLogger(logPath, "generate");
   const signal = opts.signal;
 
-  try {
+  return withVerbLogger(ctx, "generate", { log: args.log, ts, onProgress: opts.onProgress }, async (logger) => {
     const profile = await loadProfile(profilePath);
     const resolved = resolveProfile(profile);
     await logger.info("resolve", "apiKey resolved", {
@@ -224,12 +221,5 @@ export async function generateImpl(
       logPath: logger.handle.path,
       partial,
     };
-  } catch (err) {
-    await safeLogError(logger, (err as Error).message, {
-      code: (err as { code?: string }).code ?? null,
-    });
-    throw err;
-  } finally {
-    await logger.close();
-  }
+  });
 }

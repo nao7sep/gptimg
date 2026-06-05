@@ -24,7 +24,7 @@ export async function layerImpl(
 ): Promise<LayerResult> {
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "layer", args.log, async (logger) => {
+  return withVerbLogger(ctx, "layer", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.base,
       outName: defaultOutputName(args.base),

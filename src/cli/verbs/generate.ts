@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
-import { getAbortSignal } from "../abort.js";
+import { cliCallOptions } from "../progress.js";
 import { addAiCommonOptions, addOverwriteOption } from "../options.js";
 import { emit } from "../output.js";
 
@@ -36,7 +36,7 @@ export function registerGenerate(program: Command): void {
         set: opts.set,
         overwrite: opts.overwrite,
       },
-      { signal: getAbortSignal() },
+      cliCallOptions(),
     );
     emit(result);
   });

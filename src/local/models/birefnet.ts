@@ -146,7 +146,9 @@ export async function runBirefnet(
       "BiRefNet ONNX session has no input. Model file may be malformed.",
     );
   }
+  await opts.logger?.info("infer", "running BiRefNet inference", { width, height });
   const outputs = await session.run({ [inputName]: tensor });
+  await opts.logger?.info("infer", "BiRefNet inference complete");
   const outputName = session.outputNames[session.outputNames.length - 1]!;
   const output = outputs[outputName];
   if (!output) {

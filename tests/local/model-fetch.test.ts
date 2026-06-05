@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultModelsDir } from "../../src/internal/paths.js";
 import { ensureModel } from "../../src/local/models/fetch.js";
 import type { ModelEntry } from "../../src/local/models/registry.js";
+import type { Logger } from "../../src/log/index.js";
 
 function listen(handler: http.RequestListener): Promise<{
   server: http.Server;
@@ -77,6 +78,40 @@ describe("ensureModel", () => {
   afterEach(async () => {
     restoreStderr();
     await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("reports download progress through the logger, never to stderr", async () => {
+    const body = Buffer.from(new Uint8Array(64));
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200, {
+        "content-type": "application/octet-stream",
+        "content-length": String(body.length),
+      });
+      res.end(body);
+    });
+    const events: { stage: string; msg: string }[] = [];
+    const logger: Logger = {
+      handle: { path: path.join(tmp, "dl.jsonl"), verb: "model" },
+      info: async (stage, msg) => {
+        events.push({ stage, msg });
+      },
+      warn: async () => {},
+      error: async () => {},
+      close: async () => {},
+    };
+    // Spy stderr for the duration of the download; the SDK must not touch it.
+    const stderrSpy = vi.fn(() => true);
+    process.stderr.write = stderrSpy as unknown as typeof process.stderr.write;
+    try {
+      const entry: ModelEntry = { name: "prog.bin", url: baseURL, inputSize: 0 };
+      await ensureModel(entry, tmp, { logger });
+    } finally {
+      await closeServer(server);
+    }
+    expect(stderrSpy).not.toHaveBeenCalled();
+    expect(events.every((e) => e.stage === "download")).toBe(true);
+    expect(events.some((e) => e.msg.startsWith("downloading prog.bin"))).toBe(true);
+    expect(events.some((e) => e.msg.startsWith("downloaded prog.bin"))).toBe(true);
   });
 
   it("downloads to .partial and atomically renames to the final name", async () => {

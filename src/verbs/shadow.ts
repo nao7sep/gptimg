@@ -24,7 +24,7 @@ export async function shadowImpl(
 ): Promise<ShadowResult> {
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "shadow", args.log, async (logger) => {
+  return withVerbLogger(ctx, "shadow", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       outName: defaultOutputName(args.in),

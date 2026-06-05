@@ -25,7 +25,7 @@ export async function combineImpl(
 ): Promise<CombineResult> {
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "combine", args.log, async (logger) => {
+  return withVerbLogger(ctx, "combine", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     if (!args.inputs.length) {
       throw new LocalOpError(
         "args.invalid",

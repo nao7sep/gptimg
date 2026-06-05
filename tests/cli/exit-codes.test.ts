@@ -49,7 +49,9 @@ async function run(args: string[]): Promise<CliResult> {
   }) as typeof process.stderr.write;
 
   try {
-    const code = await runCli(["node", "gptimg", ...args]);
+    // --quiet so stderr carries only the error envelope, not progress lines;
+    // these tests assert the error/exit contract. Progress is covered separately.
+    const code = await runCli(["node", "gptimg", "--quiet", ...args]);
     return { code, stdout, stderr };
   } finally {
     process.stdout.write = stdoutWrite;

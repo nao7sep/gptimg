@@ -28,7 +28,7 @@ export async function composeImpl(
 ): Promise<ComposeResult> {
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "compose", args.log, async (logger) => {
+  return withVerbLogger(ctx, "compose", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       outName: defaultOutputName(args.in),

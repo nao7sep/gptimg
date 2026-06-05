@@ -8,7 +8,7 @@ Personal tool. v1 ships OpenAI only; the provider boundary exists but no second 
 
 ## Automation and agent use
 
-The CLI is built to be driven by scripts and AI agents. On success every command prints **one JSON object** to stdout; on failure it writes a single error to stderr and signals the outcome via [exit code](#exit-codes), so a caller parses stdout for results and branches on the code. The SDK returns the same data as objects and never writes to stdout/stderr.
+The CLI is built to be driven by scripts and AI agents. On success every command prints **one JSON object** to stdout; on failure it writes a single error to stderr and signals the outcome via [exit code](#exit-codes), so a caller parses stdout for results and branches on the code. While a long-running verb works it reports progress as one line per stage on **stderr** (suppress with `--quiet`); stdout still receives only the final result. The SDK returns the same data as objects and never writes to stdout/stderr — it reports progress through an `onProgress` callback instead.
 
 What each verb *does* is defined by the source and `--help`; this README is the reference for the **stable contract** a caller builds against — exit codes, the per-image sidecar model, [artifacts](#artifacts), and [cancellation](#cancellation). A few conventions keep automated runs reproducible and debuggable:
 
@@ -16,6 +16,7 @@ What each verb *does* is defined by the source and `--help`; this README is the 
 - Use stable, descriptive `--out-name` values (`subject-original`, `subject-mask`, `subject-cutout`), not bare timestamps.
 - Don't pass `--overwrite` unless you mean to replace a file. For `generate`/`edit` it is group-scoped: it allows the planned files to replace existing siblings but halts with `output.staleSiblings` if a prior run left indexed files the new plan would not replace.
 - Parse stdout JSON for success; use the JSONL log and sidecars for trace context, not primary success detection. Treat `partial: true` from `generate`/`edit` as recoverable when at least one file was written.
+- Progress for long verbs (model downloads, `upscale` tiles, the provider round-trip) streams to **stderr**, one line per stage. Pass `--quiet` to silence it; stdout stays the single JSON result either way.
 - Always run `mask` from the **original** image. To change mask parameters, rerun from the original — do not feed a previous mask or composite back through `mask`.
 - `vision` handles any semantic check, but it **cannot see transparency** (it ingests a transparent PNG flattened on black). Composite a cutout onto a known plate first, then vision-check that.
 - The local AI models load large native memory (BiRefNet for `mask --method ai` ~1–1.5 GB, Swin2SR for `upscale` up to ~4.4 GB) — run them **one at a time**. Network calls (`generate`/`edit`/`vision`) can run in parallel.
@@ -447,7 +448,7 @@ const composed = await sdk.layer({
 const icon = await sdk.icon({ in: composed.output, outDir: "build" });
 ```
 
-All SDK verbs return data objects and never write to stdout/stderr. Each method accepts `{ signal?: AbortSignal }` as a second argument.
+All SDK verbs return data objects and never write to stdout/stderr. Each method accepts `{ signal?: AbortSignal; onProgress?: (entry: LogEntry) => void }` as a second argument. `onProgress` is called with each info/warn stage event the verb produces (the same events the CLI renders to stderr) — including model-download percentages and `upscale` per-tile progress — so an embedding application can surface progress however it likes. With no callback the SDK stays silent.
 
 Building blocks are exposed for composition:
 

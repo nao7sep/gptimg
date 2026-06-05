@@ -1,8 +1,9 @@
 /**
- * Shared building blocks for "local" verbs — operations that run entirely on
- * the user's machine and write a single output file (currently mask, compose,
- * trim, backplate, layer). Each verb composes these helpers; they are not
- * used by generate/edit/vision, which have richer per-image-sidecar/output-
+ * Shared building blocks for verbs. `withVerbLogger` is the single logger
+ * envelope used by every verb — the local single-file ops (mask, compose,
+ * trim, backplate, layer, …) and the provider-backed ones (generate, edit,
+ * vision) and model install alike. The output-path helpers below are for the
+ * local single-file ops; generate/edit have richer per-image-sidecar/output-
  * group orchestration in `output-group.ts`.
  */
 
@@ -12,7 +13,7 @@ import { LocalOpError } from "../errors.js";
 import { createLogger, safeLogError, type Logger } from "../log/index.js";
 import { ensureOutputDir } from "./output-files.js";
 import { defaultLogPath, utcTimestamp } from "./paths.js";
-import type { LogVerb } from "../types.js";
+import type { LogEntry, LogVerb } from "../types.js";
 
 /** Stem (basename without extension) of a file path. `foo/bar.png` → `bar`. */
 export function inferStem(filePath: string): string {
@@ -62,10 +63,20 @@ export async function resolveOutputPath(
   return path.isAbsolute(outName) ? outName : path.join(outDir, outName);
 }
 
+export interface VerbLoggerOptions {
+  /** Explicit log path. Falls back to `<ts>-gptimg.jsonl` under ctx.logDir. */
+  log?: string | undefined;
+  /** Timestamp for the default log filename — pass the verb's own `ts` when it
+   * also stamps output names, so the log file and the outputs share it. */
+  ts?: string | undefined;
+  /** Progress sink: each info/warn stage event is forwarded here as it fires. */
+  onProgress?: ((entry: LogEntry) => void) | undefined;
+}
+
 /**
- * Standard logger envelope for local verbs:
- *   - resolve log path (`args.log ?? <ts>-gptimg.jsonl` under ctx.logDir)
- *   - open logger
+ * The single logger envelope for every verb (local and provider-backed):
+ *   - resolve log path (`opts.log ?? <ts>-gptimg.jsonl` under ctx.logDir)
+ *   - open a logger that also forwards info/warn events to `opts.onProgress`
  *   - run `body(logger)`
  *   - on throw, best-effort `safeLogError`, then rethrow
  *   - always close
@@ -77,12 +88,11 @@ export async function resolveOutputPath(
 export async function withVerbLogger<T>(
   ctx: { logDir: string },
   verbName: LogVerb,
-  logArg: string | undefined,
+  opts: VerbLoggerOptions,
   body: (logger: Logger) => Promise<T>,
 ): Promise<T> {
-  const ts = utcTimestamp();
-  const logPath = logArg ?? defaultLogPath(ctx.logDir, ts);
-  const logger = await createLogger(logPath, verbName);
+  const logPath = opts.log ?? defaultLogPath(ctx.logDir, opts.ts ?? utcTimestamp());
+  const logger = await createLogger(logPath, verbName, { onEvent: opts.onProgress });
   try {
     return await body(logger);
   } catch (err) {

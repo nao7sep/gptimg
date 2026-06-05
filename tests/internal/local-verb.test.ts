@@ -135,7 +135,7 @@ describe("withVerbLogger", () => {
     const result = await withVerbLogger(
       { logDir: tmp },
       "compose",
-      logPath,
+      { log: logPath },
       async (logger) => {
         await logger.info("resolve", "hello", { x: 1 });
         return { ok: true as const, logPath: logger.handle.path };
@@ -158,7 +158,7 @@ describe("withVerbLogger", () => {
     const logPath = path.join(tmp, "verb.jsonl");
     const err = new LocalOpError("output.exists", "boom");
     await expect(
-      withVerbLogger({ logDir: tmp }, "mask", logPath, async () => {
+      withVerbLogger({ logDir: tmp }, "mask", { log: logPath }, async () => {
         throw err;
       }),
     ).rejects.toBe(err);
@@ -178,7 +178,7 @@ describe("withVerbLogger", () => {
     const result = await withVerbLogger(
       { logDir: tmp },
       "combine",
-      undefined,
+      {},
       async (logger) => {
         await logger.info("resolve", "ok");
         return logger.handle.path;

@@ -11,6 +11,20 @@ import {
   type PaddedModelRun,
 } from "../../src/local/models/swin2sr.js";
 import type { ResampleKernel } from "../../src/types.js";
+import type { Logger } from "../../src/log/index.js";
+
+/** Minimal Logger that records the messages forwarded to it. */
+function recordingLogger(events: { stage: string; msg: string }[]): Logger {
+  return {
+    handle: { path: "mem.jsonl", verb: "upscale" },
+    info: async (stage, msg) => {
+      events.push({ stage, msg });
+    },
+    warn: async () => {},
+    error: async () => {},
+    close: async () => {},
+  };
+}
 
 async function writeRawPng(
   filePath: string,
@@ -183,6 +197,20 @@ describe("tileAndStitch", () => {
       }
     }
     expect(firstDiff).toBe(-1);
+  });
+
+  it("emits one infer progress event per tile through the logger", async () => {
+    const W = 200,
+      H = 200,
+      tile = 256; // region 192 → 2×2 tiles
+    const src = rgbPattern(W, H);
+    const events: { stage: string; msg: string }[] = [];
+    await tileAndStitch(src, W, H, tile, nearestPaddedX4, undefined, recordingLogger(events));
+    const n = planTiles(W, H, tile, 32).length;
+    expect(events).toHaveLength(n);
+    expect(events.every((e) => e.stage === "infer")).toBe(true);
+    expect(events[0]!.msg).toBe(`upscaled tile 1/${n}`);
+    expect(events[n - 1]!.msg).toBe(`upscaled tile ${n}/${n}`);
   });
 });
 
