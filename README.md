@@ -8,7 +8,7 @@ Personal tool. v1 ships OpenAI only; the provider boundary exists but no second 
 
 ## Automation and agent use
 
-The CLI is built to be driven by scripts and AI agents. Every command prints **one JSON object** — success on stdout, a single error object on stderr — and signals outcome via [exit code](#exit-codes), so a caller parses stdout for results and branches on the code. The SDK returns the same data as objects and never writes to stdout/stderr.
+The CLI is built to be driven by scripts and AI agents. On success every command prints **one JSON object** to stdout; on failure it writes a single error to stderr and signals the outcome via [exit code](#exit-codes), so a caller parses stdout for results and branches on the code. The SDK returns the same data as objects and never writes to stdout/stderr.
 
 What each verb *does* is defined by the source and `--help`; this README is the reference for the **stable contract** a caller builds against — exit codes, the per-image sidecar model, [artifacts](#artifacts), and [cancellation](#cancellation). A few conventions keep automated runs reproducible and debuggable:
 
@@ -282,7 +282,7 @@ gptimg trim --in cutout.png
 gptimg trim --in cutout.png --margin 0.10 --square --out-name content.png
 ```
 
-Local only. Loads the input as RGBA, finds the tightest rect of pixels with alpha > 0, re-pads by `--margin × max(bbox.width, bbox.height)`, and optionally extends the shorter axis to make the output square. Fully-transparent input → exit 5 (`image.noContent`). Default output name `<input-stem>-trim.png`.
+Local only. Loads the input as RGBA, finds the tightest rect of pixels with alpha > 0, re-pads by `--margin × max(bbox.width, bbox.height)`, and optionally extends the shorter axis to make the output square. Fully-transparent input → exit 2 (`image.noContent`, a precondition failure). Default output name `<input-stem>-trim.png`.
 
 ### `backplate`
 
@@ -341,7 +341,7 @@ gptimg icon --in icon.png --out-dir build/ --pngs
 
 Local only. Packs a square master PNG into the platform-agnostic icon artifacts every desktop toolchain consumes: `icon.icns` (macOS), `icon.ico` (Windows), and a 1024² `icon.png` master copy. The byte-level container encoding is handled by [`@shockpkg/icon-encoder`](https://www.npmjs.com/package/@shockpkg/icon-encoder); sharp renders each size from the master with the toolkit's lanczos3 resample.
 
-The master must be **square and at least 1024×1024** — non-square exits 5 (`args.invalid`), as does a smaller master (the 1024 entry would otherwise be upscaled). The `.icns` packs the modern PNG-based types `ic04`–`ic14` (16…1024 px incl. retina); the `.ico` packs 16/24/32/48/64/128/256 (32-bit BMP below 256, embedded PNG at 256 — the maximally-compatible Windows layout). `--name` (default `icon`) sets the output stem; `--pngs` additionally writes `<name>-<size>.png` for 16/32/48/64/128/256/512/1024. Without `--out-dir`, output goes beside `--in`.
+The master must be **square and at least 1024×1024** — non-square exits 2 (`args.invalid`), as does a smaller master (the 1024 entry would otherwise be upscaled). The `.icns` packs the modern PNG-based types `ic04`–`ic14` (16…1024 px incl. retina); the `.ico` packs 16/24/32/48/64/128/256 (32-bit BMP below 256, embedded PNG at 256 — the maximally-compatible Windows layout). `--name` (default `icon`) sets the output stem; `--pngs` additionally writes `<name>-<size>.png` for 16/32/48/64/128/256/512/1024. Without `--out-dir`, output goes beside `--in`.
 
 This verb produces the *same* bytes for every toolchain — only the destination differs. Placement is the caller's job: Electron uses `build/icon.icns` + `build/icon.ico`; Tauri's default `bundle.icon` is `icon.icns` + `icon.ico` + `32x32.png`/`128x128.png`/`128x128@2x.png` (all covered by `--pngs`, modulo renaming); .NET/Avalonia points `<ApplicationIcon>` at `icon.ico`.
 
@@ -560,13 +560,13 @@ On the CLI, the first `Ctrl-C` triggers cancellation cleanly; a second `Ctrl-C` 
 | Code | Meaning |
 |---|---|
 | 0 | success |
-| 2 | usage error |
+| 2 | usage error — invalid invocation, argument, or input precondition |
 | 3 | profile or recipe error |
 | 4 | provider error |
-| 5 | local operation error |
+| 5 | local operation runtime error |
 | 130 | cancelled by `Ctrl-C` / abort |
 
-Usage errors are emitted by Commander as plain text with usage help. Runtime errors are emitted as a single JSON object on stderr.
+Exit 2 covers any caller mistake — a malformed invocation, an invalid argument value, or an input that fails a precondition — regardless of which layer catches it. Malformed flags caught during CLI parsing are emitted by Commander as plain text with usage help; the same class caught by the SDK (`args.invalid`, `image.noContent`, `image.sizeMismatch`, `vision.detailUnsupported`, `output.mixedExtensions`) is emitted as a one-line `error: …` on stderr. Exit codes 3/4/5 are runtime, environment, or I/O failures and are emitted as a single JSON object on stderr.
 
 ## Development
 

@@ -1,44 +1,11 @@
-import { InvalidArgumentError, type Command } from "commander";
+import { Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import type { BackplateShape } from "../../types.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
-import { hexOption } from "../parsers.js";
+import { hexOption, numberArg } from "../parsers.js";
 
-function parsePositiveIntOpt(name: string) {
-  return (v: string): number => {
-    const n = Number(v);
-    if (!Number.isInteger(n) || n <= 0) {
-      throw new InvalidArgumentError(`${name}: must be a positive integer`);
-    }
-    return n;
-  };
-}
-
-function parseRangeOpt(name: string, min: number, max: number) {
-  return (v: string): number => {
-    const n = Number(v);
-    if (!Number.isFinite(n) || n < min || n > max) {
-      throw new InvalidArgumentError(`${name}: must be in [${min}..${max}]`);
-    }
-    return n;
-  };
-}
-
-function parseFiniteOpt(name: string) {
-  return (v: string): number => {
-    const n = Number(v);
-    if (!Number.isFinite(n)) {
-      throw new InvalidArgumentError(`${name}: must be a finite number`);
-    }
-    return n;
-  };
-}
-
-function parseShapeOpt(v: string): BackplateShape {
-  if (v === "rect" || v === "squircle") return v;
-  throw new InvalidArgumentError(`--shape: must be one of rect|squircle`);
-}
+const SHAPES: BackplateShape[] = ["rect", "squircle"];
 
 interface BackplateCliOpts {
   size?: number;
@@ -65,27 +32,25 @@ export function registerBackplate(program: Command): void {
     .option(
       "--size <px>",
       "Output canvas side in pixels. Default 1024.",
-      parsePositiveIntOpt("--size"),
+      numberArg("--size"),
     )
     .option(
       "--content <frac>",
       "Content side as a fraction of --size (0..1]. Default 0.80.",
-      parseRangeOpt("--content", 0, 1),
+      numberArg("--content"),
     )
     .option(
       "--radius <frac>",
       "Corner radius as a fraction of the content side [0..0.5]. Default 0.225.",
-      parseRangeOpt("--radius", 0, 0.5),
+      numberArg("--radius"),
     )
     .option(
       "--angle <deg>",
       "Gradient angle (deg, CSS convention: 0=bottom→top, 90=left→right). Default 135.",
-      parseFiniteOpt("--angle"),
+      numberArg("--angle"),
     )
-    .option(
-      "--shape <rect|squircle>",
-      "Corner shape. Default rect.",
-      parseShapeOpt,
+    .addOption(
+      new Option("--shape <shape>", "Corner shape. Default rect.").choices(SHAPES),
     )
     .option("--out-dir <dir>", "Output directory (default: cwd)")
     .option("--out-name <name>", "Output filename (default: backplate-<size>.png)")

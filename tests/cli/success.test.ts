@@ -391,7 +391,7 @@ describe("CLI success contracts", () => {
       [
         "bad mask border-sample",
         ["mask", "--in", "in.png", "--border-sample", "large"],
-        "--border-sample: not a number",
+        "--border-sample: must be a number",
       ],
       [
         "bad mask method choice",
@@ -406,7 +406,37 @@ describe("CLI success contracts", () => {
       [
         "bad combine op",
         ["combine", "unknown-op", "--in", "a.png"],
-        "invalid op 'unknown-op'",
+        "Allowed choices are union, intersect, subtract, invert, feather",
+      ],
+      [
+        "bad layer gravity choice",
+        ["layer", "--base", "a.png", "--top", "b.png", "--gravity", "nope"],
+        "Allowed choices are center, north",
+      ],
+      [
+        "bad backplate shape choice",
+        ["backplate", "--from", "#000000", "--to", "#ffffff", "--shape", "nope"],
+        "Allowed choices are rect, squircle",
+      ],
+      [
+        "bad resize kernel choice",
+        ["resize", "--in", "a.png", "--to-size", "100", "--kernel", "nope"],
+        "Allowed choices are nearest, cubic, mitchell, lanczos2, lanczos3",
+      ],
+      [
+        "bad upscale kernel choice",
+        ["upscale", "--in", "a.png", "--kernel", "nope"],
+        "Allowed choices are nearest, cubic, mitchell, lanczos2, lanczos3",
+      ],
+      [
+        "bad shadow offset format",
+        ["shadow", "--in", "a.png", "--offset", "1"],
+        'must be "x,y"',
+      ],
+      [
+        "bad shadow blur format",
+        ["shadow", "--in", "a.png", "--blur", "abc"],
+        "--blur: must be a number",
       ],
     ] as const;
 

@@ -133,7 +133,62 @@ describe("CLI exit codes", () => {
       "nope",
     ]);
     expect(badNumber.code).toBe(2);
-    expect(badNumber.stderr).toContain("--border-sample: not a number");
+    expect(badNumber.stderr).toContain("--border-sample: must be a number");
+  });
+
+  it("maps SDK argument validation (args.invalid) to exit 2 with a plain message", async () => {
+    // These flags pass CLI coercion (they ARE numbers / valid "x,y" points);
+    // their semantic bounds live only in the SDK, so the violation is caught
+    // mid-verb. It must still read as a usage error: exit 2, a one-line
+    // `error:` message on stderr, empty stdout, and no JSON envelope.
+    const disk = fixture("green-disk.png");
+    const cases: Array<[string, string[], string]> = [
+      ["shadow opacity (0..1]", ["shadow", "--in", disk, "--opacity", "5"], "opacity must be in (0..1]"],
+      ["shadow spread integer", ["shadow", "--in", disk, "--spread", "1.5"], "spread must be an integer"],
+      ["shadow offset integer", ["shadow", "--in", disk, "--offset", "1.5,2"], "offset must be integers"],
+      ["shadow offset range", ["shadow", "--in", disk, "--offset", "99999,0"], "offset components must be within"],
+      ["backplate size positive int", ["backplate", "--from", "#000000", "--to", "#ffffff", "--size", "0"], "size must be a positive integer"],
+      ["backplate content (0..1]", ["backplate", "--from", "#000000", "--to", "#ffffff", "--content", "5"], "content must be in (0..1]"],
+      ["backplate radius [0..0.5]", ["backplate", "--from", "#000000", "--to", "#ffffff", "--radius", "0.9"], "radius must be in [0..0.5]"],
+      ["resize to-size zero", ["resize", "--in", disk, "--to-size", "0"], "to-size must be an integer in [1.."],
+      ["resize to-size non-integer", ["resize", "--in", disk, "--to-size", "1.5"], "to-size must be an integer in [1.."],
+      ["trim margin [0..1]", ["trim", "--in", disk, "--margin", "2"], "margin must be a number in [0..1]"],
+      ["layer scale positive", ["layer", "--base", disk, "--top", disk, "--scale", "-1"], "scale must be a positive number"],
+      ["mask saturation-ratio (0..1]", ["mask", "--in", disk, "--saturation-ratio", "5"], "saturationRatio must be in (0..1]"],
+    ];
+
+    for (const [name, args, msg] of cases) {
+      const result = await run([...args, "--out-dir", tmp]);
+      expect(result.code, name).toBe(2);
+      expect(result.stdout, name).toBe("");
+      expect(result.stderr.trim(), name).toMatch(/^error: /);
+      expect(result.stderr, name).toContain(msg);
+    }
+  });
+
+  it("maps input-precondition usage errors (not args.invalid) to exit 2", async () => {
+    // An unsupported option value is a caller mistake, not a runtime failure:
+    // it shares the usage contract — exit 2, plain `error:` line, no JSON — even
+    // though its code is `vision.detailUnsupported`, not `args.invalid`. This is
+    // routed by the shared isUsageError predicate, so it stands in for the whole
+    // usage-code set (image.noContent, image.sizeMismatch, …).
+    const result = await run([
+      "vision",
+      "--in",
+      fixture("green-disk.png"),
+      "--check",
+      "is this a green disk?",
+      "--profile",
+      profilePath,
+      "--log",
+      path.join(tmp, "vision-detail.log"),
+      "--set",
+      "detail=original",
+    ]);
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr.trim()).toMatch(/^error: /);
+    expect(result.stderr).toContain("detail");
   });
 
   it("returns 3 for profile and recipe errors", async () => {
@@ -233,25 +288,6 @@ describe("CLI exit codes", () => {
     ]);
     expect(vision.code).toBe(5);
     expect(parseError(vision.stderr).error.type).toBe("localOp");
-
-    const unsupportedDetail = await run([
-      "vision",
-      "--in",
-      fixture("green-disk.png"),
-      "--check",
-      "is this a green disk?",
-      "--profile",
-      profilePath,
-      "--log",
-      path.join(tmp, "vision-detail.log"),
-      "--set",
-      "detail=original",
-    ]);
-    expect(unsupportedDetail.code).toBe(5);
-    expect(parseError(unsupportedDetail.stderr).error).toMatchObject({
-      type: "localOp",
-      code: "vision.detailUnsupported",
-    });
 
     const logDir = path.join(tmp, "log-dir");
     await mkdir(logDir);

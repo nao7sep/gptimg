@@ -3,28 +3,13 @@ import { GptImg } from "../../gptimg.js";
 import { isHexColor } from "../../color.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
+import { numberArg } from "../parsers.js";
 import type { MaskMethod } from "../../types.js";
 
 function parseKeyOpt(v: string): string {
   if (v === "auto" || v === "from-sidecar") return v;
   if (isHexColor(v)) return v;
   throw new InvalidArgumentError("must be 'auto', 'from-sidecar', or '#rrggbb'");
-}
-
-function parseIntOpt(name: string) {
-  return (v: string): number => {
-    const n = parseInt(v, 10);
-    if (Number.isNaN(n)) throw new InvalidArgumentError(`${name}: not a number`);
-    return n;
-  };
-}
-
-function parseSaturationRatioOpt(v: string): number {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n <= 0 || n > 1) {
-    throw new InvalidArgumentError("--saturation-ratio: expected a number in (0..1]");
-  }
-  return n;
 }
 
 interface MaskCliOpts {
@@ -65,12 +50,12 @@ export function registerMask(program: Command): void {
     .option(
       "--border-sample <px>",
       "Border depth for --key auto",
-      parseIntOpt("--border-sample"),
+      numberArg("--border-sample"),
     )
     .option(
       "--saturation-ratio <frac>",
       "Spill ratio at which near-key pixels saturate to α=0 (0..1]. Chroma method only.",
-      parseSaturationRatioOpt,
+      numberArg("--saturation-ratio"),
     )
     .option("--dry-run", "Compute and emit stats without writing the mask file")
     .option("--out-dir <dir>", "Output directory (default: same as input)")

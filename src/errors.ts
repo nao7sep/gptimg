@@ -40,6 +40,27 @@ export class AbortError extends GptImgError {
   }
 }
 
+/**
+ * Codes that represent a caller mistake — an invalid argument value, or an
+ * input that fails a precondition the caller controls (an empty image, two
+ * inputs whose sizes disagree, an unsupported option value) — as opposed to a
+ * runtime, environment, or I/O failure. The CLI maps these to the usage exit
+ * code and renders them as a plain one-line message; everything else is a
+ * runtime error rendered as JSON. Kept in one place so the exit-code mapping
+ * and the error renderer can never disagree about what counts as usage.
+ */
+const USAGE_ERROR_CODES = new Set<string>([
+  "args.invalid",
+  "image.noContent",
+  "image.sizeMismatch",
+  "vision.detailUnsupported",
+  "output.mixedExtensions",
+]);
+
+export function isUsageError(err: unknown): err is GptImgError {
+  return err instanceof GptImgError && USAGE_ERROR_CODES.has(err.code);
+}
+
 export function toAbortError(err: unknown, fallback = "cancelled"): AbortError {
   if (err instanceof AbortError) return err;
   if (err instanceof Error) {

@@ -189,6 +189,13 @@ export async function chromaMask(
   throwIfAborted(signal);
   const preserveInterior = options.preserveInterior ?? CHROMA_DEFAULTS.preserveInterior;
   const borderDepth = options.borderSample ?? CHROMA_DEFAULTS.borderSample;
+  const saturationRatio = options.saturationRatio ?? CHROMA_DEFAULTS.saturationRatio;
+  if (!Number.isFinite(saturationRatio) || saturationRatio <= 0 || saturationRatio > 1) {
+    throw new LocalOpError(
+      "args.invalid",
+      `chroma: saturationRatio must be in (0..1]; got ${saturationRatio}.`,
+    );
+  }
   // Sample the border in linear light once. It is the "auto" key for that
   // path AND the empirical strength estimator that keeps from-sidecar /
   // explicit robust to an AI-painted bg that drifts from the recorded hex.
@@ -254,8 +261,7 @@ export async function chromaMask(
   } else {
     const { linR, linG, linB } = linearizeRGBA(rgba);
     throwIfAborted(signal);
-    const sat = options.saturationRatio ?? CHROMA_DEFAULTS.saturationRatio;
-    alpha = spillAlpha(linR, linG, linB, topology, sat);
+    alpha = spillAlpha(linR, linG, linB, topology, saturationRatio);
     if (preserveInterior) {
       throwIfAborted(signal);
       preserveInteriorRegions(alpha, width, height);

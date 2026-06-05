@@ -1,17 +1,8 @@
-import { InvalidArgumentError, type Command } from "commander";
+import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
-
-function parsePctOpt(name: string) {
-  return (v: string): number => {
-    const n = Number(v);
-    if (!Number.isFinite(n) || n < 0 || n > 1) {
-      throw new InvalidArgumentError(`${name}: must be a number in [0..1]`);
-    }
-    return n;
-  };
-}
+import { numberArg } from "../parsers.js";
 
 interface TrimCliOpts {
   in: string;
@@ -33,7 +24,7 @@ export function registerTrim(program: Command): void {
     .option(
       "--margin <frac>",
       "Margin to re-pad, as fraction of the longer bbox side (0..1). Default 0.08.",
-      parsePctOpt("--margin"),
+      numberArg("--margin"),
     )
     .option(
       "--square",

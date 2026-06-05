@@ -1,50 +1,9 @@
-import { InvalidArgumentError, type Command } from "commander";
+import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import type { ShadowOffset } from "../../types.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
-import { hexOption } from "../parsers.js";
-
-function parseNonNegativeNumberOpt(name: string) {
-  return (v: string): number => {
-    const n = Number(v);
-    if (!Number.isFinite(n) || n < 0) {
-      throw new InvalidArgumentError(`${name}: must be a number >= 0`);
-    }
-    return n;
-  };
-}
-
-function parseOpacityOpt(v: string): number {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n <= 0 || n > 1) {
-    throw new InvalidArgumentError("--opacity: must be in (0..1]");
-  }
-  return n;
-}
-
-function parseSpreadOpt(v: string): number {
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < 0) {
-    throw new InvalidArgumentError("--spread: must be a non-negative integer");
-  }
-  return n;
-}
-
-const MAX_OFFSET = 10000;
-
-function parseOffsetOpt(v: string): ShadowOffset {
-  const m = /^(-?\d+),(-?\d+)$/.exec(v.trim());
-  if (!m) {
-    throw new InvalidArgumentError('--offset: must be "x,y" integers');
-  }
-  const x = Number(m[1]!);
-  const y = Number(m[2]!);
-  if (Math.abs(x) > MAX_OFFSET || Math.abs(y) > MAX_OFFSET) {
-    throw new InvalidArgumentError(`--offset: components must be within ±${MAX_OFFSET}`);
-  }
-  return { x, y };
-}
+import { hexOption, numberArg, pointArg } from "../parsers.js";
 
 interface ShadowCliOpts {
   in: string;
@@ -70,23 +29,23 @@ export function registerShadow(program: Command): void {
     .option(
       "--blur <px>",
       "Gaussian blur sigma for the shadow edge. Default 12.",
-      parseNonNegativeNumberOpt("--blur"),
+      numberArg("--blur"),
     )
     .option(
       "--offset <x,y>",
       'Shadow displacement, integers (may be negative). Default "0,8".',
-      parseOffsetOpt,
+      pointArg("--offset"),
     )
     .option("--color <#rrggbb>", "Shadow color. Default #000000.", hexOption("--color"))
     .option(
       "--opacity <frac>",
       "Peak shadow opacity (0..1]. Default 0.35.",
-      parseOpacityOpt,
+      numberArg("--opacity"),
     )
     .option(
       "--spread <px>",
       "Grow the shadow shape outward before blurring. Default 0.",
-      parseSpreadOpt,
+      numberArg("--spread"),
     )
     .option(
       "--keep-canvas",

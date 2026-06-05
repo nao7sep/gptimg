@@ -1,8 +1,9 @@
-import { InvalidArgumentError, type Command } from "commander";
+import { Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import type { ResampleKernel } from "../../types.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
+import { numberArg } from "../parsers.js";
 
 const KERNELS: readonly ResampleKernel[] = [
   "nearest",
@@ -11,23 +12,6 @@ const KERNELS: readonly ResampleKernel[] = [
   "lanczos2",
   "lanczos3",
 ];
-
-function parsePositiveIntOpt(name: string) {
-  return (v: string): number => {
-    const n = Number(v);
-    if (!Number.isInteger(n) || n < 1) {
-      throw new InvalidArgumentError(`${name}: must be a positive integer`);
-    }
-    return n;
-  };
-}
-
-function parseKernelOpt(v: string): ResampleKernel {
-  if (!KERNELS.includes(v as ResampleKernel)) {
-    throw new InvalidArgumentError(`must be one of ${KERNELS.join(", ")}`);
-  }
-  return v as ResampleKernel;
-}
 
 interface UpscaleCliOpts {
   in: string;
@@ -51,17 +35,18 @@ export function registerUpscale(program: Command): void {
     .option(
       "--to-size <px>",
       "Final output longer-side length in px (aspect preserved). Default 1024.",
-      parsePositiveIntOpt("--to-size"),
+      numberArg("--to-size"),
     )
-    .option(
-      "--kernel <name>",
-      `Resampling kernel for the resize after ×4 (${KERNELS.join(", ")}). Default lanczos3.`,
-      parseKernelOpt,
+    .addOption(
+      new Option(
+        "--kernel <name>",
+        "Resampling kernel for the resize after ×4. Default lanczos3.",
+      ).choices(KERNELS),
     )
     .option(
       "--tile <px>",
       "Approx. model-input edge per pass — the memory knob (larger = fewer passes, more RAM). Default 256.",
-      parsePositiveIntOpt("--tile"),
+      numberArg("--tile"),
     )
     .option("--recipe <path>", "Path to recipe.json (for network.modelDownload)")
     .option("--out-dir <dir>", "Output directory (default: same as input)")

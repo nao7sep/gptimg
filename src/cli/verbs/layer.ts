@@ -1,8 +1,9 @@
-import { InvalidArgumentError, type Command } from "commander";
+import { Option, type Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import type { LayerGravity, LayerOffset } from "../../types.js";
 import { getAbortSignal } from "../abort.js";
 import { emit } from "../output.js";
+import { numberArg, pointArg } from "../parsers.js";
 
 const GRAVITIES: LayerGravity[] = [
   "center",
@@ -15,30 +16,6 @@ const GRAVITIES: LayerGravity[] = [
   "southeast",
   "southwest",
 ];
-
-function parseScaleOpt(v: string): number {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new InvalidArgumentError(`--scale: must be a positive number`);
-  }
-  return n;
-}
-
-function parseGravityOpt(v: string): LayerGravity {
-  if ((GRAVITIES as string[]).includes(v)) return v as LayerGravity;
-  throw new InvalidArgumentError(
-    `--gravity: must be one of ${GRAVITIES.join("|")}`,
-  );
-}
-
-function parseTopOffsetOpt(v: string): LayerOffset {
-  // Format: "x,y" — two integers (may be negative).
-  const m = /^(-?\d+),(-?\d+)$/.exec(v.trim());
-  if (!m) {
-    throw new InvalidArgumentError(`--top-offset: must be "x,y" integers`);
-  }
-  return { x: Number(m[1]!), y: Number(m[2]!) };
-}
 
 interface LayerCliOpts {
   base: string;
@@ -63,17 +40,18 @@ export function registerLayer(program: Command): void {
     .option(
       "--scale <n>",
       "Resize top so its longer side = scale * min(baseW, baseH). Preserves aspect.",
-      parseScaleOpt,
+      numberArg("--scale"),
     )
-    .option(
-      "--gravity <pos>",
-      `Placement anchor: ${GRAVITIES.join("|")}. Default center. Ignored if --top-offset is given.`,
-      parseGravityOpt,
+    .addOption(
+      new Option(
+        "--gravity <pos>",
+        "Placement anchor. Default center. Ignored if --top-offset is given.",
+      ).choices(GRAVITIES),
     )
     .option(
       "--top-offset <x,y>",
       "Explicit pixel offset of top's top-left corner from base's top-left (overrides --gravity).",
-      parseTopOffsetOpt,
+      pointArg("--top-offset"),
     )
     .option("--out-dir <dir>", "Output directory (default: same as --base)")
     .option(
