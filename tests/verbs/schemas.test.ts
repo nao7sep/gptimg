@@ -40,6 +40,8 @@ describe("verb argument validation (single source of truth)", () => {
     expect(validateEditArgs({ prompt: "x", in: "a.png" }).in).toBe("a.png");
     badArgs(() => validateVisionArgs({ in: "a.png", check: "" }), "check");
     badArgs(() => validateVisionArgs({ in: [], check: "ok" }));
+    badArgs(() => validateVisionArgs({ in: "", check: "ok" }));
+    badArgs(() => validateVisionArgs({ in: ["a.png", ""], check: "ok" }));
     expect(validateVisionArgs({ in: ["a.png", "b.png"], check: "ok" })).toBeTruthy();
   });
 
@@ -76,6 +78,8 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateTrimArgs({ in: "a.png", margin: 2 }), "[0..1]");
     expect(validateBackplateArgs({ from: "#000000", to: "#ffffff" })).toBeTruthy();
     badArgs(() => validateBackplateArgs({ from: "nope", to: "#ffffff" }), "hex");
+    badArgs(() => validateBackplateArgs({ to: "#ffffff" } as never), "from"); // from is required
+    badArgs(() => validateBackplateArgs({ from: "#000000", to: "#ffffff", angle: Infinity })); // non-finite rejected by z.number()
     badArgs(() => validateBackplateArgs({ from: "#000000", to: "#ffffff", size: 0 }), "positive integer");
     badArgs(() => validateBackplateArgs({ from: "#000000", to: "#ffffff", content: 5 }), "(0..1]");
     badArgs(() => validateBackplateArgs({ from: "#000000", to: "#ffffff", radius: 0.9 }), "[0..0.5]");
@@ -88,6 +92,8 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateLayerArgs({ base: "b.png", top: "t.png", scale: 0 }), "positive number");
     badArgs(() => validateLayerArgs({ base: "b.png", top: "t.png", topOffset: { x: 1.5, y: 2 } }), "integers");
     badArgs(() => validateShadowArgs({ in: "a.png", opacity: 5 }), "(0..1]");
+    badArgs(() => validateShadowArgs({ in: "a.png", opacity: Infinity })); // non-finite rejected by z.number()
+    badArgs(() => validateShadowArgs({ in: "a.png", opacity: NaN })); // NaN rejected by z.number()
     badArgs(() => validateShadowArgs({ in: "a.png", spread: 1.5 }), "integer");
     badArgs(() => validateShadowArgs({ in: "a.png", spread: 100000 }), "[0..1024]");
     badArgs(() => validateShadowArgs({ in: "a.png", offset: { x: 1.5, y: 0 } }), "offset must be integers");
@@ -113,9 +119,12 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateIconArgs({ in: "a.png", name: "../evil" }), "path separators");
   });
 
-  it("model: key membership", () => {
+  it("model: key membership (own properties only)", () => {
     expect(() => validateModelKey("birefnet")).not.toThrow();
     badArgs(() => validateModelKey("nope"), "unknown model");
+    // Inherited Object.prototype keys must be rejected, not read as an entry.
+    badArgs(() => validateModelKey("toString"), "unknown model");
+    badArgs(() => validateModelKey("constructor"), "unknown model");
   });
 
   it("the SDK enforces enums and bounds itself — not just the CLI (§3)", async () => {

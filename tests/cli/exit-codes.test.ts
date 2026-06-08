@@ -262,6 +262,51 @@ describe("CLI exit codes", () => {
     expect(parseError(clearKey.stderr).error.code).toBe("profile.readFailed");
   });
 
+  it("an output collision is a usage error (exit 2, plain message, no JSON)", async () => {
+    const bp = [
+      "backplate", "--from", "#000000", "--to", "#ffffff", "--size", "16",
+      "--out-dir", tmp, "--out-name", "collide", "--log", path.join(tmp, "bp.log"),
+    ];
+    const first = await run(bp);
+    expect(first.code).toBe(0);
+    const second = await run(bp); // same target, no --overwrite
+    expect(second.code).toBe(2);
+    expect(second.stdout).toBe("");
+    expect(second.stderr.trim()).toMatch(/^error: /);
+    expect(second.stderr).toContain("Output exists");
+  });
+
+  it("a missing API key is a usage error (exit 2, plain message)", async () => {
+    const noKey = path.join(tmp, "nokey.json");
+    await writeFile(noKey, JSON.stringify({ provider: "openai" }) + "\n");
+    const result = await run([
+      "generate", "prompt", "--profile", noKey,
+      "--out-dir", tmp, "--log", path.join(tmp, "nokey.log"),
+    ]);
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr.trim()).toMatch(/^error: /);
+    expect(result.stderr).toContain("No apiKey resolved");
+  });
+
+  // POSIX-only: the file-mode check is skipped on Windows.
+  it.skipIf(process.platform === "win32")(
+    "an insecure profile file mode is a usage error (exit 2, plain message)",
+    async () => {
+      const loose = path.join(tmp, "loose.json");
+      await writeFile(loose, JSON.stringify({ provider: "openai", apiKey: "sk-test" }) + "\n");
+      await chmod(loose, 0o644);
+      const result = await run([
+        "generate", "prompt", "--profile", loose,
+        "--out-dir", tmp, "--log", path.join(tmp, "loose.log"),
+      ]);
+      expect(result.code).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(result.stderr.trim()).toMatch(/^error: /);
+      expect(result.stderr).toContain("file mode is");
+    },
+  );
+
   it("returns 5 for local operation errors", async () => {
     const maskMissing = await run([
       "mask",

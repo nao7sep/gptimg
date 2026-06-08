@@ -29,7 +29,7 @@ function createProgram(): Command {
     .version("0.1.0")
     .option(
       "--quiet",
-      "Suppress progress output on stderr (stdout still carries the JSON result)",
+      "Suppress JSONL progress output on stderr (stdout still carries the JSON result)",
     )
     .showHelpAfterError()
     .exitOverride()

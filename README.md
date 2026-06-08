@@ -562,7 +562,7 @@ On the CLI, the first `Ctrl-C` triggers cancellation cleanly; a second `Ctrl-C` 
 |---|---|
 | 0 | success |
 | 2 | usage error — invalid invocation, argument, input precondition, or a caller-supplied profile/recipe |
-| 3 | profile or recipe runtime error (e.g. an unreadable file, or an insecure-mode halt) |
+| 3 | profile or recipe runtime error (e.g. an unreadable profile file) |
 | 4 | provider runtime error (the provider call failed) |
 | 5 | local operation runtime error |
 | 130 | cancelled by `Ctrl-C` / abort |

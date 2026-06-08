@@ -69,9 +69,8 @@ const requiredPath = (label: string) => z.string().min(1, `${label} is required`
 const hexColor = (label: string) =>
   z.string().regex(HEX_RE, `${label} must be a #rrggbb hex color`);
 
-const finiteNumber = (msg: string) =>
-  z.number().refine((v) => Number.isFinite(v), msg);
-
+// Note: z.number() already rejects Infinity and NaN (Zod 4), so a separate
+// "finite" refinement would be unreachable — bounds below only check range/sign.
 const positiveInt = (msg: string) =>
   z.number().refine((v) => Number.isInteger(v) && v > 0, msg);
 
@@ -128,9 +127,7 @@ const ComposeArgsSchema = z.object({
 const CombineArgsSchema = z.object({
   op: oneOf(COMBINE_OPS, "op"),
   inputs: z.array(z.string().min(1)),
-  radius: finiteNumber("must be a non-negative number")
-    .refine((v) => v >= 0, "must be a non-negative number")
-    .optional(),
+  radius: z.number().refine((v) => v >= 0, "must be a non-negative number").optional(),
 });
 
 const TrimArgsSchema = z.object({
@@ -144,17 +141,14 @@ const BackplateArgsSchema = z.object({
   size: positiveInt("must be a positive integer").optional(),
   content: z.number().refine((v) => v > 0 && v <= 1, "must be in (0..1]").optional(),
   radius: z.number().refine((v) => v >= 0 && v <= 0.5, "must be in [0..0.5]").optional(),
-  angle: finiteNumber("must be a finite number").optional(),
+  angle: z.number().optional(),
   shape: oneOf(BACKPLATE_SHAPES, "shape").optional(),
 });
 
 const LayerArgsSchema = z.object({
   base: requiredPath("base"),
   top: requiredPath("top"),
-  scale: z
-    .number()
-    .refine((v) => Number.isFinite(v) && v > 0, "must be a positive number")
-    .optional(),
+  scale: z.number().refine((v) => v > 0, "must be a positive number").optional(),
   gravity: oneOf(LAYER_GRAVITIES, "gravity").optional(),
   topOffset: z
     .object({ x: z.number(), y: z.number() })
@@ -304,7 +298,9 @@ export function validateIconArgs(args: IconArgs): IconArgs {
 
 /** Validate a model key against the registry. Throws `args.invalid` when unknown. */
 export function validateModelKey(key: string): void {
-  if (!(key in MODELS)) {
+  // Own-property check: `key in MODELS` would accept inherited keys like
+  // "toString" / "constructor", which then read a function as the model entry.
+  if (!Object.hasOwn(MODELS, key)) {
     throw new LocalOpError(
       "args.invalid",
       `unknown model "${key}"; known: ${Object.keys(MODELS).join(", ")}.`,
