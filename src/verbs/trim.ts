@@ -7,6 +7,7 @@ import {
 import { runTrim } from "../local/trim.js";
 import type { TrimArgs, TrimResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateTrimArgs } from "./schemas.js";
 
 export interface TrimContext {
   profileDir: string;
@@ -22,6 +23,7 @@ export async function trimImpl(
   args: TrimArgs,
   opts: VerbCallOptions = {},
 ): Promise<TrimResult> {
+  validateTrimArgs(args);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "trim", { log: args.log, onProgress: opts.onProgress }, async (logger) => {

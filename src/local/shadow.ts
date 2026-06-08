@@ -26,16 +26,6 @@ export const SHADOW_DEFAULTS = {
   keepCanvas: false,
 } as const;
 
-/** sharp's accepted gaussian blur sigma range; `0` means "no blur". */
-const MIN_BLUR = 0.3;
-const MAX_BLUR = 1000;
-
-/** Upper bound on `spread` so padding can't explode the canvas into an OOM. */
-const MAX_SPREAD = 1024;
-
-/** Upper bound on |offset|, same reason: a huge offset would balloon the canvas. */
-const MAX_OFFSET = 10000;
-
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
 }
@@ -75,10 +65,12 @@ function dilateAlpha(
   width: number,
   height: number,
   r: number,
+  signal?: AbortSignal,
 ): Uint8Array {
   if (r <= 0) return src;
   const horiz = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) {
+    throwIfAborted(signal);
     const row = y * width;
     for (let x = 0; x < width; x++) {
       const x0 = Math.max(0, x - r);
@@ -94,6 +86,7 @@ function dilateAlpha(
   }
   const out = new Uint8Array(width * height);
   for (let x = 0; x < width; x++) {
+    throwIfAborted(signal);
     for (let y = 0; y < height; y++) {
       const y0 = Math.max(0, y - r);
       const y1 = Math.min(height - 1, y + r);
@@ -122,37 +115,6 @@ export async function runShadow(
   const spread = args.spread ?? SHADOW_DEFAULTS.spread;
   const keepCanvas = args.keepCanvas ?? SHADOW_DEFAULTS.keepCanvas;
 
-  if (!Number.isFinite(blur) || (blur !== 0 && (blur < MIN_BLUR || blur > MAX_BLUR))) {
-    throw new LocalOpError(
-      "args.invalid",
-      `shadow: blur must be 0 or between ${MIN_BLUR} and ${MAX_BLUR}; got ${blur}.`,
-    );
-  }
-  if (!Number.isInteger(offset.x) || !Number.isInteger(offset.y)) {
-    throw new LocalOpError(
-      "args.invalid",
-      `shadow: offset must be integers; got (${offset.x}, ${offset.y}).`,
-    );
-  }
-  if (Math.abs(offset.x) > MAX_OFFSET || Math.abs(offset.y) > MAX_OFFSET) {
-    throw new LocalOpError(
-      "args.invalid",
-      `shadow: offset components must be within ±${MAX_OFFSET}; got (${offset.x}, ${offset.y}).`,
-    );
-  }
-  if (!Number.isFinite(opacity) || opacity <= 0 || opacity > 1) {
-    throw new LocalOpError(
-      "args.invalid",
-      `shadow: opacity must be in (0..1]; got ${opacity}.`,
-    );
-  }
-  if (!Number.isInteger(spread) || spread < 0 || spread > MAX_SPREAD) {
-    throw new LocalOpError(
-      "args.invalid",
-      `shadow: spread must be an integer in [0..${MAX_SPREAD}]; got ${spread}.`,
-    );
-  }
-
   throwIfAborted(signal);
   const src = await loadRawRGBA(args.in);
   const { width: w, height: h, data } = src;
@@ -171,8 +133,9 @@ export async function runShadow(
       alpha[dst + x] = data[(y * w + x) * 4 + 3]!;
     }
   }
-  alpha = dilateAlpha(alpha, pw, ph, spread);
+  alpha = dilateAlpha(alpha, pw, ph, spread, signal);
 
+  throwIfAborted(signal);
   const [cr, cg, cb] = parseHex(color);
   const shadowRGBA = Buffer.alloc(pw * ph * 4);
   for (let i = 0; i < pw * ph; i++) {

@@ -21,6 +21,7 @@ import type {
   VisionResult,
 } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateVisionArgs } from "./schemas.js";
 import {
   defaultOutDir,
   defaultProfilePath,
@@ -98,6 +99,7 @@ export async function visionImpl(
   args: VisionArgs,
   opts: VerbCallOptions = {},
 ): Promise<VisionResult> {
+  validateVisionArgs(args);
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);

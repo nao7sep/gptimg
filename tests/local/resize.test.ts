@@ -131,25 +131,8 @@ describe("runResize", () => {
     }
   });
 
-  it("rejects an out-of-range to-size", async () => {
-    const inPath = path.join(tmp, "in.png");
-    await writeRawPng(inPath, 16, 16, diskish(16, 16));
-    await expect(
-      runResize({ in: inPath, out: path.join(tmp, "o.png"), toSize: 0 }),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
-    await expect(
-      runResize({ in: inPath, out: path.join(tmp, "o.png"), toSize: 10.5 }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
-
-  it("rejects an unknown kernel", async () => {
-    const inPath = path.join(tmp, "in.png");
-    await writeRawPng(inPath, 16, 16, diskish(16, 16));
-    await expect(
-      runResize({ in: inPath, out: path.join(tmp, "o.png"), toSize: 8, kernel: "bogus" as ResampleKernel }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
-
+  // to-size range and kernel-enum rejections now live in verbs/schemas.ts
+  // (validateResizeArgs) and are covered by tests/verbs/schemas.test.ts.
   it("reports a clean error when the input cannot be read", async () => {
     await expect(
       runResize({ in: path.join(tmp, "missing.png"), out: path.join(tmp, "o.png"), toSize: 32 }),

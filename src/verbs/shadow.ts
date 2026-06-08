@@ -7,6 +7,7 @@ import {
 import { runShadow } from "../local/shadow.js";
 import type { ShadowArgs, ShadowResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateShadowArgs } from "./schemas.js";
 
 export interface ShadowContext {
   profileDir: string;
@@ -22,6 +23,7 @@ export async function shadowImpl(
   args: ShadowArgs,
   opts: VerbCallOptions = {},
 ): Promise<ShadowResult> {
+  validateShadowArgs(args);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "shadow", { log: args.log, onProgress: opts.onProgress }, async (logger) => {

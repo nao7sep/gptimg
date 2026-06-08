@@ -22,7 +22,6 @@ import type { ResampleKernel } from "../types.js";
 import {
   runSwin2srX4,
   SWIN2SR_DEFAULT_TILE,
-  SWIN2SR_MIN_TILE,
 } from "./models/swin2sr.js";
 
 export const UPSCALE_DEFAULTS = {
@@ -30,17 +29,6 @@ export const UPSCALE_DEFAULTS = {
   kernel: "lanczos3" as ResampleKernel,
   tile: SWIN2SR_DEFAULT_TILE,
 } as const;
-
-const KERNELS: readonly ResampleKernel[] = [
-  "nearest",
-  "cubic",
-  "mitchell",
-  "lanczos2",
-  "lanczos3",
-];
-// Lower than resize's cap (16384): upscale runs the ×4 model + holds a 4×
-// intermediate, so it is far more memory-heavy per output pixel.
-const MAX_TO_SIZE = 8192;
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
@@ -110,25 +98,6 @@ export async function runUpscale(
   const toSize = args.toSize ?? UPSCALE_DEFAULTS.toSize;
   const kernel = args.kernel ?? UPSCALE_DEFAULTS.kernel;
   const tile = args.tile ?? UPSCALE_DEFAULTS.tile;
-
-  if (!Number.isInteger(toSize) || toSize < 1 || toSize > MAX_TO_SIZE) {
-    throw new LocalOpError(
-      "args.invalid",
-      `upscale: to-size must be an integer in [1..${MAX_TO_SIZE}]; got ${toSize}.`,
-    );
-  }
-  if (!KERNELS.includes(kernel)) {
-    throw new LocalOpError(
-      "args.invalid",
-      `upscale: kernel must be one of ${KERNELS.join(", ")}; got ${kernel}.`,
-    );
-  }
-  if (!Number.isInteger(tile) || tile < SWIN2SR_MIN_TILE) {
-    throw new LocalOpError(
-      "args.invalid",
-      `upscale: tile must be an integer >= ${SWIN2SR_MIN_TILE}; got ${tile}.`,
-    );
-  }
 
   const { data, width, height } = await loadRawRGBA(args.in);
   throwIfAborted(signal);

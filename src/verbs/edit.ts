@@ -32,6 +32,7 @@ import type {
   Sidecar,
 } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateEditArgs } from "./schemas.js";
 import {
   defaultOutDir,
   defaultProfilePath,
@@ -63,6 +64,7 @@ export async function editImpl(
   args: EditArgs,
   opts: VerbCallOptions = {},
 ): Promise<EditResult> {
+  validateEditArgs(args);
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);

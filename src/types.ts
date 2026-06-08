@@ -1,3 +1,20 @@
+export type {
+  BackplateShape,
+  CombineOp,
+  LayerGravity,
+  MaskMethod,
+  ResampleKernel,
+  VisionDetail,
+} from "./enums.js";
+import type {
+  BackplateShape,
+  CombineOp,
+  LayerGravity,
+  MaskMethod,
+  ResampleKernel,
+  VisionDetail,
+} from "./enums.js";
+
 export interface Profile {
   provider: string;
   apiKey?: string;
@@ -171,8 +188,6 @@ export interface VisionArgs {
   overwrite?: boolean;
 }
 
-export type VisionDetail = "low" | "high" | "original" | "auto";
-
 export interface VisionVerdict {
   ok: boolean;
   score: number;
@@ -187,7 +202,6 @@ export interface VisionResult extends VisionVerdict {
 
 // ----- mask / compose / combine -----
 
-export type MaskMethod = "chroma" | "ai";
 export type ChromaKeySource = "auto" | "sidecar" | "explicit";
 
 export interface ChromaMaskStats {
@@ -270,8 +284,6 @@ export interface ComposeResult {
   logPath: string;
 }
 
-export type CombineOp = "union" | "intersect" | "subtract" | "invert" | "feather";
-
 // ----- trim -----
 
 /** The tightest rect of non-transparent (alpha > 0) pixels in an RGBA image. */
@@ -315,14 +327,6 @@ export interface TrimResult {
 
 // ----- backplate -----
 
-/**
- * Corner shape for the squircle backplate.
- * - "rect": circular-arc rounded corners (standard SVG rounded rect).
- * - "squircle": quarter-superellipse corners (smoother continuous curvature,
- *   closer to the macOS dock icon shape).
- */
-export type BackplateShape = "rect" | "squircle";
-
 export interface BackplateArgs {
   /** Output PNG side length in pixels. Default 1024. */
   size?: number;
@@ -361,21 +365,6 @@ export interface BackplateResult {
 }
 
 // ----- layer -----
-
-/**
- * Where to anchor the top image on the base when no explicit pixel offset is
- * given. Matches sharp's compass directions.
- */
-export type LayerGravity =
-  | "center"
-  | "north"
-  | "south"
-  | "east"
-  | "west"
-  | "northeast"
-  | "northwest"
-  | "southeast"
-  | "southwest";
 
 export interface LayerOffset {
   /** Pixel offset of the top image's top-left corner from the base's top-left. */
@@ -471,14 +460,6 @@ export interface ShadowResult {
 }
 
 // ----- resample (shared by upscale + resize) -----
-
-/** Resampling kernel for image resize (sharp kernels). */
-export type ResampleKernel =
-  | "nearest"
-  | "cubic"
-  | "mitchell"
-  | "lanczos2"
-  | "lanczos3";
 
 // ----- upscale -----
 

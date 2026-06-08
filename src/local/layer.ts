@@ -77,15 +77,6 @@ export async function runLayer(
   const { signal } = opts;
   throwIfAborted(signal);
 
-  if (args.scale !== undefined) {
-    if (!Number.isFinite(args.scale) || args.scale <= 0) {
-      throw new LocalOpError(
-        "args.invalid",
-        `layer: scale must be a positive number; got ${args.scale}.`,
-      );
-    }
-  }
-
   const baseMeta = await readMetadata(args.base);
   throwIfAborted(signal);
   const topMeta = await readMetadata(args.top);

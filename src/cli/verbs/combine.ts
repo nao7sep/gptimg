@@ -4,14 +4,7 @@ import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 import { numberArg } from "../parsers.js";
 import type { CombineOp } from "../../types.js";
-
-const VALID_OPS: readonly CombineOp[] = [
-  "union",
-  "intersect",
-  "subtract",
-  "invert",
-  "feather",
-];
+import { COMBINE_OPS } from "../../enums.js";
 
 interface CombineCliOpts {
   in?: string[];
@@ -31,10 +24,10 @@ export function registerCombine(program: Command): void {
     .command("combine")
     .description(
       "Combine masks via set operations. " +
-        `<op> is one of: ${VALID_OPS.join(", ")}.`,
+        `<op> is one of: ${COMBINE_OPS.join(", ")}.`,
     )
     .addArgument(
-      new Argument("<op>", `One of: ${VALID_OPS.join(", ")}`).choices(VALID_OPS),
+      new Argument("<op>", `One of: ${COMBINE_OPS.join(", ")}`).choices(COMBINE_OPS),
     )
     .requiredOption(
       "--in <path>",

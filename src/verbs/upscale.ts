@@ -10,6 +10,7 @@ import { resolveNetworkForCall } from "../network/index.js";
 import { loadRecipe } from "../recipe/load.js";
 import type { UpscaleArgs, UpscaleResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateUpscaleArgs } from "./schemas.js";
 
 export interface UpscaleContext {
   profileDir: string;
@@ -25,6 +26,7 @@ export async function upscaleImpl(
   args: UpscaleArgs,
   opts: VerbCallOptions = {},
 ): Promise<UpscaleResult> {
+  validateUpscaleArgs(args);
   const signal = opts.signal;
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
 

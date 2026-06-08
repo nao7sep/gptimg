@@ -10,12 +10,15 @@ export function setQuiet(value: boolean): void {
 }
 
 /**
- * Render one progress event as a single stderr line. stdout is reserved for the
- * one-shot result document, so progress never touches it.
+ * Render one progress event as a single line of JSONL on stderr — the whole
+ * typed event (ts, level, stage, verb, msg, and any structured `data`), one
+ * object per line. stdout stays reserved for the one-shot result document, so
+ * progress never touches it. Not gated on whether stderr is a TTY: scripts and
+ * agents watch stderr and want every line (§6).
  */
 export function renderProgress(entry: LogEntry): void {
   if (quiet) return;
-  process.stderr.write(`${entry.verb}: ${entry.msg}\n`);
+  process.stderr.write(JSON.stringify(entry) + "\n");
 }
 
 /**

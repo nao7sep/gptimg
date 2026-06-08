@@ -77,12 +77,6 @@ export async function runTrim(
 
   const margin = args.margin ?? TRIM_DEFAULTS.margin;
   const square = args.square ?? TRIM_DEFAULTS.square;
-  if (!Number.isFinite(margin) || margin < 0 || margin > 1) {
-    throw new LocalOpError(
-      "args.invalid",
-      `trim: margin must be a number in [0..1]; got ${margin}.`,
-    );
-  }
 
   const { data, width, height } = await loadRawRGBA(args.in);
   throwIfAborted(signal);

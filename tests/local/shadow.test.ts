@@ -123,46 +123,12 @@ describe("runShadow", () => {
     expect(alpha).toBeGreaterThan(0);
   });
 
-  it("rejects opacity outside (0, 1]", async () => {
+  // Argument-bound rejections (opacity, spread, offset, blur ranges) now live in
+  // verbs/schemas.ts and are covered by tests/verbs/schemas.test.ts. runShadow
+  // trusts the validated args it is handed.
+  it("accepts blur 0 as 'no blur'", async () => {
     const src = path.join(tmp, "src.png");
     await writeCenteredSquare(src, 64, 32);
-    await expect(
-      runShadow({ in: src, out: path.join(tmp, "o.png"), opacity: 0 }),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
-  });
-
-  it("rejects a negative spread", async () => {
-    const src = path.join(tmp, "src.png");
-    await writeCenteredSquare(src, 64, 32);
-    await expect(
-      runShadow({ in: src, out: path.join(tmp, "o.png"), spread: -2 }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
-
-  it("rejects a spread beyond the cap", async () => {
-    const src = path.join(tmp, "src.png");
-    await writeCenteredSquare(src, 64, 32);
-    await expect(
-      runShadow({ in: src, out: path.join(tmp, "o.png"), spread: 100000 }),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
-  });
-
-  it("rejects an offset beyond the cap", async () => {
-    const src = path.join(tmp, "src.png");
-    await writeCenteredSquare(src, 64, 32);
-    await expect(
-      runShadow({ in: src, out: path.join(tmp, "o.png"), offset: { x: 1_000_000, y: 0 } }),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
-  });
-
-  it("rejects a blur below sharp's usable range (but accepts 0)", async () => {
-    const src = path.join(tmp, "src.png");
-    await writeCenteredSquare(src, 64, 32);
-    await expect(
-      runShadow({ in: src, out: path.join(tmp, "o.png"), blur: 0.2 }),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
-
-    // 0 is valid: it means "no blur".
     const res = await runShadow({ in: src, out: path.join(tmp, "ok.png"), blur: 0 });
     expect(res.blur).toBe(0);
   });

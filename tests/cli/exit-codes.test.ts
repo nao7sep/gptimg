@@ -5,6 +5,13 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCli } from "../../src/cli/run.js";
+import { exitCodeFor } from "../../src/cli/exitCodes.js";
+import {
+  LocalOpError,
+  ProfileError,
+  ProviderError,
+  RecipeError,
+} from "../../src/errors.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.resolve(HERE, "..", "fixtures");
@@ -145,18 +152,18 @@ describe("CLI exit codes", () => {
     // `error:` message on stderr, empty stdout, and no JSON envelope.
     const disk = fixture("green-disk.png");
     const cases: Array<[string, string[], string]> = [
-      ["shadow opacity (0..1]", ["shadow", "--in", disk, "--opacity", "5"], "opacity must be in (0..1]"],
-      ["shadow spread integer", ["shadow", "--in", disk, "--spread", "1.5"], "spread must be an integer"],
+      ["shadow opacity (0..1]", ["shadow", "--in", disk, "--opacity", "5"], "must be in (0..1]"],
+      ["shadow spread integer", ["shadow", "--in", disk, "--spread", "1.5"], "must be an integer in [0..1024]"],
       ["shadow offset integer", ["shadow", "--in", disk, "--offset", "1.5,2"], "offset must be integers"],
       ["shadow offset range", ["shadow", "--in", disk, "--offset", "99999,0"], "offset components must be within"],
-      ["backplate size positive int", ["backplate", "--from", "#000000", "--to", "#ffffff", "--size", "0"], "size must be a positive integer"],
-      ["backplate content (0..1]", ["backplate", "--from", "#000000", "--to", "#ffffff", "--content", "5"], "content must be in (0..1]"],
-      ["backplate radius [0..0.5]", ["backplate", "--from", "#000000", "--to", "#ffffff", "--radius", "0.9"], "radius must be in [0..0.5]"],
-      ["resize to-size zero", ["resize", "--in", disk, "--to-size", "0"], "to-size must be an integer in [1.."],
-      ["resize to-size non-integer", ["resize", "--in", disk, "--to-size", "1.5"], "to-size must be an integer in [1.."],
-      ["trim margin [0..1]", ["trim", "--in", disk, "--margin", "2"], "margin must be a number in [0..1]"],
-      ["layer scale positive", ["layer", "--base", disk, "--top", disk, "--scale", "-1"], "scale must be a positive number"],
-      ["mask saturation-ratio (0..1]", ["mask", "--in", disk, "--saturation-ratio", "5"], "saturationRatio must be in (0..1]"],
+      ["backplate size positive int", ["backplate", "--from", "#000000", "--to", "#ffffff", "--size", "0"], "must be a positive integer"],
+      ["backplate content (0..1]", ["backplate", "--from", "#000000", "--to", "#ffffff", "--content", "5"], "must be in (0..1]"],
+      ["backplate radius [0..0.5]", ["backplate", "--from", "#000000", "--to", "#ffffff", "--radius", "0.9"], "must be in [0..0.5]"],
+      ["resize to-size zero", ["resize", "--in", disk, "--to-size", "0"], "must be an integer in [1.."],
+      ["resize to-size non-integer", ["resize", "--in", disk, "--to-size", "1.5"], "must be an integer in [1.."],
+      ["trim margin [0..1]", ["trim", "--in", disk, "--margin", "2"], "must be in [0..1]"],
+      ["layer scale positive", ["layer", "--base", disk, "--top", disk, "--scale", "-1"], "must be a positive number"],
+      ["mask saturation-ratio (0..1]", ["mask", "--in", disk, "--saturation-ratio", "5"], "must be in (0..1]"],
     ];
 
     for (const [name, args, msg] of cases) {
@@ -193,8 +200,11 @@ describe("CLI exit codes", () => {
     expect(result.stderr).toContain("detail");
   });
 
-  it("returns 3 for profile and recipe errors", async () => {
-    const profile = await run([
+  it("treats a missing/invalid caller-named profile or recipe as a usage error (exit 2)", async () => {
+    // The caller named the path (or wrote the contents); per the conventions
+    // that is theirs to fix — usage, not a runtime failure. Exit 2, a plain
+    // `error:` line, empty stdout, no JSON envelope.
+    const missingProfile = await run([
       "generate",
       "prompt",
       "--profile",
@@ -204,8 +214,10 @@ describe("CLI exit codes", () => {
       "--log",
       path.join(tmp, "profile.log"),
     ]);
-    expect(profile.code).toBe(3);
-    expect(parseError(profile.stderr).error.type).toBe("profile");
+    expect(missingProfile.code).toBe(2);
+    expect(missingProfile.stdout).toBe("");
+    expect(missingProfile.stderr.trim()).toMatch(/^error: /);
+    expect(missingProfile.stderr).toContain("Profile not found");
 
     const badRecipe = path.join(tmp, "bad-recipe.json");
     await writeFile(badRecipe, "{bad json");
@@ -219,22 +231,13 @@ describe("CLI exit codes", () => {
       "--log",
       path.join(tmp, "recipe.log"),
     ]);
-    expect(recipe.code).toBe(3);
-    expect(parseError(recipe.stderr).error.type).toBe("recipe");
-
-    const profileDir = path.join(tmp, "profile-dir");
-    await mkdir(profileDir);
-    const clearKey = await run([
-      "profile",
-      "clear-key",
-      "--path",
-      profileDir,
-    ]);
-    expect(clearKey.code).toBe(3);
-    expect(parseError(clearKey.stderr).error.code).toBe("profile.readFailed");
+    expect(recipe.code).toBe(2);
+    expect(recipe.stdout).toBe("");
+    expect(recipe.stderr.trim()).toMatch(/^error: /);
+    expect(recipe.stderr).toContain("Invalid JSON in recipe");
   });
 
-  it("returns 4 for provider errors", async () => {
+  it("treats an unknown provider named in the profile as a usage error (exit 2)", async () => {
     const result = await run([
       "generate",
       "prompt",
@@ -245,8 +248,18 @@ describe("CLI exit codes", () => {
       "--log",
       path.join(tmp, "provider.log"),
     ]);
-    expect(result.code).toBe(4);
-    expect(parseError(result.stderr).error.type).toBe("provider");
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr.trim()).toMatch(/^error: /);
+    expect(result.stderr).toContain("Unknown provider");
+  });
+
+  it("returns 3 for a profile read failure (runtime, not the caller's fault)", async () => {
+    const profileDir = path.join(tmp, "profile-dir");
+    await mkdir(profileDir);
+    const clearKey = await run(["profile", "clear-key", "--path", profileDir]);
+    expect(clearKey.code).toBe(3);
+    expect(parseError(clearKey.stderr).error.code).toBe("profile.readFailed");
   });
 
   it("returns 5 for local operation errors", async () => {
@@ -337,5 +350,33 @@ describe("CLI exit codes", () => {
     };
     expect(payload.output).toBe(outPath);
     expect(existsSync(outPath)).toBe(true);
+  });
+});
+
+describe("exit-code mapping (unit)", () => {
+  it("maps runtime error domains to distinct nonzero codes", () => {
+    expect(exitCodeFor(new ProviderError("provider.requestFailed", "x"))).toBe(4);
+    expect(exitCodeFor(new LocalOpError("image.writeFailed", "x"))).toBe(5);
+    expect(exitCodeFor(new ProfileError("profile.readFailed", "x"))).toBe(3);
+    // output.duplicate is a defensive invariant, not a caller mistake — runtime.
+    expect(exitCodeFor(new LocalOpError("output.duplicate", "x"))).toBe(5);
+    expect(exitCodeFor(new Error("plain"))).toBe(1);
+  });
+
+  it("classifies caller-fault codes as usage (exit 2)", () => {
+    const usage = [
+      new LocalOpError("args.invalid", "x"),
+      new RecipeError("set.invalidExpression", "x"),
+      new ProviderError("provider.unknown", "x"),
+      new ProfileError("profile.notFound", "x"),
+      new RecipeError("recipe.invalidJson", "x"),
+      new RecipeError("recipe.validationFailed", "x"),
+      new ProfileError("profile.validationFailed", "x"),
+      new LocalOpError("output.exists", "x"),
+      new LocalOpError("output.staleSiblings", "x"),
+      new ProfileError("apiKey.missing", "x"),
+      new ProfileError("profile.insecureMode", "x"),
+    ];
+    for (const e of usage) expect(exitCodeFor(e)).toBe(2);
   });
 });

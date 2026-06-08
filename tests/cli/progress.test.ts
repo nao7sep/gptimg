@@ -88,10 +88,15 @@ describe("progress emission", () => {
     expect(stderrSpy).not.toHaveBeenCalled();
   });
 
-  it("CLI: progress goes to stderr, the JSON result to stdout", async () => {
+  it("CLI: progress goes to stderr as JSONL, the JSON result to stdout", async () => {
     const result = await run(backplateArgs());
     expect(result.code).toBe(0);
-    expect(result.stderr).toContain("backplate:");
+    // §6.4: stderr is JSONL — one structured event object per line.
+    const lines = result.stderr.trim().split("\n").filter(Boolean);
+    expect(lines.length).toBeGreaterThan(0);
+    const events = lines.map((l) => JSON.parse(l) as LogEntry);
+    expect(events.every((ev) => ev.verb === "backplate")).toBe(true);
+    expect(events.every((ev) => typeof ev.stage === "string" && typeof ev.msg === "string")).toBe(true);
     // stdout is exactly the one-shot JSON result, parseable on its own.
     expect(JSON.parse(result.stdout).size).toBe(64);
   });

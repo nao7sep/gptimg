@@ -112,19 +112,8 @@ describe("chromaMask: spill formula", () => {
     expect(res.alpha[subject]).toBe(255);
   });
 
-  it("rejects an out-of-range saturationRatio instead of silently clamping", async () => {
-    const W = 8;
-    const H = 8;
-    const rgba = new Uint8Array(W * H * 4);
-    for (let p = 0, i = 0; p < W * H; p++, i += 4) {
-      rgba[i + 1] = 255;
-      rgba[i + 3] = 255;
-    }
-    await expect(
-      chromaMask(rgba, W, H, { key: "#00ff00", saturationRatio: 5 }),
-    ).rejects.toThrow(/saturationRatio must be in \(0\.\.1\]/);
-  });
-
+  // The saturationRatio (0..1] bound now lives in verbs/schemas.ts
+  // (validateMaskArgs) and is covered by tests/verbs/schemas.test.ts.
   it("handles a magenta (secondary) key correctly", async () => {
     const W = 32;
     const H = 32;

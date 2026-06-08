@@ -251,18 +251,6 @@ describe("runTrim", () => {
     });
   });
 
-  it("throws args.invalid on an out-of-range margin", async () => {
-    const W = 8;
-    const H = 8;
-    const inPath = path.join(tmp, "in.png");
-    const outPath = path.join(tmp, "out.png");
-    await writeRawPng(inPath, W, H, makeRGBA(W, H, { x0: 2, y0: 2, x1: 5, y1: 5 }));
-
-    await expect(
-      runTrim({ in: inPath, out: outPath, margin: -0.1 }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(
-      runTrim({ in: inPath, out: outPath, margin: 1.5 }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
+  // The margin [0..1] bound now lives in verbs/schemas.ts (validateTrimArgs)
+  // and is covered by tests/verbs/schemas.test.ts.
 });

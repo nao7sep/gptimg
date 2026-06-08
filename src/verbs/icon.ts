@@ -7,6 +7,7 @@ import { ensureOutputDir } from "../internal/output-files.js";
 import { ICON_DEFAULTS, planIconOutputs, runIcon } from "../local/icon.js";
 import type { IconArgs, IconResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateIconArgs } from "./schemas.js";
 
 export interface IconContext {
   profileDir: string;
@@ -18,6 +19,7 @@ export async function iconImpl(
   args: IconArgs,
   opts: VerbCallOptions = {},
 ): Promise<IconResult> {
+  validateIconArgs(args);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "icon", { log: args.log, onProgress: opts.onProgress }, async (logger) => {

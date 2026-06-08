@@ -31,6 +31,7 @@ import type {
   Sidecar,
 } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateGenerateArgs } from "./schemas.js";
 import {
   defaultOutDir,
   defaultProfilePath,
@@ -50,6 +51,7 @@ export async function generateImpl(
   args: GenerateArgs,
   opts: VerbCallOptions = {},
 ): Promise<GenerateResult> {
+  validateGenerateArgs(args);
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);

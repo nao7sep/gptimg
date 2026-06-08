@@ -248,44 +248,7 @@ describe("runBackplate", () => {
     });
   });
 
-  it("rejects an out-of-range size", async () => {
-    await expect(
-      runBackplate({
-        out: path.join(tmp, "x.png"),
-        size: 0,
-        from: "#000000",
-        to: "#ffffff",
-      }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(
-      runBackplate({
-        out: path.join(tmp, "x.png"),
-        size: 100.5,
-        from: "#000000",
-        to: "#ffffff",
-      }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
-
-  it("rejects an out-of-range content", async () => {
-    await expect(
-      runBackplate({
-        out: path.join(tmp, "x.png"),
-        content: 1.5,
-        from: "#000000",
-        to: "#ffffff",
-      }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
-
-  it("rejects an out-of-range radius", async () => {
-    await expect(
-      runBackplate({
-        out: path.join(tmp, "x.png"),
-        radius: 0.7,
-        from: "#000000",
-        to: "#ffffff",
-      }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
+  // size/content/radius/angle range rejections now live in verbs/schemas.ts and
+  // are covered by tests/verbs/schemas.test.ts. runBackplate still normalizes
+  // and rejects a malformed hex (above), since that is its own transform.
 });

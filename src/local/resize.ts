@@ -16,17 +16,6 @@ export const RESIZE_DEFAULTS = {
   kernel: "lanczos3" as ResampleKernel,
 } as const;
 
-const KERNELS: readonly ResampleKernel[] = [
-  "nearest",
-  "cubic",
-  "mitchell",
-  "lanczos2",
-  "lanczos3",
-];
-// Higher than upscale's cap (8192): resize is a single sharp resample with no
-// model and no large intermediate, so a bigger target is cheap.
-const MAX_TO_SIZE = 16384;
-
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
 }
@@ -56,18 +45,6 @@ export async function runResize(
   throwIfAborted(signal);
 
   const kernel = args.kernel ?? RESIZE_DEFAULTS.kernel;
-  if (!Number.isInteger(args.toSize) || args.toSize < 1 || args.toSize > MAX_TO_SIZE) {
-    throw new LocalOpError(
-      "args.invalid",
-      `resize: to-size must be an integer in [1..${MAX_TO_SIZE}]; got ${args.toSize}.`,
-    );
-  }
-  if (!KERNELS.includes(kernel)) {
-    throw new LocalOpError(
-      "args.invalid",
-      `resize: kernel must be one of ${KERNELS.join(", ")}; got ${kernel}.`,
-    );
-  }
 
   let meta;
   try {

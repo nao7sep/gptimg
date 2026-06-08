@@ -77,12 +77,6 @@ export function planIconOutputs(
   name: string,
   pngs: boolean,
 ): IconPlan {
-  if (name.length === 0 || path.basename(name) !== name) {
-    throw new LocalOpError(
-      "args.invalid",
-      `icon: name must be a plain filename stem (no path separators); got "${name}".`,
-    );
-  }
   const icns = path.join(outDir, `${name}.icns`);
   const ico = path.join(outDir, `${name}.ico`);
   const png = path.join(outDir, `${name}.png`);
@@ -199,6 +193,7 @@ export async function runIcon(
     await writeOutputBytes(plan.ico, ico.encode());
     await writeOutputBytes(plan.png, await render(MASTER_SIZE));
     for (const { size, path: p } of plan.pngSet) {
+      throwIfAborted(signal);
       await writeOutputBytes(p, await render(size));
     }
   } catch (err) {

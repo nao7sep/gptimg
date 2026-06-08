@@ -1,4 +1,3 @@
-import { LocalOpError } from "../errors.js";
 import {
   assertSingleFileAvailable,
   inferStem,
@@ -8,6 +7,7 @@ import {
 import { runCombine } from "../local/combine.js";
 import type { CombineArgs, CombineResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateCombineArgs } from "./schemas.js";
 
 export interface CombineContext {
   profileDir: string;
@@ -23,15 +23,10 @@ export async function combineImpl(
   args: CombineArgs,
   opts: VerbCallOptions = {},
 ): Promise<CombineResult> {
+  validateCombineArgs(args);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "combine", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
-    if (!args.inputs.length) {
-      throw new LocalOpError(
-        "args.invalid",
-        `combine ${args.op} requires at least one input.`,
-      );
-    }
     const firstInput = args.inputs[0]!;
     const outPath = await resolveOutputPath(args, {
       inputForDir: firstInput,

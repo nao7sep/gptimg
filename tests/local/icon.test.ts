@@ -48,12 +48,8 @@ describe("planIconOutputs", () => {
     expect(plan.all).toEqual([plan.icns, plan.ico, plan.png]);
   });
 
-  it("rejects an empty name or one containing path separators", () => {
-    expect(() => planIconOutputs("/out", "", false)).toThrow();
-    expect(() => planIconOutputs("/out", "../evil", false)).toThrow();
-    expect(() => planIconOutputs("/out", "sub/icon", false)).toThrow();
-  });
-
+  // The name-stem validation (no path separators) now lives in verbs/schemas.ts
+  // (validateIconArgs) and is covered by tests/verbs/schemas.test.ts.
   it("adds the sized-PNG set when requested and honors the name stem", () => {
     const plan = planIconOutputs("/out", "app", true);
     expect(plan.png).toBe(path.join("/out", "app.png"));

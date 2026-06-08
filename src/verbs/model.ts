@@ -1,6 +1,5 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { LocalOpError } from "../errors.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { defaultModelsDir, defaultRecipePath } from "../internal/paths.js";
 import { ensureModel } from "../local/models/fetch.js";
@@ -9,6 +8,7 @@ import { resolveNetworkForCall } from "../network/index.js";
 import { loadRecipe } from "../recipe/load.js";
 import type { ModelInstallResult, ModelListEntry } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateModelKey } from "./schemas.js";
 
 interface ModelContext {
   profileDir: string;
@@ -28,13 +28,8 @@ export async function installModelImpl(
   key: ModelKey,
   opts: ModelInstallOptions = {},
 ): Promise<ModelInstallResult> {
+  validateModelKey(key);
   const entry = MODELS[key];
-  if (!entry) {
-    throw new LocalOpError(
-      "model.unknown",
-      `Unknown model "${key}". Known models: ${Object.keys(MODELS).join(", ")}.`,
-    );
-  }
   const recipePath = opts.recipe ?? defaultRecipePath(ctx.profileDir);
   const budget = resolveNetworkForCall(await loadRecipe(recipePath)).modelDownload;
   const cacheDir = defaultModelsDir(ctx.profileDir);

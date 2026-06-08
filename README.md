@@ -8,7 +8,7 @@ Personal tool. v1 ships OpenAI only; the provider boundary exists but no second 
 
 ## Automation and agent use
 
-The CLI is built to be driven by scripts and AI agents. On success every command prints **one JSON object** to stdout; on failure it writes a single error to stderr and signals the outcome via [exit code](#exit-codes), so a caller parses stdout for results and branches on the code. While a long-running verb works it reports progress as one line per stage on **stderr** (suppress with `--quiet`); stdout still receives only the final result. The SDK returns the same data as objects and never writes to stdout/stderr — it reports progress through an `onProgress` callback instead.
+The CLI is built to be driven by scripts and AI agents. On success every command prints **one JSON object** to stdout; on failure it writes a single error to stderr and signals the outcome via [exit code](#exit-codes), so a caller parses stdout for results and branches on the code. While a long-running verb works it reports progress as JSONL on **stderr** — one JSON event object per line (suppress with `--quiet`); stdout still receives only the final result. The SDK returns the same data as objects and never writes to stdout/stderr — it reports progress through an `onProgress` callback instead.
 
 What each verb *does* is defined by the source and `--help`; this README is the reference for the **stable contract** a caller builds against — exit codes, the per-image sidecar model, [artifacts](#artifacts), and [cancellation](#cancellation). A few conventions keep automated runs reproducible and debuggable:
 
@@ -16,7 +16,7 @@ What each verb *does* is defined by the source and `--help`; this README is the 
 - Use stable, descriptive `--out-name` values (`subject-original`, `subject-mask`, `subject-cutout`), not bare timestamps.
 - Don't pass `--overwrite` unless you mean to replace a file. For `generate`/`edit` it is group-scoped: it allows the planned files to replace existing siblings but halts with `output.staleSiblings` if a prior run left indexed files the new plan would not replace.
 - Parse stdout JSON for success; use the JSONL log and sidecars for trace context, not primary success detection. Treat `partial: true` from `generate`/`edit` as recoverable when at least one file was written.
-- Progress for long verbs (model downloads, `upscale` tiles, the provider round-trip) streams to **stderr**, one line per stage. Pass `--quiet` to silence it; stdout stays the single JSON result either way.
+- Progress for long verbs (model downloads, `upscale` tiles, the provider round-trip) streams to **stderr** as JSONL, one JSON event object per line. Pass `--quiet` to silence it; stdout stays the single JSON result either way.
 - Always run `mask` from the **original** image. To change mask parameters, rerun from the original — do not feed a previous mask or composite back through `mask`.
 - `vision` handles any semantic check, but it **cannot see transparency** (it ingests a transparent PNG flattened on black). Composite a cutout onto a known plate first, then vision-check that.
 - The local AI models load large native memory (BiRefNet for `mask --method ai` ~1–1.5 GB, Swin2SR for `upscale` up to ~4.4 GB) — run them **one at a time**. Network calls (`generate`/`edit`/`vision`) can run in parallel.
@@ -56,7 +56,7 @@ Profile files are strict JSON objects. Supported top-level keys are `provider`, 
 
 ### Profile file permissions
 
-On POSIX systems, a profile containing `apiKey` must be owner-only (mode `0600`). `gptimg profile set-key` writes the file with that mode automatically; if you hand-author `~/.gptimg/profile.json` and include `apiKey`, run `chmod 600 ~/.gptimg/profile.json` after writing. Loading a loose-mode profile that carries `apiKey` halts with `profile.insecureMode` (exit code 3) and prints the file mode plus the chmod command to run. Profiles that use only `apiKeyEnv` (no stored key) are not subject to this check. The mode check is POSIX-only and is skipped on Windows. If your key was already exposed because the file was loose-mode, rotate it; `clear-key` removes it from the profile but cannot undo prior reads.
+On POSIX systems, a profile containing `apiKey` must be owner-only (mode `0600`). `gptimg profile set-key` writes the file with that mode automatically; if you hand-author `~/.gptimg/profile.json` and include `apiKey`, run `chmod 600 ~/.gptimg/profile.json` after writing. Loading a loose-mode profile that carries `apiKey` halts with `profile.insecureMode` (exit code 2 — a usage error, since the file mode is the caller's to fix) and prints the file mode plus the chmod command to run. Profiles that use only `apiKeyEnv` (no stored key) are not subject to this check. The mode check is POSIX-only and is skipped on Windows. If your key was already exposed because the file was loose-mode, rotate it; `clear-key` removes it from the profile but cannot undo prior reads.
 
 Defaults live under `~/.gptimg/`:
 
@@ -561,13 +561,13 @@ On the CLI, the first `Ctrl-C` triggers cancellation cleanly; a second `Ctrl-C` 
 | Code | Meaning |
 |---|---|
 | 0 | success |
-| 2 | usage error — invalid invocation, argument, or input precondition |
-| 3 | profile or recipe error |
-| 4 | provider error |
+| 2 | usage error — invalid invocation, argument, input precondition, or a caller-supplied profile/recipe |
+| 3 | profile or recipe runtime error (e.g. an unreadable file, or an insecure-mode halt) |
+| 4 | provider runtime error (the provider call failed) |
 | 5 | local operation runtime error |
 | 130 | cancelled by `Ctrl-C` / abort |
 
-Exit 2 covers any caller mistake — a malformed invocation, an invalid argument value, or an input that fails a precondition — regardless of which layer catches it. Malformed flags caught during CLI parsing are emitted by Commander as plain text with usage help; the same class caught by the SDK (`args.invalid`, `image.noContent`, `image.sizeMismatch`, `vision.detailUnsupported`, `output.mixedExtensions`) is emitted as a one-line `error: …` on stderr. Exit codes 3/4/5 are runtime, environment, or I/O failures and are emitted as a single JSON object on stderr.
+Exit 2 covers any caller mistake, regardless of which layer catches it, by the test *is this the caller's to fix?* — a malformed invocation or flag, an invalid or out-of-range argument value, an input that fails a precondition (an empty image, mismatched sizes), a profile/recipe the caller named or wrote that is missing/malformed/invalid, an output collision the caller resolves with `--overwrite` or a fresh `--out-name`, a missing API key, or an insecure profile file mode. Malformed flags caught during CLI parsing are emitted by Commander as plain text with usage help; the same class caught by the SDK is emitted as a one-line `error: …` on stderr (the authoritative set is `USAGE_ERROR_CODES` in the source). Exit codes 3/4/5 are genuine runtime, environment, or I/O failures — an unreadable profile (`profile.readFailed`), a failed provider call (`provider.requestFailed`), a local image/model failure — and are emitted as a single JSON object on stderr.
 
 ## Development
 

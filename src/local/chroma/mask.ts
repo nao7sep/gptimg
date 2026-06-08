@@ -16,6 +16,7 @@
 import { normalizeHex, parseHex } from "../../color.js";
 import { LocalOpError, toAbortError } from "../../errors.js";
 import { loadRawRGBA } from "../../image/bridge.js";
+import type { ChromaKeySource, ChromaMaskStats } from "../../types.js";
 import { CHROMA_DEFAULTS } from "./defaults.js";
 import { loadKeyFromSidecar } from "./sidecar-key.js";
 import {
@@ -28,7 +29,6 @@ import {
 } from "./spill.js";
 
 export type ChromaKeySpec = "auto" | "from-sidecar" | string;
-export type ChromaKeySource = "auto" | "sidecar" | "explicit";
 
 export interface ChromaMaskOptions {
   key?: ChromaKeySpec;
@@ -36,17 +36,6 @@ export interface ChromaMaskOptions {
   borderSample?: number;
   /** Spill ratio at which near-key pixels saturate to α=0. Defaults to CHROMA_DEFAULTS.saturationRatio. */
   saturationRatio?: number;
-}
-
-export interface ChromaMaskStats {
-  method: "chroma";
-  key: string;
-  keySource: ChromaKeySource;
-  preserveInterior: boolean;
-  removedPixels: number;
-  removedFraction: number;
-  width: number;
-  height: number;
 }
 
 export interface ChromaMaskResult {
@@ -190,12 +179,6 @@ export async function chromaMask(
   const preserveInterior = options.preserveInterior ?? CHROMA_DEFAULTS.preserveInterior;
   const borderDepth = options.borderSample ?? CHROMA_DEFAULTS.borderSample;
   const saturationRatio = options.saturationRatio ?? CHROMA_DEFAULTS.saturationRatio;
-  if (!Number.isFinite(saturationRatio) || saturationRatio <= 0 || saturationRatio > 1) {
-    throw new LocalOpError(
-      "args.invalid",
-      `chroma: saturationRatio must be in (0..1]; got ${saturationRatio}.`,
-    );
-  }
   // Sample the border in linear light once. It is the "auto" key for that
   // path AND the empirical strength estimator that keeps from-sidecar /
   // explicit robust to an AI-painted bg that drifts from the recorded hex.

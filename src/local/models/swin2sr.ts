@@ -31,15 +31,18 @@ import type { NetworkBudget } from "../../network/defaults.js";
 import { ensureModel } from "./fetch.js";
 import { SWIN2SR_X4 } from "./registry.js";
 import { loadSession } from "./session.js";
+import {
+  SWIN2SR_DEFAULT_TILE,
+  SWIN2SR_MIN_TILE,
+  SWIN2SR_OVERLAP as OVERLAP,
+  SWIN2SR_SCALE,
+  SWIN2SR_WINDOW as WINDOW,
+} from "./swin2sr-constants.js";
 
-export const SWIN2SR_SCALE = 4;
-const WINDOW = 8;
-/** Context overlap (source px) kept around each tile and cropped off on merge. */
-const OVERLAP = 32;
-/** Default max fed model-input edge per pass — the memory knob (~4.4 GB at 256). */
-export const SWIN2SR_DEFAULT_TILE = 256;
-/** Smallest usable tile: must leave an interior region of at least one window. */
-export const SWIN2SR_MIN_TILE = 2 * OVERLAP + WINDOW;
+// Re-exported so callers that historically import these from the model module
+// (e.g. the upscale verb) keep working; the definitions live, dependency-free,
+// in swin2sr-constants.ts.
+export { SWIN2SR_DEFAULT_TILE, SWIN2SR_MIN_TILE, SWIN2SR_SCALE };
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);

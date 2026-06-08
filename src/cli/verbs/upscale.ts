@@ -4,14 +4,7 @@ import type { ResampleKernel } from "../../types.js";
 import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 import { numberArg } from "../parsers.js";
-
-const KERNELS: readonly ResampleKernel[] = [
-  "nearest",
-  "cubic",
-  "mitchell",
-  "lanczos2",
-  "lanczos3",
-];
+import { RESAMPLE_KERNELS } from "../../enums.js";
 
 interface UpscaleCliOpts {
   in: string;
@@ -41,7 +34,7 @@ export function registerUpscale(program: Command): void {
       new Option(
         "--kernel <name>",
         "Resampling kernel for the resize after ×4. Default lanczos3.",
-      ).choices(KERNELS),
+      ).choices(RESAMPLE_KERNELS),
     )
     .option(
       "--tile <px>",

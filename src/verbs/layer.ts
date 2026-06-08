@@ -7,6 +7,7 @@ import {
 import { runLayer } from "../local/layer.js";
 import type { LayerArgs, LayerResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateLayerArgs } from "./schemas.js";
 
 export interface LayerContext {
   profileDir: string;
@@ -22,6 +23,7 @@ export async function layerImpl(
   args: LayerArgs,
   opts: VerbCallOptions = {},
 ): Promise<LayerResult> {
+  validateLayerArgs(args);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "layer", { log: args.log, onProgress: opts.onProgress }, async (logger) => {

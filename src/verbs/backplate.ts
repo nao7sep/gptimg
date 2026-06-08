@@ -6,6 +6,7 @@ import {
 import { BACKPLATE_DEFAULTS, runBackplate } from "../local/backplate.js";
 import type { BackplateArgs, BackplateResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateBackplateArgs } from "./schemas.js";
 
 export interface BackplateContext {
   profileDir: string;
@@ -21,6 +22,7 @@ export async function backplateImpl(
   args: BackplateArgs,
   opts: VerbCallOptions = {},
 ): Promise<BackplateResult> {
+  validateBackplateArgs(args);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "backplate", { log: args.log, onProgress: opts.onProgress }, async (logger) => {

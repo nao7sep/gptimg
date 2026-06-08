@@ -22,6 +22,7 @@ import {
   defaultRecipePath,
 } from "../internal/paths.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateMaskArgs } from "./schemas.js";
 
 export interface MaskContext {
   profileDir: string;
@@ -61,6 +62,7 @@ export async function maskImpl(
   args: MaskArgs,
   opts: VerbCallOptions = {},
 ): Promise<MaskResult> {
+  validateMaskArgs(args);
   const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
   const signal = opts.signal;
 

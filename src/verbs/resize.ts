@@ -7,6 +7,7 @@ import {
 import { runResize } from "../local/resize.js";
 import type { ResizeArgs, ResizeResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateResizeArgs } from "./schemas.js";
 
 export interface ResizeContext {
   profileDir: string;
@@ -22,6 +23,7 @@ export async function resizeImpl(
   args: ResizeArgs,
   opts: VerbCallOptions = {},
 ): Promise<ResizeResult> {
+  validateResizeArgs(args);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "resize", { log: args.log, onProgress: opts.onProgress }, async (logger) => {

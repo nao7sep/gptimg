@@ -87,15 +87,8 @@ describe("runCombine", () => {
     expect(transition).toBeLessThan(255);
   });
 
-  it("rejects binary ops with the wrong number of inputs", async () => {
-    const a = path.join(tmp, "a.png");
-    const out = path.join(tmp, "out.png");
-    await writeMaskPng(a, 1, 1, [255]);
-    await expect(
-      runCombine({ op: "union", inputs: [a], out }),
-    ).rejects.toMatchObject({ errorType: "localOp" });
-  });
-
+  // Op/arity rejections now live in verbs/schemas.ts (validateCombineArgs) and
+  // are covered by tests/verbs/schemas.test.ts.
   it("rejects mismatched input sizes", async () => {
     const a = path.join(tmp, "a.png");
     const b = path.join(tmp, "b.png");

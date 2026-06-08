@@ -4,8 +4,7 @@ import type { BackplateShape } from "../../types.js";
 import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 import { hexOption, numberArg } from "../parsers.js";
-
-const SHAPES: BackplateShape[] = ["rect", "squircle"];
+import { BACKPLATE_SHAPES } from "../../enums.js";
 
 interface BackplateCliOpts {
   size?: number;
@@ -50,7 +49,7 @@ export function registerBackplate(program: Command): void {
       numberArg("--angle"),
     )
     .addOption(
-      new Option("--shape <shape>", "Corner shape. Default rect.").choices(SHAPES),
+      new Option("--shape <shape>", "Corner shape. Default rect.").choices(BACKPLATE_SHAPES),
     )
     .option("--out-dir <dir>", "Output directory (default: cwd)")
     .option("--out-name <name>", "Output filename (default: backplate-<size>.png)")

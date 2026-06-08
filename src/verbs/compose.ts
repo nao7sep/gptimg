@@ -11,6 +11,7 @@ import {
 } from "../local/compose.js";
 import type { ComposeArgs, ComposeResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { validateComposeArgs } from "./schemas.js";
 
 export interface ComposeContext {
   profileDir: string;
@@ -26,6 +27,7 @@ export async function composeImpl(
   args: ComposeArgs,
   opts: VerbCallOptions = {},
 ): Promise<ComposeResult> {
+  validateComposeArgs(args);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "compose", { log: args.log, onProgress: opts.onProgress }, async (logger) => {

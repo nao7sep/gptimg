@@ -10,7 +10,6 @@ import {
   SWIN2SR_SCALE,
   type PaddedModelRun,
 } from "../../src/local/models/swin2sr.js";
-import type { ResampleKernel } from "../../src/types.js";
 import type { Logger } from "../../src/log/index.js";
 
 /** Minimal Logger that records the messages forwarded to it. */
@@ -283,41 +282,8 @@ describe("runUpscale", () => {
     expect(res.width).toBe(20); // 40 * 10/20
   });
 
-  it("rejects an out-of-range to-size", async () => {
-    const inPath = path.join(tmp, "x.png");
-    await expect(
-      runUpscale({ in: inPath, out: path.join(tmp, "o.png"), toSize: 0 }, tmp, { upscaler: nearestX4 }),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "args.invalid" });
-    await expect(
-      runUpscale({ in: inPath, out: path.join(tmp, "o.png"), toSize: 100.5 }, tmp, { upscaler: nearestX4 }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(
-      runUpscale({ in: inPath, out: path.join(tmp, "o.png"), toSize: 100000 }, tmp, { upscaler: nearestX4 }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
-
-  it("rejects an unknown kernel", async () => {
-    await expect(
-      runUpscale(
-        { in: path.join(tmp, "x.png"), out: path.join(tmp, "o.png"), kernel: "bogus" as ResampleKernel },
-        tmp,
-        { upscaler: nearestX4 },
-      ),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
-
-  it("rejects a tile below the minimum", async () => {
-    await expect(
-      runUpscale({ in: path.join(tmp, "x.png"), out: path.join(tmp, "o.png"), tile: 50 }, tmp, {
-        upscaler: nearestX4,
-      }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(
-      runUpscale({ in: path.join(tmp, "x.png"), out: path.join(tmp, "o.png"), tile: 100.5 }, tmp, {
-        upscaler: nearestX4,
-      }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
+  // to-size / kernel / tile argument rejections now live in verbs/schemas.ts
+  // (validateUpscaleArgs) and are covered by tests/verbs/schemas.test.ts.
 
   it("reports image.decodeFailed for a missing input even with valid args", async () => {
     // Valid args pass validation; the failure must come from loadRawRGBA,

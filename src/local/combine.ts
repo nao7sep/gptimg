@@ -13,8 +13,7 @@
 
 import { LocalOpError, toAbortError } from "../errors.js";
 import { loadMaskPNG, writeMaskPNG } from "../image/bridge.js";
-
-export type CombineOp = "union" | "intersect" | "subtract" | "invert" | "feather";
+import type { CombineOp } from "../enums.js";
 
 export interface CombineArgs {
   op: CombineOp;
@@ -26,15 +25,6 @@ export interface CombineArgs {
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
-}
-
-function expectInputs(op: CombineOp, inputs: string[], want: number): void {
-  if (inputs.length !== want) {
-    throw new LocalOpError(
-      "args.invalid",
-      `combine ${op} expects exactly ${want} input(s); got ${inputs.length}.`,
-    );
-  }
 }
 
 async function loadSameSize(paths: string[]): Promise<{
@@ -124,7 +114,6 @@ export async function runCombine(
   let height: number;
 
   if (args.op === "union" || args.op === "intersect" || args.op === "subtract") {
-    expectInputs(args.op, args.inputs, 2);
     const loaded = await loadSameSize(args.inputs);
     width = loaded.width;
     height = loaded.height;
@@ -145,7 +134,6 @@ export async function runCombine(
       }
     }
   } else if (args.op === "invert") {
-    expectInputs(args.op, args.inputs, 1);
     const loaded = await loadSameSize(args.inputs);
     width = loaded.width;
     height = loaded.height;
@@ -153,14 +141,7 @@ export async function runCombine(
     out = new Uint8Array(a.length);
     for (let p = 0; p < a.length; p++) out[p] = 255 - a[p]!;
   } else {
-    expectInputs(args.op, args.inputs, 1);
     const radius = args.radius ?? 1;
-    if (radius < 0 || !Number.isFinite(radius)) {
-      throw new LocalOpError(
-        "args.invalid",
-        `feather radius must be a non-negative integer; got ${radius}.`,
-      );
-    }
     const loaded = await loadSameSize(args.inputs);
     width = loaded.width;
     height = loaded.height;

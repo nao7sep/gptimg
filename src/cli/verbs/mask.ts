@@ -5,6 +5,7 @@ import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 import { numberArg } from "../parsers.js";
 import type { MaskMethod } from "../../types.js";
+import { MASK_METHODS } from "../../enums.js";
 
 function parseKeyOpt(v: string): string {
   if (v === "auto" || v === "from-sidecar") return v;
@@ -36,7 +37,7 @@ export function registerMask(program: Command): void {
       new Option(
         "--method <name>",
         "Mask producer. 'ai' uses BiRefNet (~1-1.5GB RSS per process); run sequentially. Default chroma.",
-      ).choices(["chroma", "ai"]),
+      ).choices(MASK_METHODS),
     )
     .option(
       "--key <value>",

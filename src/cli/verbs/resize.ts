@@ -4,14 +4,7 @@ import type { ResampleKernel } from "../../types.js";
 import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 import { numberArg } from "../parsers.js";
-
-const KERNELS: readonly ResampleKernel[] = [
-  "nearest",
-  "cubic",
-  "mitchell",
-  "lanczos2",
-  "lanczos3",
-];
+import { RESAMPLE_KERNELS } from "../../enums.js";
 
 interface ResizeCliOpts {
   in: string;
@@ -37,7 +30,7 @@ export function registerResize(program: Command): void {
     )
     .addOption(
       new Option("--kernel <name>", "Resampling kernel. Default lanczos3.").choices(
-        KERNELS,
+        RESAMPLE_KERNELS,
       ),
     )
     .option("--out-dir <dir>", "Output directory (default: same as input)")

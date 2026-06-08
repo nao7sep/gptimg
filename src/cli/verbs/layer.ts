@@ -4,18 +4,7 @@ import type { LayerGravity, LayerOffset } from "../../types.js";
 import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 import { numberArg, pointArg } from "../parsers.js";
-
-const GRAVITIES: LayerGravity[] = [
-  "center",
-  "north",
-  "south",
-  "east",
-  "west",
-  "northeast",
-  "northwest",
-  "southeast",
-  "southwest",
-];
+import { LAYER_GRAVITIES } from "../../enums.js";
 
 interface LayerCliOpts {
   base: string;
@@ -46,7 +35,7 @@ export function registerLayer(program: Command): void {
       new Option(
         "--gravity <pos>",
         "Placement anchor. Default center. Ignored if --top-offset is given.",
-      ).choices(GRAVITIES),
+      ).choices(LAYER_GRAVITIES),
     )
     .option(
       "--top-offset <x,y>",

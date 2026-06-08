@@ -212,30 +212,6 @@ export async function runBackplate(
   const angle = args.angle ?? BACKPLATE_DEFAULTS.angle;
   const shape = args.shape ?? BACKPLATE_DEFAULTS.shape;
 
-  if (!Number.isInteger(size) || size <= 0) {
-    throw new LocalOpError(
-      "args.invalid",
-      `backplate: size must be a positive integer; got ${size}.`,
-    );
-  }
-  if (!Number.isFinite(content) || content <= 0 || content > 1) {
-    throw new LocalOpError(
-      "args.invalid",
-      `backplate: content must be in (0..1]; got ${content}.`,
-    );
-  }
-  if (!Number.isFinite(radius) || radius < 0 || radius > 0.5) {
-    throw new LocalOpError(
-      "args.invalid",
-      `backplate: radius must be in [0..0.5]; got ${radius}.`,
-    );
-  }
-  if (!Number.isFinite(angle)) {
-    throw new LocalOpError(
-      "args.invalid",
-      `backplate: angle must be a finite number; got ${angle}.`,
-    );
-  }
   const from = normalizeHex(args.from, "--from");
   const to = normalizeHex(args.to, "--to");
 
