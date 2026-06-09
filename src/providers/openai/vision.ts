@@ -55,39 +55,49 @@ function imageContentParts(images: VisionProviderArgs["images"]) {
   }));
 }
 
+/**
+ * Parse the model's structured verdict. An unparseable, empty, or off-schema
+ * response is a provider fault, not a negative verdict — throw so it surfaces
+ * as a runtime error rather than masquerading as "the image failed the check".
+ * `ok: false` is reserved for a genuine verdict from the model.
+ */
 function parseVerdict(raw: string | null | undefined): VisionVerdict {
   if (typeof raw !== "string" || raw.length === 0) {
-    return { ok: false, score: 0, reasons: ["Empty response from model"] };
+    throw new ProviderError(
+      "provider.invalidResponse",
+      "Vision model returned an empty response.",
+    );
   }
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof parsed.ok === "boolean" &&
-      typeof parsed.score === "number" &&
-      Array.isArray(parsed.reasons)
-    ) {
-      return {
-        ok: parsed.ok,
-        // The schema declares score as a number but does not bound it; clamp
-        // so a stray out-of-range value can't propagate to callers.
-        score: Math.max(0, Math.min(1, parsed.score)),
-        reasons: parsed.reasons.map((r: unknown) => String(r)),
-      };
-    }
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new ProviderError(
+      "provider.invalidResponse",
+      "Vision model response was not valid JSON.",
+      { cause: err },
+    );
+  }
+  if (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    typeof (parsed as { ok?: unknown }).ok === "boolean" &&
+    typeof (parsed as { score?: unknown }).score === "number" &&
+    Array.isArray((parsed as { reasons?: unknown }).reasons)
+  ) {
+    const v = parsed as { ok: boolean; score: number; reasons: unknown[] };
     return {
-      ok: false,
-      score: 0,
-      reasons: ["Model response did not match the verdict schema"],
-    };
-  } catch {
-    return {
-      ok: false,
-      score: 0,
-      reasons: ["Failed to parse JSON from model response"],
+      ok: v.ok,
+      // The schema declares score as a number but does not bound it; clamp
+      // so a stray out-of-range value can't propagate to callers.
+      score: Math.max(0, Math.min(1, v.score)),
+      reasons: v.reasons.map((r) => String(r)),
     };
   }
+  throw new ProviderError(
+    "provider.invalidResponse",
+    "Vision model response did not match the verdict schema.",
+  );
 }
 
 export async function openaiVision(

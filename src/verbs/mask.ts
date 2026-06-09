@@ -9,7 +9,7 @@ import {
 import { aiMaskFromFile } from "../local/ai-mask.js";
 import { chromaMaskFromFile } from "../local/chroma/mask.js";
 import { resolveNetworkForCall } from "../network/index.js";
-import { loadRecipe } from "../recipe/load.js";
+import { loadRecipeForCall } from "../recipe/load.js";
 import { validateChromaSection } from "../recipe/schemas.js";
 import type {
   MaskArgs,
@@ -17,10 +17,7 @@ import type {
   MaskResult,
   MaskStats,
 } from "../types.js";
-import {
-  defaultModelsDir,
-  defaultRecipePath,
-} from "../internal/paths.js";
+import { defaultModelsDir } from "../internal/paths.js";
 import type { VerbCallOptions } from "./options.js";
 import { validateMaskArgs } from "./schemas.js";
 
@@ -63,12 +60,11 @@ export async function maskImpl(
   opts: VerbCallOptions = {},
 ): Promise<MaskResult> {
   validateMaskArgs(args);
-  const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "mask", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const method = args.method ?? "chroma";
-    const recipe = await loadRecipe(recipePath);
+    const recipe = await loadRecipeForCall(args.recipe, ctx.profileDir);
 
     let alpha: Uint8Array;
     let width: number;

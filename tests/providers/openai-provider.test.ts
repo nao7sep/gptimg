@@ -373,11 +373,72 @@ describe("OpenAI provider implementations", () => {
     expect(openaiMock.create).not.toHaveBeenCalled();
   });
 
-  it("vision degrades invalid model JSON into a false verdict", async () => {
-    openaiMock.create.mockResolvedValue({
-      choices: [{ message: { content: "not json" } }],
-    });
+  // A malformed/empty/off-schema response is a provider fault, not a negative
+  // verdict — it must surface as a runtime error rather than masquerade as
+  // "the image failed the check" (ok: false).
+  it("vision throws on an unparseable, empty, or off-schema response", async () => {
+    const badContents = [
+      "not json", // not valid JSON
+      "", // empty response
+      JSON.stringify({ ok: true }), // valid JSON, wrong shape
+    ];
+    for (const content of badContents) {
+      openaiMock.create.mockResolvedValueOnce({
+        choices: [{ message: { content } }],
+      });
+      await expect(
+        openaiVision({
+          check: "is it green?",
+          images: [{ data: png, format: "png" }],
+          params: {},
+          profile,
+          network,
+        }),
+        JSON.stringify(content),
+      ).rejects.toMatchObject({
+        errorType: "provider",
+        code: "provider.invalidResponse",
+      });
+    }
+  });
 
+  it("vision returns a genuine ok:false verdict from the model", async () => {
+    openaiMock.create.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              ok: false,
+              score: 0.2,
+              reasons: ["not green enough"],
+            }),
+          },
+        },
+      ],
+    });
+    await expect(
+      openaiVision({
+        check: "is it green?",
+        images: [{ data: png, format: "png" }],
+        params: {},
+        profile,
+        network,
+      }),
+    ).resolves.toMatchObject({
+      verdict: { ok: false, score: 0.2, reasons: ["not green enough"] },
+    });
+  });
+
+  it("vision clamps an out-of-range score from the model", async () => {
+    openaiMock.create.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({ ok: true, score: 1.7, reasons: [] }),
+          },
+        },
+      ],
+    });
     const result = await openaiVision({
       check: "is it green?",
       images: [{ data: png, format: "png" }],
@@ -385,47 +446,6 @@ describe("OpenAI provider implementations", () => {
       profile,
       network,
     });
-
-    expect(result.verdict).toEqual({
-      ok: false,
-      score: 0,
-      reasons: ["Failed to parse JSON from model response"],
-    });
-  });
-
-  it("vision degrades empty and schema-mismatched responses", async () => {
-    openaiMock.create.mockResolvedValueOnce({
-      choices: [{ message: { content: "" } }],
-    });
-    await expect(
-      openaiVision({
-        check: "is it green?",
-        images: [{ data: png, format: "png" }],
-        params: {},
-        profile,
-        network,
-      }),
-    ).resolves.toMatchObject({
-      verdict: { ok: false, score: 0, reasons: ["Empty response from model"] },
-    });
-
-    openaiMock.create.mockResolvedValueOnce({
-      choices: [{ message: { content: JSON.stringify({ ok: true }) } }],
-    });
-    await expect(
-      openaiVision({
-        check: "is it green?",
-        images: [{ data: png, format: "png" }],
-        params: {},
-        profile,
-        network,
-      }),
-    ).resolves.toMatchObject({
-      verdict: {
-        ok: false,
-        score: 0,
-        reasons: ["Model response did not match the verdict schema"],
-      },
-    });
+    expect(result.verdict).toEqual({ ok: true, score: 1, reasons: [] });
   });
 });

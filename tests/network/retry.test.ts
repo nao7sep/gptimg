@@ -46,8 +46,8 @@ describe("callWithRetry", () => {
     expect(fn).toHaveBeenCalledTimes(3);
   });
 
-  it("retries on 500/502/503/504 and 408/409", async () => {
-    for (const status of [500, 502, 503, 504, 408, 409]) {
+  it("retries on 500/502/503/504 and 408", async () => {
+    for (const status of [500, 502, 503, 504, 408]) {
       const fn = vi
         .fn()
         .mockRejectedValueOnce(http(status))
@@ -61,8 +61,10 @@ describe("callWithRetry", () => {
     }
   });
 
-  it("does NOT retry on 400/401/403/404", async () => {
-    for (const status of [400, 401, 403, 404]) {
+  // 409 is a deterministic conflict for this toolkit's endpoints, not a
+  // transient boundary — retrying it only burns the budget before failing.
+  it("does NOT retry on 400/401/403/404/409", async () => {
+    for (const status of [400, 401, 403, 404, 409]) {
       const fn = vi.fn().mockRejectedValue(http(status));
       await expect(
         callWithRetry({ budgetName: "imageGenerate", budget: fast }, fn),

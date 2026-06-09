@@ -40,8 +40,16 @@ async function writeProfile(filePath: string, profile: Profile): Promise<void> {
  * (`"obf:" + base64(reverse(raw))`). Preserves every other field. Atomic.
  * If the profile file does not exist, a minimal `{ provider: "openai" }`
  * profile is created.
+ *
+ * The key must be non-empty (ignoring surrounding whitespace); storing an empty
+ * key would only surface later as a confusing provider failure. This is the
+ * SDK's contract — enforced here so every caller, library or CLI, behaves the
+ * same.
  */
 export async function setApiKey(filePath: string, rawKey: string): Promise<void> {
+  if (rawKey.trim().length === 0) {
+    throw new ProfileError("apiKey.missing", "API key must not be empty.");
+  }
   let profile: Profile;
   try {
     // Skip the insecure-mode halt: this write path immediately rewrites the

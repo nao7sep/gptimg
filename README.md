@@ -511,7 +511,7 @@ Retry behavior:
 - `Retry-After` and `retry-after-ms` response headers override configured intervals.
 - Without retry headers, retry K waits `retryIntervals[min(K - 1, length - 1)]`.
 - `[]` means immediate retry; `maxRetries: 0` disables retries.
-- Retryable errors include HTTP 408, 409, 429, 5xx, transient network errors, and per-attempt download timeouts.
+- Retryable errors include HTTP 408, 429, 5xx, transient network errors, and per-attempt download timeouts. Deterministic statuses (4xx such as 409 Conflict) are not retried — retrying cannot fix them.
 - 400/401/403/404 and validation failures fail immediately.
 
 Recipe overrides:
@@ -567,7 +567,7 @@ On the CLI, the first `Ctrl-C` triggers cancellation cleanly; a second `Ctrl-C` 
 | 5 | local operation runtime error |
 | 130 | cancelled by `Ctrl-C` / abort |
 
-Exit 2 covers any caller mistake, regardless of which layer catches it, by the test *is this the caller's to fix?* — a malformed invocation or flag, an invalid or out-of-range argument value, an input that fails a precondition (an empty image, mismatched sizes), a profile/recipe the caller named or wrote that is missing/malformed/invalid, an output collision the caller resolves with `--overwrite` or a fresh `--out-name`, a missing API key, or an insecure profile file mode. Malformed flags caught during CLI parsing are emitted by Commander as plain text with usage help; the same class caught by the SDK is emitted as a one-line `error: …` on stderr (the authoritative set is `USAGE_ERROR_CODES` in the source). Exit codes 3/4/5 are genuine runtime, environment, or I/O failures — an unreadable profile (`profile.readFailed`), a failed provider call (`provider.requestFailed`), a local image/model failure — and are emitted as a single JSON object on stderr.
+Exit 2 covers any caller mistake, regardless of which layer catches it, by the test *is this the caller's to fix?* — a malformed invocation or flag, an invalid or out-of-range argument value, an input that fails a precondition (an empty image, mismatched sizes), a profile/recipe the caller named or wrote that is missing/malformed/invalid, an output collision the caller resolves with `--overwrite` or a fresh `--out-name`, a missing API key, or an insecure profile file mode. Malformed flags caught during CLI parsing are emitted by Commander as plain text with usage help; the same class caught by the SDK is emitted as a one-line `error: …` on stderr (the authoritative set is `USAGE_ERROR_CODES` in the source). Exit codes 3/4/5 are genuine runtime, environment, or I/O failures — an unreadable profile or recipe (`profile.readFailed` / `recipe.readFailed`), a failed provider call (`provider.requestFailed`), a local image/model failure — and are emitted as a single JSON object on stderr.
 
 ## Development
 

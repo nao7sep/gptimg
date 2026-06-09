@@ -4,10 +4,10 @@ import {
   resolveOutputPath,
   withVerbLogger,
 } from "../internal/local-verb.js";
-import { defaultModelsDir, defaultRecipePath } from "../internal/paths.js";
+import { defaultModelsDir } from "../internal/paths.js";
 import { runUpscale } from "../local/upscale.js";
 import { resolveNetworkForCall } from "../network/index.js";
-import { loadRecipe } from "../recipe/load.js";
+import { loadRecipeForCall } from "../recipe/load.js";
 import type { UpscaleArgs, UpscaleResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
 import { validateUpscaleArgs } from "./schemas.js";
@@ -28,7 +28,6 @@ export async function upscaleImpl(
 ): Promise<UpscaleResult> {
   validateUpscaleArgs(args);
   const signal = opts.signal;
-  const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
 
   return withVerbLogger(ctx, "upscale", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
@@ -37,7 +36,7 @@ export async function upscaleImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    const network = resolveNetworkForCall(await loadRecipe(recipePath));
+    const network = resolveNetworkForCall(await loadRecipeForCall(args.recipe, ctx.profileDir));
     const cacheDir = defaultModelsDir(ctx.profileDir);
 
     await logger.info("resolve", "upscale start", {

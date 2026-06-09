@@ -15,6 +15,7 @@
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
 import { LocalOpError } from "../../errors.js";
+import { resizeSingleChannel } from "../../image/bridge.js";
 import type { Logger } from "../../log/index.js";
 import type { NetworkBudget } from "../../network/defaults.js";
 import { ensureModel } from "./fetch.js";
@@ -39,26 +40,6 @@ async function resizeRGB(
     .raw()
     .toBuffer();
   return new Uint8Array(rgb);
-}
-
-async function resizeAlphaUp(
-  alpha: Uint8Array,
-  srcW: number,
-  srcH: number,
-  dstW: number,
-  dstH: number,
-): Promise<Uint8Array> {
-  // sharp may widen single-channel raw input to 3 channels during resampling.
-  // Force single-channel output via `.toColourspace("b-w")` so the returned
-  // buffer has exactly dstW*dstH bytes.
-  const out = await sharp(Buffer.from(alpha), {
-    raw: { width: srcW, height: srcH, channels: 1 },
-  })
-    .resize(dstW, dstH, { fit: "fill", kernel: "lanczos3" })
-    .toColourspace("b-w")
-    .raw()
-    .toBuffer();
-  return new Uint8Array(out);
 }
 
 function preprocessToTensor(rgb: Uint8Array, size: number): ort.Tensor {
@@ -159,6 +140,6 @@ export async function runBirefnet(
   }
 
   const { alpha: alphaAtModel, width: outW, height: outH } = tensorToAlpha(output);
-  const alpha = await resizeAlphaUp(alphaAtModel, outW, outH, width, height);
+  const alpha = await resizeSingleChannel(alphaAtModel, outW, outH, width, height);
   return { alpha, width, height };
 }

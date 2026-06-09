@@ -1,11 +1,11 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { withVerbLogger } from "../internal/local-verb.js";
-import { defaultModelsDir, defaultRecipePath } from "../internal/paths.js";
+import { defaultModelsDir } from "../internal/paths.js";
 import { ensureModel } from "../local/models/fetch.js";
 import { MODELS, type ModelKey } from "../local/models/registry.js";
 import { resolveNetworkForCall } from "../network/index.js";
-import { loadRecipe } from "../recipe/load.js";
+import { loadRecipeForCall } from "../recipe/load.js";
 import type { ModelInstallResult, ModelListEntry } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
 import { validateModelKey } from "./schemas.js";
@@ -30,8 +30,9 @@ export async function installModelImpl(
 ): Promise<ModelInstallResult> {
   validateModelKey(key);
   const entry = MODELS[key];
-  const recipePath = opts.recipe ?? defaultRecipePath(ctx.profileDir);
-  const budget = resolveNetworkForCall(await loadRecipe(recipePath)).modelDownload;
+  const budget = resolveNetworkForCall(
+    await loadRecipeForCall(opts.recipe, ctx.profileDir),
+  ).modelDownload;
   const cacheDir = defaultModelsDir(ctx.profileDir);
   return withVerbLogger(ctx, "model", { log: opts.log, onProgress: opts.onProgress }, async (logger) => {
     const installedPath = await ensureModel(entry, cacheDir, {

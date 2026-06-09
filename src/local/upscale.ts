@@ -15,7 +15,7 @@
 import sharp from "sharp";
 import { LocalOpError, toAbortError } from "../errors.js";
 import { fitLongerSide } from "../image/aspect.js";
-import { loadRawRGBA, writeRGBA } from "../image/bridge.js";
+import { loadRawRGBA, resizeSingleChannel, writeRGBA } from "../image/bridge.js";
 import type { Logger } from "../log/index.js";
 import type { NetworkBudget } from "../network/defaults.js";
 import type { ResampleKernel } from "../types.js";
@@ -126,16 +126,14 @@ export async function runUpscale(
       .raw()
       .toBuffer();
 
-    const alphaResized = await sharp(Buffer.from(alpha), {
-      raw: { width, height, channels: 1 },
-    })
-      .resize(finalW, finalH, { fit: "fill", kernel })
-      // Force single-channel output: sharp can widen a 1-channel raw buffer to
-      // 3 channels during resampling, which would desync the RGBA recombine
-      // below (same lesson as birefnet.ts:resizeAlphaUp).
-      .toColourspace("b-w")
-      .raw()
-      .toBuffer();
+    const alphaResized = await resizeSingleChannel(
+      alpha,
+      width,
+      height,
+      finalW,
+      finalH,
+      kernel,
+    );
 
     const rgba = new Uint8Array(finalW * finalH * 4);
     for (let p = 0, s = 0, d = 0; p < finalW * finalH; p++, s += 3, d += 4) {

@@ -143,6 +143,17 @@ describe("setApiKey / clearApiKey", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
+  it("rejects an empty or whitespace-only key (the SDK owns this bound)", async () => {
+    for (const key of ["", "   ", "\n\t"]) {
+      await expect(setApiKey(file, key), JSON.stringify(key)).rejects.toMatchObject({
+        code: "apiKey.missing",
+        errorType: "profile",
+      });
+    }
+    // A rejected key must not create or touch the profile file.
+    await expect(loadProfile(file)).rejects.toMatchObject({ code: "profile.notFound" });
+  });
+
   it("creates a default OpenAI profile when none exists", async () => {
     await setApiKey(file, "sk-local-created");
 

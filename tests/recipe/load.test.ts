@@ -3,7 +3,8 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RecipeError } from "../../src/errors.js";
-import { loadRecipe } from "../../src/recipe/load.js";
+import { loadRecipe, loadRecipeForCall } from "../../src/recipe/load.js";
+import { defaultRecipePath } from "../../src/internal/paths.js";
 
 describe("loadRecipe", () => {
   let tmp: string;
@@ -16,8 +17,24 @@ describe("loadRecipe", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("returns an empty recipe when the file is missing", async () => {
-    await expect(loadRecipe(path.join(tmp, "missing.json"))).resolves.toEqual({});
+  it("treats a named-but-missing recipe as a usage error", async () => {
+    await expect(
+      loadRecipe(path.join(tmp, "missing.json")),
+    ).rejects.toMatchObject({ code: "recipe.notFound" });
+  });
+
+  it("returns an empty recipe for a missing optional (required:false) recipe", async () => {
+    await expect(
+      loadRecipe(path.join(tmp, "missing.json"), { required: false }),
+    ).resolves.toEqual({});
+  });
+
+  it("reports a non-ENOENT read failure as a runtime error", async () => {
+    // Reading a directory yields EISDIR, not ENOENT: the environment's fault,
+    // so a runtime error rather than the caller-named-missing usage error.
+    await expect(loadRecipe(tmp)).rejects.toMatchObject({
+      code: "recipe.readFailed",
+    });
   });
 
   it("loads and validates a recipe from disk", async () => {
@@ -62,5 +79,37 @@ describe("loadRecipe", () => {
         code: "recipe.validationFailed",
       });
     }
+  });
+});
+
+describe("loadRecipeForCall", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-recipe-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("fails when a caller-named recipe is missing", async () => {
+    await expect(
+      loadRecipeForCall(path.join(tmp, "typo.json"), tmp),
+    ).rejects.toMatchObject({ code: "recipe.notFound" });
+  });
+
+  it("treats an absent default recipe as empty (no recipe configured)", async () => {
+    await expect(loadRecipeForCall(undefined, tmp)).resolves.toEqual({});
+  });
+
+  it("loads the default recipe from the profile dir when present", async () => {
+    await writeFile(
+      defaultRecipePath(tmp),
+      JSON.stringify({ generate: { n: 3 } }) + "\n",
+    );
+    await expect(loadRecipeForCall(undefined, tmp)).resolves.toEqual({
+      generate: { n: 3 },
+    });
   });
 });

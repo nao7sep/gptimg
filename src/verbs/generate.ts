@@ -19,7 +19,7 @@ import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
 import { applySet } from "../recipe/applySet.js";
-import { loadRecipe } from "../recipe/load.js";
+import { loadRecipeForCall } from "../recipe/load.js";
 import { validateChromaSection, validateGenerateSection } from "../recipe/schemas.js";
 import { writeSidecar } from "../sidecar/write.js";
 import { nullBase64InResponse } from "../sidecar/nullBase64.js";
@@ -35,7 +35,6 @@ import { validateGenerateArgs } from "./schemas.js";
 import {
   defaultOutDir,
   defaultProfilePath,
-  defaultRecipePath,
   defaultStem,
   utcTimestamp,
 } from "../internal/paths.js";
@@ -54,7 +53,6 @@ export async function generateImpl(
   validateGenerateArgs(args);
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
-  const recipePath = args.recipe ?? defaultRecipePath(ctx.profileDir);
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "generate", { log: args.log, ts, onProgress: opts.onProgress }, async (logger) => {
@@ -65,7 +63,7 @@ export async function generateImpl(
       provider: profile.provider,
     });
 
-    let recipe = await loadRecipe(recipePath);
+    let recipe = await loadRecipeForCall(args.recipe, ctx.profileDir);
     if (args.set?.length) recipe = await applySet(recipe, "generate", args.set);
     const network = resolveNetworkForCall(recipe);
     const section = validateGenerateSection(recipe.generate);

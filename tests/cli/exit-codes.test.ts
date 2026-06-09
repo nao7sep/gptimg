@@ -78,13 +78,13 @@ describe("CLI exit codes", () => {
   let tmp: string;
   let profilePath: string;
   let badProviderPath: string;
-  let missingRecipePath: string;
+  let emptyRecipePath: string;
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-cli-"));
     profilePath = path.join(tmp, "profile.json");
     badProviderPath = path.join(tmp, "bad-provider.json");
-    missingRecipePath = path.join(tmp, "missing-recipe.json");
+    emptyRecipePath = path.join(tmp, "empty-recipe.json");
     await writeFile(
       profilePath,
       JSON.stringify({ provider: "openai", apiKey: "test-key" }) + "\n",
@@ -93,6 +93,10 @@ describe("CLI exit codes", () => {
       badProviderPath,
       JSON.stringify({ provider: "nope", apiKey: "test-key" }) + "\n",
     );
+    // A hermetic, existing (but empty) recipe: pins the recipe so tests never
+    // read the developer's ~/.gptimg/recipe.json, without itself being the
+    // caller-named-missing usage error that those tests are not exercising.
+    await writeFile(emptyRecipePath, JSON.stringify({}) + "\n");
     if (process.platform !== "win32") {
       await chmod(profilePath, 0o600);
       await chmod(badProviderPath, 0o600);
@@ -132,7 +136,7 @@ describe("CLI exit codes", () => {
   it("returns 2 for CLI-owned usage validation", async () => {
     const missingKey = await run(["profile", "set-key"]);
     expect(missingKey.code).toBe(2);
-    expect(missingKey.stderr).toContain("No API key provided");
+    expect(missingKey.stderr).toContain("Provide the API key via --key");
 
     const badNumber = await run([
       "mask",
@@ -210,7 +214,7 @@ describe("CLI exit codes", () => {
       "--profile",
       path.join(tmp, "missing-profile.json"),
       "--recipe",
-      missingRecipePath,
+      emptyRecipePath,
       "--log",
       path.join(tmp, "profile.log"),
     ]);
@@ -237,6 +241,26 @@ describe("CLI exit codes", () => {
     expect(recipe.stderr).toContain("Invalid JSON in recipe");
   });
 
+  it("treats a caller-named recipe that does not exist as a usage error (exit 2)", async () => {
+    // The caller named --recipe, so a missing file is theirs to fix (and their
+    // settings are NOT silently ignored). Contrast: an absent *default* recipe
+    // is a no-op, covered by the SDK loadRecipeForCall tests.
+    const result = await run([
+      "generate",
+      "prompt",
+      "--profile",
+      profilePath,
+      "--recipe",
+      path.join(tmp, "typo-recipe.json"),
+      "--log",
+      path.join(tmp, "typo.log"),
+    ]);
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr.trim()).toMatch(/^error: /);
+    expect(result.stderr).toContain("Recipe file not found");
+  });
+
   it("treats an unknown provider named in the profile as a usage error (exit 2)", async () => {
     const result = await run([
       "generate",
@@ -244,7 +268,7 @@ describe("CLI exit codes", () => {
       "--profile",
       badProviderPath,
       "--recipe",
-      missingRecipePath,
+      emptyRecipePath,
       "--log",
       path.join(tmp, "provider.log"),
     ]);
@@ -326,7 +350,7 @@ describe("CLI exit codes", () => {
       "--profile",
       profilePath,
       "--recipe",
-      missingRecipePath,
+      emptyRecipePath,
       "--log",
       path.join(tmp, "edit.log"),
     ]);
@@ -342,7 +366,7 @@ describe("CLI exit codes", () => {
       "--profile",
       profilePath,
       "--recipe",
-      missingRecipePath,
+      emptyRecipePath,
       "--log",
       path.join(tmp, "vision.log"),
     ]);

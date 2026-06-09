@@ -40,18 +40,20 @@ export function registerProfile(program: Command): void {
     .option("--path <path>", "Profile file path (default: ~/.gptimg/profile.json)");
 
   setKey.action(async (opts: SetKeyOpts) => {
+    // The CLI only selects the source (which is an invocation concern); the SDK
+    // owns the "key must be non-empty" rule, so an empty --key or empty stdin
+    // is rejected there, identically for library callers.
     let raw: string | undefined = opts.key;
-    if (!raw && opts.stdin) {
+    if (raw === undefined && opts.stdin) {
       raw = await readStdin();
     }
-    if (!raw || raw.length === 0) {
-      setKey.error("No API key provided. Use --key <value> or pipe via --stdin.", {
+    if (raw === undefined) {
+      setKey.error("Provide the API key via --key <value> or --stdin.", {
         code: "commander.missingArgument",
       });
     }
-    const key = raw as string;
     const sdk = new GptImg();
-    await sdk.profile.setApiKey(key, opts.path ? { path: opts.path } : undefined);
+    await sdk.profile.setApiKey(raw as string, opts.path ? { path: opts.path } : undefined);
     emit({ ok: true });
   });
 
