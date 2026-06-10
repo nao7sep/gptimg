@@ -100,7 +100,7 @@ export interface Sidecar {
   files: SidecarFileEntry[];
 }
 
-export type LogLevel = "info" | "warn" | "error";
+export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogStage =
   | "resolve"
   | "request"
@@ -111,7 +111,9 @@ export type LogStage =
   | "download"
   | "infer"
   | "cancelled"
-  | "error";
+  | "error"
+  // The logging subsystem reporting on itself (e.g. the session file is unavailable).
+  | "log";
 export type LogVerb =
   | "generate"
   | "edit"
@@ -129,11 +131,14 @@ export type LogVerb =
   | "model";
 
 export interface LogEntry {
-  ts: string;
-  verb: LogVerb;
+  /** Event instant: UTC ISO-8601 with milliseconds and `Z` (logging-conventions envelope). */
+  time: string;
   level: LogLevel;
+  /** Short, stable, human-readable description of the event. */
+  message: string;
+  /** Typed structured fields carried alongside the three envelope keys (sdk-cli §6/§7). */
+  verb: LogVerb;
   stage: LogStage;
-  msg: string;
   data?: Record<string, unknown>;
 }
 

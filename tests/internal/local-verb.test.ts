@@ -149,7 +149,7 @@ describe("withVerbLogger", () => {
       verb: "compose",
       level: "info",
       stage: "resolve",
-      msg: "hello",
+      message: "hello",
       data: { x: 1 },
     });
   });
@@ -169,12 +169,12 @@ describe("withVerbLogger", () => {
       verb: "mask",
       level: "error",
       stage: "error",
-      msg: "boom",
+      message: "boom",
       data: { code: "output.exists" },
     });
   });
 
-  it("derives a default log path under ctx.logDir when logArg is undefined", async () => {
+  it("derives a default millisecond-stamped session log path when logArg is undefined", async () => {
     const result = await withVerbLogger(
       { logDir: tmp },
       "combine",
@@ -185,6 +185,8 @@ describe("withVerbLogger", () => {
       },
     );
     expect(result.startsWith(tmp + path.sep)).toBe(true);
-    expect(result.endsWith("-gptimg.jsonl")).toBe(true);
+    // The session log carries the `-fff` millisecond exception so two same-second
+    // concurrent runs never collide on one file: yyyymmdd-hhmmss-fff-utc.log.
+    expect(path.basename(result)).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/);
   });
 });

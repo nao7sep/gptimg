@@ -6,13 +6,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GptImg } from "../../src/gptimg.js";
 import { defaultModelsDir } from "../../src/internal/paths.js";
 import { MODELS, type ModelKey } from "../../src/local/models/registry.js";
+import { captureStderr } from "../helpers/streams.js";
 
 // `model install` routes through the shared logger envelope, so it opens a log
-// file (mkdir'ing its parent) before doing any work. These tests pin the
-// `--log`/`log` escape hatch that lets a caller redirect that path — without
-// it, an unwritable default log dir would fail the install even though the
-// cache and network are fine. A cache hit logs nothing, so we assert on the
-// directory `openLog` creates, not on a written log line.
+// file (mkdir'ing its parent) before doing any work. The first test pins the
+// `--log`/`log` redirect (a caller can choose where that file goes); the second
+// pins the fallback contract — an unwritable default log dir announces the
+// failure to stderr once and never fails the install, since the cache and network
+// are fine. A cache hit logs nothing, so we assert on the directory `openLog`
+// creates, not on a written log line.
 
 describe("installModelImpl logging", () => {
   let tmp: string;
@@ -50,7 +52,7 @@ describe("installModelImpl logging", () => {
     expect(defaultEntries).toEqual([]);
   });
 
-  it("an explicit log path is an escape hatch when the default log dir can't be opened", async () => {
+  it("a default log dir that can't be opened is announced once, never failing install", async () => {
     const profileDir = path.join(tmp, "profile");
     await seedCachedModel(profileDir);
     // Point the default log dir under a *file*, so opening its log (mkdir of the
@@ -59,15 +61,16 @@ describe("installModelImpl logging", () => {
     await writeFile(blocker, "not a dir");
     const logDir = path.join(blocker, "logs");
 
-    // Without a redirect, install fails purely at logger open.
-    const blocked = new GptImg({ profileDir, logDir });
-    await expect(blocked.model.install(key)).rejects.toMatchObject({ code: "log.openFailed" });
+    let result: { name: string } | undefined;
+    const chunks = await captureStderr(async () => {
+      // The logger can't open its file, but that must not fail the install — the
+      // cache and network are fine, so the failure is announced and work goes on.
+      const sdk = new GptImg({ profileDir, logDir });
+      result = await sdk.model.install(key);
+    });
 
-    // With a writable `log`, the same install succeeds — the default path is
-    // never consulted, so the unwritable dir no longer matters.
-    const writableLog = path.join(tmp, "ok.jsonl");
-    const rescued = new GptImg({ profileDir, logDir });
-    const result = await rescued.model.install(key, { log: writableLog });
-    expect(result.name).toBe(MODELS[key].name);
+    expect(result?.name).toBe(MODELS[key].name);
+    // The logging failure surfaces on stderr rather than being swallowed.
+    expect(chunks.join("")).toContain('"message":"log file unavailable"');
   });
 });

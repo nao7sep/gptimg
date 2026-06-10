@@ -373,18 +373,6 @@ describe("CLI exit codes", () => {
     expect(vision.code).toBe(5);
     expect(parseError(vision.stderr).error.type).toBe("localOp");
 
-    const logDir = path.join(tmp, "log-dir");
-    await mkdir(logDir);
-    const badLog = await run([
-      "mask",
-      "--in",
-      fixture("green-disk.png"),
-      "--log",
-      logDir,
-    ]);
-    expect(badLog.code).toBe(5);
-    expect(parseError(badLog.stderr).error.code).toBe("log.writeFailed");
-
     const fileAsDir = path.join(tmp, "file-as-dir");
     await writeFile(fileAsDir, "");
     const badOutDir = await run([
@@ -398,6 +386,34 @@ describe("CLI exit codes", () => {
     ]);
     expect(badOutDir.code).toBe(5);
     expect(parseError(badOutDir.stderr).error.code).toBe("output.mkdirFailed");
+  });
+
+  it("a log path that can't be written is announced once and never fails the verb", async () => {
+    // Point --log at a directory: opening its parent succeeds but the append
+    // fails (EISDIR). Logging must announce the failure and keep running, never
+    // crash the verb.
+    const logDir = path.join(tmp, "log-as-file");
+    await mkdir(logDir);
+    const outPath = path.join(tmp, "degraded-mask.png");
+    const result = await run([
+      "mask",
+      "--in",
+      fixture("green-disk.png"),
+      "--out-name",
+      outPath,
+      "--overwrite",
+      "--log",
+      logDir,
+    ]);
+
+    // The verb still succeeds and writes its output...
+    expect(result.code).toBe(0);
+    expect(existsSync(outPath)).toBe(true);
+    // ...stdout stays the clean result document (the notice never touches it)...
+    const payload = JSON.parse(result.stdout) as { output: string };
+    expect(payload.output).toBe(outPath);
+    // ...and the logging failure is surfaced on stderr, exactly once.
+    expect(result.stderr.split('"message":"log file unavailable"')).toHaveLength(2);
   });
 
   it("keeps successful mask output on stdout", async () => {

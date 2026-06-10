@@ -4,7 +4,7 @@ An **app icon** is a square master image packed into the platform formats a desk
 
 > **Scope.** `gptimg` performs the **imaging operations** and writes outputs to the paths you give it. It does not know which framework will consume them or how files must be named for it — that placement and renaming is the operator's job (see "Packing"). The conventions below are a reliable way to drive it, but every destination path is yours to supply.
 
-Target formats this produces for: **Tauri** (`src-tauri/icons/` with framework-specific filenames), **Electron** (`build/icon.icns` + `build/icon.ico` via electron-builder), **Avalonia / .NET** (`<ApplicationIcon>` pointing at an `.ico`), and any toolchain that wants a loose sized-PNG set.
+Target formats this produces for: **Tauri** (`src-tauri/icons/` with framework-specific filenames), **Electron** (`build/icon.icns` + `build/icon.ico` via electron-builder), **Avalonia / .NET** (`<ApplicationIcon>` pointing at an `.ico`), **Qt** (PySide6/PyQt — a runtime PNG via `QIcon` plus `.icns`/`.ico` for the packager), and any toolchain that wants a loose sized-PNG set.
 
 ## The pipeline
 
@@ -12,13 +12,13 @@ Target formats this produces for: **Tauri** (`src-tauri/icons/` with framework-s
 generate content → mask → compose → trim --square → [upscale if below on-plate size] → shadow → backplate → layer → icon → rename
 ```
 
-A worked example — the actual QuickDeck run this workflow was validated on (a
+A worked example — a real run this workflow was validated on (a
 cluster of fanned note panels; substitute any glyph). It stages **directly in the
 asset library** so every step is a reviewable git diff (see "Working conventions"):
 
 ```sh
 # Stage in the library path you'll keep this in — NOT a temp dir.
-ICONS=~/code/personal/assets/quickdeck/icons
+ICONS=~/code/<repo>/assets/<project>/icons
 mkdir -p "$ICONS/fanned-panes/indigo"
 
 # 1. Generate the glyph on a chroma backdrop whose key color is absent from the
@@ -137,6 +137,8 @@ Because of (4) especially, **no geometric number can be authoritative** — the 
 
 For a symbol-on-plate icon, **start around 70–78 % optical, then trust your eyes** — and remember a vivid, high-contrast glyph on a dark plate can be set a little smaller than a muted one and still read as large, thanks to the irradiation effect. In this workflow's validated run, `layer --scale 0.78` read right for the fanned-panes glyph on the macOS 0.87 plate, and `0.86` on the **fuller** 0.92 Windows plate (a fuller plate wants a proportionally larger glyph to fill the tile); `~0.62` read clearly too small. Treat those as **starting points tuned by eye, not fixed recommendations** — the right number depends on the art's design, colors, and style.
 
+**Confirm the scale per icon — never ship the starting number unexamined.** The starting scale is a hypothesis: render a small sweep around it (a few percentages per platform), then judge the candidates against a reference icon by eye, and where it helps by the optical-size metric and a `vision` balance check. Decide the macOS and Windows percentages separately, per icon. A sparse or elongated glyph reads far smaller than its bounding box — its scale usually lands well above the default.
+
 ## Normalizing the content size
 
 The glyph's final size on the plate is `layer --scale × plate-side` (for example `0.78 × 1024 ≈ 800 px`), **not** 1024 — `layer` scales the content *down* onto the plate. So normalization is conditional, not a fixed "resize to 1024" step:
@@ -182,6 +184,7 @@ icon-16.png … icon-1024.png              # loose sized set (with --pngs)
 - **Tauri** (`src-tauri/icons/`): `32x32.png`, `128x128.png`, `128x128@2x.png` (= 256 px), `icon.icns`, `icon.ico`, `icon.png`. Map from the loose set: `icon-32.png → 32x32.png`, `icon-128.png → 128x128.png`, `icon-256.png → 128x128@2x.png`; the `.icns`/`.ico`/`.png` keep their names. Then list them in the project's `bundle.icon` array. (If you made per-platform masters, pack each separately and take `icon.icns` from the macOS master, `icon.ico` from the Windows master.)
 - **Electron** (electron-builder): `build/icon.icns` + `build/icon.ico` — the two containers, copied under `build/`.
 - **Avalonia / .NET**: point `<ApplicationIcon>` at `icon.ico`.
+- **Qt — PySide6 / PyQt**: no fixed icon directory. Set the **runtime** window/app icon from a PNG (`app.setWindowIcon(QIcon(...))`, loaded from the package's resources), and hand `icon.icns` / `icon.ico` to whatever packages the app (PyInstaller, briefcase, py2app).
 - **Linux / web / generic**: use the loose `icon-<size>.png` set directly.
 
 The master must be **square and ≥1024×1024** (this workflow produces 1024²).
@@ -190,10 +193,10 @@ The master must be **square and ≥1024×1024** (this workflow produces 1024²).
 
 These keep a session reproducible and debuggable.
 
-- **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/personal/assets/<project>/icons/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: you can commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions, so a human pick that spans sessions would lose its candidates. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
+- **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/<repo>/assets/<project>/icons/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: you can commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions, so a human pick that spans sessions would lose its candidates. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
 - **The top level holds raw generations and their sidecars only.** Every other file — masks, cutouts, plates, composites, previews, finals, packed icons — lives in a subdirectory. This keeps the originals (the one paid, irreplaceable artifact) trivially findable.
 - **One directory per content candidate; one subdirectory per base.** A "candidate" is a distinct *design* (a different concept or style), named by a descriptive slug. Its shared content prep (`mask`, `cutout`, squared `content`, `shadow`) lives at the candidate level; each base (plate color/shape) gets its own subdirectory holding that base's plate(s) and master(s). The chosen master lives in its base subdirectory — there is no separate "final" folder; a clean filename marks it.
-- **Use descriptive slug filenames — no index numbers.** Distinguish candidates by *concept* (`fanned-panes`, `side-panes`, `qd-monogram`), never `-01` — and because each icon gets its **own distinct prompt** rather than micro-variations of one prompt, there is nothing to enumerate. Work files encode the pipeline role (`fanned-panes-original.png`, `-mask.png`, `-content.png`, `-shadow.png`). When you split mac/Windows masters, the `-mac`/`-win` suffix is a **platform tag, not an index** (`fanned-panes-indigo-mac.png`). A few throwaway scale renders while you pick a size are scaffolding — keep only the chosen master and record its scale in the README.
+- **Use descriptive slug filenames — no index numbers.** Distinguish candidates by *concept* (`fanned-panes`, `side-panes`, `bold-monogram`), never `-01` — and because each icon gets its **own distinct prompt** rather than micro-variations of one prompt, there is nothing to enumerate. Work files encode the pipeline role (`fanned-panes-original.png`, `-mask.png`, `-content.png`, `-shadow.png`). When you split mac/Windows masters, the `-mac`/`-win` suffix is a **platform tag, not an index** (`fanned-panes-indigo-mac.png`). A few throwaway scale renders while you pick a size are scaffolding — keep only the chosen master and record its scale in the README.
 - **If you rename a generated image, fix its sidecar.** The generation sidecar (`<stem>.json`) records the image basename in `files[0].name`; if you rename the PNG you must rename the sidecar *and* update that field, or the image↔sidecar pairing silently breaks. The `sha256` does **not** change — it hashes the bytes, not the name.
 - **Keep every raw generation and its sidecar.** The sidecar (`<stem>.json`, written by `generate`) holds the prompt and resolved request — the recipe to reproduce the art. The post-processing verbs (`mask`, `compose`, `trim`, `backplate`, `layer`, `shadow`, `upscale`, `icon`) write **no** sidecars, so record their parameters yourself (see "READMEs").
 - **Never destroy a durable artifact.** Renaming on a collision is fine — both files survive. Overwriting is not: you must be able to inspect how anything was made. Previews are work-in-progress and live in the subdirectories like everything else.
@@ -205,7 +208,7 @@ A staging layout — rooted in the asset library — for two content candidates 
 distinct designs), the keeper split into mac/Windows masters:
 
 ```
-~/code/personal/assets/quickdeck/icons/
+~/code/<repo>/assets/<project>/icons/
   fanned-panes-original.png               # raw + sidecar ONLY at the top level
   fanned-panes-original.json              #   generation sidecar = prompt/provenance
   side-panes-original.{png,json}          # a second candidate = a different design

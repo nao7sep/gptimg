@@ -68,7 +68,7 @@ export async function editImpl(
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "edit", { log: args.log, ts, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "edit", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const profile = await loadProfile(profilePath);
     const resolved = resolveProfile(profile);
     await logger.info("resolve", "apiKey resolved", {

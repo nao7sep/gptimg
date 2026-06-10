@@ -11,9 +11,10 @@ export interface VerbCallOptions {
 
   /**
    * Receive progress as the operation runs. The SDK calls this with each
-   * info/warn stage event it would otherwise only write to the log file; it
-   * never writes to a stream itself. With no callback the SDK stays silent.
-   * The CLI supplies a callback that renders one line per event to stderr.
+   * non-error stage event (info, warn, and debug ticks) it also records to the
+   * log file; it never writes to a stream itself. With no callback the SDK
+   * stays silent. The CLI supplies a callback that renders one line per event
+   * to stderr.
    */
   onProgress?: ((entry: LogEntry) => void) | undefined;
 }

@@ -102,7 +102,10 @@ async function downloadAttempt(
         const percent = Math.floor((received / total) * 100);
         if (percent >= lastReported + 10) {
           lastReported = percent;
-          await logger?.info("download", `${name} ${percent}% (${received}/${total} bytes)`, {
+          // Progress ticks scale with download size — `debug`, so they are
+          // forwarded to the live progress stream but never persisted to an
+          // end-user's log file. The start/end lines below stay `info`.
+          await logger?.debug("download", `${name} ${percent}% (${received}/${total} bytes)`, {
             name,
             percent,
             received,

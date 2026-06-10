@@ -20,7 +20,7 @@ function listen(
 
 describe("resolveNetworkForCall", () => {
   it("rejects invalid recipe.network values", () => {
-    for (const [name, recipe] of [
+    const cases: [string, unknown][] = [
       [
         "unknown category",
         { network: { imageGenrate: { timeout: 120000 } } },
@@ -33,8 +33,9 @@ describe("resolveNetworkForCall", () => {
         "bad value type",
         { network: { imageGenerate: { timeout: "slow" } } },
       ],
-    ]) {
-      expect(() => resolveNetworkForCall(recipe), name).toThrow(RecipeError);
+    ];
+    for (const [name, recipe] of cases) {
+      expect(() => resolveNetworkForCall(recipe as Parameters<typeof resolveNetworkForCall>[0]), name).toThrow(RecipeError);
     }
   });
 

@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type RequestListener, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -14,7 +14,7 @@ const openaiMock = vi.hoisted(() => ({
   generate: vi.fn(),
   edit: vi.fn(),
   create: vi.fn(),
-  toFile: vi.fn(async () => ({ mockFile: true })),
+  toFile: vi.fn(async (_data: unknown, _name?: unknown, _options?: unknown) => ({ mockFile: true })),
 }));
 
 vi.mock("openai", () => ({
@@ -51,7 +51,7 @@ function pngBase64(bytes: Uint8Array): string {
 }
 
 function listen(
-  handler: Parameters<typeof createServer>[0],
+  handler: RequestListener,
 ): Promise<{ server: Server; url: string }> {
   const server = createServer(handler);
   return new Promise((resolve) => {

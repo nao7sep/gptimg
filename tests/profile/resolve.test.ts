@@ -83,7 +83,7 @@ describe("resolveProfile", () => {
     vi.stubEnv("GPTIMG_TEST_KEY", "from-env");
     const p: Profile = {
       provider: "openai",
-      model: "gpt-image-1",
+      organization: "openai-org",
       apiKey: "secret",
       apiKeyEnv: "GPTIMG_TEST_KEY",
     };
@@ -91,6 +91,6 @@ describe("resolveProfile", () => {
     expect(r.redacted).not.toHaveProperty("apiKey");
     expect(r.redacted).not.toHaveProperty("apiKeyEnv");
     expect(r.redacted.provider).toBe("openai");
-    expect(r.redacted.model).toBe("gpt-image-1");
+    expect(r.redacted.organization).toBe("openai-org");
   });
 });

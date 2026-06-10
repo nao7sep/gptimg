@@ -96,7 +96,7 @@ describe("progress emission", () => {
     expect(lines.length).toBeGreaterThan(0);
     const events = lines.map((l) => JSON.parse(l) as LogEntry);
     expect(events.every((ev) => ev.verb === "backplate")).toBe(true);
-    expect(events.every((ev) => typeof ev.stage === "string" && typeof ev.msg === "string")).toBe(true);
+    expect(events.every((ev) => typeof ev.stage === "string" && typeof ev.message === "string")).toBe(true);
     // stdout is exactly the one-shot JSON result, parseable on its own.
     expect(JSON.parse(result.stdout).size).toBe(64);
   });
@@ -106,5 +106,29 @@ describe("progress emission", () => {
     expect(result.code).toBe(0);
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout).size).toBe(64);
+  });
+
+  it("CLI: a degraded log does not duplicate the progress stream on stderr", async () => {
+    // --log points at an existing directory → every append fails (EISDIR), so the
+    // session log degrades. Each real progress event must still appear EXACTLY
+    // once on stderr (the naive fallback used to mirror every line, doubling the
+    // stream that progress already writes there), plus a single failure notice.
+    const result = await run([...backplateArgs(), "--log", tmp]);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).size).toBe(64);
+
+    const events = result.stderr
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as LogEntry);
+    // Exactly one failure notice (stage "log").
+    expect(events.filter((e) => e.stage === "log")).toHaveLength(1);
+    // Every progress event is unique — no line was written twice.
+    const progress = events
+      .filter((e) => e.verb === "backplate" && e.stage !== "log")
+      .map((e) => JSON.stringify(e));
+    expect(progress.length).toBeGreaterThan(0);
+    expect(new Set(progress).size).toBe(progress.length);
   });
 });

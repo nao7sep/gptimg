@@ -66,13 +66,14 @@ describe("loadRecipe", () => {
   });
 
   it("rejects malformed recipe sections", async () => {
-    for (const [name, value] of [
+    const cases: [string, unknown][] = [
       ["generate-n", { generate: { n: 0 } }],
       ["chroma-color", { chroma: { color: "green" } }],
       ["edit", { edit: { size: 123 } }],
       ["vision-shrink", { vision: { shrink: { width: 0, height: 100 } } }],
       ["network", { network: { imageGenerate: { timeout: "slow" } } }],
-    ]) {
+    ];
+    for (const [name, value] of cases) {
       const file = path.join(tmp, `${name}.json`);
       await writeFile(file, JSON.stringify(value));
       await expect(loadRecipe(file), name).rejects.toMatchObject({

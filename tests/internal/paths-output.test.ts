@@ -12,6 +12,7 @@ import {
   defaultRecipePath,
   defaultStem,
   utcTimestamp,
+  utcTimestampMs,
 } from "../../src/internal/paths.js";
 
 describe("internal paths", () => {
@@ -23,7 +24,7 @@ describe("internal paths", () => {
     expect(defaultLogDir(profileDir)).toBe(path.join(profileDir, "logs"));
     expect(defaultOutDir(profileDir)).toBe(path.join(profileDir, "output"));
     expect(defaultLogPath(path.join(profileDir, "logs"), "20260102-030405-utc")).toBe(
-      path.join(profileDir, "logs", "20260102-030405-utc-gptimg.jsonl"),
+      path.join(profileDir, "logs", "20260102-030405-utc.log"),
     );
     expect(defaultStem("20260102-030405-utc")).toBe("20260102-030405-utc-gptimg");
   });
@@ -31,6 +32,16 @@ describe("internal paths", () => {
   it("formats UTC timestamps with the required suffix", () => {
     expect(utcTimestamp(new Date("2026-01-02T03:04:05Z"))).toBe(
       "20260102-030405-utc",
+    );
+  });
+
+  it("formats millisecond UTC timestamps with the -fff exception, zero-padded", () => {
+    expect(utcTimestampMs(new Date("2026-01-02T03:04:05.067Z"))).toBe(
+      "20260102-030405-067-utc",
+    );
+    // A whole-second instant still carries an explicit 000 millisecond part.
+    expect(utcTimestampMs(new Date("2026-01-02T03:04:05Z"))).toBe(
+      "20260102-030405-000-utc",
     );
   });
 });

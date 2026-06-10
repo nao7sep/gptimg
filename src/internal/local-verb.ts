@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { LocalOpError } from "../errors.js";
 import { createLogger, safeLogError, type Logger } from "../log/index.js";
 import { ensureOutputDir } from "./output-files.js";
-import { defaultLogPath, utcTimestamp } from "./paths.js";
+import { defaultLogPath, utcTimestampMs } from "./paths.js";
 import type { LogEntry, LogVerb } from "../types.js";
 
 /** Stem (basename without extension) of a file path. `foo/bar.png` → `bar`. */
@@ -64,19 +64,17 @@ export async function resolveOutputPath(
 }
 
 export interface VerbLoggerOptions {
-  /** Explicit log path. Falls back to `<ts>-gptimg.jsonl` under ctx.logDir. */
+  /** Explicit log path. Falls back to a per-session
+   * `yyyymmdd-hhmmss-fff-utc.log` under ctx.logDir. */
   log?: string | undefined;
-  /** Timestamp for the default log filename — pass the verb's own `ts` when it
-   * also stamps output names, so the log file and the outputs share it. */
-  ts?: string | undefined;
-  /** Progress sink: each info/warn stage event is forwarded here as it fires. */
+  /** Progress sink: each non-error stage event is forwarded here as it fires. */
   onProgress?: ((entry: LogEntry) => void) | undefined;
 }
 
 /**
  * The single logger envelope for every verb (local and provider-backed):
- *   - resolve log path (`opts.log ?? <ts>-gptimg.jsonl` under ctx.logDir)
- *   - open a logger that also forwards info/warn events to `opts.onProgress`
+ *   - resolve log path (`opts.log ?? <yyyymmdd-hhmmss-fff-utc>.log` under ctx.logDir)
+ *   - open a logger that also forwards non-error events to `opts.onProgress`
  *   - run `body(logger)`
  *   - on throw, best-effort `safeLogError`, then rethrow
  *   - always close
@@ -91,7 +89,11 @@ export async function withVerbLogger<T>(
   opts: VerbLoggerOptions,
   body: (logger: Logger) => Promise<T>,
 ): Promise<T> {
-  const logPath = opts.log ?? defaultLogPath(ctx.logDir, opts.ts ?? utcTimestamp());
+  // The session log carries its own millisecond-precision name so two runs that
+  // start in the same UTC second never interleave into one file. This is
+  // deliberately independent of any second-precision stamp a verb uses for its
+  // output names — the log filename is a per-session identity, not an output.
+  const logPath = opts.log ?? defaultLogPath(ctx.logDir, utcTimestampMs());
   const logger = await createLogger(logPath, verbName, { onEvent: opts.onProgress });
   try {
     return await body(logger);

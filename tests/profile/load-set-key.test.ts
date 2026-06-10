@@ -40,10 +40,11 @@ describe("loadProfile", () => {
   });
 
   it("rejects invalid JSON-object shapes", async () => {
-    for (const [name, text] of [
+    const cases: [string, string][] = [
       ["array", "[]"],
       ["null", "null"],
-    ]) {
+    ];
+    for (const [name, text] of cases) {
       const file = path.join(tmp, `${name}.json`);
       await writeFile(file, text);
       await expect(loadProfile(file), name).rejects.toMatchObject({
@@ -53,14 +54,15 @@ describe("loadProfile", () => {
   });
 
   it("rejects malformed, unknown, and legacy profile fields", async () => {
-    for (const [name, value] of [
+    const cases: [string, unknown][] = [
       ["missing-provider", {}],
       ["empty-provider", { provider: "" }],
       ["unknown-field", { provider: "openai", model: "gpt-image-2" }],
       ["legacy-network-field", { provider: "openai", network: { imageGenerate: { timeout: 1000 } } }],
       ["legacy-timeout", { provider: "openai", timeout: 1234 }],
       ["legacy-max-retries", { provider: "openai", maxRetries: 4 }],
-    ]) {
+    ];
+    for (const [name, value] of cases) {
       const file = path.join(tmp, `${name}.json`);
       await writeFile(file, JSON.stringify(value));
       await expect(loadProfile(file), name).rejects.toMatchObject({

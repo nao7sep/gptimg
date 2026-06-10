@@ -97,6 +97,7 @@ describe("ensureModel", () => {
       },
       warn: async () => {},
       error: async () => {},
+      debug: async () => {},
       close: async () => {},
     };
     // Spy stderr for the duration of the download; the SDK must not touch it.

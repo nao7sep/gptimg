@@ -21,7 +21,7 @@ A worked example (a distressed circular postmark; substitute any subject):
 
 ```sh
 # Stage in the library path you'll keep this in — NOT a temp dir.
-STAMPS=~/code/personal/assets/fotoready/stamps
+STAMPS=~/code/<repo>/assets/<project>/stamps
 mkdir -p "$STAMPS/postmark-vintage"
 cd "$STAMPS"
 
@@ -87,6 +87,8 @@ Two rules make chroma reliable:
 - the source is **not on a clean chroma backdrop** at all.
 
 The AI mask works on any background but is heavy (~1–1.5 GB RAM per process) and must run one at a time (see "Concurrency"). The model downloads once on first use; pre-fetch with `gptimg model install birefnet`.
+
+**Translucency is different from wispy edges.** The AI matte fixes *alpha* on wispy fibers, but it cannot recover *color*. A genuinely translucent surface — glass, an insect wing, a thin film — generated over a chroma backdrop has the key color physically bleeding *through* it, and no keyer (chroma or AI matte) can recover what the backdrop hid. `compose --remove-bleed` neutralizes the tint toward the surface's own color, but the area stays slightly ghosted. The only real fix is upstream: make the subject opaque, or generate it over a backdrop the translucent area can tolerate.
 
 **Interior regions.** By default every key-colored pixel — including pockets fully enclosed by the subject — becomes transparent, which is what you want for line art where the gaps between strokes should show the photo beneath. If a subject has an *intentional* solid interior that happens to be key-colored, use `mask --preserve-interior`, or combine a preserve-interior mask with a plain one via `combine intersect`.
 
@@ -160,7 +162,7 @@ gptimg vision --in postmark-vintage-preview-light.png \
 
 These keep a session reproducible and debuggable.
 
-- **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/personal/assets/<project>/stamps/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
+- **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/<repo>/assets/<project>/stamps/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
 - **The top level holds raw generations and their sidecars only.** Every other file — masks, cutouts, previews, finals — lives in a per-candidate subdirectory. This keeps the originals (the one paid, irreplaceable artifact) trivially findable.
 - **Name by the subject, one word — add a second only for what makes a design distinct; no index numbers.** A slug is the **subject noun alone** when nothing but generic charm describes it (cute, happy, nice, funny, little): `mushroom`, `cat`, `star`, `cloud`. Those flavor words neither sort nor distinguish, so drop them. When a design has a **specific character, action, or treatment**, append exactly **one** word for it, placed **after** the noun so the set still sorts by subject: `heart-blushing`, `moon-sleeping`, `planet-winking`, `postmark-vintage`. That one extra word is also what separates future siblings — a second, distinct mushroom becomes `mushroom-spotted`, never a rename of the first and never a numbered `-01`. Work files add the pipeline role on top of the slug: `mushroom-original.png`, `-mask.png`, `-cutout.png`, `-trim.png`, `-shadow.png`. The **final** carries the clean slug with no stage suffix (`mushroom.png`), so the finished asset is obvious from its name alone — no separate "final" folder is needed.
 - **If you rename a generated image, fix its sidecar.** The generation sidecar (`<stem>.json`) records the image basename in `files[0].name`; if you rename the PNG you must rename the sidecar *and* update that field, or the image↔sidecar pairing silently breaks. The `sha256` does **not** change — it hashes the bytes, not the name — so it stays valid.
@@ -173,7 +175,7 @@ These keep a session reproducible and debuggable.
 A staging layout for two candidates (two distinct designs):
 
 ```
-~/code/personal/assets/fotoready/stamps/
+~/code/<repo>/assets/<project>/stamps/
   postmark-vintage-original.png        # raw + sidecar ONLY at the top level
   postmark-vintage-original.json       #   generation sidecar = prompt/provenance
   star-gold-original.{png,json}        # a second candidate = a different design

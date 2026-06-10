@@ -29,22 +29,42 @@ export function defaultModelsDir(profileDir: string): string {
   return path.join(profileDir, "models");
 }
 
+// The default per-session log lives in the app's own logs dir, so it follows the
+// logging convention's filename form: strictly `yyyymmdd-hhmmss-utc.log` — no app
+// name (the path already implies it), no `.jsonl` (a `.log` file holding JSON
+// Lines is the convention). A user `--log <path>` overrides this and is named by
+// the caller.
 export function defaultLogPath(logDir: string, ts: string): string {
-  return path.join(logDir, `${ts}-gptimg.jsonl`);
+  return path.join(logDir, `${ts}.log`);
+}
+
+/** `yyyymmdd-hhmmss` in UTC — the shared date-time body both filename stamps build on. */
+function utcBody(now: Date): string {
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return (
+    `${now.getUTCFullYear()}${p(now.getUTCMonth() + 1)}${p(now.getUTCDate())}` +
+    `-${p(now.getUTCHours())}${p(now.getUTCMinutes())}${p(now.getUTCSeconds())}`
+  );
 }
 
 /** Returns `yyyymmdd-hhmmss-utc` per playbook. OS clock via Date. */
 export function utcTimestamp(now: Date = new Date()): string {
-  const p = (n: number): string => String(n).padStart(2, "0");
-  return (
-    `${now.getUTCFullYear()}` +
-    `${p(now.getUTCMonth() + 1)}` +
-    `${p(now.getUTCDate())}` +
-    `-${p(now.getUTCHours())}` +
-    `${p(now.getUTCMinutes())}` +
-    `${p(now.getUTCSeconds())}` +
-    `-utc`
-  );
+  return `${utcBody(now)}-utc`;
+}
+
+/**
+ * Returns `yyyymmdd-hhmmss-fff-utc` — second precision plus a millisecond part.
+ * This is the `-fff` exception in the timestamp conventions, permitted for a
+ * tool designed to run concurrently. gptimg is exactly that case: it names the
+ * per-session log file with this so two runs that start in the same UTC second
+ * get distinct log files instead of interleaving into one. OS clock via Date.
+ *
+ * Both stamps build on the same `utcBody`, so they cannot drift in their shared
+ * date-time portion; the millisecond variant just carries one extra segment.
+ */
+export function utcTimestampMs(now: Date = new Date()): string {
+  const ms = String(now.getUTCMilliseconds()).padStart(3, "0");
+  return `${utcBody(now)}-${ms}-utc`;
 }
 
 export function defaultStem(ts: string): string {

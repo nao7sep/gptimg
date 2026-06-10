@@ -19,7 +19,8 @@ export interface ModelInstallOptions extends VerbCallOptions {
   /** Re-download and replace even if the model is already cached. */
   force?: boolean;
   recipe?: string;
-  /** Path to log JSONL file. Defaults to <ts>-gptimg.jsonl under the log dir. */
+  /** Path to log JSONL file. Defaults to a per-session
+   * `yyyymmdd-hhmmss-fff-utc.log` under the log dir. */
   log?: string;
 }
 

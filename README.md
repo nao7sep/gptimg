@@ -20,6 +20,7 @@ What each verb *does* is defined by the source and `--help`; this README is the 
 - Always run `mask` from the **original** image. To change mask parameters, rerun from the original — do not feed a previous mask or composite back through `mask`.
 - `vision` handles any semantic check, but it **cannot see transparency** (it ingests a transparent PNG flattened on black). Composite a cutout onto a known plate first, then vision-check that.
 - The local AI models load large native memory (BiRefNet for `mask --method ai` ~1–1.5 GB, Swin2SR for `upscale` up to ~4.4 GB) — run them **one at a time**. Network calls (`generate`/`edit`/`vision`) can run in parallel.
+- A cold cache downloads the model on first use. Concurrent cold starts are safe — the fetch publishes the file atomically, so they never corrupt the cache — but each one re-downloads it, so warm the cache once with `gptimg model install` before fanning parallel jobs out.
 
 For complete recipes that compose these verbs into finished assets — including the decisions gptimg deliberately does **not** encode (margins, glyph sizing, background-removal choice, directory layout, target-format filenames) — see the workflow guides:
 
@@ -448,7 +449,7 @@ const composed = await sdk.layer({
 const icon = await sdk.icon({ in: composed.output, outDir: "build" });
 ```
 
-All SDK verbs return data objects and never write to stdout/stderr. Each method accepts `{ signal?: AbortSignal; onProgress?: (entry: LogEntry) => void }` as a second argument. `onProgress` is called with each info/warn stage event the verb produces (the same events the CLI renders to stderr) — including model-download percentages and `upscale` per-tile progress — so an embedding application can surface progress however it likes. With no callback the SDK stays silent.
+All SDK verbs return data objects and never write to stdout/stderr. Each method accepts `{ signal?: AbortSignal; onProgress?: (entry: LogEntry) => void }` as a second argument. `onProgress` is called with each non-error stage event the verb produces — info, warn, and debug-level ticks alike (the same events the CLI renders to stderr) — including model-download percentages (classified `debug`, so they reach this live stream but the on-disk log keeps them only when `GPTIMG_DEBUG=1`) and `upscale` per-tile progress, so an embedding application can surface progress however it likes. With no callback the SDK stays silent.
 
 Building blocks are exposed for composition:
 
@@ -533,7 +534,7 @@ Bare `--set` keys are scoped under the current verb; paths beginning with `gener
 |---|---|
 | `<stem>.<ext>`, `<stem>-N.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
 | `<stem>.json` | Sidecar with resolved request, redacted response, SHA-256 file table |
-| `<utc>-gptimg.jsonl` | Per-invocation JSONL log |
+| `<yyyymmdd-hhmmss-fff-utc>.log` | Per-session log, millisecond-stamped so concurrent runs never collide (JSON Lines in a `.log` file) |
 | `~/.gptimg/models/<model>.onnx` | Lazily fetched AI models (BiRefNet for `mask --method ai`, Swin2SR for `upscale`) |
 | `<input-stem>-mask.png` | `mask` output (grayscale alpha) |
 | `<input-stem>-composed.png` | `compose` output (RGBA or flattened RGB) |
@@ -573,11 +574,11 @@ Exit 2 covers any caller mistake, regardless of which layer catches it, by the t
 
 ```sh
 npm run build
-npm run typecheck
+npm run typecheck   # type-check src and the test files
 npm test
 ```
 
-Tests cover the algorithmic core, CLI exit-code boundaries, SDK abort shape, OpenAI provider adapters, network retry behavior, and the chroma pipeline against committed synthetic fixtures under `tests/fixtures/`.
+Tests cover the algorithmic core, CLI exit-code boundaries, SDK abort shape, OpenAI provider adapters, network retry behavior, and the chroma pipeline against committed synthetic fixtures under `tests/fixtures/`. `npm run typecheck` type-checks both the shipped `src/` and the test files (`tsconfig.test.json`) — Vitest runs the tests without type-checking them, so the test config keeps them covered.
 
 ## License
 

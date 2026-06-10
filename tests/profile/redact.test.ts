@@ -40,6 +40,35 @@ describe("redact", () => {
     expect(out).toEqual(input);
   });
 
+  it("redacts every seeded secret key, case-insensitively by whole name", () => {
+    const input = {
+      apiKey: "a",
+      Authorization: "Bearer x",
+      TOKEN: "t",
+      Password: "p",
+      secret: "s",
+    };
+    expect(redact(input)).toEqual({
+      apiKey: "[redacted]",
+      Authorization: "[redacted]",
+      TOKEN: "[redacted]",
+      Password: "[redacted]",
+      secret: "[redacted]",
+    });
+  });
+
+  it("matches whole keys only — never by substring", () => {
+    // `tokenCount`/`broken` contain "token"; `apiKeyEnv` contains "apikey";
+    // `secretsManager` contains "secret". None is an exact key, so all survive.
+    const input = {
+      tokenCount: 42,
+      broken: true,
+      apiKeyEnv: "OPENAI_API_KEY",
+      secretsManager: "arn:...",
+    };
+    expect(redact(input)).toEqual(input);
+  });
+
   it("handles null, undefined, primitives, and empty objects safely", () => {
     expect(redact(null)).toBeNull();
     expect(redact(undefined)).toBeUndefined();
