@@ -22,7 +22,7 @@ A worked example (a distressed circular postmark; substitute any subject):
 ```sh
 # Stage in the library path you'll keep this in — NOT a temp dir.
 STAMPS=~/code/personal/assets/fotoready/stamps
-mkdir -p "$STAMPS/vintage-postmark"
+mkdir -p "$STAMPS/postmark-vintage"
 cd "$STAMPS"
 
 # 1. Generate the art as ink/shapes on a flat chroma backdrop, at MEDIUM quality
@@ -33,33 +33,33 @@ gptimg generate \
   "a distressed circular postmark, dark crimson ink, concentric rings and a date, \
    printed directly on a flat solid pure green #00ff00 background, no paper, flat top-down view" \
   --set size=1024x1024 --set chroma.color=#00ff00 --set quality=medium \
-  --out-dir "$STAMPS" --out-name vintage-postmark-original
+  --out-dir "$STAMPS" --out-name postmark-vintage-original
 
 # All work-in-progress goes in the candidate's subdirectory.
-cd "$STAMPS/vintage-postmark"
-ORIG="$STAMPS/vintage-postmark-original.png"
+cd "$STAMPS/postmark-vintage"
+ORIG="$STAMPS/postmark-vintage-original.png"
 
 # 2. Produce an alpha mask by keying out the backdrop.
-gptimg mask --in "$ORIG" --key from-sidecar --out-name vintage-postmark-mask.png
+gptimg mask --in "$ORIG" --key from-sidecar --out-name postmark-vintage-mask.png
 
 # 3. Apply the mask and clean residual key spill from the kept pixels.
-gptimg compose --in "$ORIG" --mask vintage-postmark-mask.png \
-  --remove-bleed "#00ff00" --out-name vintage-postmark-cutout.png
+gptimg compose --in "$ORIG" --mask postmark-vintage-mask.png \
+  --remove-bleed "#00ff00" --out-name postmark-vintage-cutout.png
 
 # 4. Crop the SUBJECT to a uniform 5% margin — NO --square. This locks the asset size.
-gptimg trim --in vintage-postmark-cutout.png --margin 0.05 \
-  --out-name vintage-postmark-trim.png
+gptimg trim --in postmark-vintage-cutout.png --margin 0.05 \
+  --out-name postmark-vintage-trim.png
 
 # 5. Cast the shadow INSIDE the locked canvas (--keep-canvas = no growth; applied by
 #    default, drop only on request). The shadow tucks into the margin; only its faint
 #    feathered tail can clip at the edge, which is harmless.
-gptimg shadow --in vintage-postmark-trim.png --keep-canvas --blur 16 --offset 0,12 \
-  --opacity 0.28 --color "#101010" --out-name vintage-postmark-shadow.png
+gptimg shadow --in postmark-vintage-trim.png --keep-canvas --blur 16 --offset 0,12 \
+  --opacity 0.28 --color "#101010" --out-name postmark-vintage-shadow.png
 
 # 6. Normalize the longer edge to 1024 — upscale to enlarge (the usual case), resize
 #    to shrink (see "Normalizing the size"). The final carries the clean slug.
-gptimg upscale --in vintage-postmark-shadow.png --to-size 1024 \
-  --out-name vintage-postmark.png
+gptimg upscale --in postmark-vintage-shadow.png --to-size 1024 \
+  --out-name postmark-vintage.png
 ```
 
 ## Quality: always start at medium
@@ -137,19 +137,19 @@ Instead, **composite the cutout onto a known plate and check that.** Build a sol
 
 ```sh
 gptimg backplate --size 1200 --from "#9a9a9a" --to "#9a9a9a" --shape rect --content 1.0 --radius 0 --out-name plate-light.png
-gptimg layer --base plate-light.png --top vintage-postmark-cutout.png --scale 0.85 --out-name vintage-postmark-preview-light.png
+gptimg layer --base plate-light.png --top postmark-vintage-cutout.png --scale 0.85 --out-name postmark-vintage-preview-light.png
 
 # a dark plate reveals any key-color fringe:
 gptimg backplate --size 1200 --from "#202020" --to "#202020" --shape rect --content 1.0 --radius 0 --out-name plate-dark.png
-gptimg layer --base plate-dark.png --top vintage-postmark-cutout.png --scale 0.85 --out-name vintage-postmark-preview-dark.png
+gptimg layer --base plate-dark.png --top postmark-vintage-cutout.png --scale 0.85 --out-name postmark-vintage-preview-dark.png
 ```
 
 A light plate reveals shadows; a dark plate reveals key-color fringe. Check both. **Do not** preview by feeding the cutout to `compose --mask` as its own mask: `compose` reads the mask image's *luminance* (it greyscales and drops alpha), so a glossy subject's dark areas would read as semi-transparent — a misleading preview, not a real defect. To check *opacity* directly, measure the alpha channel rather than eyeballing a composite. Then, for a recorded verdict:
 
 ```sh
-gptimg vision --in vintage-postmark-preview-light.png \
+gptimg vision --in postmark-vintage-preview-light.png \
   --check "one centered subject, fully visible, clean edges with no colored fringe; a soft shadow is acceptable" \
-  --out-name vintage-postmark-vision
+  --out-name postmark-vintage-vision
 ```
 
 **Use both kinds of sight.** If the agent driving `gptimg` can view images, that direct look is the real check. Run `gptimg vision` *in addition*, as a recorded, scriptable verdict that a vision-incapable agent can also rely on — do not omit it, but do not treat its score as final either: it is noisy, and on **intentionally textured or distressed** art it tends to flag the texture itself as "fringe." Cross-check against the plate composites before acting on a vision verdict.
@@ -160,7 +160,7 @@ These keep a session reproducible and debuggable.
 
 - **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/personal/assets/<project>/stamps/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
 - **The top level holds raw generations and their sidecars only.** Every other file — masks, cutouts, previews, finals — lives in a per-candidate subdirectory. This keeps the originals (the one paid, irreplaceable artifact) trivially findable.
-- **Use descriptive slug filenames — no index numbers.** A "candidate" is a distinct *design* (a different subject, style, or treatment), so it gets its own descriptive slug — `vintage-postmark`, `gold-star`, `wax-seal` — never a numbered variant like `-01`. Leave room for future siblings: `vintage-postmark`, not `postmark`, so a later `modern-postmark` does not force a rename. Work files encode the pipeline role: `vintage-postmark-original.png`, `-mask.png`, `-cutout.png`, `-trim.png`, `-shadow.png`. The **final** carries the clean slug with no stage suffix (`vintage-postmark.png`), so the finished asset is obvious from its name alone — no separate "final" folder is needed.
+- **Name by the subject, one word — add a second only for what makes a design distinct; no index numbers.** A slug is the **subject noun alone** when nothing but generic charm describes it (cute, happy, nice, funny, little): `mushroom`, `cat`, `star`, `cloud`. Those flavor words neither sort nor distinguish, so drop them. When a design has a **specific character, action, or treatment**, append exactly **one** word for it, placed **after** the noun so the set still sorts by subject: `heart-blushing`, `moon-sleeping`, `planet-winking`, `postmark-vintage`. That one extra word is also what separates future siblings — a second, distinct mushroom becomes `mushroom-spotted`, never a rename of the first and never a numbered `-01`. Work files add the pipeline role on top of the slug: `mushroom-original.png`, `-mask.png`, `-cutout.png`, `-trim.png`, `-shadow.png`. The **final** carries the clean slug with no stage suffix (`mushroom.png`), so the finished asset is obvious from its name alone — no separate "final" folder is needed.
 - **If you rename a generated image, fix its sidecar.** The generation sidecar (`<stem>.json`) records the image basename in `files[0].name`; if you rename the PNG you must rename the sidecar *and* update that field, or the image↔sidecar pairing silently breaks. The `sha256` does **not** change — it hashes the bytes, not the name — so it stays valid.
 - **Keep every raw generation and its sidecar.** The sidecar (`<stem>.json`, written by `generate`) holds the prompt and resolved request — it is the recipe to reproduce the art. The post-processing verbs (`mask`, `compose`, `trim`, `resize`, `upscale`, `shadow`) do **not** write sidecars, so record their parameters yourself (see "READMEs").
 - **Never destroy a durable artifact.** Renaming on a name collision is fine — both files survive. Overwriting is not: if something goes wrong, you must still be able to inspect how it was made. Previews are work-in-progress and live in the candidate subdirectory like everything else; they may be regenerated, but do not overwrite originals or finals.
@@ -172,18 +172,18 @@ A staging layout for two candidates (two distinct designs):
 
 ```
 ~/code/personal/assets/fotoready/stamps/
-  vintage-postmark-original.png        # raw + sidecar ONLY at the top level
-  vintage-postmark-original.json       #   generation sidecar = prompt/provenance
-  gold-star-original.{png,json}        # a second candidate = a different design
-  vintage-postmark/                    # all work-in-progress + the final for this design
+  postmark-vintage-original.png        # raw + sidecar ONLY at the top level
+  postmark-vintage-original.json       #   generation sidecar = prompt/provenance
+  star-gold-original.{png,json}        # a second candidate = a different design
+  postmark-vintage/                    # all work-in-progress + the final for this design
     README.md                          #   how this design was made
-    vintage-postmark-mask.png
-    vintage-postmark-cutout.png
-    vintage-postmark-trim.png
-    vintage-postmark-shadow.png
-    vintage-postmark-preview-light.png  vintage-postmark-preview-dark.png   # verification previews (kept)
-    vintage-postmark.png               #   FINAL (clean slug, shadow baked in)
-  gold-star/
+    postmark-vintage-mask.png
+    postmark-vintage-cutout.png
+    postmark-vintage-trim.png
+    postmark-vintage-shadow.png
+    postmark-vintage-preview-light.png  postmark-vintage-preview-dark.png   # verification previews (kept)
+    postmark-vintage.png               #   FINAL (clean slug, shadow baked in)
+  star-gold/
     ...
 ```
 
