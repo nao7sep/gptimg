@@ -588,19 +588,32 @@ export interface CombineResult {
 
 // ----- model management -----
 
-export interface ModelInstallResult {
+/** One model file as installed (or found already cached) by `model install`. */
+export interface InstalledModel {
   key: string;
   name: string;
   path: string;
+  /** True when `--force` re-downloaded over an existing cache entry. */
   forced: boolean;
 }
 
+/** Result of `model install`: every model the call installed. */
+export interface ModelInstallResult {
+  installed: InstalledModel[];
+}
+
+/** One known model and its cache state, from `model list`. */
 export interface ModelListEntry {
   key: string;
   name: string;
   path: string;
   cached: boolean;
   sizeBytes?: number;
+}
+
+/** Result of `model list`: every known model and whether it is cached. */
+export interface ModelListResult {
+  models: ModelListEntry[];
 }
 
 export interface GptImgOptions {

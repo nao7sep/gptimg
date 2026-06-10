@@ -70,7 +70,7 @@ import { trimImpl } from "./verbs/trim.js";
 import { upscaleImpl } from "./verbs/upscale.js";
 import { visionImpl } from "./verbs/vision.js";
 import type { ModelKey } from "./local/models/registry.js";
-import type { ModelInstallResult, ModelListEntry } from "./types.js";
+import type { InstalledModel, ModelInstallResult, ModelListResult } from "./types.js";
 
 export type { VerbCallOptions } from "./verbs/options.js";
 export type { ModelInstallOptions } from "./verbs/model.js";
@@ -111,11 +111,11 @@ export class GptImg {
   };
 
   readonly model = {
-    install: (key: ModelKey, opts?: ModelInstallOptions): Promise<ModelInstallResult> =>
+    install: (key: ModelKey, opts?: ModelInstallOptions): Promise<InstalledModel> =>
       installModelImpl(this.ctx, key, opts),
-    installAll: (opts?: ModelInstallOptions): Promise<ModelInstallResult[]> =>
+    installAll: (opts?: ModelInstallOptions): Promise<ModelInstallResult> =>
       installAllModelsImpl(this.ctx, opts),
-    list: (): ModelListEntry[] => listModelsImpl(this.ctx),
+    list: (): ModelListResult => listModelsImpl(this.ctx),
   };
 
   constructor(opts: GptImgOptions = {}) {

@@ -49,7 +49,7 @@ const TOP_LEVEL_KEYS = new Set(["generate", "edit", "vision", "chroma", "network
  * `@path` reads the value from a file (parsed as JSON if possible).
  *
  * Paths that start with a recognized top-level key (`generate`, `edit`,
- * `vision`, `network`) are treated as recipe-rooted; everything else is
+ * `vision`, `chroma`, `network`) are treated as recipe-rooted; everything else is
  * scoped under the verb's section. So `--set network.imageGenerate.timeout=...`
  * sets `recipe.network.imageGenerate.timeout`, while `--set size=...` sets
  * `recipe.<verb>.size`.

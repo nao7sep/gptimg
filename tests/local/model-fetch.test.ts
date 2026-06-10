@@ -159,32 +159,6 @@ describe("ensureModel", () => {
     }
   });
 
-  it("cleans up a stale .partial from a prior interrupted run before downloading", async () => {
-    const body = Buffer.from(new Uint8Array([3, 3, 3]));
-    const { server, baseURL } = await listen((_req, res) => {
-      res.writeHead(200);
-      res.end(body);
-    });
-    try {
-      const entry: ModelEntry = {
-        name: "partial-cleanup.bin",
-        url: baseURL,
-        inputSize: 0,
-      };
-      await writeFile(
-        path.join(tmp, `${entry.name}.partial`),
-        Buffer.from("garbage from a prior run"),
-      );
-      const finalPath = await ensureModel(entry, tmp);
-      expect(finalPath).toBe(path.join(tmp, entry.name));
-      expect(existsSync(`${finalPath}.partial`)).toBe(false);
-      const got = await readFile(finalPath);
-      expect(Array.from(new Uint8Array(got))).toEqual(Array.from(new Uint8Array(body)));
-    } finally {
-      await closeServer(server);
-    }
-  });
-
   it("removes the .partial when the download itself fails", async () => {
     const { server, baseURL } = await listen((_req, res) => {
       res.writeHead(404);

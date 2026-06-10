@@ -12,6 +12,9 @@ const sdkCalls = vi.hoisted(() => ({
   combine: vi.fn(),
   setApiKey: vi.fn(),
   clearApiKey: vi.fn(),
+  modelInstall: vi.fn(),
+  modelInstallAll: vi.fn(),
+  modelList: vi.fn(),
 }));
 
 vi.mock("../../src/gptimg.js", () => ({
@@ -19,6 +22,12 @@ vi.mock("../../src/gptimg.js", () => ({
     readonly profile = {
       setApiKey: sdkCalls.setApiKey,
       clearApiKey: sdkCalls.clearApiKey,
+    };
+
+    readonly model = {
+      install: sdkCalls.modelInstall,
+      installAll: sdkCalls.modelInstallAll,
+      list: sdkCalls.modelList,
     };
 
     generate = sdkCalls.generate;
@@ -305,6 +314,67 @@ describe("CLI success contracts", () => {
       }),
       { signal: expect.any(AbortSignal), onProgress: expect.any(Function) },
     );
+  });
+
+  it("model install wraps a single targeted install in one { installed } object", async () => {
+    const model = {
+      key: "birefnet",
+      name: "birefnet-general-fp16-v1.onnx",
+      path: "/cache/birefnet-general-fp16-v1.onnx",
+      forced: false,
+    };
+    sdkCalls.modelInstall.mockResolvedValue(model);
+
+    const result = await run(["model", "install", "birefnet"]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    const parsed = JSON.parse(result.stdout);
+    // sdk-cli §4: one JSON object on stdout, never a bare array.
+    expect(Array.isArray(parsed)).toBe(false);
+    expect(parsed).toEqual({ installed: [model] });
+    expect(sdkCalls.modelInstall).toHaveBeenCalledWith(
+      "birefnet",
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        onProgress: expect.any(Function),
+      }),
+    );
+    expect(sdkCalls.modelInstallAll).not.toHaveBeenCalled();
+  });
+
+  it("model install with no name passes the installAll wrapper straight through", async () => {
+    const wrapper = {
+      installed: [
+        { key: "birefnet", name: "birefnet.onnx", path: "/c/birefnet.onnx", forced: false },
+        { key: "swin2sr", name: "swin2sr.onnx", path: "/c/swin2sr.onnx", forced: false },
+      ],
+    };
+    sdkCalls.modelInstallAll.mockResolvedValue(wrapper);
+
+    const result = await run(["model", "install"]);
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(wrapper);
+    expect(sdkCalls.modelInstall).not.toHaveBeenCalled();
+  });
+
+  it("model list emits one { models } object, never a bare array", async () => {
+    const wrapper = {
+      models: [
+        { key: "birefnet", name: "birefnet.onnx", path: "/c/birefnet.onnx", cached: true, sizeBytes: 3 },
+        { key: "swin2sr", name: "swin2sr.onnx", path: "/c/swin2sr.onnx", cached: false },
+      ],
+    };
+    sdkCalls.modelList.mockReturnValue(wrapper);
+
+    const result = await run(["model", "list"]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    const parsed = JSON.parse(result.stdout);
+    expect(Array.isArray(parsed)).toBe(false);
+    expect(parsed).toEqual(wrapper);
   });
 
   it("profile set-key and clear-key emit ok JSON", async () => {

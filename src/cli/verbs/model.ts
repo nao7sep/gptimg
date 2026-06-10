@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
 import { MODELS, type ModelKey } from "../../local/models/registry.js";
+import type { ModelInstallResult } from "../../types.js";
 import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
 
@@ -38,11 +39,14 @@ export function registerModel(program: Command): void {
         log: opts.log,
         ...cliCallOptions(),
       };
-      const results =
+      // Both paths emit the same `{ installed: [...] }` envelope (sdk-cli §4:
+      // one JSON object on stdout). A targeted install returns one model, which
+      // the CLI wraps; installAll already returns the wrapper.
+      const result: ModelInstallResult =
         name !== undefined
-          ? [await sdk.model.install(name as ModelKey, installOpts)]
+          ? { installed: [await sdk.model.install(name as ModelKey, installOpts)] }
           : await sdk.model.installAll(installOpts);
-      emit(results);
+      emit(result);
     });
 
   model

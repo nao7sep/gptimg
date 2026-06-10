@@ -155,15 +155,6 @@ export async function ensureModel(
     return finalPath;
   }
 
-  // Legacy cleanup: pre-link()-rework versions used a fixed `<final>.partial`
-  // name that older interrupted runs may have left behind. The unique-suffix
-  // partials produced by the new code never collide with it, so removing
-  // the legacy artifact is safe and frees disk on first post-upgrade run.
-  const legacyPartial = `${finalPath}.partial`;
-  if (existsSync(legacyPartial)) {
-    await unlink(legacyPartial).catch(() => undefined);
-  }
-
   let partialPath: string;
   try {
     partialPath = await callWithRetry(

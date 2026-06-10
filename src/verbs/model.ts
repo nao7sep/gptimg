@@ -6,7 +6,7 @@ import { ensureModel } from "../local/models/fetch.js";
 import { MODELS, type ModelKey } from "../local/models/registry.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadRecipeForCall } from "../recipe/load.js";
-import type { ModelInstallResult, ModelListEntry } from "../types.js";
+import type { InstalledModel, ModelInstallResult, ModelListResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
 import { validateModelKey } from "./schemas.js";
 
@@ -28,7 +28,7 @@ export async function installModelImpl(
   ctx: ModelContext,
   key: ModelKey,
   opts: ModelInstallOptions = {},
-): Promise<ModelInstallResult> {
+): Promise<InstalledModel> {
   validateModelKey(key);
   const entry = MODELS[key];
   const budget = resolveNetworkForCall(
@@ -49,17 +49,17 @@ export async function installModelImpl(
 export async function installAllModelsImpl(
   ctx: ModelContext,
   opts: ModelInstallOptions = {},
-): Promise<ModelInstallResult[]> {
-  const results: ModelInstallResult[] = [];
+): Promise<ModelInstallResult> {
+  const installed: InstalledModel[] = [];
   for (const key of Object.keys(MODELS) as ModelKey[]) {
-    results.push(await installModelImpl(ctx, key, opts));
+    installed.push(await installModelImpl(ctx, key, opts));
   }
-  return results;
+  return { installed };
 }
 
-export function listModelsImpl(ctx: ModelContext): ModelListEntry[] {
+export function listModelsImpl(ctx: ModelContext): ModelListResult {
   const cacheDir = defaultModelsDir(ctx.profileDir);
-  return (Object.keys(MODELS) as ModelKey[]).map((key) => {
+  const models = (Object.keys(MODELS) as ModelKey[]).map((key) => {
     const entry = MODELS[key];
     const filePath = path.join(cacheDir, entry.name);
     const cached = existsSync(filePath);
@@ -71,4 +71,5 @@ export function listModelsImpl(ctx: ModelContext): ModelListEntry[] {
       sizeBytes: cached ? statSync(filePath).size : undefined,
     };
   });
+  return { models };
 }

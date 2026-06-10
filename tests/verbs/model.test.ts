@@ -74,3 +74,58 @@ describe("installModelImpl logging", () => {
     expect(chunks.join("")).toContain('"message":"log file unavailable"');
   });
 });
+
+// The CLI renders whatever the SDK returns as the single stdout JSON object
+// (sdk-cli §4), so the install/list SDK methods must each return one wrapper
+// object — never a bare array. These pin those shapes: `installAll` → { installed },
+// `list` → { models }.
+describe("model verb result shapes", () => {
+  let tmp: string;
+  const keys = Object.keys(MODELS) as ModelKey[];
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-model-shape-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("installAll wraps the per-model results in a single { installed } object", async () => {
+    const profileDir = path.join(tmp, "profile");
+    // Seed every model so each ensureModel is a cache hit — no network.
+    const modelsDir = defaultModelsDir(profileDir);
+    await mkdir(modelsDir, { recursive: true });
+    for (const key of keys) {
+      await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
+    }
+
+    const sdk = new GptImg({ profileDir, logDir: path.join(tmp, "logs") });
+    const result = await sdk.model.installAll();
+
+    expect(Array.isArray(result)).toBe(false);
+    expect(result.installed.map((m) => m.key)).toEqual(keys);
+    expect(result.installed.every((m) => m.forced === false)).toBe(true);
+  });
+
+  it("list wraps entries in a single { models } object carrying cache state", async () => {
+    const profileDir = path.join(tmp, "profile");
+    const modelsDir = defaultModelsDir(profileDir);
+    await mkdir(modelsDir, { recursive: true });
+    // Seed only the first model so both a cached and an uncached entry appear.
+    await writeFile(path.join(modelsDir, MODELS[keys[0]!].name), Buffer.from([1, 2, 3]));
+
+    const sdk = new GptImg({ profileDir, logDir: path.join(tmp, "logs") });
+    const result = sdk.model.list();
+
+    expect(Array.isArray(result)).toBe(false);
+    expect(result.models.map((m) => m.key)).toEqual(keys);
+    const cached = result.models.find((m) => m.key === keys[0]);
+    expect(cached?.cached).toBe(true);
+    expect(typeof cached?.sizeBytes).toBe("number");
+    if (keys.length > 1) {
+      const uncached = result.models.find((m) => m.key === keys[1]);
+      expect(uncached?.cached).toBe(false);
+      expect(uncached?.sizeBytes).toBeUndefined();
+    }
+  });
+});

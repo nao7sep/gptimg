@@ -100,36 +100,13 @@ function parseProfile(text: string, filePath: string): Profile {
   }
   const result = ProfileSchema.safeParse(parsed);
   if (!result.success) {
-    const hint = migrationHint(result.error);
     const detail = formatZodError(result.error);
     throw new ProfileError(
       "profile.validationFailed",
-      `Profile at ${filePath} invalid: ${detail}${hint ? ` (${hint})` : ""}`,
+      `Profile at ${filePath} invalid: ${detail}`,
     );
   }
   return result.data as Profile;
-}
-
-/**
- * Detect well-known schema migrations and return a short user-actionable
- * hint. Today's only case: the `network` block moved from profile to recipe
- * in the post-inspect-removal cleanup. Without this hint the user sees a
- * raw "Unrecognized key(s)" zod message and has no way to know the field
- * was retired rather than misspelled.
- */
-function migrationHint(err: import("zod").ZodError): string | null {
-  const mentionsNetwork = err.issues.some(
-    (i) =>
-      (i.path[0] === "network") ||
-      (i.code === "unrecognized_keys" &&
-        "keys" in i &&
-        Array.isArray((i as { keys?: unknown }).keys) &&
-        (i as { keys: string[] }).keys.includes("network")),
-  );
-  if (mentionsNetwork) {
-    return "the `network` block moved from profile to recipe; remove it from your profile and put it under `network.*` in your recipe.json";
-  }
-  return null;
 }
 
 function assertSecureMode(filePath: string, mode: number, profile: Profile): void {
