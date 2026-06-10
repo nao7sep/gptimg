@@ -510,9 +510,9 @@ gptimg generate "logo" \
 Retry behavior:
 
 - `Retry-After` and `retry-after-ms` response headers override configured intervals.
-- Without retry headers, retry K waits `retryIntervals[min(K - 1, length - 1)]`.
+- Without retry headers, retry K waits a jittered 75–100% of `retryIntervals[min(K - 1, length - 1)]` (equal jitter; never exceeds the listed value).
 - `[]` means immediate retry; `maxRetries: 0` disables retries.
-- Retryable errors include HTTP 408, 429, 5xx, transient network errors, and per-attempt download timeouts. Deterministic statuses (4xx such as 409 Conflict) are not retried — retrying cannot fix them.
+- Retryable errors include HTTP 408, 429, most 5xx (500, 502–504, 520–525, 530; not 501/526), transient network errors, and per-attempt download timeouts. Deterministic statuses (4xx such as 409 Conflict) are not retried — retrying cannot fix them.
 - 400/401/403/404 and validation failures fail immediately.
 
 Recipe overrides:
