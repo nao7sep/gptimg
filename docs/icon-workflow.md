@@ -12,9 +12,7 @@ Target formats this produces for: **Tauri** (`src-tauri/icons/` with framework-s
 generate content → mask → compose → trim --square → [upscale if below on-plate size] → shadow → backplate → layer → icon → rename
 ```
 
-A worked example — a real run this workflow was validated on (a
-cluster of fanned note panels; substitute any glyph). It stages **directly in the
-asset library** so every step is a reviewable git diff (see "Working conventions"):
+A worked example — a real run this workflow was validated on (a cluster of fanned note panels; substitute any glyph). It stages **directly in the asset library** so every step is a reviewable git diff (see "Working conventions"):
 
 ```sh
 # Stage in the library path you'll keep this in — NOT a temp dir.
@@ -64,9 +62,7 @@ gptimg icon --in "$B/fanned-panes-indigo-mac.png" --out-dir "$B/mac" --pngs
 gptimg icon --in "$B/fanned-panes-indigo-win.png" --out-dir "$B/win" --pngs
 ```
 
-The 0.78 / 0.86 scales are **starting points that read right for this glyph**, not
-fixed numbers — tune them by eye per the art's design, color, and style (see
-"Sizing the glyph").
+The 0.78 / 0.86 scales are **starting points that read right for this glyph**, not fixed numbers — tune them by eye per the art's design, color, and style (see "Sizing the glyph").
 
 ## Quality: always start at medium
 
@@ -204,8 +200,7 @@ These keep a session reproducible and debuggable.
 - **A README at each level.** `<candidate>/README.md` records the raw → content recipe (mask method, trim, shadow, any upscale); `<candidate>/<base>/README.md` records the content → icon recipe (plate `from`/`to`, shape, angle, content fraction, layer scale, chosen size). Free format — enough for another operator to replicate it. These are the human-readable substitute for the sidecars the processing verbs do not emit.
 - **Retention is casual and keeper-scoped.** Keep the complete trail of any asset you decide to keep — raw + sidecar, every pipeline intermediate, the plate(s), the master(s), the packed set, and the READMEs. It is fine to keep the **decision scaffolding** too — contact sheets, scale sweeps, comparison montages, legibility strips, size/DPI references, preview composites; disk is cheap and the goal is to have whatever you might want later, not to be tidy. A candidate you reject outright is dropped *whole*. **When asked to clean up**, delete scaffolding first (the renders that only compared options or informed a pick already recorded in a README), then anything clearly redundant — but **never** the durable trail of a keeper (raw + sidecar, the pipeline-stage outputs that reproduce the asset, the master(s), the packs, the READMEs). This is a guide for what is *safe to remove on request*, not a mandate to auto-prune; keep by default.
 
-A staging layout — rooted in the asset library — for two content candidates (two
-distinct designs), the keeper split into mac/Windows masters:
+A staging layout — rooted in the asset library — for two content candidates (two distinct designs), the keeper split into mac/Windows masters:
 
 ```
 ~/code/<repo>/assets/<project>/icons/
@@ -226,11 +221,7 @@ distinct designs), the keeper split into mac/Windows masters:
     ...
 ```
 
-The library keeps gptimg's toolchain-agnostic `icon-NN.png` names; renaming to a
-framework's names (`32x32.png`, …) happens only when you deploy into the app (see
-"Packing"). The provenance is the top-level `fanned-panes-original.json`; there is
-no renamed sidecar copy beside the master — a copy under a new name would break the
-image↔sidecar pairing (see "If you rename a generated image, fix its sidecar").
+The library keeps gptimg's toolchain-agnostic `icon-NN.png` names; renaming to a framework's names (`32x32.png`, …) happens only when you deploy into the app (see "Packing"). The provenance is the top-level `fanned-panes-original.json`; there is no renamed sidecar copy beside the master — a copy under a new name would break the image↔sidecar pairing (see "If you rename a generated image, fix its sidecar").
 
 ## Finalizing and deploying
 
