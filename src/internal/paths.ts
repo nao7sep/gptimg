@@ -29,11 +29,14 @@ export function defaultModelsDir(profileDir: string): string {
   return path.join(profileDir, "models");
 }
 
-// The default per-session log lives in the app's own logs dir, so it follows the
-// logging convention's filename form: strictly `yyyymmdd-hhmmss-utc.log` — no app
-// name (the path already implies it), no `.jsonl` (a `.log` file holding JSON
-// Lines is the convention). A user `--log <path>` overrides this and is named by
-// the caller.
+// The default per-session log lives in the app's own logs dir and follows the
+// logging convention's filename form — here `yyyymmdd-hhmmss-fff-utc.log`. The
+// default caller stamps it with `utcTimestampMs` (below): the millisecond-precision
+// `-fff` variant the timestamp conventions reserve for concurrent-by-design tools,
+// so two runs starting in the same UTC second get distinct log files instead of
+// interleaving into one. No app name (the path already implies it) and no `.jsonl`
+// (a `.log` file holding JSON Lines is the convention). A user `--log <path>`
+// overrides this and is named by the caller.
 export function defaultLogPath(logDir: string, ts: string): string {
   return path.join(logDir, `${ts}.log`);
 }
