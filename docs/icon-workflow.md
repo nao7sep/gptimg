@@ -113,27 +113,22 @@ A soft **contact shadow** under the glyph lifts it off the plate. Cast it on the
 
 ## Sizing the glyph
 
-How large to make the glyph on the plate is the one genuinely hard call. It has no exact formula, because **perceived size is multi-factorial** — at least four separable effects drive it:
+How large to make the glyph on the plate is the one genuinely hard call. There is no exact formula, because **perceived size is multi-factorial** — at least four separable effects drive it:
 
-1. **Visual mass / area** — how much ink there is.
-2. **Maximum extent / elongation** — a longer shape reads larger at a glance (the *elongation bias*: a tall glass "looks like it holds more"). For equal area, the elongated shape looks bigger.
+1. **Visual mass / area** — how much of the region is actually filled.
+2. **Extent / elongation** — a longer shape reads larger at a glance (the *elongation bias*); for equal area the elongated one looks bigger.
 3. **Orientation** — vertical extent reads ~5–10 % longer than the same physical horizontal extent (the *horizontal–vertical illusion*).
-4. **Color, contrast, brightness** — a bright, warm, high-contrast glyph reads **larger** than a dark, muted, low-contrast one of identical geometry (the *irradiation illusion*: a light shape on a dark field looks bigger than a dark shape on a light field).
+4. **Color / contrast / brightness** — a vivid, bright, warm, high-contrast glyph reads **larger** (and is more appealing) than a dark, muted one of identical geometry (the *irradiation illusion*: a light shape on a dark field looks bigger than a dark shape on a light field).
 
-Because of (4) especially, **no geometric number can be authoritative** — the same shape looks larger in vivid coral-on-dark than in muted gray-on-white. So the guidance below is a **starting point to be adjusted by eye**, not a rule, and deliberately not encoded in `gptimg`.
+So no single number is authoritative — what follows is a **starting point to adjust by eye**, not a rule, and deliberately not encoded in `gptimg`.
 
-**Don't normalize by bounding box.** `layer --scale` sizes the top image by its longer edge, which over-weights extent and is fooled by sparse glyphs (a fanned cluster whose bounding box is mostly empty reads far smaller than its box). Two pro systems make the point: Material and Apple do not use one bounding box — they define **per-shape keylines** (Material's circle keyline is ~11 % larger than its square keyline so the two *look* equal).
+**Judge apparent size by the region the glyph occupies — not its bounding box, and not its ink.** `layer --scale` sizes the top image by its longer edge (the bounding box), which over-weights sparse glyphs: a fanned cluster whose box is mostly empty reads far smaller than its box. Filled-alpha area is the opposite error — it under-counts open glyphs and penalizes solid blocks (an outline and a filled square of the same box look about as big but hold very different ink). The fair middle is the **convex-hull area** — the region the eye perceives a shape to occupy, because the visual system completes internal gaps (*Gestalt closure*). So gauge apparent size by **√(convex-hull area)**, not by `--scale` alone. (Material and Apple arrive at the same place from the other direction: instead of one bounding box they define per-shape keylines so different shapes *look* equally large.)
 
-**A practical starting metric: optical size.** Estimate the glyph's *optical* size as the equivalent square side of its actual ink — `√(filled-alpha area)`, which for typical glyphs lands near `(width + height) / 2` of the ink's bounding box — expressed as a percentage of the plate body (~890 px on a 1024 canvas at `--content 0.87`). This blends mass and extent and uses the real ink, not the box. Then **eyeball it against a familiar reference icon and nudge.**
+**Hull area is only geometry, and perception is not** — it ignores effects (3) and (4). A vivid/bright/warm glyph reads larger than a dark/muted one of the same hull, and a tall glyph larger than a squat one. So treat any area-derived size as a floor and nudge by eye: vivid or elongated art can sit a little smaller, dark/muted or squat art a little larger.
 
-**Two archetypes set the target range:**
+**Archetype ranges** (as % of the plate body, ~890 px on a 1024 canvas at `--content 0.87`): full-bleed / background-as-shape art ~90–100 %; a symbol on a plate ~55–82 %, with sparse open glyphs near the top of that band and dense solid blocks near the bottom — exactly what the hull metric predicts. Within the range, **eyeball against a familiar reference icon and nudge.**
 
-- **Full-bleed / background-as-shape** (the artwork *is* the plate's fill, edge to edge): ~90–100 % of the body.
-- **Symbol-on-plate** (a distinct glyph floating on a colored plate): ~55–82 % of the body. *Object-cluster* glyphs (stacked notes, overlapping shapes) sit at the high end, ~75–82 %; a single small symbol can sit lower.
-
-For a symbol-on-plate icon, **start around 70–78 % optical, then trust your eyes** — and remember a vivid, high-contrast glyph on a dark plate can be set a little smaller than a muted one and still read as large, thanks to the irradiation effect. In this workflow's validated run, `layer --scale 0.78` read right for the fanned-panes glyph on the macOS 0.87 plate, and `0.86` on the **fuller** 0.92 Windows plate (a fuller plate wants a proportionally larger glyph to fill the tile); `~0.62` read clearly too small. Treat those as **starting points tuned by eye, not fixed recommendations** — the right number depends on the art's design, colors, and style.
-
-**Confirm the scale per icon — never ship the starting number unexamined.** The starting scale is a hypothesis: render a small sweep around it (a few percentages per platform), then judge the candidates against a reference icon by eye, and where it helps by the optical-size metric and a `vision` balance check. Decide the macOS and Windows percentages separately, per icon. A sparse or elongated glyph reads far smaller than its bounding box — its scale usually lands well above the default.
+**Confirm per icon — never ship the starting number unexamined.** Render a small sweep (a few percentages per platform), judge by eye (a `vision` balance check helps), and choose the macOS and Windows percentages separately: the fuller Windows plate (`--content 0.92`) wants a proportionally larger glyph, ≈ mac scale × 0.92/0.87.
 
 ## Normalizing the content size
 
@@ -228,5 +223,26 @@ The library keeps gptimg's toolchain-agnostic `icon-NN.png` names; renaming to a
 1. **Pick one combination** (content × base × scale, and a platform master each if you split mac/Windows). Because you staged in the asset library, the keepers and their sidecars and READMEs are already in place — there is nothing to copy; just confirm the chosen master(s) carry clean filenames and the base README records the recipe.
 2. **Pack** the master(s) with `icon --pngs` (one `--out-dir` per master) and **rename** the outputs for the target framework (see "Packing").
 3. **Deploy** the renamed files into the framework's icon directory and wire them up where required (the Tauri `bundle.icon` list; the .NET `<ApplicationIcon>`), replacing any placeholder.
+4. **Confirm the icon shows.** A *built* bundle (`.app` / `.dmg` / `.exe`) carries the new icon directly; a running *dev* session can keep showing a cached old one — on macOS + Tauri especially (see "macOS: refreshing the Dock icon for `tauri dev`" below).
 
 Note an asymmetry with a transparent stamp: a stamp's descriptive slug *is* its deployed filename, but an icon's deployed names are **fixed by the target framework** — the slug only organizes your library. Destination paths are supplied per task, not baked into this workflow.
+
+## macOS: refreshing the Dock icon for `tauri dev`
+
+A *built* bundle embeds the icon, so a freshly built `.app`, `.dmg`, or Windows `.exe` shows the new art immediately. A running **dev** session often does not — the OS caches the app's icon — and this bites hardest on **macOS + Tauri**.
+
+`tauri dev` runs the bare debug binary, and macOS draws the Dock tile from the **registered `.app` bundle** for the app's bundle id (cached from the last `tauri build`), not from the binary or from `src-tauri/icons/`. So a changed icon keeps showing the old art in dev, and `killall Dock` alone won't refresh it. Rebuild a bundle that carries the new icon and re-register it — run from the app repo root, substituting your app name for `<App>`:
+
+```sh
+tauri build --debug --bundles app        # debug profile, .app only — fast, skips the .dmg
+lsregister -f src-tauri/target/debug/bundle/macos/<App>.app
+killall Dock
+```
+
+`lsregister` is not on `PATH`; it lives at `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister`. After this, `tauri dev` resolves its Dock tile through the freshly-registered bundle. If the old icon still sticks — the deeper, image-level IconServices cache — clear that (regenerable) cache and relaunch the UI:
+
+```sh
+sudo rm -rf /Library/Caches/com.apple.iconservices.store && killall Dock Finder
+```
+
+The other targets don't need this: **Windows** compiles the icon into the `.exe`, so rebuilding the debug binary already carries it; **Electron** sets its dev Dock icon at runtime (`app.dock.setIcon`), so refreshing that runtime image is enough.
