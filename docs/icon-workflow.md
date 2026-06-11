@@ -12,57 +12,59 @@ Target formats this produces for: **Tauri** (`src-tauri/icons/` with framework-s
 generate content → mask → compose → trim --square → [upscale if below on-plate size] → shadow → backplate → layer → icon → rename
 ```
 
-A worked example — a real run this workflow was validated on (a cluster of fanned note panels; substitute any glyph). It stages **directly in the asset library** so every step is a reviewable git diff (see "Working conventions"):
+A worked example — a real run this workflow was validated on (Dropkick's three stacked downward chevrons; substitute any glyph). It stages **directly in the asset library** so every step is a reviewable git diff (see "Working conventions"):
 
 ```sh
 # Stage in the library path you'll keep this in — NOT a temp dir.
 ICONS=~/code/<repo>/assets/<project>/icons
-mkdir -p "$ICONS/fanned-panes/indigo"
+mkdir -p "$ICONS/chevrons-down/blue"
 
 # 1. Generate the glyph on a chroma backdrop whose key color is absent from the
-#    art (these panes have no green, so #00ff00 is safe), at MEDIUM quality.
+#    art (these chevrons have no green, so #00ff00 is safe), at MEDIUM quality.
 #    Pass an absolute --out-dir so a paid generation lands where you expect.
 gptimg generate \
-  "A modern flat app-icon illustration: three overlapping rounded-rectangle note \
-   panels fanned like a hand of cards, vivid coral, teal and amber, flat vector \
-   style, centered, on a solid pure green #00ff00 background, no green on the \
-   panels, no shadow, no real words" \
+  "A modern flat app-icon illustration: a bold set of three stacked downward \
+   chevron arrows, thick and chunky, a coral-to-amber gradient across the \
+   chevrons, clean minimal vector style, crisp edges, centered, on a solid pure \
+   green #00ff00 background, no green on the artwork, no shadow, no real words" \
   --set size=1024x1024 --set chroma.color=#00ff00 --set quality=medium \
-  --out-dir "$ICONS" --out-name fanned-panes-original
+  --out-dir "$ICONS" --out-name chevrons-down-original
 
-ORIG="$ICONS/fanned-panes-original.png"
-C="$ICONS/fanned-panes"            # candidate dir = shared content prep
-B="$C/indigo"                      # base dir = one brand plate
+ORIG="$ICONS/chevrons-down-original.png"
+C="$ICONS/chevrons-down"           # candidate dir = shared content prep
+B="$C/blue"                        # base dir = one brand plate
 
 # 2. Shared content prep (used by BOTH platform masters): key out the backdrop,
 #    square the glyph with a shadow margin, cast a contact shadow inside the canvas.
-gptimg mask    --in "$ORIG" --key from-sidecar --out-dir "$C" --out-name fanned-panes-mask.png
-gptimg compose --in "$ORIG" --mask "$C/fanned-panes-mask.png" --remove-bleed "#00ff00" --out-dir "$C" --out-name fanned-panes-cutout.png
-gptimg trim    --in "$C/fanned-panes-cutout.png" --square --margin 0.10 --out-dir "$C" --out-name fanned-panes-content.png
-gptimg shadow  --in "$C/fanned-panes-content.png" --keep-canvas --blur 24 --offset 0,18 \
-  --opacity 0.32 --color "#0a0a20" --out-dir "$C" --out-name fanned-panes-shadow.png
+gptimg mask    --in "$ORIG" --key from-sidecar --out-dir "$C" --out-name chevrons-down-mask.png
+gptimg compose --in "$ORIG" --mask "$C/chevrons-down-mask.png" --remove-bleed "#00ff00" --out-dir "$C" --out-name chevrons-down-cutout.png
+gptimg trim    --in "$C/chevrons-down-cutout.png" --square --margin 0.10 --out-dir "$C" --out-name chevrons-down-content.png
+gptimg shadow  --in "$C/chevrons-down-content.png" --keep-canvas --blur 24 --offset 0,18 \
+  --opacity 0.32 --color "#0a0a20" --out-dir "$C" --out-name chevrons-down-shadow.png
 #    A glyph generated near 1024 is already larger than its on-plate size, so no
 #    upscale is needed here — see "Normalizing the content size".
 
 # 3. Two platform masters from the one content — only the plate --content and the
-#    layer --scale differ (see "Two platforms, two masters" and "Sizing the glyph").
+#    layer --scale (and an optional --top-offset) differ (see "Two platforms, two
+#    masters", "Sizing the glyph", "Positioning the glyph").
 #    Corner `--radius 0.305` and `--content 0.87` are *measured* from real macOS
 #    system icons (see "The base (plate)"); the `squircle` shape is squarer and is
 #    the wrong tool here.
-#    macOS: 0.87 plate, glyph at 0.78.
-gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape rect --radius 0.305 --content 0.87 --out-dir "$B" --out-name plate-indigo-mac.png
-gptimg layer --base "$B/plate-indigo-mac.png" --top "$C/fanned-panes-shadow.png" --scale 0.78 --out-dir "$B" --out-name fanned-panes-indigo-mac.png
-#    Windows: fuller 0.92 plate, glyph at 0.86 so it fills the tile.
-gptimg backplate --size 1024 --from "#4f46e5" --to "#1e1b4b" --shape rect --radius 0.305 --content 0.92 --out-dir "$B" --out-name plate-indigo-win.png
-gptimg layer --base "$B/plate-indigo-win.png" --top "$C/fanned-panes-shadow.png" --scale 0.86 --out-dir "$B" --out-name fanned-panes-indigo-win.png
+#    macOS: 0.87 plate, glyph at 0.68, nudged DOWN 15px to optically center it
+#    (a downward chevron is top-heavy — see "Positioning the glyph").
+gptimg backplate --size 1024 --from "#2563eb" --to "#1e3a8a" --shape rect --radius 0.305 --content 0.87 --out-dir "$B" --out-name plate-blue-mac.png
+gptimg layer --base "$B/plate-blue-mac.png" --top "$C/chevrons-down-shadow.png" --scale 0.68 --top-offset 164,179 --out-dir "$B" --out-name chevrons-down-blue-mac.png
+#    Windows: fuller 0.92 plate, glyph at 0.75.
+gptimg backplate --size 1024 --from "#2563eb" --to "#1e3a8a" --shape rect --radius 0.305 --content 0.92 --out-dir "$B" --out-name plate-blue-win.png
+gptimg layer --base "$B/plate-blue-win.png" --top "$C/chevrons-down-shadow.png" --scale 0.75 --top-offset 128,144 --out-dir "$B" --out-name chevrons-down-blue-win.png
 
 # 4. Pack each master into its own subdir (so icon.icns/icon.ico don't collide),
 #    then cherry-pick per target at deploy time (see "Packing").
-gptimg icon --in "$B/fanned-panes-indigo-mac.png" --out-dir "$B/mac" --pngs
-gptimg icon --in "$B/fanned-panes-indigo-win.png" --out-dir "$B/win" --pngs
+gptimg icon --in "$B/chevrons-down-blue-mac.png" --out-dir "$B/mac" --pngs
+gptimg icon --in "$B/chevrons-down-blue-win.png" --out-dir "$B/win" --pngs
 ```
 
-The 0.78 / 0.86 scales are **starting points that read right for this glyph**, not fixed numbers — tune them by eye per the art's design, color, and style (see "Sizing the glyph").
+The 0.68 / 0.75 scales here are deliberately **small** — three chevrons are a simple mark, and a simple glyph reads oversized next to busier ones (see "Sizing the glyph"). Treat every number above as this glyph's *chosen* values, not defaults: the scales, the `--top-offset`, and the plate colors are all tuned by eye, and the **authoritative record of any icon's parameters is its base README**, not this example.
 
 ## Quality: always start at medium
 
@@ -113,26 +115,52 @@ A soft **contact shadow** under the glyph lifts it off the plate. Cast it on the
 
 ## Sizing the glyph
 
-How large to make the glyph on the plate is the one genuinely hard call. There is no exact formula, because **perceived size is multi-factorial** — at least four separable effects drive it:
+How large to make the glyph on the plate is the one genuinely hard call. There is no exact formula, because **perceived size is multi-factorial** — at least five separable effects drive it:
 
 1. **Visual mass / area** — how much of the region is actually filled.
 2. **Extent / elongation** — a longer shape reads larger at a glance (the *elongation bias*); for equal area the elongated one looks bigger.
 3. **Orientation** — vertical extent reads ~5–10 % longer than the same physical horizontal extent (the *horizontal–vertical illusion*).
 4. **Color / contrast / brightness** — a vivid, bright, warm, high-contrast glyph reads **larger** (and is more appealing) than a dark, muted one of identical geometry (the *irradiation illusion*: a light shape on a dark field looks bigger than a dark shape on a light field).
+5. **Complexity / detail density** — a *simpler* glyph reads **larger and heavier** than a busy one of identical hull area or extent: with fewer parts, each part reads bigger and the mark commands more attention (a bold `<` set as large as a dense `W` looks oversized). Unlike (1)–(4), this one is **only visible across icons** — judging a glyph alone you never see it; lined up beside busier siblings, the simple one dominates.
 
 So no single number is authoritative — what follows is a **starting point to adjust by eye**, not a rule, and deliberately not encoded in `gptimg`.
 
-**Judge apparent size by the region the glyph occupies — not its bounding box, and not its ink.** `layer --scale` sizes the top image by its longer edge (the bounding box), which over-weights sparse glyphs: a fanned cluster whose box is mostly empty reads far smaller than its box. Filled-alpha area is the opposite error — it under-counts open glyphs and penalizes solid blocks (an outline and a filled square of the same box look about as big but hold very different ink). The fair middle is the **convex-hull area** — the region the eye perceives a shape to occupy, because the visual system completes internal gaps (*Gestalt closure*). So gauge apparent size by **√(convex-hull area)**, not by `--scale` alone. (Material and Apple arrive at the same place from the other direction: instead of one bounding box they define per-shape keylines so different shapes *look* equally large.)
+**Judge apparent size by the region the glyph occupies — not its bounding box, and not its ink.** `layer --scale` sizes the top image by its longer edge (the bounding box), which over-weights sparse glyphs: a sparse chevron stack whose box is mostly empty reads far smaller than its box. Filled-alpha area is the opposite error — it under-counts open glyphs and penalizes solid blocks (an outline and a filled square of the same box look about as big but hold very different ink). The fair middle is the **convex-hull area** — the region the eye perceives a shape to occupy, because the visual system completes internal gaps (*Gestalt closure*). So gauge apparent size by **√(convex-hull area)**, not by `--scale` alone. (Material and Apple arrive at the same place from the other direction: instead of one bounding box they define per-shape keylines so different shapes *look* equally large.)
 
 **Hull area is only geometry, and perception is not** — it ignores effects (3) and (4). A vivid/bright/warm glyph reads larger than a dark/muted one of the same hull, and a tall glyph larger than a squat one. So treat any area-derived size as a floor and nudge by eye: vivid or elongated art can sit a little smaller, dark/muted or squat art a little larger.
 
 **Archetype ranges** (as % of the plate body, ~890 px on a 1024 canvas at `--content 0.87`): full-bleed / background-as-shape art ~90–100 %; a symbol on a plate ~55–82 %, with sparse open glyphs near the top of that band and dense solid blocks near the bottom — exactly what the hull metric predicts. Within the range, **eyeball against a familiar reference icon and nudge.**
 
+**Across a suite, complexity outranks hull parity.** The hull metric equalizes perceived size for *one glyph in isolation*; a suite, though, is seen side by side, where factor (5) takes over. A simple mark sized to the same hull as a busy neighbour reads **too big** — so size **simple glyphs down and busy ones up**, and confirm against the actual neighbours at real Dock size, not by matching hull area. (Dropkick's three chevrons, the simplest mark in its suite, sit *smaller* than the busier card-deck and photo-grid icons beside them — not equal to them. An earlier "equalize hull area" pass oversized them; the fix was to shrink the simple glyph, then re-confirm the others by eye.)
+
 **Confirm per icon — never ship the starting number unexamined.** Render a small sweep (a few percentages per platform), judge by eye (a `vision` balance check helps), and choose the macOS and Windows percentages separately: the fuller Windows plate (`--content 0.92`) wants a proportionally larger glyph, ≈ mac scale × 0.92/0.87.
+
+## Positioning the glyph
+
+Sizing and positioning are **separate decisions on the same `layer` step** — `--scale` sets how big, `--top-offset` sets where. Most glyphs need only the first.
+
+**Optional — skip it by default.** `layer` centers the top image by its bounding box (`--gravity center`). For a glyph whose visual mass is centered in its box — most symmetric marks — that is already right; do nothing. Reach for positioning only when the glyph is **asymmetric in mass**.
+
+**Why box-centering can look off.** When the ink is not centered in its bounding box, the box sits centered but the glyph *looks* shifted toward its heavy side. A downward chevron is heavy at the top (two arms) and tapers to a point, so box-centered it reads **lifted**; an arrow or other leaning mark pulls to one side. Center the **perceived mass** (the alpha centroid), not the box — the positional cousin of the perception effects in "Sizing the glyph."
+
+**Any direction.** Usually a **vertical** nudge — top-heavy → move down, bottom-heavy → up — but it can be **horizontal** (a side-weighted glyph → left/right) or both.
+
+**How — `--top-offset` overrides `--gravity`** and sets the scaled top's absolute top-left corner. Start from the centered position and add the nudge:
+
+```
+topW = topH = round(scale × min(baseW, baseH))      # square top
+x0   = round((baseW − topW) / 2)                     # centered left
+y0   = round((baseH − topH) / 2)                     # centered top
+--top-offset (x0 + dx),(y0 + dy)                     # dy>0 down / <0 up; dx>0 right / <0 left
+```
+
+**Finding the nudge.** A good starting `dy` is the glyph's alpha-centroid offset from its canvas center, scaled by the layer factor; then **confirm by eye** with a small offset sweep (free, like the scale sweep) over a center crosshair — a touch past the pure centroid often reads best for tapering shapes. Re-confirm whenever the scale changes, since the pixel nudge scales with it.
+
+**Record per app, not here.** Whether positioning was applied and the exact `--top-offset` belong in the app's base README; this recipe describes only the technique. *(Worked example: Dropkick's chevrons at `--scale 0.68` are box-centered at left 164; their mass sits ~19 px high, so a swept-and-confirmed **down 15 px** gives `--top-offset 164,179`.)*
 
 ## Normalizing the content size
 
-The glyph's final size on the plate is `layer --scale × plate-side` (for example `0.78 × 1024 ≈ 800 px`), **not** 1024 — `layer` scales the content *down* onto the plate. So normalization is conditional, not a fixed "resize to 1024" step:
+The glyph's final size on the plate is `layer --scale × plate-side` (for example `0.68 × 1024 ≈ 696 px`), **not** 1024 — `layer` scales the content *down* onto the plate. So normalization is conditional, not a fixed "resize to 1024" step:
 
 - **If the cut-out glyph is already at least its on-plate size — the usual case, since it's generated near 1024 and then scaled down — skip this step.** `layer` downscales it cleanly; there is nothing to enlarge.
 - **If the glyph came out smaller than its on-plate size, `upscale` it first** to at least that size. Use the learned ×4 super-resolution for *any* enlargement, however small — never a plain stretch — so `layer` isn't forced to enlarge it with a plain kernel. Never enlarge by re-generating; that changes the art. (`upscale` is one of the two strictly-sequential local models — see "Concurrency".)
@@ -154,9 +182,9 @@ Before committing, look at the glyph at the sizes it will actually appear. `gpti
 Unlike a transparent stamp cutout, a composited icon is **opaque**, so `gptimg vision` can judge it directly:
 
 ```sh
-gptimg vision --in "$B/fanned-panes-indigo-mac.png" \
-  --check "one centered glyph on a rounded gradient plate, well balanced, not cut off, good contrast" \
-  --out-name fanned-panes-vision
+gptimg vision --in "$B/chevrons-down-blue-mac.png" \
+  --check "three downward chevrons centered on a rounded gradient plate, well balanced, not cut off, good contrast" \
+  --out-name chevrons-down-vision
 ```
 
 Prefer your own eyes for the real judgment and run `gptimg vision` as an additional recorded check — useful so a vision-incapable agent can complete the same work, and harmless to keep.
@@ -187,7 +215,7 @@ These keep a session reproducible and debuggable.
 - **Stage in the asset library you'll keep the work in** — the target directory you supply (for example `~/code/<repo>/assets/<project>/icons/`), **not** a temp dir. Working in the destination means every step shows up as a reviewable git diff: you can commit (lock) the stable pieces early — the raw generation and its sidecar first — keep iterating on the rest, and prune on request as phases complete. A temp dir is git-invisible and does not survive across sessions, so a human pick that spans sessions would lose its candidates. (`~/.gptimg/` is the tool's own territory — do not stage there.) Get any timestamp from the OS (`date -u`), not from memory.
 - **The top level holds raw generations and their sidecars only.** Every other file — masks, cutouts, plates, composites, previews, finals, packed icons — lives in a subdirectory. This keeps the originals (the one paid, irreplaceable artifact) trivially findable.
 - **One directory per content candidate; one subdirectory per base.** A "candidate" is a distinct *design* (a different concept or style), named by a descriptive slug. Its shared content prep (`mask`, `cutout`, squared `content`, `shadow`) lives at the candidate level; each base (plate color/shape) gets its own subdirectory holding that base's plate(s) and master(s). The chosen master lives in its base subdirectory — there is no separate "final" folder; a clean filename marks it.
-- **Use descriptive slug filenames — no index numbers.** Distinguish candidates by *concept* (`fanned-panes`, `side-panes`, `bold-monogram`), never `-01` — and because each icon gets its **own distinct prompt** rather than micro-variations of one prompt, there is nothing to enumerate. Work files encode the pipeline role (`fanned-panes-original.png`, `-mask.png`, `-content.png`, `-shadow.png`). When you split mac/Windows masters, the `-mac`/`-win` suffix is a **platform tag, not an index** (`fanned-panes-indigo-mac.png`). A few throwaway scale renders while you pick a size are scaffolding — keep only the chosen master and record its scale in the README.
+- **Use descriptive slug filenames — no index numbers.** Distinguish candidates by *concept* (`chevrons-down`, `boot-tread`, `bold-monogram`), never `-01` — and because each icon gets its **own distinct prompt** rather than micro-variations of one prompt, there is nothing to enumerate. Work files encode the pipeline role (`chevrons-down-original.png`, `-mask.png`, `-content.png`, `-shadow.png`). When you split mac/Windows masters, the `-mac`/`-win` suffix is a **platform tag, not an index** (`chevrons-down-blue-mac.png`). A few throwaway scale renders while you pick a size are scaffolding — keep only the chosen master and record its scale in the README.
 - **If you rename a generated image, fix its sidecar.** The generation sidecar (`<stem>.json`) records the image basename in `files[0].name`; if you rename the PNG you must rename the sidecar *and* update that field, or the image↔sidecar pairing silently breaks. The `sha256` does **not** change — it hashes the bytes, not the name.
 - **Keep every raw generation and its sidecar.** The sidecar (`<stem>.json`, written by `generate`) holds the prompt and resolved request — the recipe to reproduce the art. The post-processing verbs (`mask`, `compose`, `trim`, `backplate`, `layer`, `shadow`, `upscale`, `icon`) write **no** sidecars, so record their parameters yourself (see "READMEs").
 - **Never destroy a durable artifact.** Renaming on a collision is fine — both files survive. Overwriting is not: you must be able to inspect how anything was made. Previews are work-in-progress and live in the subdirectories like everything else.
@@ -199,24 +227,24 @@ A staging layout — rooted in the asset library — for two content candidates 
 
 ```
 ~/code/<repo>/assets/<project>/icons/
-  fanned-panes-original.png               # raw + sidecar ONLY at the top level
-  fanned-panes-original.json              #   generation sidecar = prompt/provenance
-  side-panes-original.{png,json}          # a second candidate = a different design
-  fanned-panes/                           # the kept candidate's shared content prep
+  chevrons-down-original.png               # raw + sidecar ONLY at the top level
+  chevrons-down-original.json              #   generation sidecar = prompt/provenance
+  boot-tread-original.{png,json}          # a second candidate = a different design
+  chevrons-down/                           # the kept candidate's shared content prep
     README.md                             #   raw → content recipe
-    fanned-panes-mask.png  fanned-panes-cutout.png  fanned-panes-content.png  fanned-panes-shadow.png
-    indigo/                               # one base (brand plate)
-      README.md                           #   content → icon recipe (records the chosen scales)
-      plate-indigo-mac.png  plate-indigo-win.png
-      fanned-panes-indigo-mac.png         #   macOS master (0.87 plate, glyph 0.78)
-      fanned-panes-indigo-win.png         #   Windows master (0.92 plate, glyph 0.86)
+    chevrons-down-mask.png  chevrons-down-cutout.png  chevrons-down-content.png  chevrons-down-shadow.png
+    blue/                               # one base (brand plate)
+      README.md                           #   content → icon recipe (records the chosen scales + offsets)
+      plate-blue-mac.png  plate-blue-win.png
+      chevrons-down-blue-mac.png         #   macOS master (0.87 plate, glyph 0.68, down 15px)
+      chevrons-down-blue-win.png         #   Windows master (0.92 plate, glyph 0.75)
       mac/  icon.icns icon.ico icon.png icon-16.png … icon-1024.png   # pack of the mac master
       win/  icon.icns icon.ico icon.png icon-16.png … icon-1024.png   # pack of the win master
-  side-panes/                             # a rejected candidate is dropped whole
+  boot-tread/                             # a rejected candidate is dropped whole
     ...
 ```
 
-The library keeps gptimg's toolchain-agnostic `icon-NN.png` names; renaming to a framework's names (`32x32.png`, …) happens only when you deploy into the app (see "Packing"). The provenance is the top-level `fanned-panes-original.json`; there is no renamed sidecar copy beside the master — a copy under a new name would break the image↔sidecar pairing (see "If you rename a generated image, fix its sidecar").
+The library keeps gptimg's toolchain-agnostic `icon-NN.png` names; renaming to a framework's names (`32x32.png`, …) happens only when you deploy into the app (see "Packing"). The provenance is the top-level `chevrons-down-original.json`; there is no renamed sidecar copy beside the master — a copy under a new name would break the image↔sidecar pairing (see "If you rename a generated image, fix its sidecar").
 
 ## Finalizing and deploying
 
