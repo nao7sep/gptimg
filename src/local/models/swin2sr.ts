@@ -261,7 +261,7 @@ export async function tileAndStitch(
       out.set(up.subarray(srcStart, srcStart + rowBytes), dstStart);
     }
     done++;
-    await logger?.info("infer", `upscaled tile ${done}/${specs.length}`, {
+    await logger?.debug("infer", `upscaled tile ${done}/${specs.length}`, {
       tile: done,
       tiles: specs.length,
     });
