@@ -31,6 +31,7 @@ import type { NetworkBudget } from "../../network/defaults.js";
 import { ensureModel } from "./fetch.js";
 import { SWIN2SR_X4 } from "./registry.js";
 import { loadSession } from "./session.js";
+import { packNchw01, unpackChwToU8 } from "./swin2sr-tensor.js";
 import {
   SWIN2SR_DEFAULT_TILE,
   SWIN2SR_MIN_TILE,
@@ -142,16 +143,8 @@ function makeOnnxRun(
   outputName: string,
 ): PaddedModelRun {
   return async (rgb, pw, ph) => {
-    const n = pw * ph;
-    const input = new Float32Array(3 * n);
-    for (let p = 0, i = 0; p < n; p++, i += 3) {
-      input[p] = rgb[i]! / 255;
-      input[n + p] = rgb[i + 1]! / 255;
-      input[2 * n + p] = rgb[i + 2]! / 255;
-    }
-
     const outputs = await session.run({
-      [inputName]: new ort.Tensor("float32", input, [1, 3, ph, pw]),
+      [inputName]: new ort.Tensor("float32", packNchw01(rgb, pw, ph), [1, 3, ph, pw]),
     });
     const tensor = outputs[outputName];
     if (!tensor) {
@@ -160,32 +153,12 @@ function makeOnnxRun(
         `Swin2SR session produced no output named ${outputName}.`,
       );
     }
-    const ow = pw * SWIN2SR_SCALE;
-    const oh = ph * SWIN2SR_SCALE;
-    const dims = tensor.dims;
-    if (
-      dims.length !== 4 ||
-      dims[0] !== 1 ||
-      dims[1] !== 3 ||
-      Number(dims[2]) !== oh ||
-      Number(dims[3]) !== ow
-    ) {
-      throw new LocalOpError(
-        "model.outputShape",
-        `Swin2SR output shape unexpected: got [${dims.join(",")}], expected [1,3,${oh},${ow}].`,
-      );
-    }
-
-    const data = tensor.data as Float32Array;
-    const plane = ow * oh;
-    const res = new Uint8Array(plane * 3);
-    for (let q = 0, d = 0; q < plane; q++, d += 3) {
-      for (let c = 0; c < 3; c++) {
-        const v = data[c * plane + q]!;
-        res[d + c] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255);
-      }
-    }
-    return res;
+    return unpackChwToU8(
+      tensor.data as Float32Array,
+      tensor.dims,
+      pw * SWIN2SR_SCALE,
+      ph * SWIN2SR_SCALE,
+    );
   };
 }
 

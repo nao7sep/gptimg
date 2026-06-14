@@ -21,9 +21,7 @@ import type { NetworkBudget } from "../../network/defaults.js";
 import { ensureModel } from "./fetch.js";
 import { BIREFNET } from "./registry.js";
 import { loadSession } from "./session.js";
-
-const IMAGENET_MEAN = [0.485, 0.456, 0.406];
-const IMAGENET_STD = [0.229, 0.224, 0.225];
+import { logitsToAlpha, normalizeImageNet } from "./birefnet-tensor.js";
 
 async function resizeRGB(
   rgba: Uint8Array,
@@ -43,17 +41,7 @@ async function resizeRGB(
 }
 
 function preprocessToTensor(rgb: Uint8Array, size: number): ort.Tensor {
-  const n = size * size;
-  const data = new Float32Array(3 * n);
-  for (let p = 0, i = 0; p < n; p++, i += 3) {
-    const r = rgb[i]! / 255;
-    const g = rgb[i + 1]! / 255;
-    const b = rgb[i + 2]! / 255;
-    data[p] = (r - IMAGENET_MEAN[0]!) / IMAGENET_STD[0]!;
-    data[n + p] = (g - IMAGENET_MEAN[1]!) / IMAGENET_STD[1]!;
-    data[2 * n + p] = (b - IMAGENET_MEAN[2]!) / IMAGENET_STD[2]!;
-  }
-  return new ort.Tensor("float32", data, [1, 3, size, size]);
+  return new ort.Tensor("float32", normalizeImageNet(rgb, size), [1, 3, size, size]);
 }
 
 /**
@@ -64,36 +52,7 @@ function preprocessToTensor(rgb: Uint8Array, size: number): ort.Tensor {
  * fail loudly with a clear error instead of silently reading wrong data.
  */
 function tensorToAlpha(tensor: ort.Tensor): { alpha: Uint8Array; width: number; height: number } {
-  const dims = tensor.dims;
-  if (dims.length !== 4 || dims[0] !== 1 || dims[1] !== 1) {
-    throw new LocalOpError(
-      "model.outputShape",
-      `BiRefNet output shape unexpected: got [${dims.join(",")}], expected [1, 1, H, W].`,
-    );
-  }
-  const height = Number(dims[2]);
-  const width = Number(dims[3]);
-  if (!Number.isFinite(height) || !Number.isFinite(width) || height <= 0 || width <= 0) {
-    throw new LocalOpError(
-      "model.outputShape",
-      `BiRefNet output spatial dims invalid: H=${dims[2]}, W=${dims[3]}.`,
-    );
-  }
-  const data = tensor.data as Float32Array;
-  const expected = width * height;
-  if (data.length !== expected) {
-    throw new LocalOpError(
-      "model.outputShape",
-      `BiRefNet output tensor has ${data.length} elements; expected ${expected} for [1,1,${height},${width}].`,
-    );
-  }
-  const out = new Uint8Array(expected);
-  for (let p = 0; p < expected; p++) {
-    const v = data[p]!;
-    const sig = 1 / (1 + Math.exp(-v));
-    out[p] = Math.max(0, Math.min(255, Math.round(sig * 255)));
-  }
-  return { alpha: out, width, height };
+  return logitsToAlpha(tensor.data as Float32Array, tensor.dims);
 }
 
 export interface BirefnetOutput {

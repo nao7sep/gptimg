@@ -1,8 +1,10 @@
 import { createServer, type RequestListener, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.js";
 import { openaiEdit } from "../../src/providers/openai/edit.js";
@@ -245,6 +247,161 @@ describe("OpenAI provider implementations", () => {
     ).rejects.toMatchObject({
       name: "AbortError",
       code: "cancelled",
+    });
+    expect(openaiMock.edit).not.toHaveBeenCalled();
+  });
+
+  it("edit wraps a non-abort SDK failure as a provider.requestFailed error", async () => {
+    openaiMock.edit.mockRejectedValue(new Error("upstream 503"));
+
+    await expect(
+      openaiEdit({
+        prompt: "edit it",
+        imagePath: path.join(FIXTURES, "green-disk.png"),
+        params: { model: "gpt-image-2" },
+        profile,
+        network,
+      }),
+    ).rejects.toMatchObject({
+      errorType: "provider",
+      code: "provider.requestFailed",
+      message: /OpenAI images\.edit failed: upstream 503/,
+    });
+  });
+
+  it("edit downloads a URL response item and decodes the bytes", async () => {
+    const { server, url } = await listen((_req, res) => {
+      res.writeHead(200, { "content-type": "image/png" });
+      res.end(Buffer.from(png));
+    });
+    servers.push(server);
+    openaiMock.edit.mockResolvedValue({ data: [{ url }] });
+
+    const result = await openaiEdit({
+      prompt: "edit it",
+      imagePath: path.join(FIXTURES, "green-disk.png"),
+      params: { model: "dall-e-2" },
+      profile,
+      network,
+    });
+
+    expect(result.images[0]?.data).toEqual(png);
+    expect(result.images[0]?.error).toBeUndefined();
+  });
+
+  it("edit reports a failed URL download as a per-item error without throwing", async () => {
+    const { server, url } = await listen((_req, res) => {
+      res.writeHead(500, { "content-type": "text/plain" });
+      res.end("boom");
+    });
+    servers.push(server);
+    openaiMock.edit.mockResolvedValue({ data: [{ url }] });
+
+    const result = await openaiEdit({
+      prompt: "edit it",
+      imagePath: path.join(FIXTURES, "green-disk.png"),
+      params: { model: "dall-e-2" },
+      profile,
+      network,
+    });
+
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0]?.data).toBeNull();
+    expect(result.images[0]?.error).toMatch(/Failed to fetch image from URL/);
+  });
+
+  it("edit reports a response item with neither b64_json nor url as a per-item error", async () => {
+    openaiMock.edit.mockResolvedValue({
+      data: [{ b64_json: null, url: null }, {}],
+    });
+
+    const result = await openaiEdit({
+      prompt: "edit it",
+      imagePath: path.join(FIXTURES, "green-disk.png"),
+      params: { model: "gpt-image-2" },
+      profile,
+      network,
+    });
+
+    expect(result.images).toEqual([
+      { data: null, error: "Response item contained neither b64_json nor url" },
+      { data: null, error: "Response item contained neither b64_json nor url" },
+    ]);
+  });
+
+  it("edit rethrows the LocalOpError when the input image cannot be read", async () => {
+    const missing = path.join(FIXTURES, "does-not-exist.png");
+
+    await expect(
+      openaiEdit({
+        prompt: "edit it",
+        imagePath: missing,
+        params: { model: "gpt-image-2" },
+        profile,
+        network,
+      }),
+    ).rejects.toMatchObject({
+      errorType: "localOp",
+      // Surfaced verbatim from imageFileForEditUpload (upload.ts), not rewrapped.
+      code: "image.readFailed",
+      message: /Failed to read input image at .*does-not-exist\.png/,
+    });
+    expect(openaiMock.edit).not.toHaveBeenCalled();
+  });
+
+  it("edit rejects an input image whose format is unsupported for upload", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "gptimg-edit-"));
+    try {
+      const gifPath = path.join(dir, "input.gif");
+      const gifBytes = await sharp({
+        create: {
+          width: 4,
+          height: 4,
+          channels: 3,
+          background: { r: 1, g: 2, b: 3 },
+        },
+      })
+        .gif()
+        .toBuffer();
+      await writeFile(gifPath, gifBytes);
+
+      await expect(
+        openaiEdit({
+          prompt: "edit it",
+          imagePath: gifPath,
+          params: { model: "gpt-image-2" },
+          profile,
+          network,
+        }),
+      ).rejects.toMatchObject({
+        errorType: "localOp",
+        code: "image.formatUnknown",
+        message: /Unsupported input image format for OpenAI edit upload: gif/,
+      });
+      expect(openaiMock.edit).not.toHaveBeenCalled();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("edit wraps a non-LocalOpError upload failure as image.readFailed", async () => {
+    // toFile (the SDK upload step) is mocked; make it reject with a plain Error
+    // so imageFileForEditUpload throws something that is *not* a LocalOpError.
+    // edit.ts must wrap that into a LocalOpError("image.readFailed").
+    openaiMock.toFile.mockRejectedValueOnce(new Error("toFile blew up"));
+
+    await expect(
+      openaiEdit({
+        prompt: "edit it",
+        imagePath: path.join(FIXTURES, "green-disk.png"),
+        params: { model: "gpt-image-2" },
+        profile,
+        network,
+      }),
+    ).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "image.readFailed",
+      message: /Failed to read edit input image: toFile blew up/,
     });
     expect(openaiMock.edit).not.toHaveBeenCalled();
   });
