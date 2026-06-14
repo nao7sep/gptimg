@@ -9,6 +9,10 @@
     "email": "nao7sep@gmail.com",
     "url": "https://github.com/nao7sep"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nao7sep/gptimg.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -52,6 +56,7 @@
     "@microsoft/api-extractor": "^7.58.7",
     "@types/node": "^25.9.1",
     "@types/write-file-atomic": "^4.0.3",
+    "@vitest/coverage-v8": "^4.1.8",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
