@@ -1,6 +1,7 @@
 {
   "name": "gptimg",
   "version": "0.1.0",
+  "private": true,
   "description": "Batteries-included TypeScript toolkit for AI image generation, vision, and local chroma-key post-processing.",
   "license": "MIT",
   "author": {
