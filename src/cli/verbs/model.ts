@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { GptImg } from "../../gptimg.js";
-import { MODELS, type ModelKey } from "../../local/models/registry.js";
+import type { ModelKey } from "../../local/models/registry.js";
 import type { ModelInstallResult } from "../../types.js";
 import { cliCallOptions } from "../progress.js";
 import { emit } from "../output.js";
@@ -25,13 +25,10 @@ export function registerModel(program: Command): void {
     .option("--force", "Re-download and replace even if already cached")
     .option("--recipe <path>", "Path to recipe JSON file (for network.modelDownload)")
     .option("--log <path>", "Path to log JSONL file")
-    .action(async (name: string | undefined, opts: InstallOpts, cmd: Command) => {
-      const keys = Object.keys(MODELS) as ModelKey[];
-      if (name !== undefined && !keys.includes(name as ModelKey)) {
-        cmd.error(`unknown model '${name}'; known: ${keys.join(", ")}`, {
-          code: "commander.invalidArgument",
-        });
-      }
+    .action(async (name: string | undefined, opts: InstallOpts) => {
+      // An unknown model name is validated authoritatively by the SDK
+      // (`validateModelKey`, called inside install); re-checking here would
+      // duplicate that known-models list and message and let the two drift (sdk-cli §3).
       const sdk = new GptImg();
       const installOpts = {
         force: opts.force,

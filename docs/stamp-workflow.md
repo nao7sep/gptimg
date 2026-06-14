@@ -78,7 +78,7 @@ Two mask methods exist, but **chroma key is the default by a wide margin** — g
 Two rules make chroma reliable:
 
 - **Pick a key color absent from the subject.** `#00ff00` is the default. If the art contains green (foliage, a green object), key on magenta `#ff00ff` instead; in general choose a hue the art does not use. `generate` records the chosen color in the sidecar, and `mask --key from-sidecar` reads it back, so the choice is made once.
-- **Decontaminate edges with `compose --remove-bleed "<key>"`.** This suppresses key spill on every kept pixel and recovers edge colors blended against the backdrop, removing the faint colored fringe that keying otherwise leaves. A faint residual fringe, if any, is hidden under the drop shadow.
+- **Decontaminate edges with `compose --remove-bleed "<key>"`.** For a chromatic key like `#00ff00`, this suppresses key spill on every kept pixel, removing the faint colored fringe that keying otherwise leaves. (Alpha-aware edge-color recovery is a separate path that runs only for an achromatic/gray key.) A faint residual fringe, if any, is hidden under the drop shadow.
 
 **Reach for the AI matte (`mask --method ai`, BiRefNet) only when:**
 

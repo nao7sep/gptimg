@@ -36,7 +36,7 @@ export function registerCombine(program: Command): void {
     )
     .option(
       "--radius <n>",
-      "Feather radius (number of 3×3 box-blur passes). Required for feather.",
+      "Feather radius — number of 3×3 box-blur passes, [0..1024]. Required for feather.",
       numberArg("--radius"),
     )
     .option("--out-dir <dir>", "Output directory (default: same as first input)")

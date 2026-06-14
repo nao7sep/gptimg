@@ -267,10 +267,12 @@ export interface ComposeArgs {
    */
   over?: string;
   /**
-   * Remove the named background color from subject pixels. Applies
-   * chromatic spill suppression at every kept pixel and alpha-aware edge
-   * recovery at partial-α pixels. Achromatic hexes still get edge recovery.
-   * Format: `#rrggbb`.
+   * Remove the named background color from the subject pixels the mask kept.
+   * The math dispatches on the key's chromaticity and only one path runs: a
+   * chromatic key (R/G/B/C/M/Y) gets spill suppression at every kept pixel and
+   * no edge recovery (solving `C = α·F + (1−α)·B` is unstable for chroma/AI-mask
+   * alphas and would halo); an achromatic key (gray) instead gets alpha-aware
+   * edge recovery at partial-α pixels only. Format: `#rrggbb`.
    */
   removeBleed?: string;
   outDir?: string;

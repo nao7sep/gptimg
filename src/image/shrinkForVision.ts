@@ -25,8 +25,16 @@ export async function shrinkForVision(
   try {
     const pipeline = sharp(input as Buffer);
     const meta = await pipeline.metadata();
-    const ow = meta.width ?? 0;
-    const oh = meta.height ?? 0;
+    if (meta.width === undefined || meta.height === undefined) {
+      // No readable dimensions means the bytes aren't a decodable raster; fail at
+      // the boundary instead of carrying a degenerate 0x0 size into the result.
+      throw new LocalOpError(
+        "image.decodeFailed",
+        "Failed to prepare image for vision: the image reports no width/height.",
+      );
+    }
+    const ow = meta.width;
+    const oh = meta.height;
     const fmt = meta.format ?? "png";
 
     const needsShrink = ow > fit.width || oh > fit.height;

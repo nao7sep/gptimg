@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { installSigintHandler } from "./abort.js";
+import { CLI_VERSION } from "./version.js";
 import { emitError } from "./output.js";
 import { exitCodeFor } from "./exitCodes.js";
 import { setQuiet } from "./progress.js";
@@ -26,7 +27,7 @@ function createProgram(): Command {
     .description(
       "AI image generation, vision, and local post-processing (mask, compose, combine, trim, backplate, layer, shadow, icon, upscale, resize).",
     )
-    .version("0.1.0")
+    .version(CLI_VERSION)
     .option(
       "--quiet",
       "Suppress JSONL progress output on stderr (stdout still carries the JSON result)",

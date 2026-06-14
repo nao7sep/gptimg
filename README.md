@@ -66,7 +66,7 @@ Defaults live under `~/.gptimg/`:
 | `~/.gptimg/profile.json` | Provider + API key |
 | `~/.gptimg/recipe.json` | Per-verb parameters (optional; missing is fine) |
 | `~/.gptimg/output/` | Generated images |
-| `~/.gptimg/logs/` | One JSONL file per invocation |
+| `~/.gptimg/logs/` | Per-session JSON Lines logs: a CLI process-lifecycle log per invocation, plus an operation log per verb run |
 | `~/.gptimg/models/` | Cached AI models (BiRefNet for `mask --method ai`, Swin2SR for `upscale`; override with `GPTIMG_MODELS_DIR`) |
 
 ## Common Workflows
@@ -233,7 +233,7 @@ gptimg compose --in image.png --mask image-mask.png --remove-bleed "#00ff00"
 
 Local only. Writes RGBA when `--over` is omitted; flattens to opaque RGB when `--over` is given.
 
-`--remove-bleed <#rrggbb>` cleans the named bg color out of the subject pixels the mask kept. Two passes run together: (1) chromatic spill suppression on every pixel with α > 0 — for a primary key (R/G/B) the key channel is clamped to ≤ max(other two), for a secondary key (C/M/Y) the two non-suppressed channels are reduced by their excess above the suppressed channel; legitimate subject colors satisfy these constraints so the clamp is a no-op for them. (2) Alpha-aware edge color recovery on partial-α pixels — given `C = α·F + (1−α)·B`, solve for `F`, removing the bg blend baked into edge pixels during the original capture. Achromatic hexes (gray bg) skip step 1 but still benefit from step 2.
+`--remove-bleed <#rrggbb>` cleans the named bg color out of the subject pixels the mask kept. The math dispatches on the key's chromaticity — the two cases are alternatives, and only one runs. A **chromatic key** (R/G/B/C/M/Y) gets spill suppression on every kept pixel (α > 0), at all alphas: for a primary key the key channel is clamped to ≤ max(other two); for a secondary key the two non-suppressed channels are reduced by their excess above the suppressed channel. Legitimate subject colors already satisfy these constraints, so the clamp is a no-op for them — and edge recovery is deliberately *not* applied to a chromatic key, because solving `C = α·F + (1−α)·B` is unstable for the non-physical alphas that chroma and AI masks produce and would leave colored halos. An **achromatic key** (gray) has no hue to suppress, so it instead gets alpha-aware edge color recovery on partial-α pixels only: solve `C = α·F + (1−α)·B` for `F` to strip the gray blend baked into edge pixels during capture; fully opaque pixels are left untouched.
 
 ### `combine`
 
@@ -378,7 +378,7 @@ gptimg resize --in big.png --to-size 512
 gptimg resize --in photo.png --to-size 256 --kernel mitchell
 ```
 
-Local only, no model. One sharp resample to `--to-size` (the longer side; aspect preserved), in either direction. This is the cheap counterpart to `upscale`: milliseconds and a few MB, with no 54MB model download or GBs of RAM. Use it to **downscale** (where a learned model adds nothing — classical kernels are already optimal for shrinking) or for quick enlargement where super-resolution quality isn't needed; reach for `upscale` only when enlarging small content and you want the learned ×4. `--to-size` is required; `--kernel` (default `lanczos3`; also `nearest`, `cubic`, `mitchell`, `lanczos2`) selects the resampler. Alpha is preserved. Default output name `<input-stem>-resize.png`.
+Local only, no model. One sharp resample to `--to-size` (the longer side; aspect preserved), in either direction. This is the cheap counterpart to `upscale`: milliseconds and a few MB, with no ~54 MB model download or GBs of RAM. Use it to **downscale** (where a learned model adds nothing — classical kernels are already optimal for shrinking) or for quick enlargement where super-resolution quality isn't needed; reach for `upscale` only when enlarging small content and you want the learned ×4. `--to-size` is required; `--kernel` (default `lanczos3`; also `nearest`, `cubic`, `mitchell`, `lanczos2`) selects the resampler. Alpha is preserved. Default output name `<input-stem>-resize.png`.
 
 ### `model`
 
@@ -534,7 +534,7 @@ Bare `--set` keys are scoped under the current verb; paths beginning with `gener
 |---|---|
 | `<stem>.<ext>`, `<stem>-N.<ext>`, `<stem>-NN.<ext>` | AI image output(s) |
 | `<stem>.json` | Sidecar with resolved request, redacted response, SHA-256 file table |
-| `<yyyymmdd-hhmmss-fff-utc>.log` | Per-session log, millisecond-stamped so concurrent runs never collide (JSON Lines in a `.log` file) |
+| `<yyyymmdd-hhmmss-fff-utc>.log` | Per-session JSON Lines log, millisecond-stamped so concurrent runs never collide. The CLI writes a process-lifecycle log (startup/shutdown, last-resort crash hooks); each verb run writes its own operation log |
 | `~/.gptimg/models/<model>.onnx` | Lazily fetched AI models (BiRefNet for `mask --method ai`, Swin2SR for `upscale`) |
 | `<input-stem>-mask.png` | `mask` output (grayscale alpha) |
 | `<input-stem>-composed.png` | `compose` output (RGBA or flattened RGB) |

@@ -14,14 +14,18 @@ import type { Logger } from "../../src/log/index.js";
 
 /** Minimal Logger that records the messages forwarded to it. */
 function recordingLogger(events: { stage: string; msg: string }[]): Logger {
+  // Per-tile progress is a firehose tick, so tileAndStitch emits it at `debug`
+  // (logging conventions: per-chunk progress ticks are debug, never info).
+  // Record debug as well as info so those ticks are captured.
+  const record = async (stage: string, msg: string): Promise<void> => {
+    events.push({ stage, msg });
+  };
   return {
     handle: { path: "mem.jsonl", verb: "upscale" },
-    info: async (stage, msg) => {
-      events.push({ stage, msg });
-    },
+    info: record,
     warn: async () => {},
     error: async () => {},
-    debug: async () => {},
+    debug: record,
     close: async () => {},
   };
 }

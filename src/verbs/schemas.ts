@@ -61,6 +61,9 @@ const SHADOW_MAX_OFFSET = 10000;
 // memory-heavy per output pixel than resize's single resample.
 const UPSCALE_MAX_TO_SIZE = 8192;
 const RESIZE_MAX_TO_SIZE = 16384;
+// `combine feather` runs `radius` full-image 3×3 box-blur passes (cost is linear
+// in radius), so cap it; 1024 passes already far exceeds any real mask feather.
+const COMBINE_MAX_RADIUS = 1024;
 
 // ----- shared field fragments -----
 
@@ -127,7 +130,10 @@ const ComposeArgsSchema = z.object({
 const CombineArgsSchema = z.object({
   op: oneOf(COMBINE_OPS, "op"),
   inputs: z.array(z.string().min(1)),
-  radius: z.number().refine((v) => v >= 0, "must be a non-negative number").optional(),
+  radius: z
+    .number()
+    .refine((v) => v >= 0 && v <= COMBINE_MAX_RADIUS, `must be in [0..${COMBINE_MAX_RADIUS}]`)
+    .optional(),
 });
 
 const TrimArgsSchema = z.object({

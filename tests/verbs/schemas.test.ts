@@ -70,7 +70,8 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateCombineArgs({ op: "nope" as never, inputs: ["a.png"] }), "op must be one of");
     badArgs(() => validateCombineArgs({ op: "union", inputs: ["a.png"] }), "expects exactly 2");
     badArgs(() => validateCombineArgs({ op: "invert", inputs: ["a.png", "b.png"] }), "expects exactly 1");
-    badArgs(() => validateCombineArgs({ op: "feather", inputs: ["a.png"], radius: -1 }), "non-negative");
+    badArgs(() => validateCombineArgs({ op: "feather", inputs: ["a.png"], radius: -1 }), "[0..1024]");
+    badArgs(() => validateCombineArgs({ op: "feather", inputs: ["a.png"], radius: 1e9 }), "[0..1024]");
   });
 
   it("trim / backplate: numeric ranges and enums", () => {

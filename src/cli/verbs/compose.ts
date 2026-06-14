@@ -27,7 +27,7 @@ export function registerCompose(program: Command): void {
     )
     .option(
       "--remove-bleed <#rrggbb>",
-      "Remove this bg color from subject pixels. Chromatic spill suppression on all kept pixels plus alpha-aware edge recovery at partial-α pixels.",
+      "Remove this bg color from kept subject pixels. Dispatches on the key's chromaticity: a chromatic key (R/G/B/C/M/Y) gets spill suppression (no edge recovery); a gray key gets alpha-aware edge recovery at partial-α pixels.",
       hexOption("--remove-bleed"),
     )
     .option("--out-dir <dir>", "Output directory (default: same as input)")

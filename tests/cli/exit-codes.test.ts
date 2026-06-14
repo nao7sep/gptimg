@@ -168,6 +168,7 @@ describe("CLI exit codes", () => {
       ["trim margin [0..1]", ["trim", "--in", disk, "--margin", "2"], "must be in [0..1]"],
       ["layer scale positive", ["layer", "--base", disk, "--top", disk, "--scale", "-1"], "must be a positive number"],
       ["mask saturation-ratio (0..1]", ["mask", "--in", disk, "--saturation-ratio", "5"], "must be in (0..1]"],
+      ["combine feather radius [0..1024]", ["combine", "feather", "--in", disk, "--radius", "99999"], "must be in [0..1024]"],
     ];
 
     for (const [name, args, msg] of cases) {
