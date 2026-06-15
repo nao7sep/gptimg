@@ -126,7 +126,7 @@ The optical-centering `--top-offset` transfers the same way — it is the same g
 
 Sizing and positioning are **separate decisions on the same `layer` step** — `--scale` sets how big, `--top-offset` sets where. Most glyphs need only the first.
 
-**Optional — skip it by default.** `layer` centers the top image by its bounding box (`--gravity center`). For a glyph whose visual mass is centered in its box — most symmetric marks — that is already right; do nothing. Reach for positioning only when the glyph is **asymmetric in mass**.
+**Always check both axes; nudge when the mass is off-center.** `layer` centers by the bounding box (`--gravity center`), which is right only when the glyph's visual mass is centered in its box. **Verify both the horizontal and the vertical** — designs aren't always symmetric on both axes — and when the mass sits off-center on either, nudge it to the visual center (`--top-offset`).
 
 **Why box-centering can look off.** When the ink is not centered in its bounding box, the box sits centered but the glyph *looks* shifted toward its heavy side. A downward chevron is heavy at the top (two arms) and tapers to a point, so box-centered it reads **lifted**; an arrow or other leaning mark pulls to one side. Center the **perceived mass** (the alpha centroid), not the box — the positional cousin of the perception effects in "Sizing the glyph."
 
