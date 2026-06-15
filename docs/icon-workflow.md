@@ -44,9 +44,10 @@ gptimg shadow  --in "$C/chevrons-down-content.png" --keep-canvas --blur 24 --off
 #    A glyph generated near 1024 is already larger than its on-plate size, so no
 #    upscale is needed here — see "Normalizing the content size".
 
-# 3. Two platform masters from the one content — only the plate --content and the
-#    layer --scale (and an optional --top-offset) differ (see "Two platforms, two
-#    masters", "Sizing the glyph", "Positioning the glyph").
+# 3. Three renderings from the one content (mac + win shown; web = the same content on a
+#    full-bleed --content 1.0 --radius 0 plate). Only the plate --content and the
+#    layer --scale (and an optional --top-offset) differ (see "Three renderings",
+#    "Sizing the glyph", "Positioning the glyph").
 #    Corner `--radius 0.305` and `--content 0.87` are *measured* from real macOS
 #    system icons (see "The base (plate)"); the `squircle` shape is squarer and is
 #    the wrong tool here.
@@ -54,9 +55,9 @@ gptimg shadow  --in "$C/chevrons-down-content.png" --keep-canvas --blur 24 --off
 #    (a downward chevron is top-heavy — see "Positioning the glyph").
 gptimg backplate --size 1024 --from "#2563eb" --to "#1e3a8a" --shape rect --radius 0.305 --content 0.87 --out-dir "$B" --out-name plate-blue-mac.png
 gptimg layer --base "$B/plate-blue-mac.png" --top "$C/chevrons-down-shadow.png" --scale 0.68 --top-offset 164,179 --out-dir "$B" --out-name chevrons-down-blue-mac.png
-#    Windows: fuller 0.92 plate, glyph at 0.75.
+#    Windows: fuller 0.92 plate, glyph at 0.72 — computed (= mac 0.68 × 0.92/0.87), not eyeballed.
 gptimg backplate --size 1024 --from "#2563eb" --to "#1e3a8a" --shape rect --radius 0.305 --content 0.92 --out-dir "$B" --out-name plate-blue-win.png
-gptimg layer --base "$B/plate-blue-win.png" --top "$C/chevrons-down-shadow.png" --scale 0.75 --top-offset 128,144 --out-dir "$B" --out-name chevrons-down-blue-win.png
+gptimg layer --base "$B/plate-blue-win.png" --top "$C/chevrons-down-shadow.png" --scale 0.72 --top-offset 144,160 --out-dir "$B" --out-name chevrons-down-blue-win.png
 
 # 4. Pack each master into its own subdir (so icon.icns/icon.ico don't collide),
 #    then cherry-pick per target at deploy time (see "Packing").
@@ -64,26 +65,23 @@ gptimg icon --in "$B/chevrons-down-blue-mac.png" --out-dir "$B/mac" --pngs
 gptimg icon --in "$B/chevrons-down-blue-win.png" --out-dir "$B/win" --pngs
 ```
 
-The 0.68 / 0.75 scales here are deliberately **small** — three chevrons are a simple mark, and a simple glyph reads oversized next to busier ones (see "Sizing the glyph"). Treat every number above as this glyph's *chosen* values, not defaults: the scales, the `--top-offset`, and the plate colors are all tuned by eye, and the **authoritative record of any icon's parameters is its base README**, not this example.
+The **0.68 macOS scale** here is deliberately **small** — three chevrons are a simple mark, and a simple glyph reads oversized next to busier ones (see "Sizing the glyph"). Only the macOS scale is tuned by eye; the **Windows 0.72 is computed** from it (`0.68 × 0.92/0.87`), not chosen. Treat the macOS scale, the plate colors, and the macOS `--top-offset` as this glyph's *chosen* values, not defaults — and the **authoritative record of any icon's parameters is its base README**, not this example.
 
 ## Quality: always start at medium
 
-Always generate at **`quality=medium`**. `high` is significantly more expensive, and the overwhelming majority of icon candidates are discarded for *what they contain and how* — concept, composition, balance — not for resolution. Use `high` **only when the operator explicitly asks for it** after judging a specific medium render insufficient — never on the AI's own initiative.
+Generate at **`quality=medium`** — candidates are chosen or rejected on concept/composition, not resolution. Use `high` only on the operator's explicit request, never on the AI's own initiative.
 
 ## Concurrency
 
-- **API calls** — `generate`, `edit`, `vision` — are network-bound and may run **in parallel**, around **5 at a time**, which speeds up generating a batch of candidates.
-- **Local ONNX models** — `mask --method ai` (BiRefNet) and `upscale` (Swin2SR) — load large amounts of native memory (BiRefNet ~1–1.5 GB, Swin2SR up to ~4.4 GB) and must run **strictly one at a time**. Never run two in parallel; it can drive the machine into swap and crash the desktop session.
+API calls (`generate`, `edit`, `vision`) may run in parallel, ~5 at a time. The local ONNX models (`mask --method ai` ~1–1.5 GB, `upscale` ~4.4 GB) are memory-heavy and must run **strictly one at a time** — running two at once can swap the machine into a crash.
 
-## Why square (and why this differs from a stamp)
+## Why square
 
-Icons are **forced square** — `trim --square` extends the shorter axis with transparent pixels so the glyph sits on a square canvas, because the plate and every packed size are square. (A transparent overlay stamp is the opposite: there, forcing square would bake dead side-space onto tall or wide subjects, so stamps preserve native aspect.) Use `--square` for icons.
+Icons are **forced square** (`trim --square`) — the plate and every packed size are square. (A transparent stamp is the opposite and preserves native aspect.)
 
 ## Masking: chroma key by default
 
-As with stamps, **chroma key is the default** — it reliably beats the AI matte on the clean, flat art most glyphs are made of (the AI matte tends to *add* edge problems on simple subjects). Generate the glyph on a flat chroma backdrop whose key color is **absent from the art**: `#00ff00` for most glyphs, or magenta `#ff00ff` / another unused hue if the glyph contains green. Then key it out, exactly like a stamp.
-
-Reach for the **AI matte** (`mask --method ai`, BiRefNet, generated on a plain neutral background instead) only in the narrow cases where a glyph genuinely can't be keyed: **wispy or translucent** fine fibers/fur (a solid, well-defined or stylized fur silhouette keys fine with chroma — reach for the matte only when the edge is genuinely wispy), or colors that unavoidably span every candidate key hue. It is heavy (~1–1.5 GB RAM, run one at a time — see "Concurrency"; pre-fetch with `gptimg model install birefnet`).
+**Chroma key is the default** — it beats the AI matte on the clean, flat art most glyphs are made of. Generate on a flat chroma backdrop whose key color is **absent from the art** (`#00ff00`, or magenta `#ff00ff` if the glyph contains green), then key it out. Reach for the **AI matte** (`mask --method ai`, BiRefNet) only when a glyph genuinely can't be keyed — wispy/translucent edges, or art that spans every candidate key hue.
 
 ## The base (plate)
 
@@ -93,21 +91,17 @@ Reach for the **AI matte** (`mask --method ai`, BiRefNet, generated on a plain n
 - `--from` / `--to` are the gradient endpoints (required); `--angle` is the gradient direction (CSS deg: 0=bottom→top, 90=left→right; default 135° runs `--from` top-left → `--to` bottom-right).
 - `--content` is the plate side as a fraction of the canvas; `--radius` is the corner radius as a fraction of the plate side.
 
-**Matching the macOS corner — measured, not guessed.** Both numbers below come from circle-fitting ten real macOS system icons (App Store, Music, Notes, Photos, Reminders, …) at native resolution:
+**macOS-matching plate:** `--content 0.87 --shape rect --radius 0.305`. These reproduce a real macOS body and corner (measured by circle-fitting system icons): the body fills ~0.87 of the canvas (the rest is the system's shadow margin) and the corner is an essentially circular arc at 0.305 of the body. Use `--shape rect` (an exact circular corner) — **not** `squircle` (an n=4 superellipse, too square to reach macOS roundness).
 
-- **`--content 0.87`** — macOS bodies fill ~0.86–0.875 of the canvas (the small remaining margin is the system's space for the drop shadow). The often-quoted "0.80 grid" is *too small*: a 0.80 icon reads visibly smaller than its neighbours in the Dock.
-- **`--shape rect --radius 0.305`** — the macOS corner circle-fits to **0.304 ± 0.01 of the body** with a ~1 % residual, i.e. it is essentially a **circular** arc at that radius. gptimg's `rect` produces a mathematically exact circular corner (`radius × body`, verified), so `rect 0.305` reproduces it.
+## Three renderings (macOS, Windows, web)
 
-Two traps that cost real time here: (1) the often-cited "~22.5 % radius" figure is only where the corner *starts*, not its roundness — `rect 0.225` reads too square; and (2) a *diagonal/silhouette* fit overshoots badly (it pushed an earlier guess to 0.38, which renders as a near-circle "ball") — **circle-fit the corner arc instead**. (3) `--shape squircle` is an n=4 superellipse — squarer than macOS and unable to reach 0.30 roundness at any radius, so it is the wrong tool despite the name.
+Build the content once, then make three images from it — they differ only in the `backplate` and the (computed) `layer --scale`, all cheap local composites:
 
-## Two platforms, two masters
+- **macOS** — `--content 0.87 --shape rect --radius 0.305` (rounded plate with a shadow margin) → packed into `icon.icns`.
+- **Windows** — fuller plate, `--content 0.92` → packed into `icon.ico` (Windows tiles fill more).
+- **Web** — full-bleed plate, `--content 1.0 --radius 0` (background to the edges; the glyph keeps its own margin) → favicon / branding use.
 
-The macOS body (~0.87 of the canvas) looks correct on macOS but a touch *small* in a full-bleed Windows context, where icons typically fill their tile. Do not force one compromise master onto both — **make a master per platform**, because the two platforms read **separate files in separate formats** and never share bytes:
-
-- a **macOS master** with `--content 0.87 --shape rect --radius 0.305` → packed into **`icon.icns`** (what a `.app` bundle reads),
-- a **Windows master** with a fuller plate (raise `--content` toward `0.90`–`1.0`, optionally `--shape rect`) → packed into **`icon.ico`** (what an `.exe` embeds).
-
-A `.app` reads exactly one `.icns` and an `.exe` embeds one `.ico`, so each bundle already gets its own file — you simply pack each from the master that suits it. Cross-platform bundlers (Tauri, Electron) reference `.icns` and `.ico` independently, so providing a mac-tuned `icon.icns` and a win-tuned `icon.ico` is all that's required. The shared sized-PNGs (Linux, tray, window-runtime) use one master of your choice — the macOS one is a fine default. Build the content once; only the `backplate`/`layer` steps differ per platform, and those are cheap local composites.
+Each platform reads its own file in its own format (a `.app` reads one `.icns`, an `.exe` embeds one `.ico`, the web set is PNG/ICO), so they never share bytes — pack each from the rendering that suits it. The shared sized-PNGs (Linux, tray, runtime) can use the macOS rendering. Only the macOS scale is eyeballed; Windows and Web are computed from it (see "Sizing the glyph").
 
 ## Shadow
 
@@ -115,25 +109,18 @@ A soft **contact shadow** under the glyph lifts it off the plate. Cast it on the
 
 ## Sizing the glyph
 
-How large to make the glyph on the plate is the one genuinely hard call. There is no exact formula, because **perceived size is multi-factorial** — at least five separable effects drive it:
-
-1. **Visual mass / area** — how much of the region is actually filled.
-2. **Extent / elongation** — a longer shape reads larger at a glance (the *elongation bias*); for equal area the elongated one looks bigger.
-3. **Orientation** — vertical extent reads ~5–10 % longer than the same physical horizontal extent (the *horizontal–vertical illusion*).
-4. **Color / contrast / brightness** — a vivid, bright, warm, high-contrast glyph reads **larger** (and is more appealing) than a dark, muted one of identical geometry (the *irradiation illusion*: a light shape on a dark field looks bigger than a dark shape on a light field).
-5. **Complexity / detail density** — a *simpler* glyph reads **larger and heavier** than a busy one of identical hull area or extent: with fewer parts, each part reads bigger and the mark commands more attention (a bold `<` set as large as a dense `W` looks oversized). Unlike (1)–(4), this one is **only visible across icons** — judging a glyph alone you never see it; lined up beside busier siblings, the simple one dominates.
-
-So no single number is authoritative — what follows is a **starting point to adjust by eye**, not a rule, and deliberately not encoded in `gptimg`.
-
-**Judge apparent size by the region the glyph occupies — not its bounding box, and not its ink.** `layer --scale` sizes the top image by its longer edge (the bounding box), which over-weights sparse glyphs: a sparse chevron stack whose box is mostly empty reads far smaller than its box. Filled-alpha area is the opposite error — it under-counts open glyphs and penalizes solid blocks (an outline and a filled square of the same box look about as big but hold very different ink). The fair middle is the **convex-hull area** — the region the eye perceives a shape to occupy, because the visual system completes internal gaps (*Gestalt closure*). So gauge apparent size by **√(convex-hull area)**, not by `--scale` alone. (Material and Apple arrive at the same place from the other direction: instead of one bounding box they define per-shape keylines so different shapes *look* equally large.)
-
-**Hull area is only geometry, and perception is not** — it ignores effects (3) and (4). A vivid/bright/warm glyph reads larger than a dark/muted one of the same hull, and a tall glyph larger than a squat one. So treat any area-derived size as a floor and nudge by eye: vivid or elongated art can sit a little smaller, dark/muted or squat art a little larger.
+How large to make the glyph is the one genuinely hard call — there is no exact formula, because **perceived size is multi-factorial**. Don't size by the bounding box (`layer --scale` over-weights sparse glyphs) or by ink area (under-counts open ones); gauge by the **region the glyph appears to occupy** (≈ its convex hull). Then nudge by eye for what geometry misses: a vivid/bright/warm or tall glyph reads larger (size it a touch smaller), a dark/muted or squat one reads smaller (a touch larger). The effect that dominates *across a suite* is **complexity** — see the caveat below.
 
 **Archetype ranges** (as % of the plate body, ~890 px on a 1024 canvas at `--content 0.87`): full-bleed / background-as-shape art ~90–100 %; a symbol on a plate ~55–82 %, with sparse open glyphs near the top of that band and dense solid blocks near the bottom — exactly what the hull metric predicts. Within the range, **eyeball against a familiar reference icon and nudge.**
 
-**Across a suite, complexity outranks hull parity.** The hull metric equalizes perceived size for *one glyph in isolation*; a suite, though, is seen side by side, where factor (5) takes over. A simple mark sized to the same hull as a busy neighbour reads **too big** — so size **simple glyphs down and busy ones up**, and confirm against the actual neighbours at real Dock size, not by matching hull area. (Dropkick's three chevrons, the simplest mark in its suite, sit *smaller* than the busier card-deck and photo-grid icons beside them — not equal to them. An earlier "equalize hull area" pass oversized them; the fix was to shrink the simple glyph, then re-confirm the others by eye.)
+**Across a suite, complexity outranks hull parity.** The hull metric equalizes perceived size for *one glyph in isolation*; a suite, though, is seen side by side, where complexity takes over. A simple mark sized to the same hull as a busy neighbour reads **too big** — so size **simple glyphs down and busy ones up**, and confirm against the actual neighbours at real Dock size, not by matching hull area. (Dropkick's three chevrons, the simplest mark in its suite, sit *smaller* than the busier card-deck and photo-grid icons beside them — not equal to them. An earlier "equalize hull area" pass oversized them; the fix was to shrink the simple glyph, then re-confirm the others by eye.)
 
-**Confirm per icon — never ship the starting number unexamined.** Render a small sweep (a few percentages per platform), judge by eye (a `vision` balance check helps), and choose the macOS and Windows percentages separately: the fuller Windows plate (`--content 0.92`) wants a proportionally larger glyph, ≈ mac scale × 0.92/0.87.
+**Tune only the macOS scale by eye — the other platforms are mechanical.** `layer --scale` is measured against the canvas while the plate body is `--content × canvas`, so a glyph's fraction *of its frame* is `scale / content`. Holding that frame-fraction constant across platforms keeps a glyph that is balanced on one sheet balanced on all of them — so fix the **macOS** scale by eye (a small sweep, a `vision` balance check helps, judged against the suite), then **compute** the rest and do *not* re-eyeball them:
+
+- **Windows** (`--content 0.92`): `s_win = s_mac × 0.92/0.87` (≈ × 1.057).
+- **Web** (a full-bleed plate, `--content 1.0`): `s_web = s_mac × 1/0.87` (≈ × 1.149). No cap is needed — a macOS glyph never exceeds its plate body, so `s_mac ≤ 0.87` and therefore `s_web ≤ 1.0`, which always fits the canvas; web has no frame, so a full glyph is correct (the content's own trim margin still leaves breathing room).
+
+The optical-centering `--top-offset` transfers the same way — it is the same glyph, so the pixel nudge just scales with the placed size (`scale × canvas`). Only the macOS scale is ever a judgment call.
 
 ## Positioning the glyph
 
@@ -159,6 +146,8 @@ y0   = round((baseH − topH) / 2)                     # centered top
 **Record per app, not here.** Whether positioning was applied and the exact `--top-offset` belong in the app's base README; this recipe describes only the technique. *(Worked example: Dropkick's chevrons at `--scale 0.68` are box-centered at left 164; their mass sits ~19 px high, so a swept-and-confirmed **down 15 px** gives `--top-offset 164,179`.)*
 
 ## Normalizing the content size
+
+**The resize rule — enlarge with AI, shrink plainly.** `upscale` (Swin2SR ×4, then resample) is the tool for making art *larger* than its source; `resize` (plain Lanczos) is for making it *smaller*. Always enlarge through the model and always shrink with a plain resample — never the reverse. *Rationale:* the learned model reconstructs detail when enlarging (faithful, and sharper than a plain stretch), but adds **nothing** when shrinking — sending a downscale through the model (×4 up, then back down) yields pixels indistinguishable from a direct Lanczos resample, at the cost of minutes and ~4.4 GB of RAM per image (A/B-verified at 256 px and 64 px on flat glyph art). The split is about cost, not quality.
 
 The glyph's final size on the plate is `layer --scale × plate-side` (for example `0.68 × 1024 ≈ 696 px`), **not** 1024 — `layer` scales the content *down* onto the plate. So normalization is conditional, not a fixed "resize to 1024" step:
 
@@ -237,7 +226,7 @@ A staging layout — rooted in the asset library — for two content candidates 
       README.md                           #   content → icon recipe (records the chosen scales + offsets)
       plate-blue-mac.png  plate-blue-win.png
       chevrons-down-blue-mac.png         #   macOS master (0.87 plate, glyph 0.68, down 15px)
-      chevrons-down-blue-win.png         #   Windows master (0.92 plate, glyph 0.75)
+      chevrons-down-blue-win.png         #   Windows rendering (0.92 plate, glyph 0.72)
       mac/  icon.icns icon.ico icon.png icon-16.png … icon-1024.png   # pack of the mac master
       win/  icon.icns icon.ico icon.png icon-16.png … icon-1024.png   # pack of the win master
   boot-tread/                             # a rejected candidate is dropped whole
@@ -257,20 +246,12 @@ Note an asymmetry with a transparent stamp: a stamp's descriptive slug *is* its 
 
 ## macOS: refreshing the Dock icon for `tauri dev`
 
-A *built* bundle embeds the icon, so a freshly built `.app`, `.dmg`, or Windows `.exe` shows the new art immediately. A running **dev** session often does not — the OS caches the app's icon — and this bites hardest on **macOS + Tauri**.
-
-`tauri dev` runs the bare debug binary, and macOS draws the Dock tile from the **registered `.app` bundle** for the app's bundle id (cached from the last `tauri build`), not from the binary or from `src-tauri/icons/`. So a changed icon keeps showing the old art in dev, and `killall Dock` alone won't refresh it. Rebuild a bundle that carries the new icon and re-register it — run from the app repo root, substituting your app name for `<App>`:
+A *built* bundle shows the new icon immediately; a running `tauri dev` session keeps the **old** Dock tile, because macOS draws it from the last-registered `.app` bundle, not from `src-tauri/icons/`. Rebuild and re-register a bundle (from the app repo root):
 
 ```sh
-tauri build --debug --bundles app        # debug profile, .app only — fast, skips the .dmg
+tauri build --debug --bundles app
 lsregister -f src-tauri/target/debug/bundle/macos/<App>.app
 killall Dock
 ```
 
-`lsregister` is not on `PATH`; it lives at `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister`. After this, `tauri dev` resolves its Dock tile through the freshly-registered bundle. If the old icon still sticks — the deeper, image-level IconServices cache — clear that (regenerable) cache and relaunch the UI:
-
-```sh
-sudo rm -rf /Library/Caches/com.apple.iconservices.store && killall Dock Finder
-```
-
-The other targets don't need this: **Windows** compiles the icon into the `.exe`, so rebuilding the debug binary already carries it; **Electron** sets its dev Dock icon at runtime (`app.dock.setIcon`), so refreshing that runtime image is enough.
+`lsregister` lives at `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister`. If it still sticks, clear the image cache: `sudo rm -rf /Library/Caches/com.apple.iconservices.store && killall Dock Finder`. Other targets don't need this — Windows compiles the icon into the `.exe`, and Electron sets its dev Dock icon at runtime (`app.dock.setIcon`).
