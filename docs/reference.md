@@ -72,13 +72,15 @@ Every verb accepts `signal`. On abort the SDK stops at the next boundary — a p
 
 ### Logging and on-disk session log
 
-Every verb call opens one per-operation log file and returns its path in the result (`logPath`, or `sidecarPath`/`outputs` carrying it transitively). Default log path: `<logDir>/<yyyymmdd-hhmmss-fff-utc>.log` (JSON Lines; millisecond precision so concurrent runs never share a file). A caller-supplied `log` argument overrides the path. Secrets are redacted (by exact, case-insensitive field name: `apikey`, `authorization`, `token`, `password`, `secret`) before any result, log record, or sidecar is written.
+Every verb call opens one per-operation log file and returns its path in the result (`logPath`, or `sidecarPath`/`outputs` carrying it transitively). Default log path: `<logDir>/<yyyymmdd-hhmmss-fff-utc>.log` (JSON Lines; millisecond precision so concurrent runs never share a file). A caller-supplied `log` argument overrides the path. Secrets are redacted (by exact, case-insensitive field name: `apikey`, `authorization`, `token`, `password`, `secret`) before any result, log record, or sidecar is written. Model-download percentage ticks are `debug`-level: they always reach a live `onProgress` callback, but the on-disk log retains `debug` records only when `GPTIMG_DEBUG=1`.
 
 Separately, the **CLI process** writes a session-lifecycle log (startup/shutdown/crash) under `<logDir>` — this is a CLI-only concern; the SDK installs no global process handlers.
 
 ### Concurrency
 
 Concurrent invocation is expected. The model cache and any shared file are published by atomic rename, so parallel runs never corrupt shared state; they only waste work. Per-run outputs go to caller-chosen (or timestamped) paths. First-time setup that is best done once before fanning out: `profile set-key` and `model install` (the model download is a large one-shot fetch).
+
+**Local AI models are memory-heavy — serialize them.** `mask --method ai` loads BiRefNet (~1–1.5 GB peak RSS) and `upscale` loads Swin2SR (up to ~4.4 GB), all in native memory invisible to Node's GC, and the ONNX CPU provider is capped to about half the cores per session. Run AI masks and upscales **one at a time** — more than ~2 concurrent AI processes can drive a 24 GB machine into swap thrashing (and have crashed the window server). The chroma mask and the other local ops are light (~100–200 MB) and parallel-safe; the network verbs parallelize fine. ONNX tuning lives in two env vars: `GPTIMG_ONNX_INTRA_OP_THREADS` (per-session intra-op thread count; default ≈ half the cores) and `GPTIMG_ONNX_EP` (comma-separated, priority-ordered execution providers; default `cpu`, e.g. `coreml,cpu`).
 
 ### Network budgets and retries (provider-backed and model-download verbs)
 
@@ -105,6 +107,8 @@ By default a verb refuses to overwrite existing output. The behavior differs by 
 ## Provider-backed verbs
 
 These resolve a profile (for the API key) and a recipe (for model/params), call the configured provider, write outputs, and emit per-image sidecars. The only provider supported is `openai`.
+
+For a **transparent subject**, the default `gpt-image-2` does not emit transparency — generate on a solid chroma backdrop and remove it locally (`mask` → `compose`). That chroma-then-cutout path is what the local ops exist for.
 
 ### `generate(args, opts?) → GenerateResult`
 
@@ -170,6 +174,8 @@ Params come from the recipe `edit` section (same shape as `generate`; default mo
 
 Vision params come from the recipe `vision` section: `model` (default `gpt-5.4-mini`), `detail` (`low | high | original | auto`), `systemPrompt`, and `shrink` (`{ width, height }`, default `{ 1024, 1024 }`). Each input is shrunk to fit the `shrink` box before upload (aspect preserved; only downsized).
 
+**Vision cannot judge transparency.** Inputs are uploaded with their format and alpha intact, but a vision model effectively assesses a transparent cutout against an opaque background (typically black) — a soft edge or shadow can read as a halo, and a bare cutout looks like a subject on black. To verify a cutout, composite it onto a known plate (`backplate` + `layer`) and check that instead.
+
 **Result (`VisionResult`):** `{ ok: boolean, score: number, reasons: string[], raw: unknown, sidecarPath: string, logPath: string }`. `ok` is the model's verdict, `score` its confidence in `[0,1]`, `reasons` concrete observations.
 
 **On-disk artifacts:** one sidecar `<stem>.json` (no image output). `request` holds the params, check, detail, and per-input `{ name, shrink }`; `response` holds `{ verdict, raw }`; `files` is `[]`.
@@ -206,6 +212,8 @@ Method `ai` ignores the chroma knobs and runs BiRefNet over the whole image.
 **On-disk artifacts:** `<in-stem>-mask.png` (unless `dryRun`).
 
 **Note:** for a chroma `key` that is achromatic or multi-channel (gray, or no dominant channel), the spill formula does not apply and the mask comes back fully opaque (everything kept) — a no-op rather than an error.
+
+**Note:** run `mask` from the **original** image. To change masking parameters, rerun from the original rather than feeding a previous mask or composite back through `mask`.
 
 **Failure modes:** `args.invalid` (bad `key` token, bad ranges); `output.exists`; for `ai`/model-download failures: `model.downloadFailed`, `model.checksumMismatch`, `model.loadFailed`, `model.outputShape`; `image.*` decode/read failures; `AbortError`.
 
