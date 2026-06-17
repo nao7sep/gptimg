@@ -22,10 +22,7 @@ What each verb *does* is defined by the source and `--help`; this README is the 
 - The local AI models load large native memory (BiRefNet for `mask --method ai` ~1–1.5 GB, Swin2SR for `upscale` up to ~4.4 GB) — run them **one at a time**. Network calls (`generate`/`edit`/`vision`) can run in parallel.
 - A cold cache downloads the model on first use. Concurrent cold starts are safe — the fetch publishes the file atomically, so they never corrupt the cache — but each one re-downloads it, so warm the cache once with `gptimg model install` before fanning parallel jobs out.
 
-For complete recipes that compose these verbs into finished assets — including the decisions gptimg deliberately does **not** encode (margins, glyph sizing, background-removal choice, directory layout, target-format filenames) — see the workflow guides:
-
-- **[Stamp workflow](docs/stamp-workflow.md)** — transparent overlay assets (badges, postmarks, frames, ribbons).
-- **[Icon workflow](docs/icon-workflow.md)** — app icons packed for Tauri / Electron / Avalonia / .NET.
+gptimg deliberately does **not** encode the higher-level decisions that compose these verbs into finished assets — margins, glyph sizing, background-removal choice, directory layout, target-format filenames. Those are the caller's to make.
 
 ## Quick Start
 
@@ -139,7 +136,7 @@ gptimg layer --base plate.png --top content-shadow.png --scale 0.78 \
 gptimg icon --in icon.png --out-dir build/
 ```
 
-> These snippets are quick orientation. For finished-asset recipes — the cropping, sizing, and packing decisions plus the staging conventions — follow the [stamp workflow](docs/stamp-workflow.md) and [icon workflow](docs/icon-workflow.md).
+> These snippets are quick orientation, not finished-asset recipes — the cropping, sizing, packing, and staging decisions are the caller's.
 
 ## CLI Reference
 
