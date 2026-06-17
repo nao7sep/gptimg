@@ -332,6 +332,11 @@ export interface TrimResult {
   /** Final output height. */
   height: number;
   square: boolean;
+  /** Bounding box of solid (alpha ≥ 128) subject pixels; null if none are solid. */
+  solidBBox: AlphaBBox | null;
+  /** True when the crop box overhangs the solid subject beyond the anti-aliased
+   *  edge — the signature of un-despeckled keying residue; run `despeckle` first. */
+  residueSuspected: boolean;
   logPath: string;
 }
 

@@ -99,7 +99,7 @@ Timeout/retry policy lives in the SDK and is configurable via the recipe `networ
 
 By default a verb refuses to overwrite existing output. The behavior differs by verb family:
 
-- **Single-file verbs** (mask, compose, combine, trim, backplate, layer, shadow, resize, upscale, vision-sidecar): throw `output.exists` if the target path exists; `overwrite: true` allows replacement.
+- **Single-file verbs** (mask, compose, combine, despeckle, trim, backplate, layer, shadow, resize, upscale, vision-sidecar): throw `output.exists` if the target path exists; `overwrite: true` allows replacement.
 - **Artifact-group verbs** (generate, edit): the group is `<stem>` plus its image extension plus one `.json` sidecar per image. Without `overwrite`, *any* existing group sibling throws `output.exists`. With `overwrite: true`, planned files are replaced, but group siblings from a prior run that this run will **not** replace (e.g. a leftover image at a different `n`) throw `output.staleSiblings` — the caller must delete them or pick a fresh `outName`. The check runs once before the paid provider call (sidecar-based, fail-fast) and again after the response as the authority.
 
 ---
@@ -254,9 +254,30 @@ Method `ai` ignores the chroma knobs and runs BiRefNet over the whole image.
 
 **Failure modes:** `args.invalid` (wrong input arity for the op, bad `radius`); `image.sizeMismatch` (the two binary-op inputs differ in size); `output.exists`; `image.*`; `AbortError`.
 
+### `despeckle(args, opts?) → DespeckleResult`
+
+**Purpose:** Denoise an RGBA cutout's alpha matte — clear keying residue (a faint sub-threshold wash and isolated speckles) that `compose` leaves behind, so it neither ships as faint cruft nor inflates a later `trim` bounding box. It only ever zeros alpha (never paints or fills), is idempotent, and treats a fully-transparent input as a graceful no-op.
+
+**Arguments (`DespeckleArgs`):**
+
+| Field | Type | Req/Default | Meaning |
+|---|---|---|---|
+| `in` | string | required | RGBA input. |
+| `threshold` | int in [0,255] | default `5` | Keep alpha ≥ this; zero below — the floor, and the "present" level for the component pass. `0` disables the floor. |
+| `minArea` | int ≥ 0 | default `0` | Remove connected components smaller than this many pixels. `0` removes none (a pure floor). |
+| `connectivity` | `4` \| `8` | default `8` | Pixel neighbourhood for components. |
+| `keep` | `"all"` \| `"largest"` | default `"all"` | `all` keeps every component ≥ `minArea`; `largest` keeps only the biggest (multi-piece subjects — detached clouds, a cherry pair — need `all`). |
+| `dryRun` | boolean | default `false` | Compute stats only; write nothing. |
+
+**Result (`DespeckleResult`):** `{ input, output, threshold, minArea, connectivity, keep, flooredPixels, components, removedComponents, removedPixels, bboxBefore, bboxAfter, width, height, logPath }`. `output` is `null` when `dryRun`. `flooredPixels` is the count zeroed by the threshold; `removedComponents`/`removedPixels` the count dropped by the component pass; `bboxBefore`/`bboxAfter` are the any-alpha bounding boxes (`{x,y,width,height}` or `null`) — the before/after pair is the centering diagnostic that tells you whether residue was inflating the box.
+
+**On-disk artifacts:** `<in-stem>-despeckle.png` (unless `dryRun`).
+
+**Failure modes:** `args.invalid` (bad `threshold` / `minArea` / `connectivity` / `keep`); `image.*` decode/read failures; `image.writeFailed`; `output.exists`; `AbortError`. A fully-transparent input is **not** an error — it is written back unchanged.
+
 ### `trim(args, opts?) → TrimResult`
 
-**Purpose:** Crop to the tightest non-transparent bounding box, re-pad by a margin, optionally square.
+**Purpose:** Crop to the tightest non-transparent bounding box, re-pad by a margin, optionally square. The crop keys off *any* non-zero alpha, so `trim` also checks for un-despeckled keying residue — when the crop box overhangs the solid-subject box it sets `residueSuspected` and emits a `warn`. It does not clean the matte (that is `despeckle`'s job, run before `trim`); it only flags it.
 
 **Arguments (`TrimArgs`):**
 
@@ -266,7 +287,7 @@ Method `ai` ignores the chroma knobs and runs BiRefNet over the whole image.
 | `margin` | number in [0,1] | default `0.08` | Re-pad margin as a fraction of the longer bbox side. |
 | `square` | boolean | default `false` | Extend the shorter axis with transparency to make the output square. |
 
-**Result (`TrimResult`):** `{ input, output, bbox:{x,y,width,height}, margin, marginPx, width, height, square, logPath }`. `marginPx = round(margin * max(bbox.width, bbox.height))`.
+**Result (`TrimResult`):** `{ input, output, bbox:{x,y,width,height}, margin, marginPx, width, height, square, solidBBox, residueSuspected, logPath }`. `marginPx = round(margin * max(bbox.width, bbox.height))`. `solidBBox` is the alpha-≥128 subject box (`{x,y,width,height}` or `null`); `residueSuspected` is `true` when the crop box overhangs it by more than ~1% of the longer side (floored at 2px), at which point a `warn` log fires — the signature of an un-despeckled matte.
 
 **On-disk artifacts:** `<in-stem>-trim.png`.
 

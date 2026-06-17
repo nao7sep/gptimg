@@ -89,6 +89,18 @@ describe("computeAlphaBBox", () => {
       height: 1,
     });
   });
+
+  it("with minAlpha=128 boxes only solid pixels, ignoring faint ones", () => {
+    const W = 8;
+    const H = 8;
+    const rgba = new Uint8Array(W * H * 4);
+    rgba[(2 * W + 2) * 4 + 3] = 255; // solid pixel
+    rgba[(6 * W + 6) * 4 + 3] = 60; // faint pixel (< 128)
+    // any-alpha box spans both pixels...
+    expect(computeAlphaBBox(rgba, W, H)).toEqual({ x: 2, y: 2, width: 5, height: 5 });
+    // ...but the solid box is just the solid pixel.
+    expect(computeAlphaBBox(rgba, W, H, 128)).toEqual({ x: 2, y: 2, width: 1, height: 1 });
+  });
 });
 
 describe("runTrim", () => {
@@ -249,6 +261,53 @@ describe("runTrim", () => {
       errorType: "localOp",
       code: "image.noContent",
     });
+  });
+
+  it("does not flag residue on a clean cutout (solid block, no stray alpha)", async () => {
+    const W = 64;
+    const H = 64;
+    const rgba = makeRGBA(W, H, { x0: 10, y0: 10, x1: 29, y1: 29 });
+    const inPath = path.join(tmp, "clean.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, W, H, rgba);
+
+    const res = await runTrim({ in: inPath, out: outPath, margin: 0.05 });
+    expect(res.residueSuspected).toBe(false);
+    expect(res.solidBBox).toEqual({ x: 10, y: 10, width: 20, height: 20 });
+    expect(res.overhang).toEqual({ left: 0, top: 0, right: 0, bottom: 0 });
+  });
+
+  it("flags suspected residue when a faint speckle inflates the crop box", async () => {
+    const W = 64;
+    const H = 64;
+    const rgba = makeRGBA(W, H, { x0: 10, y0: 10, x1: 29, y1: 29 }); // solid 20x20 block
+    rgba[(3 * W + 60) * 4 + 3] = 60; // faint (alpha 60 < 128) speckle far in the corner
+    const inPath = path.join(tmp, "speckled.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, W, H, rgba);
+
+    const res = await runTrim({ in: inPath, out: outPath, margin: 0.05 });
+    // The crop box reaches the faint speckle; the solid box is just the block.
+    expect(res.bbox).toEqual({ x: 10, y: 3, width: 51, height: 27 });
+    expect(res.solidBBox).toEqual({ x: 10, y: 10, width: 20, height: 20 });
+    expect(res.residueSuspected).toBe(true);
+    expect(res.overhang.right).toBe(31); // (10+51) - (10+20)
+    expect(res.overhang.top).toBe(7); // 10 - 3
+  });
+
+  it("reports no solid box (and no residue) when every pixel is faint", async () => {
+    const W = 32;
+    const H = 32;
+    const rgba = new Uint8Array(W * H * 4);
+    // a block of alpha 100 — visible to the crop, but nothing reaches solid (128)
+    for (let y = 8; y < 24; y++) for (let x = 8; x < 24; x++) rgba[(y * W + x) * 4 + 3] = 100;
+    const inPath = path.join(tmp, "faint.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, W, H, rgba);
+
+    const res = await runTrim({ in: inPath, out: outPath, margin: 0 });
+    expect(res.solidBBox).toBeNull();
+    expect(res.residueSuspected).toBe(false);
   });
 
   // The margin [0..1] bound now lives in verbs/schemas.ts (validateTrimArgs)

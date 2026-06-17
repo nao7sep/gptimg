@@ -51,6 +51,23 @@ export async function trimImpl(
       { signal },
     );
 
+    if (result.residueSuspected) {
+      const o = result.overhang;
+      const maxOverhang = Math.max(o.left, o.top, o.right, o.bottom);
+      await logger.warn(
+        "stats",
+        `crop bbox overhangs the solid subject by up to ${maxOverhang}px ` +
+          `(tolerance ${result.tolerance}px) — likely un-despeckled keying residue; ` +
+          "run `gptimg despeckle` before trim",
+        {
+          bbox: result.bbox,
+          solidBBox: result.solidBBox,
+          overhang: result.overhang,
+          tolerance: result.tolerance,
+        },
+      );
+    }
+
     await logger.info("write", "wrote trimmed image", {
       path: result.output,
       width: result.width,
@@ -68,6 +85,8 @@ export async function trimImpl(
       width: result.width,
       height: result.height,
       square: result.square,
+      solidBBox: result.solidBBox,
+      residueSuspected: result.residueSuspected,
       logPath: logger.handle.path,
     };
   });
