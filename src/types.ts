@@ -332,11 +332,6 @@ export interface TrimResult {
   /** Final output height. */
   height: number;
   square: boolean;
-  /** Bounding box of solid (alpha ≥ 128) subject pixels; null if none are solid. */
-  solidBBox: AlphaBBox | null;
-  /** True when the crop box overhangs the solid subject beyond the anti-aliased
-   *  edge — the signature of un-despeckled keying residue; run `despeckle` first. */
-  residueSuspected: boolean;
   logPath: string;
 }
 
@@ -609,8 +604,6 @@ export interface DespeckleArgs {
   connectivity?: number;
   /** "all" = remove components below minArea; "largest" = keep only the biggest. Default "all". */
   keep?: DespeckleKeep;
-  /** Compute stats only; write nothing. */
-  dryRun?: boolean;
   outDir?: string;
   outName?: string;
   log?: string;
@@ -619,8 +612,7 @@ export interface DespeckleArgs {
 
 export interface DespeckleResult {
   input: string;
-  /** Null when dryRun was set. */
-  output: string | null;
+  output: string;
   /** Resolved threshold (floor / component on-level). */
   threshold: number;
   /** Resolved minimum component area in pixels. */

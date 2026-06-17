@@ -267,17 +267,16 @@ Method `ai` ignores the chroma knobs and runs BiRefNet over the whole image.
 | `minArea` | int ≥ 0 | default `0` | Remove connected components smaller than this many pixels. `0` removes none (a pure floor). |
 | `connectivity` | `4` \| `8` | default `8` | Pixel neighbourhood for components. |
 | `keep` | `"all"` \| `"largest"` | default `"all"` | `all` keeps every component ≥ `minArea`; `largest` keeps only the biggest (multi-piece subjects — detached clouds, a cherry pair — need `all`). |
-| `dryRun` | boolean | default `false` | Compute stats only; write nothing. |
 
-**Result (`DespeckleResult`):** `{ input, output, threshold, minArea, connectivity, keep, flooredPixels, components, removedComponents, removedPixels, bboxBefore, bboxAfter, width, height, logPath }`. `output` is `null` when `dryRun`. `flooredPixels` is the count zeroed by the threshold; `removedComponents`/`removedPixels` the count dropped by the component pass; `bboxBefore`/`bboxAfter` are the any-alpha bounding boxes (`{x,y,width,height}` or `null`) — the before/after pair is the centering diagnostic that tells you whether residue was inflating the box.
+**Result (`DespeckleResult`):** `{ input, output, threshold, minArea, connectivity, keep, flooredPixels, components, removedComponents, removedPixels, bboxBefore, bboxAfter, width, height, logPath }`. `flooredPixels` is the count zeroed by the threshold; `removedComponents`/`removedPixels` the count dropped by the component pass; `bboxBefore`/`bboxAfter` are the any-alpha bounding boxes (`{x,y,width,height}` or `null`) — the before/after pair is the centering diagnostic that tells you whether residue was inflating the box.
 
-**On-disk artifacts:** `<in-stem>-despeckle.png` (unless `dryRun`).
+**On-disk artifacts:** `<in-stem>-despeckle.png`.
 
 **Failure modes:** `args.invalid` (bad `threshold` / `minArea` / `connectivity` / `keep`); `image.*` decode/read failures; `image.writeFailed`; `output.exists`; `AbortError`. A fully-transparent input is **not** an error — it is written back unchanged.
 
 ### `trim(args, opts?) → TrimResult`
 
-**Purpose:** Crop to the tightest non-transparent bounding box, re-pad by a margin, optionally square. The crop keys off *any* non-zero alpha, so `trim` also checks for un-despeckled keying residue — when the crop box overhangs the solid-subject box it sets `residueSuspected` and emits a `warn`. It does not clean the matte (that is `despeckle`'s job, run before `trim`); it only flags it.
+**Purpose:** Crop to the tightest non-transparent bounding box, re-pad by a margin, optionally square.
 
 **Arguments (`TrimArgs`):**
 
@@ -287,7 +286,7 @@ Method `ai` ignores the chroma knobs and runs BiRefNet over the whole image.
 | `margin` | number in [0,1] | default `0.08` | Re-pad margin as a fraction of the longer bbox side. |
 | `square` | boolean | default `false` | Extend the shorter axis with transparency to make the output square. |
 
-**Result (`TrimResult`):** `{ input, output, bbox:{x,y,width,height}, margin, marginPx, width, height, square, solidBBox, residueSuspected, logPath }`. `marginPx = round(margin * max(bbox.width, bbox.height))`. `solidBBox` is the alpha-≥128 subject box (`{x,y,width,height}` or `null`); `residueSuspected` is `true` when the crop box overhangs it by more than ~1% of the longer side (floored at 2px), at which point a `warn` log fires — the signature of an un-despeckled matte.
+**Result (`TrimResult`):** `{ input, output, bbox:{x,y,width,height}, margin, marginPx, width, height, square, logPath }`. `marginPx = round(margin * max(bbox.width, bbox.height))`.
 
 **On-disk artifacts:** `<in-stem>-trim.png`.
 

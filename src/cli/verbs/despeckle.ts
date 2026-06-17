@@ -12,7 +12,6 @@ interface DespeckleCliOpts {
   minArea?: number;
   connectivity?: number;
   keep?: DespeckleKeep;
-  dryRun?: boolean;
   outDir?: string;
   outName?: string;
   log?: string;
@@ -47,7 +46,6 @@ export function registerDespeckle(program: Command): void {
         "Which components to keep: 'all' (those >= min-area) or 'largest'. Default all.",
       ).choices(DESPECKLE_KEEP),
     )
-    .option("--dry-run", "Compute and emit stats without writing the output file")
     .option("--out-dir <dir>", "Output directory (default: same as input)")
     .option(
       "--out-name <name>",
@@ -65,7 +63,6 @@ export function registerDespeckle(program: Command): void {
         minArea: opts.minArea,
         connectivity: opts.connectivity,
         keep: opts.keep,
-        dryRun: opts.dryRun,
         outDir: opts.outDir,
         outName: opts.outName,
         log: opts.log,

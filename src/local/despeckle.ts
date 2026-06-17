@@ -16,7 +16,7 @@
  *
  * It only ever zeros alpha — never paints or fills — so the subject and any
  * interior holes are untouched, and it is idempotent. A fully-transparent input
- * is a graceful no-op, not an error.
+ * is a graceful no-op (written back unchanged), not an error.
  */
 
 import { toAbortError } from "../errors.js";
@@ -37,17 +37,15 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 
 export interface DespeckleRunArgs {
   in: string;
-  /** Required when `dryRun` is not set; ignored otherwise. */
-  out?: string;
+  out: string;
   threshold?: number;
   minArea?: number;
   connectivity?: number;
   keep?: DespeckleKeep;
-  dryRun?: boolean;
 }
 
 export interface DespeckleRunResult {
-  output: string | null;
+  output: string;
   threshold: number;
   minArea: number;
   connectivity: number;
@@ -182,15 +180,11 @@ export async function runDespeckle(
 
   const bboxAfter = computeAlphaBBox(data, width, height);
 
-  let output: string | null = null;
-  if (!args.dryRun) {
-    throwIfAborted(signal);
-    await writeRGBA(data, width, height, args.out!);
-    output = args.out!;
-  }
+  throwIfAborted(signal);
+  await writeRGBA(data, width, height, args.out);
 
   return {
-    output,
+    output: args.out,
     threshold,
     minArea,
     connectivity,

@@ -27,27 +27,21 @@ export async function despeckleImpl(
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "despeckle", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
-    const dryRun = args.dryRun ?? false;
+    const outPath = await resolveOutputPath(args, {
+      inputForDir: args.in,
+      stem: defaultStem(args.in),
+      ext: "png",
+    });
+    assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     await logger.info("resolve", "despeckle start", {
       input: args.in,
+      out: outPath,
       threshold: args.threshold ?? null,
       minArea: args.minArea ?? null,
       connectivity: args.connectivity ?? null,
       keep: args.keep ?? null,
-      dryRun,
     });
-
-    // Mirror mask: resolve/assert the output only on the real (writing) path.
-    let outPath: string | undefined;
-    if (!dryRun) {
-      outPath = await resolveOutputPath(args, {
-        inputForDir: args.in,
-        stem: defaultStem(args.in),
-        ext: "png",
-      });
-      assertSingleFileAvailable(outPath, args.overwrite ?? false);
-    }
 
     const result = await runDespeckle(
       {
@@ -57,24 +51,19 @@ export async function despeckleImpl(
         minArea: args.minArea,
         connectivity: args.connectivity,
         keep: args.keep,
-        dryRun,
       },
       { signal },
     );
 
-    await logger.info(
-      dryRun ? "stats" : "write",
-      dryRun ? "despeckle complete (dry run)" : "wrote despeckled image",
-      {
-        path: result.output,
-        flooredPixels: result.flooredPixels,
-        components: result.components,
-        removedComponents: result.removedComponents,
-        removedPixels: result.removedPixels,
-        bboxBefore: result.bboxBefore,
-        bboxAfter: result.bboxAfter,
-      },
-    );
+    await logger.info("write", "wrote despeckled image", {
+      path: result.output,
+      flooredPixels: result.flooredPixels,
+      components: result.components,
+      removedComponents: result.removedComponents,
+      removedPixels: result.removedPixels,
+      bboxBefore: result.bboxBefore,
+      bboxAfter: result.bboxAfter,
+    });
 
     return {
       input: args.in,

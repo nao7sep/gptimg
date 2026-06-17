@@ -1,5 +1,4 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
@@ -163,27 +162,6 @@ describe("runDespeckle", () => {
     });
     expect(r8.components).toBe(1); // one 2-px diagonal component
     expect(r8.removedPixels).toBe(0); // size 2 >= minArea 2
-  });
-
-  it("dryRun computes stats but writes nothing", async () => {
-    const W = 4, H = 1;
-    const buf = blank(W, H);
-    setA(buf, W, 0, 0, 3);
-    setA(buf, W, 1, 0, 200);
-    const inPath = path.join(tmp, "in.png");
-    const outPath = path.join(tmp, "out.png");
-    await writeRawPng(inPath, W, H, buf);
-
-    const res = await runDespeckle({
-      in: inPath,
-      out: outPath,
-      threshold: 5,
-      minArea: 0,
-      dryRun: true,
-    });
-    expect(res.output).toBeNull();
-    expect(res.flooredPixels).toBe(1);
-    expect(existsSync(outPath)).toBe(false);
   });
 
   it("is a graceful no-op on a fully-transparent image", async () => {

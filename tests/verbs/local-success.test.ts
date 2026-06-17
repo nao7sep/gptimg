@@ -120,27 +120,6 @@ describe("local verbs success path (via GptImg SDK)", () => {
     expect(meta.format).toBe("png");
   });
 
-  it("trim: surfaces residueSuspected + solidBBox through the SDK result", async () => {
-    const W = 64;
-    const H = 64;
-    const rgba = new Uint8Array(W * H * 4);
-    for (let y = 10; y < 30; y++)
-      for (let x = 10; x < 30; x++) {
-        const i = (y * W + x) * 4;
-        rgba[i] = 220;
-        rgba[i + 1] = 40;
-        rgba[i + 2] = 40;
-        rgba[i + 3] = 255;
-      }
-    rgba[(3 * W + 60) * 4 + 3] = 60; // faint far speckle the crop box will reach
-    const input = path.join(tmp, "speckled.png");
-    await writeRawPng(input, W, H, rgba);
-
-    const res = await sdk.trim({ in: input, margin: 0.05, outName: "out" });
-    expect(res.residueSuspected).toBe(true);
-    expect(res.solidBBox).toEqual({ x: 10, y: 10, width: 20, height: 20 });
-  });
-
   it("shadow: writes the named output keeping the input canvas size", async () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 128, 128, diskish(128, 128));
