@@ -52,7 +52,7 @@ export function registerBackplate(program: Command): void {
       new Option("--shape <shape>", "Corner shape. Default rect.").choices(BACKPLATE_SHAPES),
     )
     .option("--out-dir <dir>", "Output directory (default: cwd)")
-    .option("--out-name <name>", "Output filename (default: backplate-<size>.png)")
+    .option("--out-name <name>", "Output filename stem; '.png' is appended (default: backplate-<size>)")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");
 

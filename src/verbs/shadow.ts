@@ -14,8 +14,8 @@ export interface ShadowContext {
   logDir: string;
 }
 
-function defaultOutputName(input: string): string {
-  return `${inferStem(input)}-shadow.png`;
+function defaultStem(input: string): string {
+  return `${inferStem(input)}-shadow`;
 }
 
 export async function shadowImpl(
@@ -29,7 +29,8 @@ export async function shadowImpl(
   return withVerbLogger(ctx, "shadow", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
-      outName: defaultOutputName(args.in),
+      stem: defaultStem(args.in),
+      ext: "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

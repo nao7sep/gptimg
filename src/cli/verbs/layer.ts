@@ -45,7 +45,7 @@ export function registerLayer(program: Command): void {
     .option("--out-dir <dir>", "Output directory (default: same as --base)")
     .option(
       "--out-name <name>",
-      "Output filename (default: <base-stem>-layered.png)",
+      "Output filename stem; '.png' is appended (default: <base-stem>-layered)",
     )
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");

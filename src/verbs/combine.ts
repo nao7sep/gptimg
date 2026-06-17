@@ -14,8 +14,8 @@ export interface CombineContext {
   logDir: string;
 }
 
-function defaultOutputName(firstInput: string, op: string): string {
-  return `${inferStem(firstInput)}-${op}.png`;
+function defaultStem(firstInput: string, op: string): string {
+  return `${inferStem(firstInput)}-${op}`;
 }
 
 export async function combineImpl(
@@ -30,7 +30,8 @@ export async function combineImpl(
     const firstInput = args.inputs[0]!;
     const outPath = await resolveOutputPath(args, {
       inputForDir: firstInput,
-      outName: defaultOutputName(firstInput, args.op),
+      stem: defaultStem(firstInput, args.op),
+      ext: "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

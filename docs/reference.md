@@ -186,7 +186,7 @@ Vision params come from the recipe `vision` section: `model` (default `gpt-5.4-m
 
 ## Local image operations
 
-These run entirely on-device (no provider, no API key). `mask --method ai` and `upscale` additionally need a local ONNX model (auto-fetched on first use; see [Model management](#model-management)). All take optional `outDir` / `outName` / `log` / `overwrite`. Unless noted, `outDir` defaults to the directory of the primary input, `outName` defaults as listed, and all outputs are PNG.
+These run entirely on-device (no provider, no API key). `mask --method ai` and `upscale` additionally need a local ONNX model (auto-fetched on first use; see [Model management](#model-management)). All take optional `outDir` / `outName` / `log` / `overwrite`. `outDir` defaults to the directory of the primary input. `outName` is a **stem** — the verb appends the output extension itself (always `.png` for these), exactly as `generate` does; it is strict, so a stem that already carries an extension yields `<stem>.png.png` (surfacing the mistake rather than swallowing it). When `outName` is omitted, each verb uses the default shown under its **On-disk artifacts** below. All outputs are PNG.
 
 ### `mask(args, opts?) → MaskResult`
 

@@ -43,7 +43,7 @@ export function registerUpscale(program: Command): void {
     )
     .option("--recipe <path>", "Path to recipe.json (for network.modelDownload)")
     .option("--out-dir <dir>", "Output directory (default: same as input)")
-    .option("--out-name <name>", "Output filename (default: <input-stem>-upscale.png)")
+    .option("--out-name <name>", "Output filename stem; '.png' is appended (default: <input-stem>-upscale)")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");
 

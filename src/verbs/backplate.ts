@@ -13,8 +13,8 @@ export interface BackplateContext {
   logDir: string;
 }
 
-function defaultOutputName(size: number): string {
-  return `backplate-${size}.png`;
+function defaultStem(size: number): string {
+  return `backplate-${size}`;
 }
 
 export async function backplateImpl(
@@ -31,7 +31,8 @@ export async function backplateImpl(
     // result fields after the call.
     const size = args.size ?? BACKPLATE_DEFAULTS.size;
     const outPath = await resolveOutputPath(args, {
-      outName: defaultOutputName(size),
+      stem: defaultStem(size),
+      ext: "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

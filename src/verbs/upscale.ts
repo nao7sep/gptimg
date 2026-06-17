@@ -17,8 +17,8 @@ export interface UpscaleContext {
   logDir: string;
 }
 
-function defaultOutputName(input: string): string {
-  return `${inferStem(input)}-upscale.png`;
+function defaultStem(input: string): string {
+  return `${inferStem(input)}-upscale`;
 }
 
 export async function upscaleImpl(
@@ -32,7 +32,8 @@ export async function upscaleImpl(
   return withVerbLogger(ctx, "upscale", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
-      outName: defaultOutputName(args.in),
+      stem: defaultStem(args.in),
+      ext: "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

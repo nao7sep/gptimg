@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { LocalOpError } from "../errors.js";
 import { createLogger, safeLogError, type Logger } from "../log/index.js";
 import { ensureOutputDir } from "./output-files.js";
+import { imageFileName } from "./output-naming.js";
 import { defaultLogPath, utcTimestampMs } from "./paths.js";
 import type { LogEntry, LogVerb } from "../types.js";
 
@@ -46,12 +47,16 @@ export function assertSingleFileAvailable(
  * - `outDir` defaults to `dirname(inputForDir)` when an input file path is
  *   given, otherwise to the current working directory. The CWD fallback is
  *   for verbs that take no input file (e.g. `backplate`).
- * - `outName` defaults to `defaults.outName`. An absolute outName overrides
- *   outDir entirely.
+ * - `outName` is a STEM, not a filename: the verb owns its extension, which is
+ *   appended here via the same primitive `generate` uses (`imageFileName`).
+ *   This is strict — a stem that already carries an extension yields
+ *   `<stem>.<ext>.<ext>` (mirroring `generate`, surfacing the misuse instead of
+ *   silently swallowing it). `outName` falls back to `defaults.stem`; an
+ *   absolute stem overrides outDir entirely.
  */
 export async function resolveOutputPath(
   args: { outDir?: string | undefined; outName?: string | undefined },
-  defaults: { inputForDir?: string | undefined; outName: string },
+  defaults: { inputForDir?: string | undefined; stem: string; ext: string },
 ): Promise<string> {
   const outDir =
     args.outDir ??
@@ -59,8 +64,9 @@ export async function resolveOutputPath(
       ? path.dirname(defaults.inputForDir)
       : process.cwd());
   await ensureOutputDir(outDir);
-  const outName = args.outName ?? defaults.outName;
-  return path.isAbsolute(outName) ? outName : path.join(outDir, outName);
+  const stem = args.outName ?? defaults.stem;
+  const fileName = imageFileName(stem, 1, 1, defaults.ext);
+  return path.isAbsolute(fileName) ? fileName : path.join(outDir, fileName);
 }
 
 export interface VerbLoggerOptions {

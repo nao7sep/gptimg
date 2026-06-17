@@ -34,7 +34,7 @@ export function registerResize(program: Command): void {
       ),
     )
     .option("--out-dir <dir>", "Output directory (default: same as input)")
-    .option("--out-name <name>", "Output filename (default: <input-stem>-resize.png)")
+    .option("--out-name <name>", "Output filename stem; '.png' is appended (default: <input-stem>-resize)")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");
 

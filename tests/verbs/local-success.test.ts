@@ -106,7 +106,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 100, 50, diskish(100, 50));
 
-    const res = await sdk.resize({ in: input, toSize: 50, outName: "out.png" });
+    const res = await sdk.resize({ in: input, toSize: 50, outName: "out" });
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -124,7 +124,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 128, 128, diskish(128, 128));
 
-    const res = await sdk.shadow({ in: input, outName: "out.png", keepCanvas: true });
+    const res = await sdk.shadow({ in: input, outName: "out", keepCanvas: true });
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -144,7 +144,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     await writeMaskPng(a, 2, 1, [10, 200]);
     await writeMaskPng(b, 2, 1, [50, 100]);
 
-    const res = await sdk.combine({ op: "union", inputs: [a, b], outName: "out.png" });
+    const res = await sdk.combine({ op: "union", inputs: [a, b], outName: "out" });
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -171,7 +171,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     await writeRawPng(inPath, W, H, rgba);
     await writeMaskPng(maskPath, W, H, Array.from(mask));
 
-    const res = await sdk.compose({ in: inPath, mask: maskPath, outName: "out.png" });
+    const res = await sdk.compose({ in: inPath, mask: maskPath, outName: "out" });
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -212,7 +212,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, W, H, greenWithSubject(W, H));
 
-    const res = await sdk.mask({ in: input, method: "chroma", key: "#00ff00", outName: "out.png" });
+    const res = await sdk.mask({ in: input, method: "chroma", key: "#00ff00", outName: "out" });
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);

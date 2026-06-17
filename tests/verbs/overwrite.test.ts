@@ -53,13 +53,13 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     await writeFile(out, "blocker");
 
     await expect(
-      sdk.trim({ in: input, outName: "out.png" }),
+      sdk.trim({ in: input, outName: "out" }),
     ).rejects.toMatchObject({
       errorType: "localOp",
       code: "output.exists",
     });
 
-    const res = await sdk.trim({ in: input, outName: "out.png", overwrite: true });
+    const res = await sdk.trim({ in: input, outName: "out", overwrite: true });
     expect(res.output).toBe(out);
   });
 
@@ -74,7 +74,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
         from: "#000000",
         to: "#ffffff",
         outDir: tmp,
-        outName: "plate.png",
+        outName: "plate",
       }),
     ).rejects.toMatchObject({
       errorType: "localOp",
@@ -86,7 +86,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
       from: "#000000",
       to: "#ffffff",
       outDir: tmp,
-      outName: "plate.png",
+      outName: "plate",
       overwrite: true,
     });
     expect(res.output).toBe(out);
@@ -102,7 +102,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     await writeFile(out, "blocker");
 
     await expect(
-      sdk.layer({ base: basePath, top: topPath, outName: "out.png" }),
+      sdk.layer({ base: basePath, top: topPath, outName: "out" }),
     ).rejects.toMatchObject({
       errorType: "localOp",
       code: "output.exists",
@@ -111,7 +111,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     const res = await sdk.layer({
       base: basePath,
       top: topPath,
-      outName: "out.png",
+      outName: "out",
       overwrite: true,
     });
     expect(res.output).toBe(out);

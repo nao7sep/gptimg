@@ -14,8 +14,8 @@ export interface TrimContext {
   logDir: string;
 }
 
-function defaultOutputName(input: string): string {
-  return `${inferStem(input)}-trim.png`;
+function defaultStem(input: string): string {
+  return `${inferStem(input)}-trim`;
 }
 
 export async function trimImpl(
@@ -29,7 +29,8 @@ export async function trimImpl(
   return withVerbLogger(ctx, "trim", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
-      outName: defaultOutputName(args.in),
+      stem: defaultStem(args.in),
+      ext: "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

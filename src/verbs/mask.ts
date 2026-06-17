@@ -26,8 +26,8 @@ export interface MaskContext {
   logDir: string;
 }
 
-function defaultOutputName(input: string): string {
-  return `${inferStem(input)}-mask.png`;
+function defaultStem(input: string): string {
+  return `${inferStem(input)}-mask`;
 }
 
 function applyChromaRecipeDefaults(
@@ -135,7 +135,8 @@ export async function maskImpl(
 
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
-      outName: defaultOutputName(args.in),
+      stem: defaultStem(args.in),
+      ext: "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

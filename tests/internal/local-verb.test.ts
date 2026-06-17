@@ -76,7 +76,7 @@ describe("resolveOutputPath", () => {
     const input = path.join(tmp, "src", "foo.png");
     const out = await resolveOutputPath(
       {},
-      { inputForDir: input, outName: "foo-trim.png" },
+      { inputForDir: input, stem: "foo-trim", ext: "png" },
     );
     expect(out).toBe(path.join(tmp, "src", "foo-trim.png"));
   });
@@ -86,25 +86,25 @@ describe("resolveOutputPath", () => {
     const outDir = path.join(tmp, "out");
     const out = await resolveOutputPath(
       { outDir },
-      { inputForDir: input, outName: "foo-trim.png" },
+      { inputForDir: input, stem: "foo-trim", ext: "png" },
     );
     expect(out).toBe(path.join(outDir, "foo-trim.png"));
   });
 
-  it("treats an absolute outName as the full path (outDir is ignored)", async () => {
+  it("treats an absolute outName (stem) as the full path (outDir is ignored)", async () => {
     const input = path.join(tmp, "src", "foo.png");
-    const abs = path.join(tmp, "elsewhere", "explicit.png");
+    const absStem = path.join(tmp, "elsewhere", "explicit");
     const out = await resolveOutputPath(
-      { outDir: path.join(tmp, "ignored"), outName: abs },
-      { inputForDir: input, outName: "ignored-default.png" },
+      { outDir: path.join(tmp, "ignored"), outName: absStem },
+      { inputForDir: input, stem: "ignored-default", ext: "png" },
     );
-    expect(out).toBe(abs);
+    expect(out).toBe(`${absStem}.png`);
   });
 
   it("falls back to process.cwd() when no input is provided (e.g. backplate)", async () => {
     const out = await resolveOutputPath(
       {},
-      { outName: "backplate-1024.png" },
+      { stem: "backplate-1024", ext: "png" },
     );
     expect(out).toBe(path.join(process.cwd(), "backplate-1024.png"));
   });
@@ -113,11 +113,29 @@ describe("resolveOutputPath", () => {
     const deep = path.join(tmp, "a", "b", "c");
     const out = await resolveOutputPath(
       { outDir: deep },
-      { outName: "x.png" },
+      { stem: "x", ext: "png" },
     );
     expect(out).toBe(path.join(deep, "x.png"));
     // mkdir -p should make the dir writable now:
     await writeFile(out, "x");
+  });
+
+  it("appends the extension to a bare out-name stem (strict: out-name is a stem)", async () => {
+    const input = path.join(tmp, "src", "foo.png");
+    const out = await resolveOutputPath(
+      { outName: "custom" },
+      { inputForDir: input, stem: "ignored-default", ext: "png" },
+    );
+    expect(out).toBe(path.join(tmp, "src", "custom.png"));
+  });
+
+  it("double-extensions an out-name stem that already carries one (strict: surfaces misuse)", async () => {
+    const input = path.join(tmp, "src", "foo.png");
+    const out = await resolveOutputPath(
+      { outName: "custom.png" },
+      { inputForDir: input, stem: "ignored-default", ext: "png" },
+    );
+    expect(out).toBe(path.join(tmp, "src", "custom.png.png"));
   });
 });
 

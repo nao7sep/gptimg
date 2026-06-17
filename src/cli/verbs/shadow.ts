@@ -54,7 +54,7 @@ export function registerShadow(program: Command): void {
     .option("--out-dir <dir>", "Output directory (default: same as --in)")
     .option(
       "--out-name <name>",
-      "Output filename (default: <in-stem>-shadow.png)",
+      "Output filename stem; '.png' is appended (default: <in-stem>-shadow)",
     )
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");

@@ -31,7 +31,7 @@ export function registerCompose(program: Command): void {
       hexOption("--remove-bleed"),
     )
     .option("--out-dir <dir>", "Output directory (default: same as input)")
-    .option("--out-name <name>", "Output filename (default: <input-stem>-composed.png)")
+    .option("--out-name <name>", "Output filename stem; '.png' is appended (default: <input-stem>-composed)")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");
 

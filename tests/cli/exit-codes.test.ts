@@ -395,13 +395,14 @@ describe("CLI exit codes", () => {
     // crash the verb.
     const logDir = path.join(tmp, "log-as-file");
     await mkdir(logDir);
-    const outPath = path.join(tmp, "degraded-mask.png");
+    const outStem = path.join(tmp, "degraded-mask");
+    const outPath = `${outStem}.png`;
     const result = await run([
       "mask",
       "--in",
       fixture("green-disk.png"),
       "--out-name",
-      outPath,
+      outStem,
       "--overwrite",
       "--log",
       logDir,
@@ -418,13 +419,14 @@ describe("CLI exit codes", () => {
   });
 
   it("keeps successful mask output on stdout", async () => {
-    const outPath = path.join(tmp, "out-mask.png");
+    const outStem = path.join(tmp, "out-mask");
+    const outPath = `${outStem}.png`;
     const result = await run([
       "mask",
       "--in",
       fixture("green-disk.png"),
       "--out-name",
-      outPath,
+      outStem,
       "--log",
       path.join(tmp, "mask.log"),
     ]);

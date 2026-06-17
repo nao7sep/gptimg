@@ -14,8 +14,8 @@ export interface LayerContext {
   logDir: string;
 }
 
-function defaultOutputName(base: string): string {
-  return `${inferStem(base)}-layered.png`;
+function defaultStem(base: string): string {
+  return `${inferStem(base)}-layered`;
 }
 
 export async function layerImpl(
@@ -29,7 +29,8 @@ export async function layerImpl(
   return withVerbLogger(ctx, "layer", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.base,
-      outName: defaultOutputName(args.base),
+      stem: defaultStem(args.base),
+      ext: "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

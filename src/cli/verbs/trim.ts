@@ -31,7 +31,7 @@ export function registerTrim(program: Command): void {
       "Extend the shorter axis with transparent pixels so the output is square",
     )
     .option("--out-dir <dir>", "Output directory (default: same as input)")
-    .option("--out-name <name>", "Output filename (default: <input-stem>-trim.png)")
+    .option("--out-name <name>", "Output filename stem; '.png' is appended (default: <input-stem>-trim)")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");
 

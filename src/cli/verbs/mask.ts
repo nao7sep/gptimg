@@ -60,7 +60,7 @@ export function registerMask(program: Command): void {
     )
     .option("--dry-run", "Compute and emit stats without writing the mask file")
     .option("--out-dir <dir>", "Output directory (default: same as input)")
-    .option("--out-name <name>", "Output filename (default: <input-stem>-mask.png)")
+    .option("--out-name <name>", "Output filename stem; '.png' is appended (default: <input-stem>-mask)")
     .option("--recipe <path>", "Path to recipe.json")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");

@@ -40,7 +40,7 @@ export function registerCombine(program: Command): void {
       numberArg("--radius"),
     )
     .option("--out-dir <dir>", "Output directory (default: same as first input)")
-    .option("--out-name <name>", "Output filename (default: <first-stem>-<op>.png)")
+    .option("--out-name <name>", "Output filename stem; '.png' is appended (default: <first-stem>-<op>)")
     .option("--log <path>", "Path to log JSONL file")
     .option("--overwrite", "Overwrite an existing output file");
 
