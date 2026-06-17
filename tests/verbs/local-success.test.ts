@@ -233,4 +233,31 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const center = Math.floor(H / 2) * W + Math.floor(W / 2);
     expect(data[center]).toBe(255); // subject kept
   });
+
+  it("despeckle: removes a far speckle and writes the named output", async () => {
+    // 24x16 cutout: a solid block + one lone opaque speckle far from it.
+    const W = 24, H = 16;
+    const rgba = new Uint8Array(W * H * 4);
+    const put = (x: number, y: number, a: number): void => {
+      const i = (y * W + x) * 4;
+      rgba[i] = 200; rgba[i + 1] = 100; rgba[i + 2] = 50; rgba[i + 3] = a;
+    };
+    for (let y = 1; y <= 6; y++) for (let x = 1; x <= 6; x++) put(x, y, 255); // block, area 36
+    put(22, 14, 255); // lone speckle, area 1
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, W, H, rgba);
+
+    const res = await sdk.despeckle({ in: input, minArea: 10, outName: "out" });
+
+    const out = path.join(tmp, "out.png");
+    expect(res.output).toBe(out);
+    expect(existsSync(out)).toBe(true);
+    expect(res.components).toBe(2);
+    expect(res.removedComponents).toBe(1);
+    expect(res.removedPixels).toBe(1);
+
+    const cleaned = new Uint8Array(await sharp(out).ensureAlpha().raw().toBuffer());
+    expect(cleaned[(14 * W + 22) * 4 + 3]).toBe(0); // speckle removed
+    expect(cleaned[(3 * W + 3) * 4 + 3]).toBe(255); // block kept
+  });
 });

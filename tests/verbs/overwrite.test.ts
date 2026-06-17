@@ -116,4 +116,22 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     });
     expect(res.output).toBe(out);
   });
+
+  it("despeckle rejects an existing output without --overwrite, accepts with it", async () => {
+    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
+    const out = path.join(tmp, "out.png");
+    await writeFile(out, "blocker");
+
+    await expect(
+      sdk.despeckle({ in: input, outName: "out" }),
+    ).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "output.exists",
+    });
+
+    const res = await sdk.despeckle({ in: input, outName: "out", overwrite: true });
+    expect(res.output).toBe(out);
+  });
 });

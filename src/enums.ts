@@ -54,5 +54,9 @@ export const COMBINE_OPS = [
 ] as const;
 export type CombineOp = (typeof COMBINE_OPS)[number];
 
+/** Which connected components `despeckle` keeps. */
+export const DESPECKLE_KEEP = ["all", "largest"] as const;
+export type DespeckleKeep = (typeof DESPECKLE_KEEP)[number];
+
 export const VISION_DETAILS = ["low", "high", "original", "auto"] as const;
 export type VisionDetail = (typeof VISION_DETAILS)[number];

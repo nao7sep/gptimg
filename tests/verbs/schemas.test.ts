@@ -4,6 +4,7 @@ import {
   validateBackplateArgs,
   validateCombineArgs,
   validateComposeArgs,
+  validateDespeckleArgs,
   validateEditArgs,
   validateGenerateArgs,
   validateIconArgs,
@@ -62,6 +63,21 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateComposeArgs({ in: "", mask: "m.png" }), "in");
     badArgs(() => validateComposeArgs({ in: "a.png", mask: "m.png", removeBleed: "00ff00" }), "hex");
     expect(validateComposeArgs({ in: "a.png", mask: "m.png", removeBleed: "#00ff00" })).toBeTruthy();
+  });
+
+  it("despeckle: integer threshold/min-area, connectivity, keep enum", () => {
+    expect(validateDespeckleArgs({ in: "a.png" })).toBeTruthy();
+    expect(
+      validateDespeckleArgs({ in: "a.png", threshold: 5, minArea: 100, connectivity: 8, keep: "largest" }),
+    ).toBeTruthy();
+    badArgs(() => validateDespeckleArgs({ in: "" }), "in");
+    badArgs(() => validateDespeckleArgs({ in: "a.png", threshold: 256 }), "[0..255]");
+    badArgs(() => validateDespeckleArgs({ in: "a.png", threshold: -1 }), "[0..255]");
+    badArgs(() => validateDespeckleArgs({ in: "a.png", threshold: 1.5 }), "[0..255]");
+    badArgs(() => validateDespeckleArgs({ in: "a.png", minArea: -1 }), "non-negative integer");
+    badArgs(() => validateDespeckleArgs({ in: "a.png", minArea: 2.5 }), "non-negative integer");
+    badArgs(() => validateDespeckleArgs({ in: "a.png", connectivity: 6 }), "must be 4 or 8");
+    badArgs(() => validateDespeckleArgs({ in: "a.png", keep: "biggest" as never }), "keep must be one of");
   });
 
   it("combine: op enum and op-dependent arity", () => {
@@ -142,6 +158,9 @@ describe("verb argument validation (single source of truth)", () => {
     await expect(sdk.resize({ in: "a.png", toSize: -1 })).rejects.toMatchObject({
       code: "args.invalid",
     });
+    await expect(
+      sdk.despeckle({ in: "a.png", connectivity: 6 }),
+    ).rejects.toMatchObject({ code: "args.invalid" });
     // combine validates through the impl too (op enum + arity), not only via the
     // standalone validator.
     await expect(

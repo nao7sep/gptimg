@@ -7,6 +7,7 @@ import { setQuiet } from "./progress.js";
 import { registerBackplate } from "./verbs/backplate.js";
 import { registerCombine } from "./verbs/combine.js";
 import { registerCompose } from "./verbs/compose.js";
+import { registerDespeckle } from "./verbs/despeckle.js";
 import { registerEdit } from "./verbs/edit.js";
 import { registerGenerate } from "./verbs/generate.js";
 import { registerIcon } from "./verbs/icon.js";
@@ -25,7 +26,7 @@ function createProgram(): Command {
   program
     .name("gptimg")
     .description(
-      "AI image generation, vision, and local post-processing (mask, compose, combine, trim, backplate, layer, shadow, icon, upscale, resize).",
+      "AI image generation, vision, and local post-processing (mask, compose, combine, despeckle, trim, backplate, layer, shadow, icon, upscale, resize).",
     )
     .version(CLI_VERSION)
     .option(
@@ -44,6 +45,7 @@ function createProgram(): Command {
   registerMask(program);
   registerCompose(program);
   registerCombine(program);
+  registerDespeckle(program);
   registerTrim(program);
   registerBackplate(program);
   registerLayer(program);

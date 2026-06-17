@@ -25,6 +25,7 @@ import { HEX_RE } from "../color.js";
 import {
   BACKPLATE_SHAPES,
   COMBINE_OPS,
+  DESPECKLE_KEEP,
   LAYER_GRAVITIES,
   MASK_METHODS,
   RESAMPLE_KERNELS,
@@ -37,6 +38,7 @@ import type {
   BackplateArgs,
   CombineArgs,
   ComposeArgs,
+  DespeckleArgs,
   EditArgs,
   GenerateArgs,
   IconArgs,
@@ -139,6 +141,20 @@ const CombineArgsSchema = z.object({
 const TrimArgsSchema = z.object({
   in: requiredPath("in"),
   margin: z.number().refine((v) => v >= 0 && v <= 1, "must be in [0..1]").optional(),
+});
+
+const DespeckleArgsSchema = z.object({
+  in: requiredPath("in"),
+  threshold: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 0 && v <= 255, "must be an integer in [0..255]")
+    .optional(),
+  minArea: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
+    .optional(),
+  connectivity: z.number().refine((v) => v === 4 || v === 8, "must be 4 or 8").optional(),
+  keep: oneOf(DESPECKLE_KEEP, "keep").optional(),
 });
 
 const BackplateArgsSchema = z.object({
@@ -276,6 +292,10 @@ export function validateCombineArgs(args: CombineArgs): CombineArgs {
 
 export function validateTrimArgs(args: TrimArgs): TrimArgs {
   return check(TrimArgsSchema, args, "trim");
+}
+
+export function validateDespeckleArgs(args: DespeckleArgs): DespeckleArgs {
+  return check(DespeckleArgsSchema, args, "despeckle");
 }
 
 export function validateBackplateArgs(args: BackplateArgs): BackplateArgs {

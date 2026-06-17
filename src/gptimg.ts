@@ -27,6 +27,8 @@ import type {
   CombineResult,
   ComposeArgs,
   ComposeResult,
+  DespeckleArgs,
+  DespeckleResult,
   EditArgs,
   EditResult,
   GenerateArgs,
@@ -52,6 +54,7 @@ import type {
 import { backplateImpl } from "./verbs/backplate.js";
 import { combineImpl } from "./verbs/combine.js";
 import { composeImpl } from "./verbs/compose.js";
+import { despeckleImpl } from "./verbs/despeckle.js";
 import { editImpl } from "./verbs/edit.js";
 import { generateImpl } from "./verbs/generate.js";
 import { iconImpl } from "./verbs/icon.js";
@@ -158,6 +161,10 @@ export class GptImg {
 
   combine(args: CombineArgs, opts?: VerbCallOptions): Promise<CombineResult> {
     return combineImpl(this.ctx, args, opts);
+  }
+
+  despeckle(args: DespeckleArgs, opts?: VerbCallOptions): Promise<DespeckleResult> {
+    return despeckleImpl(this.ctx, args, opts);
   }
 
   trim(args: TrimArgs, opts?: VerbCallOptions): Promise<TrimResult> {

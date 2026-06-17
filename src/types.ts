@@ -1,6 +1,7 @@
 export type {
   BackplateShape,
   CombineOp,
+  DespeckleKeep,
   LayerGravity,
   MaskMethod,
   ResampleKernel,
@@ -9,6 +10,7 @@ export type {
 import type {
   BackplateShape,
   CombineOp,
+  DespeckleKeep,
   LayerGravity,
   MaskMethod,
   ResampleKernel,
@@ -128,6 +130,7 @@ export type LogVerb =
   | "icon"
   | "upscale"
   | "resize"
+  | "despeckle"
   | "model";
 
 export interface LogEntry {
@@ -585,6 +588,55 @@ export interface CombineResult {
   width: number;
   height: number;
   op: CombineOp;
+  logPath: string;
+}
+
+// ----- despeckle -----
+
+export interface DespeckleArgs {
+  /** Input RGBA cutout whose alpha matte is cleaned. */
+  in: string;
+  /** Keep alpha ≥ threshold; zero below (the floor, and the component on-level). Integer 0..255. Default 5. */
+  threshold?: number;
+  /** Remove connected components smaller than this many pixels. 0 = remove none. Integer ≥ 0. Default 0. */
+  minArea?: number;
+  /** Pixel neighbourhood for components: 4 or 8. Default 8. */
+  connectivity?: number;
+  /** "all" = remove components below minArea; "largest" = keep only the biggest. Default "all". */
+  keep?: DespeckleKeep;
+  /** Compute stats only; write nothing. */
+  dryRun?: boolean;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface DespeckleResult {
+  input: string;
+  /** Null when dryRun was set. */
+  output: string | null;
+  /** Resolved threshold (floor / component on-level). */
+  threshold: number;
+  /** Resolved minimum component area in pixels. */
+  minArea: number;
+  /** Resolved connectivity (4 or 8). */
+  connectivity: number;
+  keep: DespeckleKeep;
+  /** Pixels zeroed by the floor (had 0 < alpha < threshold). */
+  flooredPixels: number;
+  /** Connected components found over the alpha ≥ threshold pixels. */
+  components: number;
+  /** Components removed (below minArea, or all-but-largest). */
+  removedComponents: number;
+  /** Pixels zeroed by component removal. */
+  removedPixels: number;
+  /** Any-alpha bbox before the op; null if the input was fully transparent. */
+  bboxBefore: AlphaBBox | null;
+  /** Any-alpha bbox after the op; null if nothing remains. */
+  bboxAfter: AlphaBBox | null;
+  width: number;
+  height: number;
   logPath: string;
 }
 
