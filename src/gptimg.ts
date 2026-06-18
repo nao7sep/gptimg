@@ -30,6 +30,8 @@ import type {
   DespeckleResult,
   EditArgs,
   EditResult,
+  FramecheckArgs,
+  FramecheckResult,
   GenerateArgs,
   GenerateResult,
   GptImgOptions,
@@ -59,6 +61,7 @@ import { combineImpl } from "./verbs/combine.js";
 import { composeImpl } from "./verbs/compose.js";
 import { despeckleImpl } from "./verbs/despeckle.js";
 import { editImpl } from "./verbs/edit.js";
+import { framecheckImpl } from "./verbs/framecheck.js";
 import { generateImpl } from "./verbs/generate.js";
 import { gridImpl } from "./verbs/grid.js";
 import { iconImpl } from "./verbs/icon.js";
@@ -173,6 +176,10 @@ export class GptImg {
 
   keycheck(args: KeycheckArgs, opts?: VerbCallOptions): Promise<KeycheckResult> {
     return keycheckImpl(this.ctx, args, opts);
+  }
+
+  framecheck(args: FramecheckArgs, opts?: VerbCallOptions): Promise<FramecheckResult> {
+    return framecheckImpl(this.ctx, args, opts);
   }
 
   trim(args: TrimArgs, opts?: VerbCallOptions): Promise<TrimResult> {

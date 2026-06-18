@@ -59,3 +59,17 @@ export type DespeckleKeep = (typeof DESPECKLE_KEEP)[number];
 
 export const VISION_DETAILS = ["low", "high", "original", "auto"] as const;
 export type VisionDetail = (typeof VISION_DETAILS)[number];
+
+/**
+ * Which axis (axes) `framecheck`'s centering verdict enforces. The geometry
+ * result always reports BOTH horizontal and vertical deltas; this only selects
+ * which the pass/fail verdict is computed from.
+ *
+ * - "horizontal": only |left − right| (the default — a baked drop shadow is
+ *   usually a vertical offset, so the horizontal pair is the residue-skew signal
+ *   that is symmetric by contract).
+ * - "vertical": only |top − bottom|.
+ * - "both": both pairs must be within tolerance.
+ */
+export const FRAMECHECK_AXES = ["horizontal", "vertical", "both"] as const;
+export type FramecheckAxes = (typeof FRAMECHECK_AXES)[number];

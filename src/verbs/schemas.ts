@@ -25,6 +25,7 @@ import {
   BACKPLATE_SHAPES,
   COMBINE_OPS,
   DESPECKLE_KEEP,
+  FRAMECHECK_AXES,
   LAYER_GRAVITIES,
   MASK_METHODS,
   RESAMPLE_KERNELS,
@@ -39,6 +40,7 @@ import type {
   ComposeArgs,
   DespeckleArgs,
   EditArgs,
+  FramecheckArgs,
   GenerateArgs,
   GridArgs,
   IconArgs,
@@ -180,6 +182,22 @@ const KeycheckArgsSchema = z.object({
     .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
     .optional(),
   heatmap: z.boolean().optional(),
+});
+
+const FramecheckArgsSchema = z.object({
+  in: requiredPath("in"),
+  // A "solid" pixel must actually ship, so threshold starts at 1 (not despeckle's
+  // 0): threshold 0 would count fully-transparent pixels as the body and make the
+  // solid box the whole canvas. threshold 1 means "any shipping pixel is solid".
+  threshold: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 1 && v <= 255, "must be an integer in [1..255]")
+    .optional(),
+  tolerance: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
+    .optional(),
+  axes: oneOf(FRAMECHECK_AXES, "axes").optional(),
 });
 
 const GridArgsSchema = z.object({
@@ -339,6 +357,10 @@ export function validateDespeckleArgs(args: DespeckleArgs): DespeckleArgs {
 
 export function validateKeycheckArgs(args: KeycheckArgs): KeycheckArgs {
   return check(KeycheckArgsSchema, args, "keycheck");
+}
+
+export function validateFramecheckArgs(args: FramecheckArgs): FramecheckArgs {
+  return check(FramecheckArgsSchema, args, "framecheck");
 }
 
 export function validateGridArgs(args: GridArgs): GridArgs {

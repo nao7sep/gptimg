@@ -2,6 +2,7 @@ export type {
   BackplateShape,
   CombineOp,
   DespeckleKeep,
+  FramecheckAxes,
   LayerGravity,
   MaskMethod,
   ResampleKernel,
@@ -11,6 +12,7 @@ import type {
   BackplateShape,
   CombineOp,
   DespeckleKeep,
+  FramecheckAxes,
   LayerGravity,
   MaskMethod,
   ResampleKernel,
@@ -132,6 +134,7 @@ export type LogVerb =
   | "resize"
   | "despeckle"
   | "keycheck"
+  | "framecheck"
   | "grid"
   | "model";
 
@@ -712,6 +715,78 @@ export interface KeycheckResult {
   verdict: KeyResidueVerdict;
   /** Debug heatmap path when `heatmap` was set, else null. */
   heatmapPath: string | null;
+  logPath: string;
+}
+
+// ----- framecheck -----
+
+/** Transparent margins from each canvas edge to the subject box, in pixels. */
+export interface FrameMargins {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** Whether the subject box touches each canvas border (zero margin → clipped/full-bleed). */
+export interface FrameEdgeContact {
+  left: boolean;
+  right: boolean;
+  top: boolean;
+  bottom: boolean;
+}
+
+/** Margin-pair asymmetries in pixels. The verdict is computed from these. */
+export interface FrameDeltas {
+  /** |left − right|. */
+  horizontal: number;
+  /** |top − bottom|. */
+  vertical: number;
+}
+
+/**
+ * Deterministic, read-only alpha-coverage geometry — *where does the opaque
+ * content sit inside its canvas?* The geometry counterpart to `keycheck`: one
+ * scan of the alpha channel, no pixels changed, no file written. It answers the
+ * centering / margin-lock / edge-clipping questions the stamp and icon workflows
+ * pose on every mechanically-placed output; it reads no colour (that is
+ * `keycheck`), re-pads nothing (that is `trim`), and judges no visual balance
+ * (that is `vision`).
+ */
+export interface FramecheckArgs {
+  /** RGBA image to inspect. */
+  in: string;
+  /** Alpha at/above which a pixel is the opaque "solid" body. Integer 1..255 (1 = any shipping pixel). Default 128. */
+  threshold?: number;
+  /** Max margin-pair asymmetry, in pixels, for the verdict to be "centered". Default 2. */
+  tolerance?: number;
+  /** Which axis/axes the verdict enforces. Both deltas are always reported. Default "horizontal". */
+  axes?: FramecheckAxes;
+  log?: string;
+}
+
+export interface FramecheckResult {
+  input: string;
+  width: number;
+  height: number;
+  /** Resolved solid-body alpha threshold. */
+  threshold: number;
+  /** Resolved verdict tolerance, in pixels. */
+  tolerance: number;
+  /** Resolved verdict axes. */
+  axes: FramecheckAxes;
+  /** No pixel ships (the image is fully transparent). */
+  empty: boolean;
+  /** Tightest box of any shipping pixel (alpha > 0) — includes a soft shadow/feather. Null when empty. */
+  anyBBox: AlphaBBox | null;
+  /** Tightest box of the opaque body (alpha ≥ threshold). Null when nothing is solid. */
+  solidBBox: AlphaBBox | null;
+  /** Margins of the subject box (solid, or any-alpha when no solid pixels exist). Null when empty. */
+  margins: FrameMargins | null;
+  deltas: FrameDeltas | null;
+  edgeContact: FrameEdgeContact | null;
+  /** "centered" when the enforced axes are within tolerance (empty is vacuously centered). */
+  verdict: "centered" | "offset";
   logPath: string;
 }
 

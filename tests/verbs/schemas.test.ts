@@ -6,6 +6,7 @@ import {
   validateComposeArgs,
   validateDespeckleArgs,
   validateEditArgs,
+  validateFramecheckArgs,
   validateGenerateArgs,
   validateGridArgs,
   validateIconArgs,
@@ -98,6 +99,19 @@ describe("verb argument validation (single source of truth)", () => {
       () => validateKeycheckArgs({ in: "a.png", key: "#00ff00", maxInteriorResiduePixels: 1.5 }),
       "non-negative integer",
     );
+  });
+
+  it("framecheck: optional integer threshold/tolerance, axes enum", () => {
+    expect(validateFramecheckArgs({ in: "a.png" })).toBeTruthy();
+    expect(validateFramecheckArgs({ in: "a.png", threshold: 128, tolerance: 2, axes: "both" })).toBeTruthy();
+    expect(validateFramecheckArgs({ in: "a.png", axes: "vertical" })).toBeTruthy();
+    badArgs(() => validateFramecheckArgs({ in: "" }), "in");
+    badArgs(() => validateFramecheckArgs({ in: "a.png", threshold: 0 }), "[1..255]"); // 0 would make solid = whole canvas
+    badArgs(() => validateFramecheckArgs({ in: "a.png", threshold: 256 }), "[1..255]");
+    badArgs(() => validateFramecheckArgs({ in: "a.png", threshold: 1.5 }), "[1..255]");
+    badArgs(() => validateFramecheckArgs({ in: "a.png", tolerance: -1 }), "non-negative integer");
+    badArgs(() => validateFramecheckArgs({ in: "a.png", tolerance: 2.5 }), "non-negative integer");
+    badArgs(() => validateFramecheckArgs({ in: "a.png", axes: "diagonal" as never }), "axes must be one of");
   });
 
   it("grid: inputs arity, numeric ranges, background form", () => {
