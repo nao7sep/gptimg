@@ -40,7 +40,9 @@ import type {
   DespeckleArgs,
   EditArgs,
   GenerateArgs,
+  GridArgs,
   IconArgs,
+  KeycheckArgs,
   LayerArgs,
   MaskArgs,
   ResizeArgs,
@@ -154,6 +156,44 @@ const DespeckleArgsSchema = z.object({
     .optional(),
   connectivity: z.number().refine((v) => v === 4 || v === 8, "must be 4 or 8").optional(),
   keep: oneOf(DESPECKLE_KEEP, "keep").optional(),
+});
+
+const KeycheckArgsSchema = z.object({
+  in: requiredPath("in"),
+  // Required and concrete: "from-sidecar" or an explicit hex. No "auto" — there
+  // is no background left in a keyed cutout to sample a key from.
+  key: z
+    .string()
+    .refine(
+      (v) => v === "from-sidecar" || HEX_RE.test(v),
+      "key must be 'from-sidecar' or a #rrggbb hex color",
+    ),
+  hueTolerance: z.number().refine((v) => v >= 0 && v <= 180, "must be in [0..180]").optional(),
+  minSaturation: z.number().refine((v) => v >= 0 && v <= 1, "must be in [0..1]").optional(),
+  minValue: z.number().refine((v) => v >= 0 && v <= 1, "must be in [0..1]").optional(),
+  maxEdgeResidueFraction: z
+    .number()
+    .refine((v) => v >= 0 && v <= 1, "must be in [0..1]")
+    .optional(),
+  maxInteriorResiduePixels: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
+    .optional(),
+  heatmap: z.boolean().optional(),
+});
+
+const GridArgsSchema = z.object({
+  inputs: z.array(z.string().min(1)).min(1, "inputs must have at least one path"),
+  cols: positiveInt("must be a positive integer").optional(),
+  cell: positiveInt("must be a positive integer").optional(),
+  gap: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
+    .optional(),
+  background: z
+    .string()
+    .refine((v) => v === "transparent" || HEX_RE.test(v), "must be 'transparent' or a #rrggbb hex color")
+    .optional(),
 });
 
 const BackplateArgsSchema = z.object({
@@ -295,6 +335,14 @@ export function validateTrimArgs(args: TrimArgs): TrimArgs {
 
 export function validateDespeckleArgs(args: DespeckleArgs): DespeckleArgs {
   return check(DespeckleArgsSchema, args, "despeckle");
+}
+
+export function validateKeycheckArgs(args: KeycheckArgs): KeycheckArgs {
+  return check(KeycheckArgsSchema, args, "keycheck");
+}
+
+export function validateGridArgs(args: GridArgs): GridArgs {
+  return check(GridArgsSchema, args, "grid");
 }
 
 export function validateBackplateArgs(args: BackplateArgs): BackplateArgs {

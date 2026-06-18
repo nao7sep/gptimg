@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GptImg } from "../../src/gptimg.js";
 
@@ -50,5 +51,48 @@ describe("GptImg SDK surface", () => {
     expect(typeof sdk.log.append).toBe("function");
     expect(typeof sdk.log.close).toBe("function");
     expect(typeof sdk.log.createLogger).toBe("function");
+    expect(typeof sdk.keycheck).toBe("function");
+    expect(typeof sdk.grid).toBe("function");
+  });
+
+  it("keycheck resolves the key from the sidecar and measures residue end-to-end", async () => {
+    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    // A blue island over transparent, with a generate-style sidecar recording a
+    // green chroma key beside it — the from-sidecar path mask uses.
+    const W = 8, H = 8;
+    const rgba = new Uint8Array(W * H * 4);
+    for (let y = 2; y <= 5; y++)
+      for (let x = 2; x <= 5; x++) {
+        const i = (y * W + x) * 4;
+        rgba[i] = 40; rgba[i + 1] = 80; rgba[i + 2] = 200; rgba[i + 3] = 255;
+      }
+    const imgPath = path.join(tmp, "cutout.png");
+    await sharp(Buffer.from(rgba), { raw: { width: W, height: H, channels: 4 } }).png().toFile(imgPath);
+    await writeFile(
+      path.join(tmp, "cutout.json"),
+      JSON.stringify({ request: { chroma: { color: "#00ff00" } }, response: {}, files: [] }),
+    );
+
+    const res = await sdk.keycheck({ in: imgPath, key: "from-sidecar" });
+    expect(res.key).toBe("#00ff00");
+    expect(res.keySource).toBe("sidecar");
+    expect(res.residuePixels).toBe(0);
+    expect(res.verdict).toBe("clean");
+  });
+
+  it("grid tiles inputs into a sheet beside the first input", async () => {
+    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const paths: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const p = path.join(tmp, `tile-${i}.png`);
+      await sharp({ create: { width: 32, height: 32, channels: 4, background: { r: i * 80, g: 0, b: 0, alpha: 1 } } })
+        .png()
+        .toFile(p);
+      paths.push(p);
+    }
+    const res = await sdk.grid({ inputs: paths, cell: 32, gap: 4, outName: "sheet" });
+    expect(res.placed).toBe(3);
+    expect(res.skipped).toEqual([]);
+    expect(res.output).toBe(path.join(tmp, "sheet.png"));
   });
 });

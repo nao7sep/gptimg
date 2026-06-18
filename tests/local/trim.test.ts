@@ -251,6 +251,47 @@ describe("runTrim", () => {
     });
   });
 
+  it("keys off ANY non-zero alpha, so an un-despeckled faint wash inflates/offsets the bbox", async () => {
+    // The executable reason despeckle must run before trim: trim's bbox is the
+    // extent of alpha > 0, so a single sub-visible pixel (α=2) far in a corner
+    // drags the box out to it. despeckle owns flooring that wash away; trim is
+    // pure geometry and must not second-guess it.
+    const W = 64;
+    const H = 64;
+    const rgba = makeRGBA(W, H, { x0: 24, y0: 24, x1: 39, y1: 39 }); // solid 16x16 subject
+    const faint = (2 * W + 2) * 4; // a faint pixel at (2,2)
+    rgba[faint + 3] = 2;
+    const inPath = path.join(tmp, "in.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, W, H, rgba);
+
+    const res = await runTrim({ in: inPath, out: outPath, margin: 0 });
+    // The box now spans from the faint corner (2,2) to the subject (39,39) —
+    // inflated and shoved off-centre, exactly the failure despeckle prevents.
+    expect(res.bbox).toEqual({ x: 2, y: 2, width: 38, height: 38 });
+  });
+
+  it("splits an odd square-extension pad floor/ceil (parity), never losing a pixel", async () => {
+    // bbox 9 wide × 20 tall, margin 0, square → final 20. extraW = 11 is odd, so
+    // the pad splits 5 (floor) left / 6 (ceil) right; the subject lands at col 5.
+    const W = 64;
+    const H = 64;
+    const rgba = makeRGBA(W, H, { x0: 10, y0: 5, x1: 18, y1: 24 }); // 9 × 20
+    const inPath = path.join(tmp, "in.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, W, H, rgba);
+
+    const res = await runTrim({ in: inPath, out: outPath, margin: 0, square: true });
+    expect(res.width).toBe(20);
+    expect(res.height).toBe(20);
+    const out = await readRGBA(outPath);
+    const alphaAt = (x: number, y: number): number => out.data[(y * out.width + x) * 4 + 3]!;
+    expect(alphaAt(4, 10)).toBe(0); // last column of the 5-px left pad
+    expect(alphaAt(5, 10)).toBe(255); // subject starts at col 5
+    expect(alphaAt(13, 10)).toBe(255); // subject ends at col 13 (5 + 9 − 1)
+    expect(alphaAt(14, 10)).toBe(0); // first column of the 6-px right pad
+  });
+
   // The margin [0..1] bound now lives in verbs/schemas.ts (validateTrimArgs)
   // and is covered by tests/verbs/schemas.test.ts.
 });

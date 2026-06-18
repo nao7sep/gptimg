@@ -33,8 +33,12 @@ import type {
   GenerateArgs,
   GenerateResult,
   GptImgOptions,
+  GridArgs,
+  GridResult,
   IconArgs,
   IconResult,
+  KeycheckArgs,
+  KeycheckResult,
   LayerArgs,
   LayerResult,
   MaskArgs,
@@ -56,7 +60,9 @@ import { composeImpl } from "./verbs/compose.js";
 import { despeckleImpl } from "./verbs/despeckle.js";
 import { editImpl } from "./verbs/edit.js";
 import { generateImpl } from "./verbs/generate.js";
+import { gridImpl } from "./verbs/grid.js";
 import { iconImpl } from "./verbs/icon.js";
+import { keycheckImpl } from "./verbs/keycheck.js";
 import { layerImpl } from "./verbs/layer.js";
 import { maskImpl } from "./verbs/mask.js";
 import { shadowImpl } from "./verbs/shadow.js";
@@ -165,6 +171,10 @@ export class GptImg {
     return despeckleImpl(this.ctx, args, opts);
   }
 
+  keycheck(args: KeycheckArgs, opts?: VerbCallOptions): Promise<KeycheckResult> {
+    return keycheckImpl(this.ctx, args, opts);
+  }
+
   trim(args: TrimArgs, opts?: VerbCallOptions): Promise<TrimResult> {
     return trimImpl(this.ctx, args, opts);
   }
@@ -191,5 +201,9 @@ export class GptImg {
 
   resize(args: ResizeArgs, opts?: VerbCallOptions): Promise<ResizeResult> {
     return resizeImpl(this.ctx, args, opts);
+  }
+
+  grid(args: GridArgs, opts?: VerbCallOptions): Promise<GridResult> {
+    return gridImpl(this.ctx, args, opts);
   }
 }

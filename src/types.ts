@@ -131,6 +131,8 @@ export type LogVerb =
   | "upscale"
   | "resize"
   | "despeckle"
+  | "keycheck"
+  | "grid"
   | "model";
 
 export interface LogEntry {
@@ -634,6 +636,118 @@ export interface DespeckleResult {
   bboxBefore: AlphaBBox | null;
   /** Any-alpha bbox after the op; null if nothing remains. */
   bboxAfter: AlphaBBox | null;
+  width: number;
+  height: number;
+  logPath: string;
+}
+
+// ----- keycheck -----
+
+/** A "clean" cutout has residue within the verdict thresholds; "residue" exceeds them. */
+export type KeyResidueVerdict = "clean" | "residue";
+
+/**
+ * Deterministic key-residue analysis of a keyed cutout — *did background removal
+ * succeed?* A read-only diagnostic: it never edits the asset (its only possible
+ * output is an optional debug heatmap). A pixel counts as residue when it ships
+ * (alpha > 0) and its color is biased toward the key hue — within `hueTolerance`
+ * degrees of the key's hue AND at least `minSaturation`/`minValue` (the gates
+ * exclude near-gray and near-black pixels whose hue is numerically unstable, so
+ * a legitimately key-*adjacent* subject color is not flagged). Residue on the
+ * alpha edge is fringe; residue in the interior is a missed background patch.
+ */
+export interface KeycheckArgs {
+  /** Keyed RGBA cutout to inspect (typically post mask → compose). */
+  in: string;
+  /** Key color to scan for: "from-sidecar" (read the generate sidecar beside `in`) or "#rrggbb". Required — keycheck does not guess a key. */
+  key: string;
+  /** Max hue distance (degrees, 0..180) from the key hue for a pixel to count as residue. Default 20. */
+  hueTolerance?: number;
+  /** Min HSV saturation (0..1] for a pixel to count as residue — gates out near-gray pixels. Default 0.35. */
+  minSaturation?: number;
+  /** Min HSV value (0..1] for a pixel to count as residue — gates out near-black pixels. Default 0.25. */
+  minValue?: number;
+  /** Verdict is "residue" once edgeResidueFraction exceeds this. Default 0.02. */
+  maxEdgeResidueFraction?: number;
+  /** Verdict is "residue" once interiorResiduePixels exceeds this. Default 0. */
+  maxInteriorResiduePixels?: number;
+  /** Also write a debug heatmap PNG marking residue pixels. Default false. */
+  heatmap?: boolean;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface KeycheckResult {
+  input: string;
+  /** Resolved key color, "#rrggbb". */
+  key: string;
+  /** Where the key came from ("sidecar" or "explicit"; never "auto"). */
+  keySource: ChromaKeySource;
+  width: number;
+  height: number;
+  /** Pixels that ship (alpha > 0). */
+  presentPixels: number;
+  /** Present pixels with ≥1 fully-transparent in-bounds 4-neighbour (the alpha edge ring). */
+  edgePixels: number;
+  /** All present pixels flagged as key residue. */
+  residuePixels: number;
+  /** Residue pixels on the alpha edge (key fringe). */
+  edgeResiduePixels: number;
+  /** Residue pixels not on the alpha edge (a missed background patch). */
+  interiorResiduePixels: number;
+  /** edgeResiduePixels / edgePixels (0 when there is no edge). */
+  edgeResidueFraction: number;
+  /** residuePixels / presentPixels (0 when nothing is present). */
+  residueFraction: number;
+  /** Bounding box of all residue pixels; null when there is none. */
+  worstBBox: AlphaBBox | null;
+  /** Resolved hue tolerance (degrees). */
+  hueTolerance: number;
+  /** Resolved saturation gate. */
+  minSaturation: number;
+  /** Resolved value gate. */
+  minValue: number;
+  verdict: KeyResidueVerdict;
+  /** Debug heatmap path when `heatmap` was set, else null. */
+  heatmapPath: string | null;
+  logPath: string;
+}
+
+// ----- grid -----
+
+export interface GridArgs {
+  /** Images to tile, in order. At least one. */
+  inputs: string[];
+  /** Number of columns. Default ceil(sqrt(count of readable inputs)). */
+  cols?: number;
+  /** Square cell side in pixels; each image is contain-fit into it. Default 256. */
+  cell?: number;
+  /** Gap between cells (and the outer border) in pixels. Default 16. */
+  gap?: number;
+  /** Sheet background: "transparent" or "#rrggbb". Default "transparent". */
+  background?: string;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface GridResult {
+  output: string;
+  /** Inputs supplied. */
+  count: number;
+  /** Tiles actually drawn (readable inputs). */
+  placed: number;
+  /** Inputs that could not be read, in order — skipped, never fatal. */
+  skipped: string[];
+  cols: number;
+  rows: number;
+  /** Resolved cell side (px). */
+  cell: number;
+  /** Resolved gap (px). */
+  gap: number;
   width: number;
   height: number;
   logPath: string;

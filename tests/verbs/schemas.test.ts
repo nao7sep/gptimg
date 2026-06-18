@@ -7,7 +7,9 @@ import {
   validateDespeckleArgs,
   validateEditArgs,
   validateGenerateArgs,
+  validateGridArgs,
   validateIconArgs,
+  validateKeycheckArgs,
   validateLayerArgs,
   validateMaskArgs,
   validateModelKey,
@@ -78,6 +80,38 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateDespeckleArgs({ in: "a.png", minArea: 2.5 }), "non-negative integer");
     badArgs(() => validateDespeckleArgs({ in: "a.png", connectivity: 6 }), "must be 4 or 8");
     badArgs(() => validateDespeckleArgs({ in: "a.png", keep: "biggest" as never }), "keep must be one of");
+  });
+
+  it("keycheck: required concrete key, numeric ranges, boolean heatmap", () => {
+    expect(validateKeycheckArgs({ in: "a.png", key: "#00ff00" })).toBeTruthy();
+    expect(validateKeycheckArgs({ in: "a.png", key: "from-sidecar" })).toBeTruthy();
+    expect(validateKeycheckArgs({ in: "a.png", key: "#ff00ff", heatmap: true })).toBeTruthy();
+    badArgs(() => validateKeycheckArgs({ in: "a.png" } as never), "key"); // key is required
+    badArgs(() => validateKeycheckArgs({ in: "a.png", key: "auto" }), "key must be"); // no "auto"
+    badArgs(() => validateKeycheckArgs({ in: "a.png", key: "green" }), "key must be");
+    badArgs(() => validateKeycheckArgs({ in: "", key: "#00ff00" }), "in");
+    badArgs(() => validateKeycheckArgs({ in: "a.png", key: "#00ff00", hueTolerance: 200 }), "[0..180]");
+    badArgs(() => validateKeycheckArgs({ in: "a.png", key: "#00ff00", minSaturation: 2 }), "[0..1]");
+    badArgs(() => validateKeycheckArgs({ in: "a.png", key: "#00ff00", minValue: -0.1 }), "[0..1]");
+    badArgs(() => validateKeycheckArgs({ in: "a.png", key: "#00ff00", maxEdgeResidueFraction: 1.5 }), "[0..1]");
+    badArgs(
+      () => validateKeycheckArgs({ in: "a.png", key: "#00ff00", maxInteriorResiduePixels: 1.5 }),
+      "non-negative integer",
+    );
+  });
+
+  it("grid: inputs arity, numeric ranges, background form", () => {
+    expect(validateGridArgs({ inputs: ["a.png"] })).toBeTruthy();
+    expect(validateGridArgs({ inputs: ["a.png", "b.png"], cols: 2, cell: 128, gap: 0 })).toBeTruthy();
+    expect(validateGridArgs({ inputs: ["a.png"], background: "#102030" })).toBeTruthy();
+    expect(validateGridArgs({ inputs: ["a.png"], background: "transparent" })).toBeTruthy();
+    badArgs(() => validateGridArgs({ inputs: [] }), "at least one");
+    badArgs(() => validateGridArgs({} as never), "inputs");
+    badArgs(() => validateGridArgs({ inputs: ["a.png", ""] }));
+    badArgs(() => validateGridArgs({ inputs: ["a.png"], cell: 0 }), "positive integer");
+    badArgs(() => validateGridArgs({ inputs: ["a.png"], gap: -1 }), "non-negative integer");
+    badArgs(() => validateGridArgs({ inputs: ["a.png"], gap: 1.5 }), "non-negative integer");
+    badArgs(() => validateGridArgs({ inputs: ["a.png"], background: "red" }), "transparent");
   });
 
   it("combine: op enum and op-dependent arity", () => {
@@ -169,5 +203,11 @@ describe("verb argument validation (single source of truth)", () => {
     await expect(
       sdk.combine({ op: "union", inputs: ["only-one.png"] }),
     ).rejects.toMatchObject({ code: "args.invalid" });
+    await expect(
+      sdk.keycheck({ in: "a.png", key: "green" as never }),
+    ).rejects.toMatchObject({ code: "args.invalid" });
+    await expect(sdk.grid({ inputs: [] })).rejects.toMatchObject({
+      code: "args.invalid",
+    });
   });
 });
