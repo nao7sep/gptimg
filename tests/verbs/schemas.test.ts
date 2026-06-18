@@ -144,10 +144,10 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateModelKey("constructor"), "unknown model");
   });
 
-  it("the SDK enforces enums and bounds itself — not just the CLI (§3)", async () => {
-    // Calling the SDK directly (the supported, primary surface) with a bad enum
-    // or out-of-range value must reject before any I/O — proving the constraint
-    // lives in the SDK, not only in the CLI's `.choices()`.
+  it("the SDK enforces enums and bounds itself at runtime (§3)", async () => {
+    // Calling the SDK directly (the only surface) with a bad enum or out-of-range
+    // value must reject before any I/O — proving the constraint lives in the SDK's
+    // own validator, not merely in a caller's type annotations.
     const sdk = new GptImg();
     await expect(
       sdk.backplate({ from: "#000000", to: "#ffffff", shape: "blob" as never }),

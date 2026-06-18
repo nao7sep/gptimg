@@ -52,7 +52,7 @@ describe("installModelImpl logging", () => {
     expect(defaultEntries).toEqual([]);
   });
 
-  it("a default log dir that can't be opened is announced once, never failing install", async () => {
+  it("a default log dir that can't be opened never fails install, and the SDK never prints", async () => {
     const profileDir = path.join(tmp, "profile");
     await seedCachedModel(profileDir);
     // Point the default log dir under a *file*, so opening its log (mkdir of the
@@ -64,21 +64,21 @@ describe("installModelImpl logging", () => {
     let result: { name: string } | undefined;
     const chunks = await captureStderr(async () => {
       // The logger can't open its file, but that must not fail the install — the
-      // cache and network are fine, so the failure is announced and work goes on.
+      // cache and network are fine, so the work goes on regardless.
       const sdk = new GptImg({ profileDir, logDir });
       result = await sdk.model.install(key);
     });
 
     expect(result?.name).toBe(MODELS[key].name);
-    // The logging failure surfaces on stderr rather than being swallowed.
-    expect(chunks.join("")).toContain('"message":"log file unavailable"');
+    // The log file is unavailable, but an SDK never falls back to a standard stream
+    // (sdk-toolkit-conventions §4); with no progress sink supplied here, it is silent.
+    expect(chunks.join("")).toBe("");
   });
 });
 
-// The CLI renders whatever the SDK returns as the single stdout JSON object
-// (sdk-cli §4), so the install/list SDK methods must each return one wrapper
-// object — never a bare array. These pin those shapes: `installAll` → { installed },
-// `list` → { models }.
+// Per §4 (return typed data, never a bare primary value), the install/list SDK
+// methods each return one wrapper object — never a bare array. These pin those
+// shapes: `installAll` → { installed }, `list` → { models }.
 describe("model verb result shapes", () => {
   let tmp: string;
   const keys = Object.keys(MODELS) as ModelKey[];

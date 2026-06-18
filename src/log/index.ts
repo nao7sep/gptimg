@@ -22,25 +22,27 @@ function serialize(entry: LogEntry): string {
   return JSON.stringify(entry) + "\n";
 }
 
-// Handles for which a file-logging failure has already been announced. We surface
-// the failure to the console exactly ONCE per session rather than on every line:
-// a dead log file degrades to a single notice, never a mirror of the whole stream
-// onto the host's stderr (which, for an embedded SDK, would be its own misbehavior
-// — imagine a server's disk filling and gptimg flooding its stderr). Module-private
-// (a WeakSet, not a field) so the public LogHandle type stays a plain `{path, verb}`.
+// Handles for which a file-logging failure has already been surfaced. The notice
+// goes through the caller's progress sink (`onEvent`) exactly ONCE per session, not
+// on every line — and never to a standard stream: an SDK prints nothing, ever
+// (sdk-toolkit-conventions §4). With no sink the SDK is silent; the live event
+// stream, which is independent of the file, already carries every event. Module-
+// private (a WeakSet, not a field) so the public LogHandle stays a plain `{path, verb}`.
 const failureAnnounced = new WeakSet<LogHandle>();
 
 /**
- * Last-resort surface sanctioned by the logging convention's "when logging itself
- * fails": never crash, never silently swallow. Emit one warn-level record — built
- * and serialized through the SAME envelope path as a normal line — to the console,
- * once per handle. The live progress stream still carries non-error events, and
- * errors still reach the caller as thrown exceptions, so the lost lines are not the
- * only record; this notice is here so the failure itself is never invisible.
+ * Surface a log-file failure once per handle, the SDK way: never crash, never
+ * print. The notice is one warn-level record forwarded through the caller's
+ * progress sink (`onEvent`) — the same envelope a normal line uses — so a watcher
+ * learns the on-disk log is unavailable. With no sink the SDK stays silent
+ * (sdk-toolkit-conventions §4, §6); the live event stream already carries every
+ * non-error event and errors still reach the caller as thrown exceptions, so the
+ * file failing loses no part of the contract.
  */
-function announceLogFailure(handle: LogHandle, err: unknown): void {
+function announceLogFailure(handle: LogHandle, err: unknown, onEvent?: (entry: LogEntry) => void): void {
   if (failureAnnounced.has(handle)) return;
   failureAnnounced.add(handle);
+  if (!onEvent) return;
   const notice: LogEntry = {
     time: new Date().toISOString(),
     level: "warn",
@@ -50,20 +52,25 @@ function announceLogFailure(handle: LogHandle, err: unknown): void {
     data: redact({ path: handle.path, error: err instanceof Error ? err.message : String(err) }),
   };
   try {
-    process.stderr.write(serialize(notice));
+    onEvent(notice);
   } catch {
-    // give up silently — the observed operation itself must keep running
+    // a throwing sink must never break the operation the logger only observes
   }
 }
 
-export async function openLog(filePath: string, verb: LogVerb): Promise<LogHandle> {
+export async function openLog(
+  filePath: string,
+  verb: LogVerb,
+  onEvent?: (entry: LogEntry) => void,
+): Promise<LogHandle> {
   const handle: LogHandle = { path: filePath, verb };
   try {
     await mkdir(path.dirname(filePath), { recursive: true });
   } catch (err) {
-    // Can't create the log directory — announce once and let appends fall through
-    // to the same handling, rather than failing the verb the logger only observes.
-    announceLogFailure(handle, err);
+    // Can't create the log directory — surface once through the sink and let appends
+    // fall through to the same handling, rather than failing the verb the logger
+    // only observes.
+    announceLogFailure(handle, err, onEvent);
   }
   return handle;
 }
@@ -110,10 +117,11 @@ export async function appendLog(
   try {
     await appendFile(handle.path, serialize(final), "utf-8");
   } catch (err) {
-    // Logging must never crash the operation it observes. Announce the failure
-    // once and keep running; we keep attempting the file on later lines so a
-    // transient failure (e.g. a disk that frees up mid-session) self-heals.
-    announceLogFailure(handle, err);
+    // Logging must never crash the operation it observes. Surface the failure
+    // once (through the sink) and keep running; we keep attempting the file on
+    // later lines so a transient failure (e.g. a disk that frees up mid-session)
+    // self-heals.
+    announceLogFailure(handle, err, onEvent);
   }
 }
 
@@ -137,8 +145,8 @@ export async function createLogger(
   verb: LogVerb,
   opts: { onEvent?: (entry: LogEntry) => void } = {},
 ): Promise<Logger> {
-  const handle = await openLog(filePath, verb);
   const onEvent = opts.onEvent;
+  const handle = await openLog(filePath, verb, onEvent);
   return {
     handle,
     info: (stage, message, data) => appendLog(handle, { level: "info", stage, message, data }, onEvent),

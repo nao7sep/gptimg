@@ -15,11 +15,6 @@ import {
 import type { LogEntry, LogHandle } from "../../src/types.js";
 import { captureStderr } from "../helpers/streams.js";
 
-/** Count non-overlapping occurrences of `needle` in `haystack`. */
-function countOf(haystack: string, needle: string): number {
-  return haystack.split(needle).length - 1;
-}
-
 describe("log helpers", () => {
   let tmp: string;
   let file: string;
@@ -152,7 +147,7 @@ describe("debug gating", () => {
     await logger.info("download", "downloaded prog.bin");
     await logger.close();
 
-    // Live stream sees the debug tick (sdk-cli §6); the disk log does not.
+    // Live stream sees the debug tick (sdk-toolkit §6); the disk log does not.
     expect(seen.map((e) => e.level)).toEqual(["debug", "info"]);
     const lines = (await readFile(file, "utf-8")).trimEnd().split("\n");
     expect(lines).toHaveLength(1);
@@ -181,57 +176,65 @@ describe("logging fallback when the file can't be written", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("announces once and keeps running when the log dir can't be created — without throwing", async () => {
+  it("surfaces the failure once through the sink and keeps running — never throwing or printing", async () => {
     // The log's parent is a *file*, so mkdir of the dir fails (ENOTDIR).
     const blocker = path.join(tmp, "blocker");
     await writeFile(blocker, "not a dir");
     const logPath = path.join(blocker, "logs", "session.log");
+    const seen: LogEntry[] = [];
+    const onEvent = (e: LogEntry): void => {
+      seen.push(e);
+    };
 
     const chunks = await captureStderr(async () => {
-      const handle = await openLog(logPath, "mask");
+      const handle = await openLog(logPath, "mask", onEvent);
       // Never throws, even though no file could be opened.
       await expect(
-        appendLog(handle, { level: "info", stage: "resolve", message: "still works" }),
+        appendLog(handle, { level: "info", stage: "resolve", message: "still works" }, onEvent),
       ).resolves.toBeUndefined();
       await expect(
-        appendLog(handle, { level: "info", stage: "write", message: "still works again" }),
+        appendLog(handle, { level: "info", stage: "write", message: "still works again" }, onEvent),
       ).resolves.toBeUndefined();
     });
 
     expect(existsSync(logPath)).toBe(false);
-    const joined = chunks.join("");
-    // The failure is announced exactly once (a valid LogEntry, not mirrored lines)...
-    expect(countOf(joined, '"message":"log file unavailable"')).toBe(1);
-    const notice = JSON.parse(joined.trim()) as LogEntry;
-    expect(notice).toMatchObject({ level: "warn", verb: "mask", stage: "log" });
-    expect((notice.data as { path: string }).path).toBe(logPath);
-    // ...and the actual log lines are NOT mirrored to stderr.
-    expect(joined).not.toContain("still works");
+    // The failure is surfaced exactly once, through the caller's sink — a valid warn LogEntry.
+    const notices = seen.filter((e) => e.message === "log file unavailable");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ level: "warn", verb: "mask", stage: "log" });
+    expect((notices[0]!.data as { path: string }).path).toBe(logPath);
+    // The data events still reach the live sink, and the SDK prints nothing.
+    expect(seen.some((e) => e.message === "still works")).toBe(true);
+    expect(chunks.join("")).toBe("");
   });
 
-  it("announces once when the append itself fails, without throwing or mirroring lines", async () => {
+  it("surfaces a single notice through the sink when the append itself fails, never printing", async () => {
     // A handle whose path is a directory: opening is fine, appendFile fails (EISDIR).
     const asDir = path.join(tmp, "is-a-dir");
     await mkdir(asDir);
     const handle: LogHandle = { path: asDir, verb: "compose" };
+    const seen: LogEntry[] = [];
+    const onEvent = (e: LogEntry): void => {
+      seen.push(e);
+    };
 
     const chunks = await captureStderr(async () => {
       for (let i = 0; i < 3; i++) {
         await expect(
-          appendLog(handle, { level: "warn", stage: "retry", message: `retry ${i}` }),
+          appendLog(handle, { level: "warn", stage: "retry", message: `retry ${i}` }, onEvent),
         ).resolves.toBeUndefined();
       }
     });
 
-    const joined = chunks.join("");
-    // Three failing appends, but a single notice.
-    expect(countOf(joined, '"message":"log file unavailable"')).toBe(1);
-    expect(joined).not.toContain('"message":"retry');
+    // Three failing appends, one notice — and the retries themselves still reach the sink.
+    expect(seen.filter((e) => e.message === "log file unavailable")).toHaveLength(1);
+    expect(seen.filter((e) => e.stage === "retry")).toHaveLength(3);
+    expect(chunks.join("")).toBe("");
   });
 
-  it("delivers each event to the live sink once and never duplicates it onto stderr", async () => {
-    // Regression: the degraded path used to mirror every line to stderr, doubling
-    // the CLI's progress stream (which also targets stderr). It must not.
+  it("delivers each event to the live sink and surfaces one notice, never printing", async () => {
+    // The SDK never falls back to a stream (§4): the failure and every event flow
+    // through the sink only, never duplicated onto stderr.
     const asDir = path.join(tmp, "dir-as-log");
     await mkdir(asDir);
     const seen: LogEntry[] = [];
@@ -243,12 +246,11 @@ describe("logging fallback when the file can't be written", () => {
       await logger.close();
     });
 
-    // The live sink saw both events, once each.
-    expect(seen.map((e) => e.message)).toEqual(["hello", "world"]);
-    const joined = chunks.join("");
-    // Only the one-off notice reached stderr — not the data lines.
-    expect(countOf(joined, '"message":"log file unavailable"')).toBe(1);
-    expect(joined).not.toContain('"message":"hello"');
-    expect(joined).not.toContain('"message":"world"');
+    // The data events reached the live sink, once each.
+    expect(seen.filter((e) => e.message === "hello")).toHaveLength(1);
+    expect(seen.filter((e) => e.message === "world")).toHaveLength(1);
+    // The failure is surfaced once through the same sink, not to stderr.
+    expect(seen.filter((e) => e.message === "log file unavailable")).toHaveLength(1);
+    expect(chunks.join("")).toBe("");
   });
 });

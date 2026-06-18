@@ -8,7 +8,7 @@ Each verb does one observable operation; composing them into finished assets —
 
 - Node.js **22.12+** and npm. gptimg is consumed directly from its TypeScript source — there is no build step; run your scripts with [`tsx`](https://tsx.is) (`npx tsx your-script.ts`).
 - An **OpenAI API key** for the provider-backed verbs (`generate`, `edit`, `vision`), billed to your key. The local image ops need no key and no network.
-- For AI matting (`mask({ method: "ai" })`) and `upscale`: a one-time **ONNX model download** (BiRefNet ~0.5 GB, Swin2SR ~4.4 GB) and the RAM to run them (~1–1.5 GB / ~4.4 GB peak) — run these one at a time.
+- For AI matting (`mask({ method: "ai" })`) and `upscale`: a one-time **ONNX model download** (BiRefNet ~0.5 GB, Swin2SR ~53 MB) and the RAM to run them (~1–1.5 GB / ~4.4 GB peak) — run these one at a time.
 - Cross-platform (Node). Icon packing emits macOS `.icns` and Windows `.ico`.
 
 ## Getting started
