@@ -1,14 +1,8 @@
 {
-  // Tests live outside the shipped `src` rootDir and must not emit declarations,
-  // so override those; everything else (lib, types, strictness) is inherited.
-  // The base excludes tests/** (they stay out of the shipped build); this config
-  // IS the test typecheck, so it overrides that exclusion.
+  // The base excludes tests/** (they are not part of the typechecked source set);
+  // this config IS the test typecheck, so it includes tests/** instead. Everything
+  // else (lib, types, strictness, noEmit) is inherited.
   "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "rootDir": ".",
-    "declaration": false
-  },
-  "exclude": ["node_modules", "dist"],
+  "exclude": ["node_modules"],
   "include": ["tests/**/*.ts"]
 }

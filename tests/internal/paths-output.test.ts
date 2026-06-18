@@ -1,13 +1,14 @@
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ensureOutputDir, writeOutputBytes } from "../../src/internal/output-files.js";
 import {
   defaultLogDir,
   defaultLogPath,
   defaultOutDir,
+  defaultProfileDir,
   defaultProfilePath,
   defaultRecipePath,
   defaultStem,
@@ -43,6 +44,57 @@ describe("internal paths", () => {
     expect(utcTimestampMs(new Date("2026-01-02T03:04:05Z"))).toBe(
       "20260102-030405-000-utc",
     );
+  });
+});
+
+describe("defaultProfileDir (GPTIMG_HOME)", () => {
+  // The relocation override is the one path seam (per the storage-path
+  // convention): set it, read it back, and always restore so it cannot leak
+  // into other tests in this process. We never reach into a private setter.
+  let prev: string | undefined;
+
+  beforeEach(() => {
+    prev = process.env.GPTIMG_HOME;
+    delete process.env.GPTIMG_HOME;
+  });
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env.GPTIMG_HOME;
+    else process.env.GPTIMG_HOME = prev;
+  });
+
+  it("defaults the storage root to ~/.gptimg when GPTIMG_HOME is unset", () => {
+    // (cleared in beforeEach)
+    expect(defaultProfileDir()).toBe(path.join(homedir(), ".gptimg"));
+  });
+
+  it("relocates the whole root when GPTIMG_HOME points at an absolute dir", () => {
+    const root = path.join(tmpdir(), "gptimg-home-abs");
+    process.env.GPTIMG_HOME = root;
+    const profileDir = defaultProfileDir();
+
+    // The root moved, and every derived subpath hangs off the relocated root.
+    expect(profileDir).toBe(root);
+    expect(defaultProfilePath(profileDir)).toBe(path.join(root, "profile.json"));
+    expect(defaultRecipePath(profileDir)).toBe(path.join(root, "recipe.json"));
+    expect(defaultLogDir(profileDir)).toBe(path.join(root, "logs"));
+  });
+
+  it("resolves a relative GPTIMG_HOME against HOME, never the working directory", () => {
+    process.env.GPTIMG_HOME = "custom-root";
+    // Resolved against homedir(), not process.cwd() — the override can never
+    // reintroduce a cwd dependence.
+    expect(defaultProfileDir()).toBe(path.resolve(homedir(), "custom-root"));
+    expect(defaultProfileDir()).not.toBe(path.resolve(process.cwd(), "custom-root"));
+  });
+
+  it("throws rather than silently falling back when GPTIMG_HOME expands to empty", () => {
+    // ${GPTIMG_UNSET_xxx} references an unset variable, so the value expands to
+    // the empty string — an unusable root, which is a startup error, not a
+    // silent fallback to ~/.gptimg.
+    process.env.GPTIMG_HOME = "${GPTIMG_DEFINITELY_UNSET_VAR_42}";
+    expect(() => defaultProfileDir()).toThrow();
+    expect(() => defaultProfileDir()).toThrowError(/expands to an empty path/);
   });
 });
 

@@ -3,17 +3,16 @@
  * argument constraint in the SDK: required fields, numeric ranges, enum
  * membership, and cross-argument arity. Each verb's public `*Impl` calls its
  * `validate<Verb>Args` first, before any I/O or logging, so a malformed
- * invocation fails identically whether it came from the CLI or a library
- * caller.
+ * invocation fails identically for every caller.
  *
  * Scope: only *static* checks live here (things decidable from the arguments
  * alone). Data-dependent preconditions that need decoded pixels or the
  * filesystem — "the master must be square", "the top must fit the base",
  * a name collision — stay in the compute layer, where the data is available.
  *
- * Every failure is raised as `LocalOpError("args.invalid", …)`, the shared
- * usage-error code, so the CLI maps all of them to the usage exit code and a
- * one-line message. Mirrors the recipe-section validators in recipe/schemas.ts.
+ * Every failure is raised as `LocalOpError("args.invalid", …)` — one code a
+ * caller can branch on for any static argument fault. Mirrors the recipe-section
+ * validators in recipe/schemas.ts.
  *
  * Messages are constraint-only ("must be in (0..1]"); `formatZodError` prefixes
  * the field path, so the rendered form reads "<verb>: <field>: <constraint>".

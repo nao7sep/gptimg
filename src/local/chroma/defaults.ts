@@ -1,6 +1,6 @@
 /**
- * All local-chroma defaults live here. CLI flags and recipe entries override
- * these at runtime; this file is the single source of truth.
+ * All local-chroma defaults live here. Recipe entries and per-call arguments
+ * override these at runtime; this file is the single source of truth.
  */
 export const CHROMA_DEFAULTS = {
   /**

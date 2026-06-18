@@ -43,8 +43,7 @@ async function writeProfile(filePath: string, profile: Profile): Promise<void> {
  *
  * The key must be non-empty (ignoring surrounding whitespace); storing an empty
  * key would only surface later as a confusing provider failure. This is the
- * SDK's contract — enforced here so every caller, library or CLI, behaves the
- * same.
+ * SDK's contract — enforced here so every caller behaves the same.
  */
 export async function setApiKey(filePath: string, rawKey: string): Promise<void> {
   if (rawKey.trim().length === 0) {

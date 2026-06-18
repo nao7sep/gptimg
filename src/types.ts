@@ -139,7 +139,7 @@ export interface LogEntry {
   level: LogLevel;
   /** Short, stable, human-readable description of the event. */
   message: string;
-  /** Typed structured fields carried alongside the three envelope keys (sdk-cli §6/§7). */
+  /** Typed structured fields carried alongside the three envelope keys. */
   verb: LogVerb;
   stage: LogStage;
   data?: Record<string, unknown>;

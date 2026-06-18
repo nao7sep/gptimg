@@ -1,9 +1,8 @@
 /**
  * Single source of truth for every closed-set argument enum: the runtime token
- * lists AND the TypeScript union types derived from them. The CLI's enum-token
- * recognition (commander `.choices()`) and the SDK's argument validation
- * (verbs/schemas.ts) both import these same arrays, so the accepted set can
- * never drift between the two layers.
+ * lists AND the TypeScript union types derived from them. The SDK's argument
+ * validation (verbs/schemas.ts) imports these same arrays, so the accepted
+ * tokens and the derived type can never drift apart.
  */
 
 /**

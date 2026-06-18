@@ -16,8 +16,8 @@ import { mergeRecipes } from "./recipe/merge.js";
 import { readSidecar } from "./sidecar/read.js";
 import { writeSidecar } from "./sidecar/write.js";
 import {
-  DEFAULT_PROFILE_DIR,
   defaultLogDir,
+  defaultProfileDir,
   defaultProfilePath,
 } from "./internal/paths.js";
 import type {
@@ -122,7 +122,7 @@ export class GptImg {
   };
 
   constructor(opts: GptImgOptions = {}) {
-    this.profileDir = opts.profileDir ?? DEFAULT_PROFILE_DIR;
+    this.profileDir = opts.profileDir ?? defaultProfileDir();
     this.logDir = opts.logDir ?? defaultLogDir(this.profileDir);
 
     this.profile = {

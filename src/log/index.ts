@@ -89,7 +89,7 @@ export async function appendLog(
   };
   if (entry.data) final.data = redact(entry.data);
 
-  // Fan out to the live progress sink (the CLI renders it to stderr) before the
+  // Fan out to the live progress sink (a caller's `onProgress` handler) before the
   // file write, so a watcher sees the event immediately. Everything but `error`
   // is progress — an error is a failure the caller learns about through the
   // thrown error, not the stream. `debug` stage events (e.g. download ticks) ARE

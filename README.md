@@ -1,14 +1,14 @@
 # gptimg
 
-gptimg is a TypeScript **SDK + CLI** for AI image generation paired with a local image-processing pipeline. It generates and edits images through OpenAI and verifies them with a vision model, then does the on-device work around them: masking, compositing, mask algebra, cropping, gradient backplates, layering, drop shadows, super-resolution upscaling, resizing, and macOS/Windows icon packing. It's built for human CLI use and — especially — for **AI agents and scripts** that need durable, inspectable artifacts: every run writes timestamped images, JSON sidecars, and JSONL logs, prints one JSON object on stdout, and signals its outcome by exit code. It is SDK-first; the CLI is a thin bridge over the same methods.
+gptimg is a TypeScript **SDK** for AI image generation paired with a local image-processing pipeline. It generates and edits images through OpenAI and verifies them with a vision model, then does the on-device work around them: masking, compositing, mask algebra, cropping, gradient backplates, layering, drop shadows, super-resolution upscaling, resizing, and macOS/Windows icon packing. It's built for **AI agents and scripts** that need durable, inspectable artifacts: every run writes timestamped images, JSON sidecars, and JSONL logs, and each verb returns a typed result object naming what it produced. Every capability is a method on one `GptImg` class — there is no CLI; the library is the whole product.
 
 Each verb does one observable operation; composing them into finished assets — margins, glyph sizing, directory layout, output names — is deliberately the caller's job, not gptimg's. A personal tool: v1 ships **OpenAI only** (the provider boundary exists, but no second provider is shipped).
 
 ## Requirements
 
-- Node.js and npm — gptimg is consumed from source: build it, then use the SDK or the `bin/gptimg.js` CLI.
+- Node.js **22.12+** and npm. gptimg is consumed directly from its TypeScript source — there is no build step; run your scripts with [`tsx`](https://tsx.is) (`npx tsx your-script.ts`).
 - An **OpenAI API key** for the provider-backed verbs (`generate`, `edit`, `vision`), billed to your key. The local image ops need no key and no network.
-- For `mask --method ai` and `upscale`: a one-time **ONNX model download** (BiRefNet ~0.5 GB, Swin2SR ~4.4 GB) and the RAM to run them (~1–1.5 GB / ~4.4 GB peak) — run these one at a time.
+- For AI matting (`mask({ method: "ai" })`) and `upscale`: a one-time **ONNX model download** (BiRefNet ~0.5 GB, Swin2SR ~4.4 GB) and the RAM to run them (~1–1.5 GB / ~4.4 GB peak) — run these one at a time.
 - Cross-platform (Node). Icon packing emits macOS `.icns` and Windows `.ico`.
 
 ## Getting started
@@ -17,32 +17,21 @@ Each verb does one observable operation; composing them into finished assets —
 git clone <this repo> gptimg
 cd gptimg
 npm install
-npm run build
 ```
 
-The build emits `dist/`; the CLI entry is `bin/gptimg.js` (add `bin/` to `PATH`, or invoke `node bin/gptimg.js`). Store your API key once:
-
-```sh
-gptimg profile set-key --key sk-...
-```
-
-Then generate an image and verify it:
-
-```sh
-gptimg generate "a single centered pink frosted donut" --out-dir ./out --out-name donut
-gptimg vision --in ./out/donut.png --check "one donut, centered and fully visible"
-```
-
-The SDK mirrors the CLI:
+No build step — `import "gptimg"` resolves to the TypeScript source, so editing `src/` takes effect on the next run with nothing to keep in sync. Store your API key once, then generate an image and verify it:
 
 ```ts
 import { GptImg } from "gptimg";
-const gen = await new GptImg().generate({ prompt: "a red mug" });
+
+const img = new GptImg();
+await img.profile.setApiKey("sk-..."); // one-time, into the default profile
+
+const gen = await img.generate({ prompt: "a single centered pink frosted donut", outName: "donut" });
+const verdict = await img.vision({ in: gen.files[0].path, check: "one donut, centered and fully visible" });
 ```
 
-## Documentation
-
-The full contract — every verb's arguments, result envelopes, on-disk artifacts, error and exit codes, cancellation, profiles and recipes, and the operational caveats (running AI models one at a time, why `vision` can't judge a transparent cutout) — is in **[docs/reference.md](docs/reference.md)**.
+Run it with `npx tsx your-script.ts`.
 
 ## License
 
