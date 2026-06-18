@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseOverColor, runCompose } from "../../src/local/compose.js";
+import { SRGB_TO_LINEAR_LUT, linearToSRGBByte } from "../../src/local/chroma/spill.js";
 
 async function writeRawPng(
   filePath: string,
@@ -146,5 +147,99 @@ describe("runCompose", () => {
     await expect(
       runCompose({ in: inPath, mask: maskPath, out: outPath }),
     ).rejects.toMatchObject({ errorType: "localOp" });
+  });
+});
+
+describe("runCompose — removeBleed dispatch (chromatic vs achromatic)", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-compose-bleed-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  function near(actual: number, expected: number, tol: number, label: string): void {
+    expect(Math.abs(actual - expected), `${label}: ${actual} vs ${expected}`).toBeLessThanOrEqual(tol);
+  }
+
+  /** Build a 1-row image (RGB from each pixel, alpha carried by the mask) and compose it. */
+  async function buildAndCompose(
+    pixels: [number, number, number, number][],
+    removeBleed: string,
+  ): Promise<Uint8Array> {
+    const W = pixels.length;
+    const H = 1;
+    const rgba = new Uint8Array(W * H * 4);
+    const mask = new Uint8Array(W * H);
+    pixels.forEach((px, p) => {
+      rgba[p * 4] = px[0];
+      rgba[p * 4 + 1] = px[1];
+      rgba[p * 4 + 2] = px[2];
+      rgba[p * 4 + 3] = 255; // the image is opaque; alpha lives in the mask
+      mask[p] = px[3];
+    });
+    const inPath = path.join(tmp, "in.png");
+    const maskPath = path.join(tmp, "mask.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, W, H, rgba);
+    await writeRawMaskPng(maskPath, W, H, mask);
+    await runCompose({ in: inPath, mask: maskPath, out: outPath, removeBleed });
+    return readRGBA(outPath);
+  }
+
+  it("chromatic PRIMARY key (green): clamps the key channel at every kept pixel (all alphas), leaves legit colors", async () => {
+    // p0: green spill (g >> r,b) at FULL opacity — proving suppression hits all
+    // alphas, unlike the achromatic path. p1: a legit warm colour that already
+    // satisfies g <= max(r,b), so it must pass through untouched.
+    const out = await buildAndCompose(
+      [
+        [60, 200, 60, 255],
+        [200, 100, 50, 255],
+      ],
+      "#00ff00",
+    );
+    near(out[0]!, 60, 2, "p0 r untouched");
+    near(out[1]!, 60, 3, "p0 g clamped to ~max(r,b)");
+    near(out[2]!, 60, 2, "p0 b untouched");
+    near(out[4]!, 200, 2, "p1 r unchanged");
+    near(out[5]!, 100, 2, "p1 g unchanged (no clamp)");
+    near(out[6]!, 50, 2, "p1 b unchanged");
+  });
+
+  it("chromatic SECONDARY key (magenta): pulls both non-suppressed channels down to the suppressed level", async () => {
+    // Magenta tint: r,b high, g low → r and b reduced by their excess over g.
+    const out = await buildAndCompose([[200, 40, 200, 255]], "#ff00ff");
+    near(out[0]!, 40, 3, "r reduced to ~g");
+    near(out[1]!, 40, 2, "g (suppressed) unchanged");
+    near(out[2]!, 40, 3, "b reduced to ~g");
+  });
+
+  it("achromatic key (gray): recovers edge colour at partial-alpha, leaves alpha=255 untouched", async () => {
+    // Reconstruct a captured edge pixel exactly: C = a·F + (1−a)·B in LINEAR
+    // light, with F=(220,40,40), a=128/255, B=gray128 — the blend removeBleed
+    // must invert. Using the same a the recovery uses makes the inversion exact
+    // (bar sRGB quantization).
+    const F: [number, number, number] = [220, 40, 40];
+    const a = 128 / 255;
+    const bLin = SRGB_TO_LINEAR_LUT[128]!;
+    const captureByte = (f: number): number =>
+      linearToSRGBByte(a * SRGB_TO_LINEAR_LUT[f]! + (1 - a) * bLin);
+    const captured: [number, number, number, number] = [
+      captureByte(220),
+      captureByte(40),
+      captureByte(40),
+      128,
+    ];
+    const out = await buildAndCompose([captured, [180, 60, 60, 255]], "#808080");
+    near(out[0]!, F[0], 3, "recovered r");
+    near(out[1]!, F[1], 3, "recovered g");
+    near(out[2]!, F[2], 3, "recovered b");
+    // The recovery genuinely moved the pixel off its captured blend.
+    expect(Math.abs(out[0]! - captured[0])).toBeGreaterThan(10);
+    // The confidently-opaque pixel (alpha 255) is left alone by the gray path.
+    near(out[4]!, 180, 2, "opaque r untouched");
+    near(out[5]!, 60, 2, "opaque g untouched");
+    near(out[6]!, 60, 2, "opaque b untouched");
   });
 });

@@ -80,6 +80,27 @@ describe("GptImg SDK surface", () => {
     expect(res.verdict).toBe("clean");
   });
 
+  it("keycheck accepts an explicit key and writes a heatmap", async () => {
+    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const W = 8, H = 8;
+    const rgba = new Uint8Array(W * H * 4);
+    for (let y = 2; y <= 5; y++)
+      for (let x = 2; x <= 5; x++) {
+        const i = (y * W + x) * 4;
+        rgba[i] = 40; rgba[i + 1] = 80; rgba[i + 2] = 200; rgba[i + 3] = 255;
+      }
+    const imgPath = path.join(tmp, "cut.png");
+    await sharp(Buffer.from(rgba), { raw: { width: W, height: H, channels: 4 } }).png().toFile(imgPath);
+
+    const res = await sdk.keycheck({ in: imgPath, key: "#00ff00", heatmap: true, outName: "qa" });
+    expect(res.keySource).toBe("explicit");
+    expect(res.key).toBe("#00ff00");
+    expect(res.heatmapPath).toBe(path.join(tmp, "qa.png"));
+    const meta = await sharp(res.heatmapPath!).metadata();
+    expect(meta.width).toBe(W);
+    expect(meta.height).toBe(H);
+  });
+
   it("grid tiles inputs into a sheet beside the first input", async () => {
     const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
     const paths: string[] = [];
