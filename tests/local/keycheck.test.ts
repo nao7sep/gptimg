@@ -246,4 +246,42 @@ describe("runKeycheck", () => {
     const inPath = await build(W, H, (b) => fillRect(b, W, 1, 1, 2, 2, BLUE));
     await expect(runKeycheck({ in: inPath, key: "#808080" })).rejects.toThrow(/achromatic/);
   });
+
+  it("does NOT flag a DARK pixel at the key hue (value gate), but does once minValue drops below it", async () => {
+    const W = 8, H = 8;
+    // (0,50,0): hue exactly 120, saturation 1.0, but value ≈ 0.196 — a near-black
+    // green the hue+saturation alone would catch; the value gate (default 0.25) excludes it.
+    const inPath = await build(W, H, (b) => fillRect(b, W, 2, 2, 5, 5, [0, 50, 0, 255]));
+    expect(rgbToHsv(0, 50, 0).h).toBe(120);
+    const gated = await runKeycheck({ in: inPath, key: GREEN });
+    expect(gated.residuePixels).toBe(0);
+    expect(gated.verdict).toBe("clean");
+    // Drop the value gate below this pixel's value and it IS caught — proving the
+    // exclusion was the value gate, not the hue or saturation.
+    const caught = await runKeycheck({ in: inPath, key: GREEN, minValue: 0.1 });
+    expect(caught.residuePixels).toBe(16);
+  });
+
+  it("the verdict knobs decide pass/fail at fixed pixels (maxEdgeResidueFraction / maxInteriorResiduePixels)", async () => {
+    const W = 12, H = 12;
+    // A green fringe ring (edgeResidueFraction = 1.0) over a blue core.
+    const ring = await build(W, H, (b) => {
+      fillRect(b, W, 3, 3, 8, 8, FRINGE_GREEN);
+      fillRect(b, W, 4, 4, 7, 7, BLUE);
+    });
+    expect((await runKeycheck({ in: ring, key: GREEN })).verdict).toBe("residue"); // default 0.02
+    const lenient = await runKeycheck({ in: ring, key: GREEN, maxEdgeResidueFraction: 1 });
+    expect(lenient.edgeResidueFraction).toBe(1);
+    expect(lenient.verdict).toBe("clean"); // same pixels, fringe now tolerated
+
+    // A 3×3 interior patch on a fully-opaque canvas → 9 interior residue, no edge.
+    const patch = await build(W, H, (b) => {
+      fillRect(b, W, 0, 0, 11, 11, BLUE);
+      fillRect(b, W, 5, 5, 7, 7, PURE_GREEN);
+    });
+    expect((await runKeycheck({ in: patch, key: GREEN })).verdict).toBe("residue"); // default max 0
+    const tolerated = await runKeycheck({ in: patch, key: GREEN, maxInteriorResiduePixels: 9 });
+    expect(tolerated.interiorResiduePixels).toBe(9);
+    expect(tolerated.verdict).toBe("clean"); // budget now covers the patch
+  });
 });

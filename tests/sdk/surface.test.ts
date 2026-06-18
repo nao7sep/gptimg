@@ -52,6 +52,7 @@ describe("GptImg SDK surface", () => {
     expect(typeof sdk.log.close).toBe("function");
     expect(typeof sdk.log.createLogger).toBe("function");
     expect(typeof sdk.keycheck).toBe("function");
+    expect(typeof sdk.framecheck).toBe("function");
     expect(typeof sdk.grid).toBe("function");
   });
 
@@ -99,6 +100,27 @@ describe("GptImg SDK surface", () => {
     const meta = await sharp(res.heatmapPath!).metadata();
     expect(meta.width).toBe(W);
     expect(meta.height).toBe(H);
+  });
+
+  it("framecheck measures subject placement and verdicts off-centre end-to-end", async () => {
+    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    // A 4×4 solid square pushed to the left (L=1, R=5) in a 10×10 canvas.
+    const W = 10, H = 10;
+    const rgba = new Uint8Array(W * H * 4);
+    for (let y = 3; y <= 6; y++)
+      for (let x = 1; x <= 4; x++) {
+        const i = (y * W + x) * 4;
+        rgba[i] = 200; rgba[i + 1] = 50; rgba[i + 2] = 50; rgba[i + 3] = 255;
+      }
+    const imgPath = path.join(tmp, "subject.png");
+    await sharp(Buffer.from(rgba), { raw: { width: W, height: H, channels: 4 } }).png().toFile(imgPath);
+
+    const res = await sdk.framecheck({ in: imgPath });
+    expect(res.solidBBox).toEqual({ x: 1, y: 3, width: 4, height: 4 });
+    expect(res.margins).toEqual({ left: 1, right: 5, top: 3, bottom: 3 });
+    expect(res.deltas!.horizontal).toBe(4);
+    expect(res.verdict).toBe("offset");
+    expect(typeof res.logPath).toBe("string");
   });
 
   it("grid tiles inputs into a sheet beside the first input", async () => {

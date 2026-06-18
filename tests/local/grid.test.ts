@@ -151,4 +151,30 @@ describe("runGrid", () => {
     expect(res.width).toBe(CELL + 2 * GAP);
     expect(res.height).toBe(3 * CELL + 4 * GAP);
   });
+
+  it("leaves a partial last row's empty cell as background (no tile bleeds in)", async () => {
+    const inputs: string[] = [];
+    for (let i = 0; i < 5; i++) inputs.push(await makeSolid(path.join(tmp, `c${i}.png`), CELL, CELL, COLORS[i]!));
+    const out = path.join(tmp, "sheet.png");
+    const res = await runGrid({ inputs, out, cell: CELL, gap: GAP, background: "#ff00ff" });
+    expect(res.cols).toBe(3);
+    expect(res.rows).toBe(2);
+    const sheet = await readRGBA(out);
+    // 5 tiles fill cells 0..4; cell 5 (row 1, col 2) is empty → the background colour.
+    const [ex, ey] = cellCenter(5, res.cols, CELL, GAP);
+    expect(pxAt(sheet, ex, ey)).toEqual([255, 0, 255, 255]);
+    // a filled cell still carries its own tile (no bleed)
+    const [fx, fy] = cellCenter(0, res.cols, CELL, GAP);
+    expect(pxAt(sheet, fx, fy)).toEqual(COLORS[0]!);
+  });
+
+  it("applies the documented cell/gap defaults (256/16) when omitted", async () => {
+    const tile = await makeSolid(path.join(tmp, "t.png"), 64, 64, COLORS[0]!);
+    const out = path.join(tmp, "sheet.png");
+    const res = await runGrid({ inputs: [tile], out });
+    expect(res.cell).toBe(256);
+    expect(res.gap).toBe(16);
+    expect(res.width).toBe(256 + 2 * 16);
+    expect(res.height).toBe(256 + 2 * 16);
+  });
 });
