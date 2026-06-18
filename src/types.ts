@@ -64,7 +64,7 @@ export interface MaskRecipe {
   color?: string;
   /** When true, interior key-colored regions are kept opaque. Default false. */
   preserveInterior?: boolean;
-  /** Border-sample depth in pixels for `--key auto`. */
+  /** Border-sample depth in pixels for `key: "auto"`. */
   borderSample?: number;
   /** Spill ratio at which near-key pixels saturate to α=0. */
   saturationRatio?: number;
@@ -166,7 +166,8 @@ export interface GenerateArgs {
   profile?: string;
   recipe?: string;
   log?: string;
-  set?: string[];
+  /** Typed recipe overrides merged over the loaded recipe (caller-supplied, last wins). */
+  overrides?: Partial<Recipe>;
   overwrite?: boolean;
 }
 
@@ -189,7 +190,8 @@ export interface VisionArgs {
   profile?: string;
   recipe?: string;
   log?: string;
-  set?: string[];
+  /** Typed recipe overrides merged over the loaded recipe (caller-supplied, last wins). */
+  overrides?: Partial<Recipe>;
   outDir?: string;
   outName?: string;
   /** Overwrite an existing sidecar at the resolved stem. Default false. */
@@ -644,7 +646,7 @@ export interface InstalledModel {
   key: string;
   name: string;
   path: string;
-  /** True when `--force` re-downloaded over an existing cache entry. */
+  /** True when `force` re-downloaded over an existing cache entry. */
   forced: boolean;
 }
 

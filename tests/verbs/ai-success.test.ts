@@ -94,12 +94,10 @@ describe("AI verb implementations with mocked provider", () => {
         prompt: "a green disk",
         outDir,
         outName: "gen",
-        set: [
-          "generate.quality=low",
-          "chroma.color=#00ff00",
-          "n=2",
-          "model=param-model",
-        ],
+        overrides: {
+          generate: { quality: "low", n: 2, model: "param-model" },
+          chroma: { color: "#00ff00" },
+        },
       });
 
       expect(stdout).not.toHaveBeenCalled();
@@ -157,7 +155,7 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("generate layers recipe file and --set with a custom profile path", async () => {
+  it("generate layers recipe file and overrides with a custom profile path", async () => {
     const profilePath = path.join(tmp, "custom-profile.json");
     const recipePath = path.join(tmp, "recipe.json");
     await writeFile(
@@ -190,7 +188,7 @@ describe("AI verb implementations with mocked provider", () => {
       recipe: recipePath,
       outDir: path.join(tmp, "layered-out"),
       outName: "layered",
-      set: ["quality=set-quality", "n=3", "edit.size=set-edit-size"],
+      overrides: { generate: { quality: "set-quality", n: 3 }, edit: { size: "set-edit-size" } },
     });
 
     expect(path.basename(result.files[0]?.path ?? "")).toBe("layered-1.png");
@@ -224,7 +222,7 @@ describe("AI verb implementations with mocked provider", () => {
       prompt: "partial",
       outDir: path.join(tmp, "partial-out"),
       outName: "partial",
-      set: ["n=2"],
+      overrides: { generate: { n: 2 } },
     });
 
     expect(result.partial).toBe(true);
@@ -347,7 +345,7 @@ describe("AI verb implementations with mocked provider", () => {
       recipe,
       outDir: path.join(tmp, "recipe-edit-out"),
       outName: "recipe-edit",
-      set: ["size=edit-from-set", "n=2"],
+      overrides: { edit: { size: "edit-from-set", n: 2 } },
     });
 
     const call = providerCalls.edit.mock.calls[0]?.[0];
@@ -392,7 +390,7 @@ describe("AI verb implementations with mocked provider", () => {
       prompt: "wider run",
       outDir,
       outName: "same",
-      set: ["n=3"],
+      overrides: { generate: { n: 3 } },
     });
     expect(existsSync(path.join(outDir, "same-1.png"))).toBe(true);
     expect(existsSync(path.join(outDir, "same-2.png"))).toBe(true);
@@ -436,7 +434,7 @@ describe("AI verb implementations with mocked provider", () => {
       prompt: "first",
       outDir,
       outName: "same",
-      set: ["n=2"],
+      overrides: { generate: { n: 2 } },
     });
 
     await expect(
@@ -444,7 +442,7 @@ describe("AI verb implementations with mocked provider", () => {
         prompt: "second",
         outDir,
         outName: "same",
-        set: ["n=2"],
+        overrides: { generate: { n: 2 } },
         overwrite: true,
       }),
     ).resolves.toMatchObject({ partial: false });
@@ -473,7 +471,7 @@ describe("AI verb implementations with mocked provider", () => {
         prompt: "second",
         outDir,
         outName: "same",
-        set: ["n=2"],
+        overrides: { generate: { n: 2 } },
       }),
     ).rejects.toMatchObject({ code: "output.exists" });
     expect(existsSync(path.join(outDir, "same-1.png"))).toBe(false);
@@ -494,7 +492,7 @@ describe("AI verb implementations with mocked provider", () => {
     const result = await sdk.generate({
       prompt: "two images",
       outName: "two",
-      set: ["n=2"],
+      overrides: { generate: { n: 2 } },
     });
 
     expect(result.files.map((f) => path.relative(tmp, f.path))).toEqual([
@@ -526,7 +524,7 @@ describe("AI verb implementations with mocked provider", () => {
       in: input,
       outDir: path.join(tmp, "edit-two"),
       outName: "edited",
-      set: ["n=2"],
+      overrides: { edit: { n: 2 } },
     });
 
     expect(result.files.map((f) => path.basename(f.path))).toEqual([
@@ -561,7 +559,7 @@ describe("AI verb implementations with mocked provider", () => {
         in: input,
         outDir,
         outName: "same",
-        set: ["n=2"],
+        overrides: { edit: { n: 2 } },
       }),
     ).rejects.toMatchObject({ code: "output.exists" });
     expect(existsSync(path.join(outDir, "same-1.png"))).toBe(false);
@@ -586,7 +584,7 @@ describe("AI verb implementations with mocked provider", () => {
       in: input,
       outDir: path.join(tmp, "edit-partial"),
       outName: "edited",
-      set: ["n=2"],
+      overrides: { edit: { n: 2 } },
     });
 
     expect(result.partial).toBe(true);
@@ -612,7 +610,7 @@ describe("AI verb implementations with mocked provider", () => {
       check: "both are green disks",
       outDir: path.join(tmp, "vision-out"),
       outName: "vision",
-      set: ['shrink={"width":64,"height":64}', "model=vision-model", "detail=high"],
+      overrides: { vision: { shrink: { width: 64, height: 64 }, model: "vision-model", detail: "high" } },
     });
 
     expect(result).toMatchObject({

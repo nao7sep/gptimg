@@ -94,7 +94,7 @@ export function defaultModelsDir(profileDir: string): string {
 // `-fff` variant the timestamp conventions reserve for concurrent-by-design tools,
 // so two runs starting in the same UTC second get distinct log files instead of
 // interleaving into one. No app name (the path already implies it) and no `.jsonl`
-// (a `.log` file holding JSON Lines is the convention). A user `--log <path>`
+// (a `.log` file holding JSON Lines is the convention). A caller's `log` option
 // overrides this and is named by the caller.
 export function defaultLogPath(logDir: string, ts: string): string {
   return path.join(logDir, `${ts}.log`);

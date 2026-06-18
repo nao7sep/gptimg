@@ -52,7 +52,7 @@ describe("assertSingleFileAvailable", () => {
       assertSingleFileAvailable(target, false);
     } catch (err) {
       expect((err as LocalOpError).code).toBe("output.exists");
-      expect((err as Error).message).toContain("--overwrite");
+      expect((err as Error).message).toContain("overwrite: true");
     }
   });
 
@@ -101,12 +101,20 @@ describe("resolveOutputPath", () => {
     expect(out).toBe(`${absStem}.png`);
   });
 
-  it("falls back to process.cwd() when no input is provided (e.g. backplate)", async () => {
+  it("uses the provided fallback directory when no input is given (e.g. backplate), never the cwd", async () => {
+    const fallbackDir = path.join(tmp, "profile-output");
     const out = await resolveOutputPath(
       {},
-      { stem: "backplate-1024", ext: "png" },
+      { fallbackDir, stem: "backplate-1024", ext: "png" },
     );
-    expect(out).toBe(path.join(process.cwd(), "backplate-1024.png"));
+    expect(out).toBe(path.join(fallbackDir, "backplate-1024.png"));
+    expect(out.startsWith(process.cwd())).toBe(false);
+  });
+
+  it("throws when a verb supplies neither an input file nor a fallback directory", async () => {
+    await expect(
+      resolveOutputPath({}, { stem: "x", ext: "png" }),
+    ).rejects.toBeInstanceOf(LocalOpError);
   });
 
   it("creates the resolved outDir (mkdir -p)", async () => {

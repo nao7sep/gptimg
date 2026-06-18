@@ -10,7 +10,6 @@ import {
 import { loadProfile } from "./profile/load.js";
 import { resolveProfile } from "./profile/resolve.js";
 import { clearApiKey, setApiKey } from "./profile/setApiKey.js";
-import { applySet } from "./recipe/applySet.js";
 import { loadRecipe } from "./recipe/load.js";
 import { mergeRecipes } from "./recipe/merge.js";
 import { readSidecar } from "./sidecar/read.js";
@@ -92,7 +91,6 @@ export class GptImg {
   readonly recipe = {
     load: loadRecipe,
     merge: mergeRecipes,
-    applySet,
   };
 
   readonly sidecar = {

@@ -35,7 +35,7 @@ export function assertSingleFileAvailable(
   if (!allowOverwrite && existsSync(filePath)) {
     throw new LocalOpError(
       "output.exists",
-      `Output exists: ${filePath}. Use --overwrite to allow.`,
+      `Output exists: ${filePath}. Set overwrite: true to allow.`,
     );
   }
 }
@@ -44,25 +44,46 @@ export function assertSingleFileAvailable(
  * Resolve {outDir, outName} args to a concrete absolute output path, creating
  * the directory if needed.
  *
- * - `outDir` defaults to `dirname(inputForDir)` when an input file path is
- *   given, otherwise to the current working directory. The CWD fallback is
- *   for verbs that take no input file (e.g. `backplate`).
- * - `outName` is a STEM, not a filename: the verb owns its extension, which is
- *   appended here via the same primitive `generate` uses (`imageFileName`).
- *   This is strict — a stem that already carries an extension yields
- *   `<stem>.<ext>.<ext>` (mirroring `generate`, surfacing the misuse instead of
- *   silently swallowing it). `outName` falls back to `defaults.stem`; an
- *   absolute stem overrides outDir entirely.
+ * The output directory is chosen in order:
+ *   1. `args.outDir`, when the caller named one;
+ *   2. otherwise `dirname(inputForDir)` for a verb that has an input file — the
+ *      source file is a legitimate explicit base;
+ *   3. otherwise `fallbackDir`, the home-anchored output directory a no-input
+ *      verb (e.g. `backplate`) supplies as `defaultOutDir(profileDir)`.
+ *
+ * The working directory is never a base: a path the app writes is anchored to
+ * the home directory or to the source file, never to how the process was
+ * launched (the storage-path convention). A verb that provides neither an input
+ * file nor a fallback directory is a programmer error and throws, rather than
+ * silently writing under the cwd.
+ *
+ * `outName` is a STEM, not a filename: the verb owns its extension, which is
+ * appended here via the same primitive `generate` uses (`imageFileName`).
+ * This is strict — a stem that already carries an extension yields
+ * `<stem>.<ext>.<ext>` (mirroring `generate`, surfacing the misuse instead of
+ * silently swallowing it). `outName` falls back to `defaults.stem`; an
+ * absolute stem overrides outDir entirely.
  */
 export async function resolveOutputPath(
   args: { outDir?: string | undefined; outName?: string | undefined },
-  defaults: { inputForDir?: string | undefined; stem: string; ext: string },
+  defaults: {
+    inputForDir?: string | undefined;
+    fallbackDir?: string | undefined;
+    stem: string;
+    ext: string;
+  },
 ): Promise<string> {
   const outDir =
     args.outDir ??
     (defaults.inputForDir !== undefined
       ? path.dirname(defaults.inputForDir)
-      : process.cwd());
+      : defaults.fallbackDir);
+  if (outDir === undefined) {
+    throw new LocalOpError(
+      "output.noBaseDir",
+      "No output directory: a verb with no input file must supply a fallback directory.",
+    );
+  }
   await ensureOutputDir(outDir);
   const stem = args.outName ?? defaults.stem;
   const fileName = imageFileName(stem, 1, 1, defaults.ext);

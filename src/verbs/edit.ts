@@ -19,7 +19,7 @@ import { withVerbLogger } from "../internal/local-verb.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
-import { applySet } from "../recipe/applySet.js";
+import { mergeRecipes } from "../recipe/merge.js";
 import { loadRecipeForCall } from "../recipe/load.js";
 import { validateEditSection } from "../recipe/schemas.js";
 import { nullBase64InResponse } from "../sidecar/nullBase64.js";
@@ -77,7 +77,7 @@ export async function editImpl(
     });
 
     let recipe = await loadRecipeForCall(args.recipe, ctx.profileDir);
-    if (args.set?.length) recipe = await applySet(recipe, "edit", args.set);
+    if (args.overrides) recipe = mergeRecipes(recipe, args.overrides);
     const network = resolveNetworkForCall(recipe);
     const section = validateEditSection(recipe.edit);
     const params: Record<string, unknown> = { ...section };

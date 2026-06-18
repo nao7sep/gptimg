@@ -138,7 +138,7 @@ export function assertOutputGroupAvailable(
       "output.staleSiblings",
       `Refusing to overwrite: the artifact group "${group.stem}.${group.ext}" in ${group.dir} ` +
         `has ${stale.length} file(s) from a prior run that this run will not replace: ${names}. ` +
-        `Delete them or choose a fresh --out-name.`,
+        `Delete them or choose a fresh outName.`,
     );
   }
 }

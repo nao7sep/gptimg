@@ -202,7 +202,7 @@ export async function chromaMask(
     hex = normalizeHex(await loadKeyFromSidecar(sourcePath), "sidecar key");
     source = "sidecar";
   } else {
-    hex = normalizeHex(keyArg, "--key");
+    hex = normalizeHex(keyArg, "key");
     source = "explicit";
   }
 

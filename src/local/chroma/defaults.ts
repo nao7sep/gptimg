@@ -10,7 +10,7 @@ export const CHROMA_DEFAULTS = {
    */
   preserveInterior: false,
   key: "auto" as const,
-  /** Border-sample depth in pixels for `--key auto`. */
+  /** Border-sample depth in pixels for `key: "auto"`. */
   borderSample: 4,
   /**
    * Spill ratio at which a pixel saturates to fully transparent. The auto-key

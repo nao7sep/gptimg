@@ -3,9 +3,9 @@
  * image. Used for placing a trimmed cutout/content layer on top of a backplate
  * in the icon-composition pipeline:
  *
- *   backplate … → layer --base <plate> --top <content> --scale 0.78
+ *   backplate … → layer({ base: <plate>, top: <content>, scale: 0.78 })
  *
- * `compose --over <image>` is *not* a substitute: it flattens to opaque RGB
+ * `compose({ over: <image> })` is *not* a substitute: it flattens to opaque RGB
  * driven by a single-channel mask. `layer` does a proper alpha composite of
  * two RGBA images and preserves the base's transparency outside the top.
  */
@@ -115,7 +115,7 @@ export async function runLayer(
   if (topWidth > baseMeta.width || topHeight > baseMeta.height) {
     throw new LocalOpError(
       "args.invalid",
-      `layer: top ${topWidth}x${topHeight} exceeds base ${baseMeta.width}x${baseMeta.height}; use --scale or a smaller top.`,
+      `layer: top ${topWidth}x${topHeight} exceeds base ${baseMeta.width}x${baseMeta.height}; reduce scale or use a smaller top.`,
     );
   }
 
