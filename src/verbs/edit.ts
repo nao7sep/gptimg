@@ -16,6 +16,7 @@ import {
   sidecarPathFor,
 } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
+import { multiline } from "../internal/textCleanup.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
@@ -67,6 +68,11 @@ export async function editImpl(
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
+  // Normalize the free-text prompt once, at the input boundary, so the same
+  // cleaned value is both sent to the provider and stored in the sidecar.
+  // multiline() is content-preserving (drops only edge blank lines and per-line
+  // trailing whitespace), so it is safe for the outgoing request.
+  const prompt = multiline(args.prompt);
 
   return withVerbLogger(ctx, "edit", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const profile = await loadProfile(profilePath);
@@ -109,7 +115,7 @@ export async function editImpl(
 
     const provider = getProvider(profile.provider);
     const providerResult = await provider.edit({
-      prompt: args.prompt,
+      prompt,
       imagePath: args.in,
       maskPath: args.mask,
       params,
@@ -179,7 +185,7 @@ export async function editImpl(
     const files: OutputFile[] = [];
     const requestRecord = {
       ...params,
-      prompt: args.prompt,
+      prompt,
       input: path.basename(args.in),
       mask: args.mask ? path.basename(args.mask) : null,
       n,

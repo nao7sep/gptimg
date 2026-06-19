@@ -3,6 +3,7 @@ import path from "node:path";
 import { LocalOpError } from "../errors.js";
 import { ensureOutputDir } from "../internal/output-files.js";
 import { assertSingleFileAvailable, withVerbLogger } from "../internal/local-verb.js";
+import { singleLine } from "../internal/textCleanup.js";
 import type { Logger } from "../log/index.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
@@ -102,6 +103,10 @@ export async function visionImpl(
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
+  // The check is a scalar instruction; normalize it to a single line once at the
+  // input boundary so the same cleaned value is sent to the model and stored in
+  // the sidecar.
+  const check = singleLine(args.check);
 
   return withVerbLogger(ctx, "vision", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const profile = await loadProfile(profilePath);
@@ -139,7 +144,7 @@ export async function visionImpl(
 
     const provider = getProvider(profile.provider);
     const providerResult = await provider.vision({
-      check: args.check,
+      check,
       images: prepared.map((p) => ({
         data: p.data,
         format: p.format,
@@ -162,7 +167,7 @@ export async function visionImpl(
     const sidecar: Sidecar = {
       request: {
         ...params,
-        check: args.check,
+        check,
         ...(detail ? { detail } : {}),
         inputs: prepared.map((p) => ({
           name: path.basename(p.path),

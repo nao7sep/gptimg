@@ -15,6 +15,7 @@ import {
   sidecarPathFor,
 } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
+import { multiline } from "../internal/textCleanup.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
@@ -54,6 +55,12 @@ export async function generateImpl(
   const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
+  // Normalize the free-text prompt once, at the input boundary, so the same
+  // cleaned value is both sent to the provider and stored in the sidecar.
+  // multiline() only drops edge blank lines and per-line trailing whitespace
+  // (indentation and interior blanks preserved), so it is content-preserving
+  // and safe for the outgoing request.
+  const prompt = multiline(args.prompt);
 
   return withVerbLogger(ctx, "generate", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
     const profile = await loadProfile(profilePath);
@@ -95,7 +102,7 @@ export async function generateImpl(
 
     const provider = getProvider(profile.provider);
     const providerResult = await provider.generate({
-      prompt: args.prompt,
+      prompt,
       params,
       profile: resolved,
       network: {
@@ -168,7 +175,7 @@ export async function generateImpl(
 
     const requestRecord: Record<string, unknown> = {
       ...params,
-      prompt: args.prompt,
+      prompt,
       n,
     };
     if (chromaColor) requestRecord.chroma = { color: chromaColor };
