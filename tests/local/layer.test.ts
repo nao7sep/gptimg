@@ -218,22 +218,107 @@ describe("runLayer", () => {
     ).rejects.toMatchObject({ code: "args.invalid" });
   });
 
-  it("rejects a top larger than the base in either axis (no --scale)", async () => {
+  it("clips a top larger than the base to the canvas (no --scale)", async () => {
     const basePath = path.join(tmp, "base.png");
     await writeRawPng(basePath, 16, 16, makeSolid(16, 16, 0, 0, 0));
     const topPath = path.join(tmp, "top.png");
-    // top wider than base
+    // top wider than base: 32x8 red, centered → x = round((16-32)/2) = -8,
+    // y = round((16-8)/2) = 4. Visible band is the full base width, rows 4..11.
     await writeRawPng(topPath, 32, 8, makeSolid(32, 8, 255, 0, 0));
-    await expect(
-      runLayer({
-        base: basePath,
-        top: topPath,
-        out: path.join(tmp, "out.png"),
-      }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
+    const outPath = path.join(tmp, "out.png");
+
+    const res = await runLayer({ base: basePath, top: topPath, out: outPath });
+    expect(res.width).toBe(16);
+    expect(res.height).toBe(16);
+    // topWidth/topHeight report the scaled (here native) size, before clipping.
+    expect(res.topWidth).toBe(32);
+    expect(res.topHeight).toBe(8);
+
+    const img = await readRGBA(outPath);
+    expect(img.width).toBe(16);
+    expect(img.height).toBe(16);
+    // Inside the clipped band: red, across the full width.
+    expect(pixelAt(img, 8, 6).r).toBeGreaterThan(200);
+    expect(pixelAt(img, 0, 6).r).toBeGreaterThan(200);
+    // Above the band: untouched black base.
+    expect(pixelAt(img, 8, 1).r).toBeLessThan(30);
   });
 
-  it("rejects a negative --top-offset", async () => {
+  it("clips a negative --top-offset (top bleeds off the top-left)", async () => {
+    const basePath = path.join(tmp, "base.png");
+    await writeRawPng(basePath, 32, 32, makeSolid(32, 32, 0, 0, 0));
+    const topPath = path.join(tmp, "top.png");
+    // 8x8 red top at (-4, 0): only its right half (x 4..7 of the top) lands,
+    // occupying base x 0..3, y 0..7.
+    await writeRawPng(topPath, 8, 8, makeSolid(8, 8, 255, 0, 0));
+    const outPath = path.join(tmp, "out.png");
+
+    const res = await runLayer({
+      base: basePath,
+      top: topPath,
+      out: outPath,
+      topOffset: { x: -4, y: 0 },
+    });
+    expect(res.topOffset).toEqual({ x: -4, y: 0 });
+    expect(res.width).toBe(32);
+
+    const img = await readRGBA(outPath);
+    // Visible sliver at the left edge.
+    expect(pixelAt(img, 1, 1).r).toBeGreaterThan(200);
+    // Past the sliver: black base.
+    expect(pixelAt(img, 10, 10).r).toBeLessThan(30);
+  });
+
+  it("clips a --top-offset that runs past the base edge", async () => {
+    const basePath = path.join(tmp, "base.png");
+    await writeRawPng(basePath, 32, 32, makeSolid(32, 32, 0, 0, 0));
+    const topPath = path.join(tmp, "top.png");
+    // 8x8 red at x=30: only x 30..31 of the base receive the top's left 2 cols.
+    await writeRawPng(topPath, 8, 8, makeSolid(8, 8, 255, 0, 0));
+    const outPath = path.join(tmp, "out.png");
+
+    await runLayer({
+      base: basePath,
+      top: topPath,
+      out: outPath,
+      topOffset: { x: 30, y: 0 }, // 30 + 8 = 38 > 32 → clipped to 2px wide
+    });
+
+    const img = await readRGBA(outPath);
+    expect(pixelAt(img, 31, 1).r).toBeGreaterThan(200);
+    expect(pixelAt(img, 10, 10).r).toBeLessThan(30);
+  });
+
+  it("--scale > 1 bleeds the top past the canvas and clips (full-bleed)", async () => {
+    // The Mumbler web case: a square top scaled slightly larger than a square
+    // base, centered, covers the whole canvas. Output stays base-sized.
+    const basePath = path.join(tmp, "base.png");
+    await writeRawPng(basePath, 40, 40, makeSolid(40, 40, 0, 0, 200)); // blue
+    const topPath = path.join(tmp, "top.png");
+    await writeRawPng(topPath, 20, 20, makeSolid(20, 20, 220, 0, 0)); // red
+    const outPath = path.join(tmp, "out.png");
+
+    const res = await runLayer({
+      base: basePath,
+      top: topPath,
+      out: outPath,
+      scale: 1.1, // longer side = round(1.1 * 40) = 44 > 40
+    });
+    expect(res.topWidth).toBe(44);
+    expect(res.topHeight).toBe(44);
+    expect(res.width).toBe(40);
+    expect(res.height).toBe(40);
+
+    const img = await readRGBA(outPath);
+    expect(img.width).toBe(40);
+    // A corner is now red — the oversized top bled over what was blue base.
+    expect(pixelAt(img, 1, 1).r).toBeGreaterThan(200);
+    expect(pixelAt(img, 1, 1).b).toBeLessThan(60);
+    // Center is red too.
+    expect(pixelAt(img, 20, 20).r).toBeGreaterThan(200);
+  });
+
+  it("rejects a --top-offset that lands the top entirely outside the base", async () => {
     const basePath = path.join(tmp, "base.png");
     await writeRawPng(basePath, 32, 32, makeSolid(32, 32, 0, 0, 0));
     const topPath = path.join(tmp, "top.png");
@@ -243,22 +328,22 @@ describe("runLayer", () => {
         base: basePath,
         top: topPath,
         out: path.join(tmp, "out.png"),
-        topOffset: { x: -1, y: 0 },
+        topOffset: { x: -8, y: 0 }, // top spans -8..-1, no overlap with base
       }),
     ).rejects.toMatchObject({ code: "args.invalid" });
   });
 
-  it("rejects a --top-offset that puts top past the base edge", async () => {
+  it("rejects a --scale whose resolved top exceeds the OOM ceiling", async () => {
     const basePath = path.join(tmp, "base.png");
-    await writeRawPng(basePath, 32, 32, makeSolid(32, 32, 0, 0, 0));
+    await writeRawPng(basePath, 100, 100, makeSolid(100, 100, 0, 0, 0));
     const topPath = path.join(tmp, "top.png");
-    await writeRawPng(topPath, 8, 8, makeSolid(8, 8, 255, 0, 0));
+    await writeRawPng(topPath, 10, 10, makeSolid(10, 10, 255, 0, 0));
     await expect(
       runLayer({
         base: basePath,
         top: topPath,
         out: path.join(tmp, "out.png"),
-        topOffset: { x: 30, y: 0 }, // 30 + 8 = 38 > 32
+        scale: 200, // round(200 * 100) = 20000 > 16384 cap
       }),
     ).rejects.toMatchObject({ code: "args.invalid" });
   });

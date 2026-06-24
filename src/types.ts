@@ -384,7 +384,11 @@ export interface BackplateResult {
 // ----- layer -----
 
 export interface LayerOffset {
-  /** Pixel offset of the top image's top-left corner from the base's top-left. */
+  /**
+   * Pixel offset of the top image's top-left corner from the base's top-left.
+   * May be negative or run past the base edge — the top bleeds off the canvas
+   * and is clipped. Only a placement entirely outside the base is rejected.
+   */
   x: number;
   y: number;
 }
@@ -396,12 +400,14 @@ export interface LayerArgs {
   top: string;
   /**
    * Resize the top image so its longer side equals `scale * min(baseW, baseH)`.
-   * Preserves aspect ratio. Omit to keep top at its native size.
+   * Preserves aspect ratio. Omit to keep top at its native size. May exceed 1.0:
+   * the top then bleeds beyond the canvas and is clipped to the base (full-bleed
+   * content). The output is always the base's size.
    */
   scale?: number;
   /** Placement anchor. Default "center". Ignored when `topOffset` is given. */
   gravity?: LayerGravity;
-  /** Explicit pixel offset of the top image (overrides `gravity`). */
+  /** Explicit pixel offset of the top image (overrides `gravity`). May bleed off-canvas; see {@link LayerOffset}. */
   topOffset?: LayerOffset;
   outDir?: string;
   outName?: string;
@@ -416,7 +422,7 @@ export interface LayerResult {
   /** Final output size (= base size; layer never changes the canvas). */
   width: number;
   height: number;
-  /** Size of the top image as composited (after `scale`, if any). */
+  /** Scaled size of the top image (after `scale`, if any), before any clip to the base. */
   topWidth: number;
   topHeight: number;
   /** Resolved placement. One of `gravity` or `topOffset` is null. */

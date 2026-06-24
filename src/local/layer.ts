@@ -5,6 +5,13 @@
  *
  *   backplate … → layer({ base: <plate>, top: <content>, scale: 0.78 })
  *
+ * The output is always the base's size — `layer` never resizes the canvas. The
+ * top is placed by `gravity` (default center) or an explicit `topOffset`, and
+ * **clipped to the base canvas**: a top larger than the base (`scale > 1`, an
+ * oversized native top, or a `topOffset` running off the edge) simply bleeds
+ * past the edges, which is the natural full-bleed behavior. The only invalid
+ * placement is one that lands the top entirely outside the base.
+ *
  * `compose({ over: <image> })` is *not* a substitute: it flattens to opaque RGB
  * driven by a single-channel mask. `layer` does a proper alpha composite of
  * two RGBA images and preserves the base's transparency outside the top.
@@ -18,8 +25,50 @@ export const LAYER_DEFAULTS = {
   gravity: "center" as LayerGravity,
 } as const;
 
+/**
+ * Largest top-image side we will materialize from a `scale`. Removing the old
+ * "top must fit the base" check also removed the implicit upper bound on
+ * `scale`, so an unbounded `scale` could balloon a small input into an OOM.
+ * Mirrors RESIZE_MAX_TO_SIZE — the ceiling on a single allocated side.
+ */
+const LAYER_MAX_TOP = 16384;
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
+}
+
+/**
+ * Top-left pixel where a `topW × topH` overlay anchors on a `baseW × baseH`
+ * canvas for a compass gravity. Replaces sharp's own gravity placement so the
+ * gravity and explicit-offset paths share one clip step below. When the top is
+ * larger than the base the coordinate goes negative (the top bleeds off that
+ * edge), which the clip then trims — e.g. `center` with an oversized top bleeds
+ * equally on all sides.
+ */
+function gravityToTopLeft(
+  gravity: LayerGravity,
+  baseW: number,
+  baseH: number,
+  topW: number,
+  topH: number,
+): { x: number; y: number } {
+  let x: number;
+  if (gravity === "west" || gravity === "northwest" || gravity === "southwest") {
+    x = 0;
+  } else if (gravity === "east" || gravity === "northeast" || gravity === "southeast") {
+    x = baseW - topW;
+  } else {
+    x = Math.round((baseW - topW) / 2);
+  }
+  let y: number;
+  if (gravity === "north" || gravity === "northeast" || gravity === "northwest") {
+    y = 0;
+  } else if (gravity === "south" || gravity === "southeast" || gravity === "southwest") {
+    y = baseH - topH;
+  } else {
+    y = Math.round((baseH - topH) / 2);
+  }
+  return { x, y };
 }
 
 export interface LayerRunArgs {
@@ -98,6 +147,12 @@ export async function runLayer(
         `layer: scale ${args.scale} on base ${baseMeta.width}x${baseMeta.height} resolves to < 1 px.`,
       );
     }
+    if (targetLonger > LAYER_MAX_TOP) {
+      throw new LocalOpError(
+        "args.invalid",
+        `layer: scale ${args.scale} on base ${baseMeta.width}x${baseMeta.height} resolves to ${targetLonger}px, over the ${LAYER_MAX_TOP}px cap.`,
+      );
+    }
     const aspect = topMeta.width / topMeta.height;
     if (topMeta.width >= topMeta.height) {
       topWidth = targetLonger;
@@ -107,16 +162,6 @@ export async function runLayer(
       topWidth = Math.max(1, Math.round(targetLonger * aspect));
     }
     topPipeline = topPipeline.resize(topWidth, topHeight, { fit: "fill" });
-  }
-
-  // The composite must fit within the base. sharp would otherwise reject with
-  // a "composite image dimensions exceed input" message we'd wrap as a
-  // misleading image.writeFailed. Catch it here with a clear arg-level error.
-  if (topWidth > baseMeta.width || topHeight > baseMeta.height) {
-    throw new LocalOpError(
-      "args.invalid",
-      `layer: top ${topWidth}x${topHeight} exceeds base ${baseMeta.width}x${baseMeta.height}; reduce scale or use a smaller top.`,
-    );
   }
 
   let topBuffer: Buffer;
@@ -131,36 +176,76 @@ export async function runLayer(
   }
   throwIfAborted(signal);
 
-  // Build the composite op. Either gravity-anchored or explicit pixel offset.
+  // Resolve a destination top-left for the top, from an explicit offset or from
+  // the gravity anchor. Either may be negative or run past an edge — that means
+  // the top bleeds off the canvas, which is allowed; the clip below trims it.
   let usedGravity: LayerGravity | null = null;
   let usedOffset: LayerOffset | null = null;
-  let composite;
+  let destX: number;
+  let destY: number;
   if (args.topOffset !== undefined) {
     const { x, y } = args.topOffset;
-    if (
-      !Number.isInteger(x) ||
-      !Number.isInteger(y) ||
-      x < 0 ||
-      y < 0 ||
-      x + topWidth > baseMeta.width ||
-      y + topHeight > baseMeta.height
-    ) {
+    // Defensive: the schema enforces integers, but runLayer is also called
+    // directly. A non-integer offset would desync from sharp's integer extract.
+    if (!Number.isInteger(x) || !Number.isInteger(y)) {
       throw new LocalOpError(
         "args.invalid",
-        `layer: topOffset (${x}, ${y}) places top ${topWidth}x${topHeight} outside base ${baseMeta.width}x${baseMeta.height}.`,
+        `layer: topOffset (${x}, ${y}) must be integers.`,
       );
     }
     usedOffset = { x, y };
-    composite = { input: topBuffer, left: x, top: y };
+    destX = x;
+    destY = y;
   } else {
     usedGravity = args.gravity ?? LAYER_DEFAULTS.gravity;
-    composite = { input: topBuffer, gravity: usedGravity };
+    ({ x: destX, y: destY } = gravityToTopLeft(
+      usedGravity,
+      baseMeta.width,
+      baseMeta.height,
+      topWidth,
+      topHeight,
+    ));
+  }
+
+  // Clip the placed top to the base. `src*` is the crop offset into the top,
+  // `dst*` the (non-negative) composite offset on the base, `vis*` the visible
+  // overlap. An empty overlap is the only invalid placement.
+  const srcX = destX < 0 ? -destX : 0;
+  const srcY = destY < 0 ? -destY : 0;
+  const dstX = destX < 0 ? 0 : destX;
+  const dstY = destY < 0 ? 0 : destY;
+  const visW = Math.min(topWidth - srcX, baseMeta.width - dstX);
+  const visH = Math.min(topHeight - srcY, baseMeta.height - dstY);
+  if (visW <= 0 || visH <= 0) {
+    throw new LocalOpError(
+      "args.invalid",
+      `layer: top ${topWidth}x${topHeight} placed at (${destX}, ${destY}) lands entirely outside base ${baseMeta.width}x${baseMeta.height}.`,
+    );
+  }
+
+  // Crop the top to its visible region only when it actually bleeds; an
+  // exactly-fitting top composites whole.
+  let placed = topBuffer;
+  if (srcX > 0 || srcY > 0 || visW < topWidth || visH < topHeight) {
+    try {
+      placed = await sharp(topBuffer)
+        .extract({ left: srcX, top: srcY, width: visW, height: visH })
+        .png()
+        .toBuffer();
+    } catch (err) {
+      throw new LocalOpError(
+        "image.writeFailed",
+        `layer: failed to clip top ${args.top}: ${(err as Error).message}`,
+        { cause: err },
+      );
+    }
+    throwIfAborted(signal);
   }
 
   try {
     await sharp(args.base)
       .ensureAlpha()
-      .composite([composite])
+      .composite([{ input: placed, left: dstX, top: dstY }])
       .png()
       .toFile(args.out);
   } catch (err) {
