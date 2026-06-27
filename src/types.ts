@@ -864,6 +864,32 @@ export interface ModelListResult {
   models: ModelListEntry[];
 }
 
+/**
+ * Integrity status of one cached model file, from `model verify`.
+ *   "ok"           — present and its sha256 matches the pinned value.
+ *   "mismatch"     — present but the wrong hash (corrupt or swapped on disk).
+ *   "missing"      — not cached.
+ *   "unverifiable" — the registry entry pins no sha256 (ad-hoc entries only).
+ */
+export type ModelIntegrity = "ok" | "mismatch" | "missing" | "unverifiable";
+
+/** One model's integrity result, from `model verify`. */
+export interface ModelVerifyEntry {
+  key: string;
+  name: string;
+  path: string;
+  integrity: ModelIntegrity;
+  /** The pinned hash expected — absent only for an entry with no pinned sha256. */
+  expectedSha256?: string;
+  /** The hash computed from the cached file — absent when missing or unverifiable. */
+  actualSha256?: string;
+}
+
+/** Result of `model verify`: the on-disk integrity of every known model. */
+export interface ModelVerifyResult {
+  models: ModelVerifyEntry[];
+}
+
 export interface GptImgOptions {
   profileDir?: string;
   logDir?: string;

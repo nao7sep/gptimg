@@ -11,6 +11,27 @@
  *   inputSize — square spatial dimension the model expects.
  */
 
+/**
+ * Sourcing decision (native-binary-and-model-delivery convention).
+ *
+ * Both models are fetched from the `onnx-community` HuggingFace org — a
+ * third-party ONNX re-export, not the model authors (who publish PyTorch only)
+ * and not a fleet-owned build. This is a deliberately accepted third-party
+ * source, not an oversight: no official ONNX of these models exists; the
+ * upstream authors are MIT/Apache and reputable; `onnx-community` is an
+ * established HuggingFace organization, not a single-maintainer host; and every
+ * entry below is pinned to an immutable commit and verified by SHA-256 after
+ * download, so a changed or tampered file fails the install. Revisit if an
+ * author-published ONNX or a fleet-owned export becomes available.
+ *
+ * Pin currency: as of 2026-06-27 both entries were confirmed to sit on their
+ * repo's latest commit (checked against the HuggingFace API), so neither is a
+ * stale mid-history pin. What remains open is model *selection* quality — whether
+ * these are the best models for matting/upscale versus newer alternatives — which
+ * is gated on re-validating output against the test images, not on a commit bump
+ * (see each entry's note).
+ */
+
 export interface ModelEntry {
   name: string;
   url: string;

@@ -44,7 +44,7 @@ function finishWrite(stream: ReturnType<typeof createWriteStream>): Promise<void
   });
 }
 
-function fileSha256(filePath: string): Promise<string> {
+export function fileSha256(filePath: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const h = createHash("sha256");
     const s = createReadStream(filePath);

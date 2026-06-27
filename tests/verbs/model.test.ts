@@ -129,3 +129,44 @@ describe("model verb result shapes", () => {
     }
   });
 });
+
+describe("model.verify integrity check", () => {
+  let tmp: string;
+  const key = (Object.keys(MODELS) as ModelKey[])[0]!;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-verify-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("reports a missing model when nothing is cached", async () => {
+    const profileDir = path.join(tmp, "profile");
+    const sdk = new GptImg({ profileDir, logDir: path.join(tmp, "logs") });
+
+    const result = await sdk.model.verify();
+
+    const entry = result.models.find((m) => m.key === key)!;
+    expect(entry.integrity).toBe("missing");
+    expect(entry.actualSha256).toBeUndefined();
+    expect(entry.expectedSha256).toBe(MODELS[key].sha256);
+  });
+
+  it("reports a mismatch when a cached file's bytes do not match the pinned sha256", async () => {
+    const profileDir = path.join(tmp, "profile");
+    const modelsDir = defaultModelsDir(profileDir);
+    await mkdir(modelsDir, { recursive: true });
+    // A real model is ~0.5 GB; a few wrong bytes prove the hash is recomputed and
+    // compared, not trusted from presence alone.
+    await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
+
+    const sdk = new GptImg({ profileDir, logDir: path.join(tmp, "logs") });
+    const result = await sdk.model.verify();
+
+    const entry = result.models.find((m) => m.key === key)!;
+    expect(entry.integrity).toBe("mismatch");
+    expect(entry.actualSha256).toBeDefined();
+    expect(entry.actualSha256).not.toBe(MODELS[key].sha256);
+  });
+});
