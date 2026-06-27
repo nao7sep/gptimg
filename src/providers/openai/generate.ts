@@ -4,12 +4,7 @@ import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { GenerateProviderArgs, ProviderImageResult } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
-import { OPENAI_MODEL_DEFAULTS } from "./defaults.js";
-
-function shouldOmitResponseFormat(model: string): boolean {
-  // gpt-image-* always returns base64 and rejects response_format.
-  return model.startsWith("gpt-image");
-}
+import { OPENAI_MODEL_DEFAULTS, shouldOmitResponseFormat } from "./defaults.js";
 
 export async function openaiGenerate(
   args: GenerateProviderArgs,

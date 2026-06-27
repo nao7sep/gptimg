@@ -13,12 +13,12 @@ import { loadRecipeForCall } from "../recipe/load.js";
 import { validateChromaSection } from "../recipe/schemas.js";
 import type {
   MaskArgs,
-  MaskRecipe,
   MaskResult,
   MaskStats,
 } from "../types.js";
 import { defaultModelsDir } from "../internal/paths.js";
 import type { VerbCallOptions } from "./options.js";
+import { applyChromaRecipeDefaults } from "./mask-defaults.js";
 import { validateMaskArgs } from "./schemas.js";
 
 export interface MaskContext {
@@ -28,30 +28,6 @@ export interface MaskContext {
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-mask`;
-}
-
-function applyChromaRecipeDefaults(
-  args: MaskArgs,
-  section: MaskRecipe,
-): MaskArgs {
-  const merged: MaskArgs = { ...args };
-  if (merged.preserveInterior === undefined && section.preserveInterior !== undefined) {
-    merged.preserveInterior = section.preserveInterior;
-  }
-  if (
-    merged.key === undefined &&
-    typeof section.color === "string" &&
-    section.color.length > 0
-  ) {
-    merged.key = section.color;
-  }
-  if (merged.borderSample === undefined && section.borderSample !== undefined) {
-    merged.borderSample = section.borderSample;
-  }
-  if (merged.saturationRatio === undefined && section.saturationRatio !== undefined) {
-    merged.saturationRatio = section.saturationRatio;
-  }
-  return merged;
 }
 
 export async function maskImpl(

@@ -3,6 +3,7 @@ import pLimit from "p-limit";
 import { LocalOpError } from "../errors.js";
 import { hash } from "../image/hash.js";
 import { detectFormat } from "../image/detectFormat.js";
+import { planGenerateOutputs, type DetectedImage } from "./generate-plan.js";
 import {
   ensureOutputDir,
   writeOutputBytes,
@@ -39,7 +40,6 @@ import {
   defaultStem,
   utcTimestamp,
 } from "../internal/paths.js";
-import { imageFileName } from "../internal/output-naming.js";
 
 export interface GenerateContext {
   profileDir: string;
@@ -118,49 +118,56 @@ export async function generateImpl(
 
     const items = providerResult.images;
     const limit = pLimit(4);
-    let partial = false;
-    const suffixCount = Math.max(n, items.length);
 
-    const plannedImages = (
-      await Promise.all(
-        items.map((item, i) =>
-          limit(async () => {
-            const index = i + 1;
-            if (!item.data) {
-              partial = true;
-              await logger.warn("write", `image ${index} failed`, {
-                index,
-                error: item.error ?? null,
-              });
-              return null;
-            }
-            try {
-              const fmt = await detectFormat(item.data);
-              const fileName = imageFileName(stem, index, suffixCount, fmt.extension);
-              const filePath = path.join(outDir, fileName);
-              return { index, data: item.data, fmt, fileName, filePath };
-            } catch (err) {
-              partial = true;
-              await logger.warn("write", `image ${index} format detection failed`, {
-                index,
-                error: (err as Error).message,
-              });
-              return null;
-            }
-          }),
-        ),
-      )
-    ).filter((item): item is NonNullable<typeof item> => item !== null);
+    // Detect each returned image's format (the I/O step). A null format marks a
+    // failed item — no data, or bytes that would not decode — which the planner
+    // drops from the outputs and counts toward `partial`. `data` is kept so the
+    // bytes can be reattached to the plan below.
+    const detected = await Promise.all(
+      items.map((item, i) =>
+        limit(async (): Promise<{ data: Uint8Array | null } & DetectedImage> => {
+          const index = i + 1;
+          if (!item.data) {
+            await logger.warn("write", `image ${index} failed`, {
+              index,
+              error: item.error ?? null,
+            });
+            return { data: null, format: null };
+          }
+          try {
+            return { data: item.data, format: await detectFormat(item.data) };
+          } catch (err) {
+            await logger.warn("write", `image ${index} format detection failed`, {
+              index,
+              error: (err as Error).message,
+            });
+            return { data: item.data, format: null };
+          }
+        }),
+      ),
+    );
 
-    const imageExts = new Set(plannedImages.map((item) => item.fmt.extension));
-    if (imageExts.size > 1) {
-      throw new LocalOpError(
-        "output.mixedExtensions",
-        `Provider returned images with mixed extensions (${[...imageExts].join(", ")}); the artifact group requires a single image format.`,
-      );
-    }
-    const groupExt = plannedImages[0]?.fmt.extension ?? "png";
-    const group = createOutputGroup(outDir, stem, groupExt);
+    const plan = planGenerateOutputs(n, stem, detected);
+    const { suffixCount, partial } = plan;
+    // Reattach each planned image's bytes by its (stable, 1-based) provenance
+    // index. The planner included an image only because its format detected, and
+    // a non-null format implies the data was present, so the slot is guaranteed
+    // to carry bytes; the guard makes that invariant explicit.
+    const plannedImages = plan.images.map((img) => {
+      const data = detected[img.index - 1]?.data;
+      if (!data) {
+        throw new LocalOpError("output.internal", `planned image ${img.index} lost its data`);
+      }
+      return {
+        index: img.index,
+        data,
+        fmt: img.format,
+        fileName: img.fileName,
+        filePath: path.join(outDir, img.fileName),
+      };
+    });
+
+    const group = createOutputGroup(outDir, stem, plan.groupExtension);
     // One sidecar per image: <stem>.json for n=1, <stem>-NN.json for n>1.
     // The artifact group includes every per-image sidecar so overwrite logic
     // catches all of them as a single unit.
