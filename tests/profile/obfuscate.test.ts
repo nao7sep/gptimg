@@ -23,4 +23,12 @@ describe("obfuscate / deobfuscate", () => {
     // 'obfuscated' (no colon) is not the marker.
     expect(deobfuscate("obfuscated")).toBe("obfuscated");
   });
+
+  it("encodes by reversing UTF-8 bytes (canonical cross-language vectors)", () => {
+    // Locked so a decoder in another language must match byte-for-byte, per the
+    // api-key-storage convention's `obf:` algorithm. ASCII is identical to a
+    // character reverse; the unicode vector is where byte-reverse is canonical.
+    expect(obfuscate("sk-test")).toBe("obf:dHNldC1rcw==");
+    expect(obfuscate("key-日本語-🔑-ñ")).toBe("obf:scMtkZSf8C2equisnOall+YteWVr");
+  });
 });

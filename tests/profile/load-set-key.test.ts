@@ -166,6 +166,12 @@ describe("setApiKey / clearApiKey", () => {
     expect(deobfuscate(profile.apiKey as string)).toBe("sk-local-created");
   });
 
+  it("trims surrounding whitespace before storing the key", async () => {
+    await setApiKey(file, "  sk-padded  ");
+    const profile = await loadProfile(file);
+    expect(deobfuscate(profile.apiKey as string)).toBe("sk-padded");
+  });
+
   it("preserves unrelated fields and stores only an obfuscated key", async () => {
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(

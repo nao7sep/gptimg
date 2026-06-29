@@ -2,14 +2,17 @@ import { ProfileError } from "../errors.js";
 
 const MARKER = "obf:";
 
-function reverseString(s: string): string {
-  return Array.from(s).reverse().join("");
+// Reverse a byte sequence on a copy, never mutating the input. Operating on the
+// UTF-8 bytes (not on string characters) keeps this byte-for-byte identical to
+// the api-key-storage convention's canonical `obf:` algorithm in every language;
+// for the ASCII keys stored in practice it is the same result either way.
+function reverseBytes(bytes: Buffer): Buffer {
+  return Buffer.from(bytes).reverse();
 }
 
 export function obfuscate(raw: string): string {
-  const reversed = reverseString(raw);
-  const encoded = Buffer.from(reversed, "utf-8").toString("base64");
-  return MARKER + encoded;
+  const reversed = reverseBytes(Buffer.from(raw, "utf-8"));
+  return MARKER + reversed.toString("base64");
 }
 
 export function deobfuscate(stored: string): string {
@@ -17,9 +20,8 @@ export function deobfuscate(stored: string): string {
     return stored;
   }
   const payload = stored.slice(MARKER.length);
-  let decoded: string;
   try {
-    decoded = Buffer.from(payload, "base64").toString("utf-8");
+    return reverseBytes(Buffer.from(payload, "base64")).toString("utf-8");
   } catch (err) {
     throw new ProfileError(
       "apiKey.invalidObf",
@@ -27,5 +29,4 @@ export function deobfuscate(stored: string): string {
       { cause: err },
     );
   }
-  return reverseString(decoded);
 }

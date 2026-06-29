@@ -36,8 +36,8 @@ async function writeProfile(filePath: string, profile: Profile): Promise<void> {
 }
 
 /**
- * Write `apiKey` to the profile, storing it in obfuscated form
- * (`"obf:" + base64(reverse(raw))`). Preserves every other field. Atomic.
+ * Write `apiKey` to the profile, storing it trimmed and in obfuscated form
+ * (`"obf:" + base64` of the reversed UTF-8 bytes). Preserves every other field. Atomic.
  * If the profile file does not exist, a minimal `{ provider: "openai" }`
  * profile is created.
  *
@@ -61,7 +61,7 @@ export async function setApiKey(filePath: string, rawKey: string): Promise<void>
       throw err;
     }
   }
-  profile.apiKey = obfuscate(rawKey);
+  profile.apiKey = obfuscate(rawKey.trim());
   await writeProfile(filePath, profile);
 }
 

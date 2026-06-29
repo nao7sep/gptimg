@@ -6,8 +6,8 @@ import { deobfuscate } from "./obfuscate.js";
  * Resolve the API key from the profile.
  *
  * Order:
- *   1. `apiKeyEnv` field names an env var that is set and non-empty → env value.
- *   2. `apiKey` field is present → decode if marked, use as-is otherwise.
+ *   1. `apiKeyEnv` field names an env var that is set and non-blank (trimmed) → env value.
+ *   2. `apiKey` field present and non-blank after decode and trim → that key.
  *   3. Throw `ProfileError("apiKey.missing")`.
  *
  * Env wins because the env variable requires deliberate per-session action;
@@ -18,8 +18,8 @@ export function resolveProfile(profile: Profile): ResolvedProfile {
   const { apiKey: storedKey, apiKeyEnv, ...rest } = profile;
 
   if (typeof apiKeyEnv === "string" && apiKeyEnv.length > 0) {
-    const envValue = process.env[apiKeyEnv];
-    if (typeof envValue === "string" && envValue.length > 0) {
+    const envValue = process.env[apiKeyEnv]?.trim();
+    if (envValue) {
       return {
         redacted: rest as Omit<Profile, "apiKey" | "apiKeyEnv">,
         apiKey: envValue,
@@ -29,11 +29,14 @@ export function resolveProfile(profile: Profile): ResolvedProfile {
   }
 
   if (typeof storedKey === "string" && storedKey.length > 0) {
-    return {
-      redacted: rest as Omit<Profile, "apiKey" | "apiKeyEnv">,
-      apiKey: deobfuscate(storedKey),
-      apiKeySource: "profile.apiKey",
-    };
+    const apiKey = deobfuscate(storedKey).trim();
+    if (apiKey) {
+      return {
+        redacted: rest as Omit<Profile, "apiKey" | "apiKeyEnv">,
+        apiKey,
+        apiKeySource: "profile.apiKey",
+      };
+    }
   }
 
   throw new ProfileError(

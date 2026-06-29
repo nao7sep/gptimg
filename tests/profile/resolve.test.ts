@@ -79,6 +79,27 @@ describe("resolveProfile", () => {
     }
   });
 
+  it("trims surrounding whitespace from the env value", () => {
+    vi.stubEnv("GPTIMG_TEST_KEY", "  from-env  ");
+    const p: Profile = { provider: "openai", apiKeyEnv: "GPTIMG_TEST_KEY" };
+    expect(resolveProfile(p).apiKey).toBe("from-env");
+  });
+
+  it("trims surrounding whitespace from a stored key", () => {
+    const p: Profile = { provider: "openai", apiKey: obfuscate("  sk-pad  ") };
+    expect(resolveProfile(p).apiKey).toBe("sk-pad");
+  });
+
+  it("treats a whitespace-only env value as unset and falls through to apiKey", () => {
+    vi.stubEnv("GPTIMG_TEST_KEY", "   ");
+    const p: Profile = {
+      provider: "openai",
+      apiKey: obfuscate("from-profile"),
+      apiKeyEnv: "GPTIMG_TEST_KEY",
+    };
+    expect(resolveProfile(p).apiKey).toBe("from-profile");
+  });
+
   it("excludes apiKey and apiKeyEnv from the redacted snapshot", () => {
     vi.stubEnv("GPTIMG_TEST_KEY", "from-env");
     const p: Profile = {
