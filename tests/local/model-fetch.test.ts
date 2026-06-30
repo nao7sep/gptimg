@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -115,7 +115,7 @@ describe("ensureModel", () => {
     expect(events.some((e) => e.msg.startsWith("downloaded prog.bin"))).toBe(true);
   });
 
-  it("downloads to .partial and atomically renames to the final name", async () => {
+  it("stages the download in temp/ and atomically publishes to the final name", async () => {
     const body = Buffer.from(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
     const { server, baseURL } = await listen((_req, res) => {
       res.writeHead(200, { "content-type": "application/octet-stream" });
@@ -130,11 +130,27 @@ describe("ensureModel", () => {
       const finalPath = await ensureModel(entry, tmp);
       expect(finalPath).toBe(path.join(tmp, "test.bin"));
       expect(existsSync(`${finalPath}.partial`)).toBe(false);
+      // Staged in the dedicated temp/ dir (not beside the kept model), and the
+      // staged copy is removed after the atomic publish.
+      expect(existsSync(path.join(tmp, "temp"))).toBe(true);
+      expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
       const got = await readFile(finalPath);
       expect(Array.from(new Uint8Array(got))).toEqual(Array.from(new Uint8Array(body)));
     } finally {
       await closeServer(server);
     }
+  });
+
+  it("refuses a non-https remote URL before any byte is fetched", async () => {
+    const entry: ModelEntry = {
+      name: "insecure.bin",
+      url: "http://example.com/model.bin",
+      inputSize: 0,
+    };
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
+      code: "model.insecureUrl",
+    });
+    expect(existsSync(path.join(tmp, entry.name))).toBe(false);
   });
 
   it("skips the download when the cached file already exists", async () => {

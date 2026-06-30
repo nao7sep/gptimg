@@ -12,7 +12,7 @@
  */
 
 /**
- * Sourcing decision (native-binary-and-model-delivery convention).
+ * Sourcing decision (managed-runtime-dependencies convention).
  *
  * Both models are fetched from the `onnx-community` HuggingFace org — a
  * third-party ONNX re-export, not the model authors (who publish PyTorch only)

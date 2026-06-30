@@ -5,16 +5,20 @@
  *   - ensureModel(entry, cacheDir) returns the absolute path to the cached
  *     model file. If the file is already present, it is returned with no
  *     network call.
+ *   - The model URL must be https; a non-https remote URL is refused before any
+ *     byte is fetched (http is allowed only for a loopback test server).
  *   - Otherwise the file is downloaded under the `modelDownload` network
- *     budget (per-attempt timeout + bounded retries) to a per-process unique
- *     partial path (`<final>.partial.<pid>.<random>`) and then published to
- *     the final name via POSIX `link()`, which is atomic and fails with
- *     EEXIST if another concurrent caller published first. Concurrent callers
- *     waste bandwidth (each downloads to its own partial) but never corrupt
- *     the cache: only the winning `link()` becomes the final file, all losers
- *     unlink their partial and return the published path.
- *   - Each retry attempt downloads to a fresh partial, so a half-written file
- *     from a failed attempt never poisons the next one.
+ *     budget (per-attempt timeout + bounded retries) into a deletable `temp/`
+ *     dir under the cache root (a per-download-unique name), then published to
+ *     the final name via POSIX `link()`, which is atomic and fails with EEXIST
+ *     if another concurrent caller published first. Concurrent callers waste
+ *     bandwidth (each downloads its own staged copy) but never corrupt the
+ *     cache: only the winning `link()` becomes the final file, all losers unlink
+ *     their staged copy and return the published path. Staging in temp/ (not as
+ *     a sibling of the kept model) keeps a crashed download's partial out of the
+ *     model dir, in a clearly-disposable area.
+ *   - Each retry attempt downloads to a fresh staged file, so a half-written
+ *     file from a failed attempt never poisons the next one.
  *   - Download progress is reported through the logger (and thus the caller's
  *     onProgress sink) — never written to a stream directly, so the SDK stays
  *     stream-silent.
@@ -127,9 +131,39 @@ async function downloadAttempt(
   });
 }
 
-function partialPathFor(finalPath: string): string {
+const TEMP_DIR = "temp";
+
+// https-only: a non-https model URL is refused before any byte is fetched, per
+// the managed-runtime-dependencies convention. http is permitted only for a
+// loopback host (localhost / 127.0.0.1 / ::1), which carries no network-MITM
+// surface and is how the local test server runs; every shipped registry URL is
+// https.
+function assertSafeUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new LocalOpError("model.insecureUrl", `Invalid model URL: ${url}`);
+  }
+  const loopback =
+    parsed.hostname === "localhost" ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "::1" ||
+    parsed.hostname === "[::1]";
+  if (parsed.protocol === "https:") return;
+  if (parsed.protocol === "http:" && loopback) return;
+  throw new LocalOpError(
+    "model.insecureUrl",
+    `Refusing insecure model URL (${parsed.protocol}//${parsed.hostname}); only https is allowed.`,
+  );
+}
+
+// A per-download staging path inside the deletable temp/ dir under the cache
+// root — same filesystem as the final path, so publish by link()/rename() stays
+// atomic, and a leftover partial lands in temp/, not beside the kept models.
+function stagingPathFor(cacheDir: string): string {
   const suffix = randomBytes(6).toString("hex");
-  return `${finalPath}.partial.${process.pid}.${suffix}`;
+  return path.join(cacheDir, TEMP_DIR, `${process.pid}.${suffix}.partial`);
 }
 
 export async function ensureModel(
@@ -147,6 +181,7 @@ export async function ensureModel(
   const force = opts.force ?? false;
   const budget = opts.budget ?? NETWORK_DEFAULTS.modelDownload;
   throwIfAborted(signal);
+  assertSafeUrl(entry.url);
 
   await mkdir(cacheDir, { recursive: true });
   const finalPath = path.join(cacheDir, entry.name);
@@ -155,12 +190,13 @@ export async function ensureModel(
     return finalPath;
   }
 
+  await mkdir(path.join(cacheDir, TEMP_DIR), { recursive: true });
   let partialPath: string;
   try {
     partialPath = await callWithRetry(
       { budgetName: "modelDownload", budget, signal, logger },
       async () => {
-        const p = partialPathFor(finalPath);
+        const p = stagingPathFor(cacheDir);
         try {
           await downloadAttempt(entry.url, p, budget.timeout, signal, logger, entry.name);
         } catch (err) {
