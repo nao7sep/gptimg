@@ -61,6 +61,19 @@ describe("assertSingleFileAvailable", () => {
     await writeFile(target, "x");
     expect(() => assertSingleFileAvailable(target, true)).not.toThrow();
   });
+
+  it("blocks a case-differing existing file (Photo.png blocks photo.png)", async () => {
+    await writeFile(path.join(tmp, "Photo.png"), "x");
+    expect(() =>
+      assertSingleFileAvailable(path.join(tmp, "photo.png"), false),
+    ).toThrowError(LocalOpError);
+    try {
+      assertSingleFileAvailable(path.join(tmp, "photo.png"), false);
+    } catch (err) {
+      expect((err as LocalOpError).code).toBe("output.exists");
+      expect((err as Error).message).toContain("Photo.png");
+    }
+  });
 });
 
 describe("resolveOutputPath", () => {

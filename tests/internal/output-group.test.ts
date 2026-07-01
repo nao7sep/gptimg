@@ -70,6 +70,18 @@ describe("OutputGroup", () => {
     ]);
   });
 
+  it("matches case-differing siblings (Photo group detects a photo output)", async () => {
+    for (const name of ["photo.png", "PHOTO-1.png", "Photo.json"]) {
+      await writeFile(path.join(tmp, name), "");
+    }
+    const group = createOutputGroup(tmp, "Photo", "png");
+    expect(siblingsOnDisk(group).map((p) => path.basename(p)).sort()).toEqual([
+      "PHOTO-1.png",
+      "Photo.json",
+      "photo.png",
+    ]);
+  });
+
   it("escapes regex metacharacters in stem", async () => {
     await writeFile(path.join(tmp, "a.b.png"), "");
     await writeFile(path.join(tmp, "axb.png"), "");

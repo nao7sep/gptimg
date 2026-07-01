@@ -83,8 +83,10 @@ export function siblingsOnDisk(group: OutputGroup): string[] {
   const stem = escapeRegex(group.stem);
   const ext = escapeRegex(group.ext);
   const sx = escapeRegex(group.sidecarExt);
-  const imagePattern = new RegExp(`^${stem}(?:-\\d+)?\\.${ext}$`);
-  const sidecarPattern = new RegExp(`^${stem}(?:-\\d+)?\\.${sx}$`);
+  // Case-insensitive: on macOS/Windows a `photo`-stem output collides with a
+  // `Photo`-stem group, so it must be detected as a sibling regardless of case.
+  const imagePattern = new RegExp(`^${stem}(?:-\\d+)?\\.${ext}$`, "i");
+  const sidecarPattern = new RegExp(`^${stem}(?:-\\d+)?\\.${sx}$`, "i");
   return entries
     .filter((name) => imagePattern.test(name) || sidecarPattern.test(name))
     .map((name) => path.join(group.dir, name))

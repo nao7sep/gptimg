@@ -8,7 +8,7 @@
  */
 
 import path from "node:path";
-import { existsSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { LocalOpError } from "../errors.js";
 import { createLogger, safeLogError, type Logger } from "../log/index.js";
 import { ensureOutputDir } from "./output-files.js";
@@ -32,10 +32,25 @@ export function assertSingleFileAvailable(
   filePath: string,
   allowOverwrite: boolean,
 ): void {
-  if (!allowOverwrite && existsSync(filePath)) {
+  if (allowOverwrite) return;
+  // Case-insensitive: on macOS/Windows filesystems a name that differs only in
+  // case from `filePath` would collide, so scan the directory and compare
+  // casefolded rather than a single case-sensitive existsSync.
+  const dir = path.dirname(filePath);
+  const target = path.basename(filePath).toLowerCase();
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch (err) {
+    // A missing directory means nothing to collide with; other errors surface.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw err;
+  }
+  const clash = entries.find((name) => name.toLowerCase() === target);
+  if (clash !== undefined) {
     throw new LocalOpError(
       "output.exists",
-      `Output exists: ${filePath}. Set overwrite: true to allow.`,
+      `Output exists: ${path.join(dir, clash)}. Set overwrite: true to allow.`,
     );
   }
 }
