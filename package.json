@@ -38,6 +38,7 @@
     "@shockpkg/icon-encoder": "^3.2.3",
     "defu": "^6.1.7",
     "dset": "^3.1.4",
+    "nanoid": "^5.1.16",
     "onnxruntime-node": "^1.27.0",
     "openai": "^6.45.0",
     "p-limit": "^7.3.0",

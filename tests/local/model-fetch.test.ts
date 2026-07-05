@@ -72,7 +72,7 @@ describe("stagingPathFor", () => {
     const p = stagingPathFor("/cache", "birefnet-general-fp16-v1.onnx");
     expect(path.dirname(p)).toBe(path.join("/cache", "temp"));
     expect(path.basename(p)).toMatch(
-      new RegExp(`^birefnet-general-fp16-v1-${process.pid}-[0-9a-f]{12}\\.tmp$`),
+      new RegExp(`^birefnet-general-fp16-v1-${process.pid}-[A-Za-z0-9_-]{21}\\.tmp$`),
     );
   });
 });

@@ -1,6 +1,6 @@
 import { rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { nanoid } from "nanoid";
 
 export interface AtomicWriteOptions {
   /** Text encoding, applied only when `data` is a string. */
@@ -16,14 +16,14 @@ export interface AtomicWriteOptions {
  * load-bearing — a rename is atomic only within one filesystem volume, so
  * staging anywhere else (a central temp dir) could degrade to a non-atomic
  * cross-volume copy for a relocated target. The discriminator is the fleet's
- * established `crypto.randomBytes(6).toString("hex")` (also used for staged
- * model downloads in `local/models/fetch.ts`), which is enough to keep two
- * concurrent writers of the same target from sharing a temp file.
+ * established `nanoid()` (also used for staged model downloads in
+ * `local/models/fetch.ts`), which is enough to keep two concurrent writers of
+ * the same target from sharing a temp file.
  */
 export function stagingPathFor(filePath: string): string {
   const dir = path.dirname(filePath);
   const stem = path.parse(filePath).name;
-  const discriminator = randomBytes(6).toString("hex");
+  const discriminator = nanoid();
   return path.join(dir, `${stem}-${discriminator}.tmp`);
 }
 

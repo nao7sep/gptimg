@@ -9,12 +9,12 @@ describe("stagingPathFor", () => {
     const target = path.join("/some/dir", "profile.json");
     const p = stagingPathFor(target);
     expect(path.dirname(p)).toBe("/some/dir");
-    expect(path.basename(p)).toMatch(/^profile-[0-9a-f]{12}\.tmp$/);
+    expect(path.basename(p)).toMatch(/^profile-[A-Za-z0-9_-]{21}\.tmp$/);
   });
 
   it("uses the full stem for a multi-dot filename (one extension stripped)", () => {
     const p = stagingPathFor("/a/foo.tar.gz");
-    expect(path.basename(p)).toMatch(/^foo\.tar-[0-9a-f]{12}\.tmp$/);
+    expect(path.basename(p)).toMatch(/^foo\.tar-[A-Za-z0-9_-]{21}\.tmp$/);
   });
 
   it("produces a distinct discriminator on each call", () => {
@@ -81,7 +81,7 @@ describe("writeFileAtomic", () => {
     await expect(writeFileAtomic(targetDir, "x", { encoding: "utf-8" })).rejects.toThrow();
 
     const entries = await readdir(tmp);
-    // Only the pre-existing directory remains; no leftover `<stem>-<hex>.tmp`.
+    // Only the pre-existing directory remains; no leftover `<stem>-<random>.tmp`.
     expect(entries).toEqual(["actually-a-dir"]);
   });
 });

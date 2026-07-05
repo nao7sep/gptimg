@@ -30,7 +30,8 @@
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { link, mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
+import { nanoid } from "nanoid";
 import { LocalOpError, toAbortError } from "../../errors.js";
 import type { Logger } from "../../log/index.js";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.js";
@@ -167,7 +168,7 @@ function assertSafeUrl(url: string): void {
 // model from colliding, and one `.tmp` extension for the file's current role.
 export function stagingPathFor(cacheDir: string, name: string): string {
   const stem = path.parse(name).name;
-  const suffix = randomBytes(6).toString("hex");
+  const suffix = nanoid();
   return path.join(cacheDir, TEMP_DIR, `${stem}-${process.pid}-${suffix}.tmp`);
 }
 
