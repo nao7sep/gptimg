@@ -7,7 +7,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultModelsDir } from "../../src/internal/paths.js";
-import { ensureModel } from "../../src/local/models/fetch.js";
+import { ensureModel, stagingPathFor } from "../../src/local/models/fetch.js";
 import type { ModelEntry } from "../../src/local/models/registry.js";
 import type { Logger } from "../../src/log/index.js";
 
@@ -64,6 +64,16 @@ describe("defaultModelsDir", () => {
       if (prev === undefined) delete process.env.GPTIMG_MODELS_DIR;
       else process.env.GPTIMG_MODELS_DIR = prev;
     }
+  });
+});
+
+describe("stagingPathFor", () => {
+  it("names the staged file <stem>-<pid>-<random>.tmp inside temp/, derived from the model's stem", () => {
+    const p = stagingPathFor("/cache", "birefnet-general-fp16-v1.onnx");
+    expect(path.dirname(p)).toBe(path.join("/cache", "temp"));
+    expect(path.basename(p)).toMatch(
+      new RegExp(`^birefnet-general-fp16-v1-${process.pid}-[0-9a-f]{12}\\.tmp$`),
+    );
   });
 });
 
@@ -129,9 +139,9 @@ describe("ensureModel", () => {
       };
       const finalPath = await ensureModel(entry, tmp);
       expect(finalPath).toBe(path.join(tmp, "test.bin"));
-      expect(existsSync(`${finalPath}.partial`)).toBe(false);
       // Staged in the dedicated temp/ dir (not beside the kept model), and the
-      // staged copy is removed after the atomic publish.
+      // staged copy — named `<stem>-<pid>-<random>.tmp` — is removed after the
+      // atomic publish.
       expect(existsSync(path.join(tmp, "temp"))).toBe(true);
       expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
       const got = await readFile(finalPath);
@@ -175,7 +185,7 @@ describe("ensureModel", () => {
     }
   });
 
-  it("removes the .partial when the download itself fails", async () => {
+  it("removes the staged .tmp file when the download itself fails", async () => {
     const { server, baseURL } = await listen((_req, res) => {
       res.writeHead(404);
       res.end();
@@ -190,7 +200,8 @@ describe("ensureModel", () => {
         code: "model.downloadFailed",
       });
       expect(existsSync(path.join(tmp, entry.name))).toBe(false);
-      expect(existsSync(path.join(tmp, `${entry.name}.partial`))).toBe(false);
+      // The staged copy in temp/ is cleaned up on failure, not left behind.
+      expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
     } finally {
       await closeServer(server);
     }

@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { Buffer } from "node:buffer";
-import writeFileAtomic from "write-file-atomic";
+import { writeFileAtomic } from "./atomic-file.js";
 import { LocalOpError } from "../errors.js";
 
 export async function ensureOutputDir(outDir: string): Promise<void> {

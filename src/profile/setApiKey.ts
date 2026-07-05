@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import writeFileAtomic from "write-file-atomic";
+import { writeFileAtomic } from "../internal/atomic-file.js";
 import { ProfileError } from "../errors.js";
 import type { Profile } from "../types.js";
 import { loadProfile } from "./load.js";

@@ -160,10 +160,15 @@ function assertSafeUrl(url: string): void {
 
 // A per-download staging path inside the deletable temp/ dir under the cache
 // root — same filesystem as the final path, so publish by link()/rename() stays
-// atomic, and a leftover partial lands in temp/, not beside the kept models.
-function stagingPathFor(cacheDir: string): string {
+// atomic, and a leftover temp file lands in temp/, not beside the kept models.
+// Named `<stem>-<pid>-<random>.tmp` per the derived-filename grammar: the
+// model's own stem (so a leftover is traceable to its target), hyphen-joined
+// to the pid+random discriminator that keeps concurrent downloads of the same
+// model from colliding, and one `.tmp` extension for the file's current role.
+export function stagingPathFor(cacheDir: string, name: string): string {
+  const stem = path.parse(name).name;
   const suffix = randomBytes(6).toString("hex");
-  return path.join(cacheDir, TEMP_DIR, `${process.pid}.${suffix}.partial`);
+  return path.join(cacheDir, TEMP_DIR, `${stem}-${process.pid}-${suffix}.tmp`);
 }
 
 export async function ensureModel(
@@ -196,7 +201,7 @@ export async function ensureModel(
     partialPath = await callWithRetry(
       { budgetName: "modelDownload", budget, signal, logger },
       async () => {
-        const p = stagingPathFor(cacheDir);
+        const p = stagingPathFor(cacheDir, entry.name);
         try {
           await downloadAttempt(entry.url, p, budget.timeout, signal, logger, entry.name);
         } catch (err) {

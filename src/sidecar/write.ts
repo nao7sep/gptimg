@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import writeFileAtomic from "write-file-atomic";
+import { writeFileAtomic } from "../internal/atomic-file.js";
 import { LocalOpError } from "../errors.js";
 import { redact } from "../profile/redact.js";
 import type { Sidecar } from "../types.js";
