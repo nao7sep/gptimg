@@ -1,0 +1,50 @@
+name: Release
+
+# gptimg ships as source (consumed directly via `tsx`) — there is no OS binary.
+# Per the app-release-conventions' source-only case, the release still follows
+# test -> pack -> DRAFT: the test gate runs, then `npm pack` produces the exact
+# tarball a consumer receives (respecting the package.json "files" allowlist), and
+# that tarball is attached to a draft release so it can be inspected before
+# publishing. Nothing is published automatically.
+#
+#   - push a tag `v*` -> test, pack, attach the tarball to a draft for that tag.
+#   - manual dispatch -> test + pack only (no release), a smoke check.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # A single runner: the npm tarball is platform-agnostic, so ubuntu-latest is
+    # just the cheapest host for a pure Node test + pack. Nothing here is Linux-
+    # specific (the fleet ships no Linux binaries; gptimg ships no binary at all).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+
+      # Test gate: a red suite (or type error) means the job fails before packing.
+      - run: npm run typecheck
+      - run: npm test
+
+      # Pack the exact distributable a consumer receives (into the working dir).
+      - name: Pack the distributable
+        run: npm pack
+
+      - name: Attach to draft release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          draft: true
+          prerelease: true # 0.x is pre-release
+          files: "*.tgz"

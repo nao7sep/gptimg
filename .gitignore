@@ -1,0 +1,17 @@
+# Dependencies and build output
+node_modules/
+dist/
+# npm pack output (the release tarball, produced transiently by scripts/CI)
+*.tgz
+
+# Local environment variables
+.env
+.env.*
+
+# OS / editor cruft
+.DS_Store
+
+# Test and coverage artifacts
+*.log
+coverage/
+.vitest/

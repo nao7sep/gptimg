@@ -1,0 +1,90 @@
+import {
+  assertSingleFileAvailable,
+  inferStem,
+  resolveOutputPath,
+  withVerbLogger,
+} from "../internal/local-verb.js";
+import { defaultModelsDir } from "../internal/paths.js";
+import { runUpscale } from "../local/upscale.js";
+import { resolveNetworkForCall } from "../network/index.js";
+import { loadRecipeForCall } from "../recipe/load.js";
+import type { UpscaleArgs, UpscaleResult } from "../types.js";
+import type { VerbCallOptions } from "./options.js";
+import { validateUpscaleArgs } from "./schemas.js";
+
+export interface UpscaleContext {
+  profileDir: string;
+  logDir: string;
+}
+
+function defaultStem(input: string): string {
+  return `${inferStem(input)}-upscale`;
+}
+
+export async function upscaleImpl(
+  ctx: UpscaleContext,
+  args: UpscaleArgs,
+  opts: VerbCallOptions = {},
+): Promise<UpscaleResult> {
+  validateUpscaleArgs(args);
+  const signal = opts.signal;
+
+  return withVerbLogger(ctx, "upscale", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+    const outPath = await resolveOutputPath(args, {
+      inputForDir: args.in,
+      stem: defaultStem(args.in),
+      ext: "png",
+    });
+    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+
+    const network = resolveNetworkForCall(await loadRecipeForCall(args.recipe, ctx.profileDir));
+    const cacheDir = defaultModelsDir(ctx.profileDir);
+
+    await logger.info("resolve", "upscale start", {
+      input: args.in,
+      out: outPath,
+      toSize: args.toSize ?? null,
+      kernel: args.kernel ?? null,
+      tile: args.tile ?? null,
+    });
+
+    const result = await runUpscale(
+      {
+        in: args.in,
+        out: outPath,
+        toSize: args.toSize,
+        kernel: args.kernel,
+        tile: args.tile,
+      },
+      cacheDir,
+      { signal, budget: network.modelDownload, logger },
+    );
+
+    await logger.info("write", "wrote upscaled image", {
+      path: result.output,
+      sourceWidth: result.sourceWidth,
+      sourceHeight: result.sourceHeight,
+      modelWidth: result.modelWidth,
+      modelHeight: result.modelHeight,
+      width: result.width,
+      height: result.height,
+      tiles: result.tiles,
+    });
+
+    return {
+      input: args.in,
+      output: result.output,
+      sourceWidth: result.sourceWidth,
+      sourceHeight: result.sourceHeight,
+      modelWidth: result.modelWidth,
+      modelHeight: result.modelHeight,
+      width: result.width,
+      height: result.height,
+      toSize: result.toSize,
+      kernel: result.kernel,
+      tile: result.tile,
+      tiles: result.tiles,
+      logPath: logger.handle.path,
+    };
+  });
+}

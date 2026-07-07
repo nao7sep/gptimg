@@ -1,0 +1,8 @@
+{
+  // The base excludes tests/** (they are not part of the typechecked source set);
+  // this config IS the test typecheck, so it includes tests/** instead. Everything
+  // else (lib, types, strictness, noEmit) is inherited.
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules"],
+  "include": ["tests/**/*.ts"]
+}

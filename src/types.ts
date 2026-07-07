@@ -1,0 +1,896 @@
+export type {
+  BackplateShape,
+  CombineOp,
+  DespeckleKeep,
+  FramecheckAxes,
+  LayerGravity,
+  MaskMethod,
+  ResampleKernel,
+  VisionDetail,
+} from "./enums.js";
+import type {
+  BackplateShape,
+  CombineOp,
+  DespeckleKeep,
+  FramecheckAxes,
+  LayerGravity,
+  MaskMethod,
+  ResampleKernel,
+  VisionDetail,
+} from "./enums.js";
+
+export interface Profile {
+  provider: string;
+  apiKey?: string;
+  apiKeyEnv?: string;
+  organization?: string;
+  project?: string;
+}
+
+export interface ResolvedProfile {
+  /** Original profile fields excluding secret-bearing keys. Safe to log/serialize. */
+  redacted: Omit<Profile, "apiKey" | "apiKeyEnv">;
+  /** Resolved API key value. NEVER log or serialize. */
+  apiKey: string;
+  /** Where the key came from: "env:NAME" or "profile.apiKey". */
+  apiKeySource: string;
+}
+
+export interface GenerateRecipe {
+  model?: string;
+  size?: string;
+  quality?: string;
+  n?: number;
+  [key: string]: unknown;
+}
+
+export interface EditRecipe {
+  model?: string;
+  size?: string;
+  quality?: string;
+  n?: number;
+  [key: string]: unknown;
+}
+
+export interface VisionRecipe {
+  model?: string;
+  shrink?: { width: number; height: number };
+  detail?: VisionDetail;
+  systemPrompt?: string;
+  [key: string]: unknown;
+}
+
+/** Defaults for `mask --method chroma` and the implicit chroma backdrop record on `generate`. */
+export interface MaskRecipe {
+  /** Chroma key color, "#rrggbb". Also recorded in the sidecar when `generate` runs. */
+  color?: string;
+  /** When true, interior key-colored regions are kept opaque. Default false. */
+  preserveInterior?: boolean;
+  /** Border-sample depth in pixels for `key: "auto"`. */
+  borderSample?: number;
+  /** Spill ratio at which near-key pixels saturate to α=0. */
+  saturationRatio?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * `chroma` is the historical name; the recipe slot stays under `recipe.chroma`
+ * so existing recipe files keep working. `MaskRecipe` is the type alias used
+ * by Phase 2 code paths.
+ */
+export type ChromaRecipe = MaskRecipe;
+
+export interface Recipe {
+  generate?: GenerateRecipe;
+  edit?: EditRecipe;
+  vision?: VisionRecipe;
+  chroma?: ChromaRecipe;
+  /** Per-category network budgets. See src/network/defaults.ts. */
+  network?: Record<string, unknown>;
+}
+
+export type RecipeVerb = "generate" | "edit" | "vision";
+
+export interface SidecarFileEntry {
+  index: number;
+  name: string;
+  sha256: string;
+  format: string;
+}
+
+export interface Sidecar {
+  request: Record<string, unknown>;
+  response: unknown;
+  files: SidecarFileEntry[];
+}
+
+export type LogLevel = "debug" | "info" | "warn" | "error";
+export type LogStage =
+  | "resolve"
+  | "request"
+  | "response"
+  | "write"
+  | "stats"
+  | "retry"
+  | "download"
+  | "infer"
+  | "cancelled"
+  | "error"
+  // The logging subsystem reporting on itself (e.g. the session file is unavailable).
+  | "log";
+export type LogVerb =
+  | "generate"
+  | "edit"
+  | "vision"
+  | "mask"
+  | "compose"
+  | "combine"
+  | "trim"
+  | "backplate"
+  | "layer"
+  | "shadow"
+  | "icon"
+  | "upscale"
+  | "resize"
+  | "despeckle"
+  | "keycheck"
+  | "framecheck"
+  | "grid"
+  | "model";
+
+export interface LogEntry {
+  /** Event instant: UTC ISO-8601 with milliseconds and `Z` (logging-conventions envelope). */
+  time: string;
+  level: LogLevel;
+  /** Short, stable, human-readable description of the event. */
+  message: string;
+  /** Typed structured fields carried alongside the three envelope keys. */
+  verb: LogVerb;
+  stage: LogStage;
+  data?: Record<string, unknown>;
+}
+
+export interface LogHandle {
+  path: string;
+  verb: LogVerb;
+}
+
+export interface OutputFile {
+  index: number;
+  path: string;
+  /** Per-image sidecar: `<image-stem>.json`. Same stem as `path` minus the extension. */
+  sidecarPath: string;
+  sha256: string;
+  format: string;
+}
+
+export interface GenerateArgs {
+  prompt: string;
+  outDir?: string;
+  outName?: string;
+  profile?: string;
+  recipe?: string;
+  log?: string;
+  /** Typed recipe overrides merged over the loaded recipe (caller-supplied, last wins). */
+  overrides?: Partial<Recipe>;
+  overwrite?: boolean;
+}
+
+export interface GenerateResult {
+  files: OutputFile[];
+  logPath: string;
+  partial: boolean;
+}
+
+export interface EditArgs extends GenerateArgs {
+  in: string;
+  mask?: string;
+}
+
+export type EditResult = GenerateResult;
+
+export interface VisionArgs {
+  in: string | string[];
+  check: string;
+  profile?: string;
+  recipe?: string;
+  log?: string;
+  /** Typed recipe overrides merged over the loaded recipe (caller-supplied, last wins). */
+  overrides?: Partial<Recipe>;
+  outDir?: string;
+  outName?: string;
+  /** Overwrite an existing sidecar at the resolved stem. Default false. */
+  overwrite?: boolean;
+}
+
+export interface VisionVerdict {
+  ok: boolean;
+  score: number;
+  reasons: string[];
+}
+
+export interface VisionResult extends VisionVerdict {
+  raw: unknown;
+  sidecarPath: string;
+  logPath: string;
+}
+
+// ----- mask / compose / combine -----
+
+export type ChromaKeySource = "auto" | "sidecar" | "explicit";
+
+export interface ChromaMaskStats {
+  method: "chroma";
+  /** Resolved key color as `#rrggbb`. */
+  key: string;
+  keySource: ChromaKeySource;
+  preserveInterior: boolean;
+  removedPixels: number;
+  removedFraction: number;
+  width: number;
+  height: number;
+}
+
+export interface AiMaskStats {
+  method: "ai";
+  model: "birefnet";
+  removedPixels: number;
+  removedFraction: number;
+  width: number;
+  height: number;
+}
+
+export type MaskStats = ChromaMaskStats | AiMaskStats;
+
+export interface MaskArgs {
+  in: string;
+  method?: MaskMethod;
+  /** "auto" | "from-sidecar" | "#rrggbb" — chroma-method only. */
+  key?: string;
+  preserveInterior?: boolean;
+  borderSample?: number;
+  /** Spill ratio at which near-key pixels saturate to α=0 (0..1]. Chroma-method only. */
+  saturationRatio?: number;
+  /** Skip writing the mask; emit stats only. */
+  dryRun?: boolean;
+  outDir?: string;
+  outName?: string;
+  recipe?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface MaskResult {
+  input: string;
+  /** Null when dryRun was set. */
+  output: string | null;
+  stats: MaskStats;
+  logPath: string;
+}
+
+export interface ComposeArgs {
+  in: string;
+  mask: string;
+  /**
+   * "transparent" | "#rrggbb" | "<path-to-image>" — flatten target.
+   * Omit for transparent output.
+   */
+  over?: string;
+  /**
+   * Remove the named background color from the subject pixels the mask kept.
+   * The math dispatches on the key's chromaticity and only one path runs: a
+   * chromatic key (R/G/B/C/M/Y) gets spill suppression at every kept pixel and
+   * no edge recovery (solving `C = α·F + (1−α)·B` is unstable for chroma/AI-mask
+   * alphas and would halo); an achromatic key (gray) instead gets alpha-aware
+   * edge recovery at partial-α pixels only. Format: `#rrggbb`.
+   */
+  removeBleed?: string;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface ComposeResult {
+  input: string;
+  mask: string;
+  output: string;
+  width: number;
+  height: number;
+  over: "transparent" | "color" | "image";
+  logPath: string;
+}
+
+// ----- trim -----
+
+/** The tightest rect of non-transparent (alpha > 0) pixels in an RGBA image. */
+export interface AlphaBBox {
+  /** Top-left x in source coordinates. */
+  x: number;
+  /** Top-left y in source coordinates. */
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface TrimArgs {
+  in: string;
+  /** Margin to re-pad, as a fraction of the longer bbox side. 0..1. Default 0.08. */
+  margin?: number;
+  /** Extend the shorter axis with transparent pixels to make the output square. */
+  square?: boolean;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface TrimResult {
+  input: string;
+  output: string;
+  /** The detected alpha bounding box in the source image. */
+  bbox: AlphaBBox;
+  /** The resolved margin fraction. */
+  margin: number;
+  /** Margin in pixels (round(margin * max(bbox.width, bbox.height))). */
+  marginPx: number;
+  /** Final output width (bbox.width + 2*marginPx, possibly extended for --square). */
+  width: number;
+  /** Final output height. */
+  height: number;
+  square: boolean;
+  logPath: string;
+}
+
+// ----- backplate -----
+
+export interface BackplateArgs {
+  /** Output PNG side length in pixels. Default 1024. */
+  size?: number;
+  /** Content side length as a fraction of `size` (the squircle occupies this). Default 0.80. */
+  content?: number;
+  /** Corner radius as a fraction of the content side (0..0.5). Default 0.225. */
+  radius?: number;
+  /** Gradient start color, "#rrggbb". Required. */
+  from: string;
+  /** Gradient end color, "#rrggbb". Required. */
+  to: string;
+  /** CSS-style gradient angle in degrees (0 = bottom→top, 90 = left→right, 180 = top→bottom). Default 135. */
+  angle?: number;
+  /** Corner shape. Default "rect". */
+  shape?: BackplateShape;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface BackplateResult {
+  output: string;
+  size: number;
+  /** Resolved content side as a fraction of `size`. */
+  content: number;
+  /** Resolved corner radius as a fraction of the content side. */
+  radius: number;
+  shape: BackplateShape;
+  /** Resolved gradient start color, "#rrggbb". */
+  from: string;
+  /** Resolved gradient end color, "#rrggbb". */
+  to: string;
+  angle: number;
+  logPath: string;
+}
+
+// ----- layer -----
+
+export interface LayerOffset {
+  /**
+   * Pixel offset of the top image's top-left corner from the base's top-left.
+   * May be negative or run past the base edge — the top bleeds off the canvas
+   * and is clipped. Only a placement entirely outside the base is rejected.
+   */
+  x: number;
+  y: number;
+}
+
+export interface LayerArgs {
+  /** Base RGBA image (the bottom layer, e.g. a backplate). */
+  base: string;
+  /** Top RGBA image (the foreground, e.g. trimmed content). */
+  top: string;
+  /**
+   * Resize the top image so its longer side equals `scale * min(baseW, baseH)`.
+   * Preserves aspect ratio. Omit to keep top at its native size. May exceed 1.0:
+   * the top then bleeds beyond the canvas and is clipped to the base (full-bleed
+   * content). The output is always the base's size.
+   */
+  scale?: number;
+  /** Placement anchor. Default "center". Ignored when `topOffset` is given. */
+  gravity?: LayerGravity;
+  /** Explicit pixel offset of the top image (overrides `gravity`). May bleed off-canvas; see {@link LayerOffset}. */
+  topOffset?: LayerOffset;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface LayerResult {
+  base: string;
+  top: string;
+  output: string;
+  /** Final output size (= base size; layer never changes the canvas). */
+  width: number;
+  height: number;
+  /** Scaled size of the top image (after `scale`, if any), before any clip to the base. */
+  topWidth: number;
+  topHeight: number;
+  /** Resolved placement. One of `gravity` or `topOffset` is null. */
+  gravity: LayerGravity | null;
+  topOffset: LayerOffset | null;
+  logPath: string;
+}
+
+// ----- shadow -----
+
+export interface ShadowOffset {
+  /** Pixel displacement of the shadow from the subject. May be negative. */
+  x: number;
+  y: number;
+}
+
+export interface ShadowArgs {
+  /** RGBA image with transparency; its alpha shape casts the shadow. */
+  in: string;
+  /** Gaussian blur sigma for the shadow edge, in pixels. Default 12. */
+  blur?: number;
+  /** Shadow displacement from the subject. Default { x: 0, y: 8 }. */
+  offset?: ShadowOffset;
+  /** Shadow color, "#rrggbb". Default "#000000". */
+  color?: string;
+  /** Peak shadow opacity, (0, 1]. Default 0.35. */
+  opacity?: number;
+  /** Grow the shadow shape outward by this many pixels before blurring. Default 0. */
+  spread?: number;
+  /**
+   * Keep the output canvas at the input's dimensions, clipping any shadow that
+   * falls outside. Default false → the canvas grows so the shadow is never cut.
+   */
+  keepCanvas?: boolean;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface ShadowResult {
+  input: string;
+  output: string;
+  /** Final canvas size (grown to fit the shadow unless `keepCanvas`). */
+  width: number;
+  height: number;
+  /** Source image dimensions. */
+  sourceWidth: number;
+  sourceHeight: number;
+  blur: number;
+  offset: ShadowOffset;
+  /** Resolved shadow color, "#rrggbb". */
+  color: string;
+  opacity: number;
+  spread: number;
+  keepCanvas: boolean;
+  logPath: string;
+}
+
+// ----- resample (shared by upscale + resize) -----
+
+// ----- upscale -----
+
+export interface UpscaleArgs {
+  /** Input RGBA image (e.g. a trimmed content cutout). */
+  in: string;
+  /** Final output longer-side length in px (aspect preserved). Default 1024. */
+  toSize?: number;
+  /** Resampling kernel for the resize after the model's ×4. Default "lanczos3". */
+  kernel?: ResampleKernel;
+  /** Max model-input edge per pass — the memory knob. Default 256. */
+  tile?: number;
+  recipe?: string;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface UpscaleResult {
+  input: string;
+  output: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  /** Size after the model's native ×4, before resampling to the target. */
+  modelWidth: number;
+  modelHeight: number;
+  /** Final output size (longer side = toSize, aspect preserved). */
+  width: number;
+  height: number;
+  toSize: number;
+  kernel: ResampleKernel;
+  /** Resolved tile (model-input edge) used. */
+  tile: number;
+  /** Number of model passes (tiles) the source was split into. */
+  tiles: number;
+  logPath: string;
+}
+
+// ----- resize -----
+
+export interface ResizeArgs {
+  /** Input image (any format sharp reads); alpha preserved if present. */
+  in: string;
+  /** Output longer-side length in px (aspect preserved). Required. */
+  toSize: number;
+  /** Resampling kernel. Default "lanczos3". */
+  kernel?: ResampleKernel;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface ResizeResult {
+  input: string;
+  output: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  /** Final output size (longer side = toSize, aspect preserved). */
+  width: number;
+  height: number;
+  toSize: number;
+  kernel: ResampleKernel;
+  logPath: string;
+}
+
+// ----- icon -----
+
+export interface IconArgs {
+  /**
+   * Square master PNG, at least 1024×1024 — e.g. the vision-approved icon from
+   * the backplate/layer pipeline. Smaller sizes are downsampled from it.
+   */
+  in: string;
+  /** Base filename stem for outputs. Default "icon" → icon.icns/.ico/.png. */
+  name?: string;
+  /** Also emit the loose sized-PNG set `<name>-<size>.png` (16…1024). Default false. */
+  pngs?: boolean;
+  /** Output directory. Default: same as `in`. */
+  outDir?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface IconResult {
+  input: string;
+  /** Every file written, absolute paths (icns, ico, png, then any sized PNGs). */
+  outputs: string[];
+  icns: string;
+  ico: string;
+  png: string;
+  /** The sized-PNG set paths. Empty unless `pngs` was set. */
+  pngs: string[];
+  /** Source master dimensions. */
+  width: number;
+  height: number;
+  logPath: string;
+}
+
+export interface CombineArgs {
+  op: CombineOp;
+  /** 1 input for `invert`/`feather`, 2 inputs for the binary ops. */
+  inputs: string[];
+  /** Feather radius (number of 3×3 box-blur passes). Ignored for other ops. */
+  radius?: number;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface CombineResult {
+  inputs: string[];
+  output: string;
+  width: number;
+  height: number;
+  op: CombineOp;
+  logPath: string;
+}
+
+// ----- despeckle -----
+
+export interface DespeckleArgs {
+  /** Input RGBA cutout whose alpha matte is cleaned. */
+  in: string;
+  /** Keep alpha ≥ threshold; zero below (the floor, and the component on-level). Integer 0..255. Default 5. */
+  threshold?: number;
+  /** Remove connected components smaller than this many pixels. 0 = remove none. Integer ≥ 0. Default 0. */
+  minArea?: number;
+  /** Pixel neighbourhood for components: 4 or 8. Default 8. */
+  connectivity?: number;
+  /** "all" = remove components below minArea; "largest" = keep only the biggest. Default "all". */
+  keep?: DespeckleKeep;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface DespeckleResult {
+  input: string;
+  output: string;
+  /** Resolved threshold (floor / component on-level). */
+  threshold: number;
+  /** Resolved minimum component area in pixels. */
+  minArea: number;
+  /** Resolved connectivity (4 or 8). */
+  connectivity: number;
+  keep: DespeckleKeep;
+  /** Pixels zeroed by the floor (had 0 < alpha < threshold). */
+  flooredPixels: number;
+  /** Connected components found over the alpha ≥ threshold pixels. */
+  components: number;
+  /** Components removed (below minArea, or all-but-largest). */
+  removedComponents: number;
+  /** Pixels zeroed by component removal. */
+  removedPixels: number;
+  /** Any-alpha bbox before the op; null if the input was fully transparent. */
+  bboxBefore: AlphaBBox | null;
+  /** Any-alpha bbox after the op; null if nothing remains. */
+  bboxAfter: AlphaBBox | null;
+  width: number;
+  height: number;
+  logPath: string;
+}
+
+// ----- keycheck -----
+
+/** A "clean" cutout has residue within the verdict thresholds; "residue" exceeds them. */
+export type KeyResidueVerdict = "clean" | "residue";
+
+/**
+ * Deterministic key-residue analysis of a keyed cutout — *did background removal
+ * succeed?* A read-only diagnostic: it never edits the asset (its only possible
+ * output is an optional debug heatmap). A pixel counts as residue when it ships
+ * (alpha > 0) and its color is biased toward the key hue — within `hueTolerance`
+ * degrees of the key's hue AND at least `minSaturation`/`minValue` (the gates
+ * exclude near-gray and near-black pixels whose hue is numerically unstable, so
+ * a legitimately key-*adjacent* subject color is not flagged). Residue on the
+ * alpha edge is fringe; residue in the interior is a missed background patch.
+ */
+export interface KeycheckArgs {
+  /** Keyed RGBA cutout to inspect (typically post mask → compose). */
+  in: string;
+  /** Key color to scan for: "from-sidecar" (read the generate sidecar beside `in`) or "#rrggbb". Required — keycheck does not guess a key. */
+  key: string;
+  /** Max hue distance (degrees, 0..180) from the key hue for a pixel to count as residue. Default 20. */
+  hueTolerance?: number;
+  /** Min HSV saturation (0..1] for a pixel to count as residue — gates out near-gray pixels. Default 0.35. */
+  minSaturation?: number;
+  /** Min HSV value (0..1] for a pixel to count as residue — gates out near-black pixels. Default 0.25. */
+  minValue?: number;
+  /** Verdict is "residue" once edgeResidueFraction exceeds this. Default 0.02. */
+  maxEdgeResidueFraction?: number;
+  /** Verdict is "residue" once interiorResiduePixels exceeds this. Default 0. */
+  maxInteriorResiduePixels?: number;
+  /** Also write a debug heatmap PNG marking residue pixels. Default false. */
+  heatmap?: boolean;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface KeycheckResult {
+  input: string;
+  /** Resolved key color, "#rrggbb". */
+  key: string;
+  /** Where the key came from ("sidecar" or "explicit"; never "auto"). */
+  keySource: ChromaKeySource;
+  width: number;
+  height: number;
+  /** Pixels that ship (alpha > 0). */
+  presentPixels: number;
+  /** Present pixels with ≥1 fully-transparent in-bounds 4-neighbour (the alpha edge ring). */
+  edgePixels: number;
+  /** All present pixels flagged as key residue. */
+  residuePixels: number;
+  /** Residue pixels on the alpha edge (key fringe). */
+  edgeResiduePixels: number;
+  /** Residue pixels not on the alpha edge (a missed background patch). */
+  interiorResiduePixels: number;
+  /** edgeResiduePixels / edgePixels (0 when there is no edge). */
+  edgeResidueFraction: number;
+  /** residuePixels / presentPixels (0 when nothing is present). */
+  residueFraction: number;
+  /** Bounding box of all residue pixels; null when there is none. */
+  worstBBox: AlphaBBox | null;
+  /** Resolved hue tolerance (degrees). */
+  hueTolerance: number;
+  /** Resolved saturation gate. */
+  minSaturation: number;
+  /** Resolved value gate. */
+  minValue: number;
+  verdict: KeyResidueVerdict;
+  /** Debug heatmap path when `heatmap` was set, else null. */
+  heatmapPath: string | null;
+  logPath: string;
+}
+
+// ----- framecheck -----
+
+/** Transparent margins from each canvas edge to the subject box, in pixels. */
+export interface FrameMargins {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** Whether the subject box touches each canvas border (zero margin → clipped/full-bleed). */
+export interface FrameEdgeContact {
+  left: boolean;
+  right: boolean;
+  top: boolean;
+  bottom: boolean;
+}
+
+/** Margin-pair asymmetries in pixels. The verdict is computed from these. */
+export interface FrameDeltas {
+  /** |left − right|. */
+  horizontal: number;
+  /** |top − bottom|. */
+  vertical: number;
+}
+
+/**
+ * Deterministic, read-only alpha-coverage geometry — *where does the opaque
+ * content sit inside its canvas?* The geometry counterpart to `keycheck`: one
+ * scan of the alpha channel, no pixels changed, no file written. It answers the
+ * centering / margin-lock / edge-clipping questions the stamp and icon workflows
+ * pose on every mechanically-placed output; it reads no colour (that is
+ * `keycheck`), re-pads nothing (that is `trim`), and judges no visual balance
+ * (that is `vision`).
+ */
+export interface FramecheckArgs {
+  /** RGBA image to inspect. */
+  in: string;
+  /** Alpha at/above which a pixel is the opaque "solid" body. Integer 1..255 (1 = any shipping pixel). Default 128. */
+  threshold?: number;
+  /** Max margin-pair asymmetry, in pixels, for the verdict to be "centered". Default 2. */
+  tolerance?: number;
+  /** Which axis/axes the verdict enforces. Both deltas are always reported. Default "horizontal". */
+  axes?: FramecheckAxes;
+  log?: string;
+}
+
+export interface FramecheckResult {
+  input: string;
+  width: number;
+  height: number;
+  /** Resolved solid-body alpha threshold. */
+  threshold: number;
+  /** Resolved verdict tolerance, in pixels. */
+  tolerance: number;
+  /** Resolved verdict axes. */
+  axes: FramecheckAxes;
+  /** No pixel ships (the image is fully transparent). */
+  empty: boolean;
+  /** Tightest box of any shipping pixel (alpha > 0) — includes a soft shadow/feather. Null when empty. */
+  anyBBox: AlphaBBox | null;
+  /** Tightest box of the opaque body (alpha ≥ threshold). Null when nothing is solid. */
+  solidBBox: AlphaBBox | null;
+  /** Margins of the subject box (solid, or any-alpha when no solid pixels exist). Null when empty. */
+  margins: FrameMargins | null;
+  deltas: FrameDeltas | null;
+  edgeContact: FrameEdgeContact | null;
+  /** "centered" when the enforced axes are within tolerance (empty is vacuously centered). */
+  verdict: "centered" | "offset";
+  logPath: string;
+}
+
+// ----- grid -----
+
+export interface GridArgs {
+  /** Images to tile, in order. At least one. */
+  inputs: string[];
+  /** Number of columns. Default ceil(sqrt(count of readable inputs)). */
+  cols?: number;
+  /** Square cell side in pixels; each image is contain-fit into it. Default 256. */
+  cell?: number;
+  /** Gap between cells (and the outer border) in pixels. Default 16. */
+  gap?: number;
+  /** Sheet background: "transparent" or "#rrggbb". Default "transparent". */
+  background?: string;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface GridResult {
+  output: string;
+  /** Inputs supplied. */
+  count: number;
+  /** Tiles actually drawn (readable inputs). */
+  placed: number;
+  /** Inputs that could not be read, in order — skipped, never fatal. */
+  skipped: string[];
+  cols: number;
+  rows: number;
+  /** Resolved cell side (px). */
+  cell: number;
+  /** Resolved gap (px). */
+  gap: number;
+  width: number;
+  height: number;
+  logPath: string;
+}
+
+// ----- model management -----
+
+/** One model file as installed (or found already cached) by `model install`. */
+export interface InstalledModel {
+  key: string;
+  name: string;
+  path: string;
+  /** True when `force` re-downloaded over an existing cache entry. */
+  forced: boolean;
+}
+
+/** Result of `model install`: every model the call installed. */
+export interface ModelInstallResult {
+  installed: InstalledModel[];
+}
+
+/** One known model and its cache state, from `model list`. */
+export interface ModelListEntry {
+  key: string;
+  name: string;
+  path: string;
+  cached: boolean;
+  sizeBytes?: number;
+}
+
+/** Result of `model list`: every known model and whether it is cached. */
+export interface ModelListResult {
+  models: ModelListEntry[];
+}
+
+/**
+ * Integrity status of one cached model file, from `model verify`.
+ *   "ok"           — present and its sha256 matches the pinned value.
+ *   "mismatch"     — present but the wrong hash (corrupt or swapped on disk).
+ *   "missing"      — not cached.
+ *   "unverifiable" — the registry entry pins no sha256 (ad-hoc entries only).
+ */
+export type ModelIntegrity = "ok" | "mismatch" | "missing" | "unverifiable";
+
+/** One model's integrity result, from `model verify`. */
+export interface ModelVerifyEntry {
+  key: string;
+  name: string;
+  path: string;
+  integrity: ModelIntegrity;
+  /** The pinned hash expected — absent only for an entry with no pinned sha256. */
+  expectedSha256?: string;
+  /** The hash computed from the cached file — absent when missing or unverifiable. */
+  actualSha256?: string;
+}
+
+/** Result of `model verify`: the on-disk integrity of every known model. */
+export interface ModelVerifyResult {
+  models: ModelVerifyEntry[];
+}
+
+export interface GptImgOptions {
+  profileDir?: string;
+  logDir?: string;
+}
