@@ -1,5 +1,5 @@
 /**
- * Model registry. One entry per AI artifact gptimg can lazily fetch.
+ * Model registry. One entry per AI artifact GptImg can lazily fetch.
  *
  * Each entry pins:
  *   name      — cache filename. Bump the suffix when changing models so old

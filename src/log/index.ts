@@ -6,7 +6,7 @@ import type { LogEntry, LogHandle, LogLevel, LogStage, LogVerb } from "../types.
 /**
  * `debug` logging is a developer-only firehose: it is written to the session log
  * file only when explicitly enabled, so it never floods an end-user's disk
- * (logging conventions). gptimg ships a single compiled artifact everywhere —
+ * (logging conventions). GptImg ships a single compiled artifact everywhere —
  * there is no separate "dev build" — so the one gate is the `GPTIMG_DEBUG`
  * environment variable. Accept the two forms a human reaches for (`1` / `true`,
  * case- and space-insensitive) so a mis-typed `true` is not a silent no-op. Read

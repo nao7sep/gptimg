@@ -1,15 +1,15 @@
 /**
  * Whitespace cleanup for free-text inputs, per the fleet text-cleanup
- * conventions. This is gptimg's own copy of the two patterns it uses — there is
+ * conventions. This is GptImg's own copy of the two patterns it uses — there is
  * no shared package; each app carries a small local helper (see
  * `text-cleanup-conventions`). The algorithms here are the canonical,
  * test-proven shapes from that convention; do not rewrite them.
  *
- * Only the two patterns gptimg actually needs are present:
+ * Only the two patterns GptImg actually needs are present:
  *   - `singleLine` — for scalar instruction fields (the vision `check`).
  *   - `multiline`  — for body fields whose line structure matters (the
  *     generate/edit `prompt`).
- * The `multiline-truncation` pattern is intentionally omitted: gptimg has no
+ * The `multiline-truncation` pattern is intentionally omitted: GptImg has no
  * preview/snippet surface that needs it. Add it (copying the convention's
  * verified version) only if a real case appears.
  *

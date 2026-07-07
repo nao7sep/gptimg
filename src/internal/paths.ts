@@ -24,7 +24,7 @@ function expandHomeAndEnv(value: string, home: string): string {
 }
 
 /**
- * The single storage root for gptimg, per the storage-path convention.
+ * The single storage root for GptImg, per the storage-path convention.
  *
  * Resolution order:
  *   1. `GPTIMG_HOME`, if set and non-empty — the relocation override. Its value
@@ -117,7 +117,7 @@ export function utcTimestamp(now: Date = new Date()): string {
 /**
  * Returns `yyyymmdd-hhmmss-fff-utc` — second precision plus a millisecond part.
  * This is the `-fff` exception in the timestamp conventions, permitted for a
- * tool designed to run concurrently. gptimg is exactly that case: it names the
+ * tool designed to run concurrently. GptImg is exactly that case: it names the
  * per-session log file with this so two runs that start in the same UTC second
  * get distinct log files instead of interleaving into one. OS clock via Date.
  *

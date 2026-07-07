@@ -19,7 +19,7 @@ const sessions = new Map<string, ort.InferenceSession>();
 /**
  * Intra-op thread count per session. ONNX Runtime's CPU EP defaults to one
  * thread per core, which is fine for a single inference but pathological when
- * the same machine runs multiple gptimg processes — each grabs all cores and
+ * the same machine runs multiple GptImg processes — each grabs all cores and
  * they thrash the scheduler. Halving the core count keeps a single call fast
  * while letting parallel callers coexist. A single-core minimum keeps tiny VMs
  * working. `GPTIMG_ONNX_INTRA_OP_THREADS` overrides for explicit tuning.
