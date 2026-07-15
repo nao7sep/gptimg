@@ -4,8 +4,18 @@ import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { GenerateProviderArgs, ProviderImageResult } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
-import { OPENAI_MODEL_DEFAULTS, shouldOmitResponseFormat } from "./defaults.js";
+import { OPENAI_MODEL_DEFAULTS } from "./defaults.js";
 
+/**
+ * `response_format` is never sent, and never stripped from a caller who sends it.
+ * The whole images endpoint rejects the parameter now ("400 Unknown parameter") —
+ * gpt-image-* always returned base64 anyway, and the DALL-E models the old
+ * inject-it branch existed for no longer exist at all. Injecting it only masked
+ * that: the parameter error fired first and reported "Unknown parameter" for a
+ * parameter the caller never set, hiding "the model does not exist".
+ * The url branch below stays: it costs nothing and a response is not ours to
+ * predict.
+ */
 export async function openaiGenerate(
   args: GenerateProviderArgs,
 ): Promise<ProviderImageResult> {
@@ -17,12 +27,6 @@ export async function openaiGenerate(
     model,
     prompt: args.prompt,
   };
-
-  if (shouldOmitResponseFormat(model)) {
-    delete params.response_format;
-  } else if (params.response_format == null) {
-    params.response_format = "b64_json";
-  }
 
   const { primary, download, logger, signal } = args.network;
 

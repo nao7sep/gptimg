@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { LocalOpError, ProviderError } from "../../errors.js";
+import { ProviderError } from "../../errors.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { VisionVerdict } from "../../types.js";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
@@ -24,27 +24,18 @@ const VERDICT_SCHEMA = {
   },
 } as const;
 
-function modelSupportsOriginalDetail(model: string): boolean {
-  return !/^gpt-5(?:\.\d+)?-(?:mini|nano)(?:-|$)/.test(model);
-}
-
-function assertSupportedVisionDetail(
-  model: string,
-  images: VisionProviderArgs["images"],
-): void {
-  if (!images.some((img) => img.detail === "original")) return;
-  if (modelSupportsOriginalDetail(model)) return;
-  throw new LocalOpError(
-    "vision.detailUnsupported",
-    `vision.detail=original is not supported by model ${model}; use low, high, or auto, or choose a model that supports original detail such as gpt-5.4`,
-  );
-}
-
 function mimeFromFormat(format: string): string {
   if (format === "jpg") return "image/jpeg";
   return `image/${format}`;
 }
 
+/**
+ * `detail` is passed through untouched. The model is free text, so this layer
+ * cannot know an arbitrary model's capabilities — and it does not need to: the API
+ * validates the field and names the legal values in its own 400 ("one of ['low',
+ * 'auto', 'high', 'original']"). A local gate here was worse than no gate; it
+ * refused detail=original on the -mini models, which accept it.
+ */
 function imageContentParts(images: VisionProviderArgs["images"]) {
   return images.map((img) => ({
     type: "image_url" as const,
@@ -104,7 +95,6 @@ export async function openaiVision(
   args: VisionProviderArgs,
 ): Promise<ProviderVisionResult> {
   const model = resolveModel(args.params.model, OPENAI_MODEL_DEFAULTS.vision);
-  assertSupportedVisionDetail(model, args.images);
   const client = buildOpenAIClient(args.profile);
 
   const { systemPrompt: paramsSystemPrompt, ...passthroughParams } = args.params;

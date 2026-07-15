@@ -36,11 +36,6 @@ export async function openaiEdit(
     image: imageFile,
   };
   if (maskFile) params.mask = maskFile;
-  if (model.startsWith("gpt-image")) {
-    delete params.response_format;
-  } else if (params.response_format == null) {
-    params.response_format = "b64_json";
-  }
 
   const { primary, download, logger, signal } = args.network;
 

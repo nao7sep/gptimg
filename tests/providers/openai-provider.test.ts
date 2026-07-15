@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.js";
+import { OPENAI_MODEL_DEFAULTS } from "../../src/providers/openai/defaults.js";
 import { openaiEdit } from "../../src/providers/openai/edit.js";
 import { openaiGenerate } from "../../src/providers/openai/generate.js";
 import { openaiVision } from "../../src/providers/openai/vision.js";
@@ -88,14 +89,14 @@ describe("OpenAI provider implementations", () => {
     servers.length = 0;
   });
 
-  it("generate omits response_format for gpt-image models and decodes base64 images", async () => {
+  it("generate decodes base64 images", async () => {
     openaiMock.generate.mockResolvedValue({
       data: [{ b64_json: pngBase64(png) }],
     });
 
     const result = await openaiGenerate({
       prompt: "prompt",
-      params: { model: "gpt-image-2", response_format: "url" },
+      params: { model: "gpt-image-2" },
       profile,
       network,
     });
@@ -105,6 +106,36 @@ describe("OpenAI provider implementations", () => {
       expect.objectContaining({ maxRetries: 0, signal: undefined }),
     );
     expect(result.images[0]?.data).toEqual(png);
+  });
+
+  // response_format is neither injected nor stripped. The images endpoint rejects
+  // it outright now ("400 Unknown parameter", verified live on gpt-image-2,
+  // gpt-image-1.5 and dall-e-3 alike), so a caller who sends one gets the API's
+  // refusal rather than a silent edit of their request. Guards both directions:
+  // re-adding the old strip, or the old inject-b64_json default.
+  it("neither injects nor strips response_format — the API judges it", async () => {
+    openaiMock.generate.mockResolvedValue({ data: [{ b64_json: pngBase64(png) }] });
+
+    // A caller's explicit value survives untouched...
+    await openaiGenerate({
+      prompt: "prompt",
+      params: { model: "gpt-image-2", response_format: "url" },
+      profile,
+      network,
+    });
+    expect(openaiMock.generate.mock.calls[0]?.[0]).toMatchObject({
+      response_format: "url",
+    });
+
+    // ...and absence stays absence, for any model.
+    openaiMock.generate.mockClear();
+    await openaiGenerate({
+      prompt: "prompt",
+      params: { model: "some-other-image-model" },
+      profile,
+      network,
+    });
+    expect(openaiMock.generate.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
   });
 
   it("generate uses the params model and falls back to the provider default", async () => {
@@ -132,7 +163,11 @@ describe("OpenAI provider implementations", () => {
     });
   });
 
-  it("generate defaults response_format for non-gpt-image models and downloads URL images", async () => {
+  // The url branch is kept on its own merit: a response is not ours to predict, and
+  // handling one costs nothing. Note this no longer pins a model name — it used to
+  // say "dall-e-3", which does not exist any more ("400 The model 'dall-e-3' does
+  // not exist"), so the test was describing a path no real call could reach.
+  it("downloads the image when the API returns a url instead of base64", async () => {
     const { server, url } = await listen((_req, res) => {
       res.writeHead(200, { "content-type": "image/png" });
       res.end(Buffer.from(png));
@@ -144,15 +179,11 @@ describe("OpenAI provider implementations", () => {
 
     const result = await openaiGenerate({
       prompt: "prompt",
-      params: { model: "dall-e-3" },
+      params: {},
       profile,
       network,
     });
 
-    expect(openaiMock.generate.mock.calls[0]?.[0]).toMatchObject({
-      model: "dall-e-3",
-      response_format: "b64_json",
-    });
     expect(result.images[0]?.data).toEqual(png);
   });
 
@@ -174,7 +205,7 @@ describe("OpenAI provider implementations", () => {
     expect(openaiMock.generate).not.toHaveBeenCalled();
   });
 
-  it("edit passes image and optional mask files and omits response_format for gpt-image models", async () => {
+  it("edit passes image and optional mask files, and injects no response_format", async () => {
     openaiMock.edit.mockResolvedValue({
       data: [{ b64_json: pngBase64(png) }],
     });
@@ -183,7 +214,7 @@ describe("OpenAI provider implementations", () => {
       prompt: "edit it",
       imagePath: path.join(FIXTURES, "green-disk.png"),
       maskPath: path.join(FIXTURES, "green-disk.png"),
-      params: { model: "gpt-image-2", response_format: "url" },
+      params: { model: "gpt-image-2" },
       profile,
       network,
     });
@@ -445,26 +476,32 @@ describe("OpenAI provider implementations", () => {
     });
   });
 
-  it("vision allows detail=original on a compatible model", async () => {
-    openaiMock.create.mockResolvedValue({
-      choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
-    });
+  // Every VISION_DETAILS value reaches the wire for any model, including the
+  // -mini/-nano ids a since-deleted local gate refused detail=original for. That
+  // gate was fiction: the API accepts original on gpt-5.4-mini (verified live), and
+  // rejects only values outside ['low','auto','high','original'] — its call, not
+  // ours. Pinned per value so re-introducing a model-keyed gate fails here.
+  it.each(["low", "high", "original", "auto"] as const)(
+    "passes detail=%s through untouched, even on a -mini model",
+    async (detail) => {
+      openaiMock.create.mockResolvedValue({
+        choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
+      });
 
-    await openaiVision({
-      check: "is it green?",
-      images: [{ data: png, format: "png", detail: "original" }],
-      params: { model: "gpt-5.4" },
-      profile,
-      network,
-    });
+      await openaiVision({
+        check: "is it green?",
+        images: [{ data: png, format: "png", detail }],
+        params: { model: "gpt-5.4-mini" },
+        profile,
+        network,
+      });
 
-    expect(openaiMock.create.mock.calls[0]?.[0]).toMatchObject({
-      model: "gpt-5.4",
-    });
-    expect(openaiMock.create.mock.calls[0]?.[0].messages[1].content[1].image_url.detail).toBe(
-      "original",
-    );
-  });
+      expect(openaiMock.create).toHaveBeenCalledTimes(1);
+      expect(
+        openaiMock.create.mock.calls[0]?.[0].messages[1].content[1].image_url.detail,
+      ).toBe(detail);
+    },
+  );
 
   it("vision uses the params model and falls back to the provider default", async () => {
     openaiMock.create.mockResolvedValue({
@@ -491,7 +528,7 @@ describe("OpenAI provider implementations", () => {
       network,
     });
     expect(openaiMock.create.mock.calls[0]?.[0]).toMatchObject({
-      model: "gpt-5.4-mini",
+      model: OPENAI_MODEL_DEFAULTS.vision,
     });
   });
 
@@ -510,22 +547,6 @@ describe("OpenAI provider implementations", () => {
     ).rejects.toMatchObject({
       name: "AbortError",
       code: "cancelled",
-    });
-    expect(openaiMock.create).not.toHaveBeenCalled();
-  });
-
-  it("vision rejects detail=original on mini models before calling the SDK", async () => {
-    await expect(
-      openaiVision({
-        check: "is it green?",
-        images: [{ data: png, format: "png", detail: "original" }],
-        params: {},
-        profile,
-        network,
-      }),
-    ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "vision.detailUnsupported",
     });
     expect(openaiMock.create).not.toHaveBeenCalled();
   });
