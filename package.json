@@ -38,18 +38,18 @@
   "dependencies": {
     "@shockpkg/icon-encoder": "^3.2.3",
     "defu": "^6.1.7",
-    "nanoid": "^5.1.16",
+    "nanoid": "^6.0.1",
     "onnxruntime-node": "^1.27.0",
-    "openai": "^6.45.0",
-    "p-limit": "^7.3.0",
+    "openai": "^7.5.0",
+    "p-limit": "^7.3.1",
     "sharp": "^0.35.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^26.1.0",
-    "@vitest/coverage-v8": "^4.1.9",
-    "tsx": "^4.23.0",
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }
