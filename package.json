@@ -31,6 +31,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
+    "check": "npm run typecheck && npm test",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
