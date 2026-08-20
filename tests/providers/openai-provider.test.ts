@@ -437,6 +437,28 @@ describe("OpenAI provider implementations", () => {
     expect(openaiMock.edit).not.toHaveBeenCalled();
   });
 
+  // A refusal comes back as a `refusal` string with null content. Reading `content` alone
+  // reports a parse failure and hides the model's stated reason — the caller cannot then tell
+  // "declined" from "answered in a shape we could not read", and only the first is the user's
+  // to act on. `length` is quieter still: the content is present and reads like a full verdict.
+  // (ai-model-routing-conventions: never invent a cause the provider gave you.)
+  it.each([
+    ["a refusal", { finish_reason: "stop", message: { content: null, refusal: "I can't assess that." } }, /declined to verify this image: I can't assess that\./],
+    ["a content filter", { finish_reason: "content_filter", message: { content: null } }, /content filter rejected/],
+    ["a truncated verdict", { finish_reason: "length", message: { content: '{"ok":true,"score":1,' } }, /truncated/],
+  ])("reports %s with the provider's own reason", async (_label, choice, expected) => {
+    openaiMock.create.mockResolvedValue({ choices: [choice] });
+    await expect(
+      openaiVision({
+        check: "is it green?",
+        images: [{ data: png, format: "png", detail: "auto" }],
+        params: { model: "gpt-5.6-luna" },
+        profile,
+        network,
+      }),
+    ).rejects.toThrow(expected);
+  });
+
   it("vision sends data URLs and parses structured verdicts", async () => {
     openaiMock.create.mockResolvedValue({
       choices: [

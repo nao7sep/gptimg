@@ -127,7 +127,10 @@ export async function openaiVision(
   const { primary, logger, signal } = args.network;
 
   let response: {
-    choices?: Array<{ message?: { content?: string | null } }>;
+    choices?: Array<{
+      finish_reason?: string | null;
+      message?: { content?: string | null; refusal?: string | null };
+    }>;
   };
   try {
     response = (await callWithRetry(
@@ -148,7 +151,34 @@ export async function openaiVision(
     );
   }
 
-  const content = response.choices?.[0]?.message?.content;
+  // The provider's own account of a result that is not what was asked for, read BEFORE the
+  // content (ai-model-routing-conventions: *never invent a cause the provider gave you*). A
+  // refusal arrives as a `refusal` string with null content, so reading `content` alone reports
+  // a parse failure and hides the stated reason — the caller then cannot tell "the model
+  // declined" from "the model answered in a shape we could not read", and only the first is
+  // something the user can act on. `length` is the quiet one: the content is present and reads
+  // like a complete verdict.
+  const choice = response.choices?.[0];
+  if (choice?.message?.refusal) {
+    throw new ProviderError(
+      "openai",
+      `The model declined to verify this image: ${choice.message.refusal}`,
+    );
+  }
+  if (choice?.finish_reason === "content_filter") {
+    throw new ProviderError(
+      "openai",
+      "OpenAI's content filter rejected this image verification. The input was rejected, not lost.",
+    );
+  }
+  if (choice?.finish_reason === "length") {
+    throw new ProviderError(
+      "openai",
+      "The model stopped at its output limit, so this verdict is truncated rather than complete.",
+    );
+  }
+
+  const content = choice?.message?.content;
   const verdict = parseVerdict(content);
   return { raw: response, verdict };
 }
