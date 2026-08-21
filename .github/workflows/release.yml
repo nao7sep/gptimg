@@ -37,6 +37,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+      - name: Verify tag matches package version
+        if: github.ref_type == 'tag'
+        run: npm run check:release-tag -- "${{ github.ref_name }}"
+
       # Pack the exact distributable a consumer receives (into the working dir).
       - name: Pack the distributable
         run: npm pack

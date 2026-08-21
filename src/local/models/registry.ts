@@ -6,9 +6,10 @@
  *               and new can coexist for rollback.
  *   url       — single source of truth, fetched on first use. Prefer
  *               commit-pinned HuggingFace URLs (`/resolve/<commit-sha>/...`)
- *               over `/resolve/main/...`. The commit pin is how we get
- *               reproducible downloads without maintaining a SHA-256 by hand.
+ *               over `/resolve/main/...`.
  *   inputSize — square spatial dimension the model expects.
+ *   byteSize  — exact artifact length, enforced before and during acquisition.
+ *   sha256    — independently pinned digest verified before publication.
  */
 
 /**
@@ -36,6 +37,8 @@ export interface ModelEntry {
   name: string;
   url: string;
   inputSize: number;
+  /** Exact artifact bytes. Shipped pinned assets always set this. */
+  byteSize?: number;
   /**
    * Pinned content hash, verified after download. Optional so ad-hoc entries
    * (e.g. tests) can omit it; every shipped model sets it.
@@ -65,6 +68,7 @@ export const BIREFNET: ModelEntry = {
   name: "birefnet-general-fp16-v1.onnx",
   url: "https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/534d3c82d3bb8b2f0867db6dfbc3a525b8e42f67/onnx/model_fp16.onnx",
   inputSize: 1024,
+  byteSize: 489_666_272,
   sha256: "3654c741eb80bd926ada8fed1713b506ccf8d30eb1f6487e87eb9f234f33df09",
 };
 
@@ -91,6 +95,7 @@ export const SWIN2SR_X4: ModelEntry = {
   name: "swin2sr-realworld-x4-bsrgan-psnr-v1.onnx",
   url: "https://huggingface.co/onnx-community/swin2SR-realworld-sr-x4-64-bsrgan-psnr-ONNX/resolve/9b3baf051f6708d0b697580489e4415b64c7378e/onnx/model.onnx",
   inputSize: 0,
+  byteSize: 53_827_735,
   sha256: "987d88b356554161cbb8f67b7a8f4162cad6dc147839c344e3d5142140f25d6f",
 };
 

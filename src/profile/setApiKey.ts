@@ -36,18 +36,24 @@ async function writeProfile(filePath: string, profile: Profile): Promise<void> {
 }
 
 /**
- * Write `apiKey` to the profile, storing it trimmed and in obfuscated form
+ * Write `apiKey` to the profile, storing it exactly and in obfuscated form
  * (`"obf:" + base64` of the reversed UTF-8 bytes). Preserves every other field. Atomic.
  * If the profile file does not exist, a minimal `{ provider: "openai" }`
  * profile is created.
  *
- * The key must be non-empty (ignoring surrounding whitespace); storing an empty
- * key would only surface later as a confusing provider failure. This is the
- * SDK's contract — enforced here so every caller behaves the same.
+ * The key must contain a non-whitespace character and must not have surrounding
+ * whitespace. Empty or padded values would otherwise surface later as confusing
+ * provider failures. This is the SDK's contract, enforced here for every caller.
  */
 export async function setApiKey(filePath: string, rawKey: string): Promise<void> {
   if (rawKey.trim().length === 0) {
     throw new ProfileError("apiKey.missing", "API key must not be empty.");
+  }
+  if (rawKey !== rawKey.trim()) {
+    throw new ProfileError(
+      "apiKey.invalidWhitespace",
+      "API key must not contain surrounding whitespace.",
+    );
   }
   let profile: Profile;
   try {
@@ -61,7 +67,7 @@ export async function setApiKey(filePath: string, rawKey: string): Promise<void>
       throw err;
     }
   }
-  profile.apiKey = obfuscate(rawKey.trim());
+  profile.apiKey = obfuscate(rawKey);
   await writeProfile(filePath, profile);
 }
 

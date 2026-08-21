@@ -6,8 +6,8 @@ import { deobfuscate } from "./obfuscate.js";
  * Resolve the API key from the profile.
  *
  * Order:
- *   1. `apiKeyEnv` field names an env var that is set and non-blank (trimmed) → env value.
- *   2. `apiKey` field present and non-blank after decode and trim → that key.
+ *   1. `apiKeyEnv` field names an env var that is set and non-blank → env value.
+ *   2. `apiKey` field present and non-blank after decode → that key.
  *   3. Throw `ProfileError("apiKey.missing")`.
  *
  * Env wins because the env variable requires deliberate per-session action;
@@ -18,8 +18,14 @@ export function resolveProfile(profile: Profile): ResolvedProfile {
   const { apiKey: storedKey, apiKeyEnv, ...rest } = profile;
 
   if (typeof apiKeyEnv === "string" && apiKeyEnv.length > 0) {
-    const envValue = process.env[apiKeyEnv]?.trim();
-    if (envValue) {
+    const envValue = process.env[apiKeyEnv];
+    if (envValue && envValue.trim().length > 0) {
+      if (envValue !== envValue.trim()) {
+        throw new ProfileError(
+          "apiKey.invalidWhitespace",
+          `API key from environment variable ${apiKeyEnv} contains surrounding whitespace.`,
+        );
+      }
       return {
         redacted: rest as Omit<Profile, "apiKey" | "apiKeyEnv">,
         apiKey: envValue,
@@ -29,8 +35,14 @@ export function resolveProfile(profile: Profile): ResolvedProfile {
   }
 
   if (typeof storedKey === "string" && storedKey.length > 0) {
-    const apiKey = deobfuscate(storedKey).trim();
-    if (apiKey) {
+    const apiKey = deobfuscate(storedKey);
+    if (apiKey.trim().length > 0) {
+      if (apiKey !== apiKey.trim()) {
+        throw new ProfileError(
+          "apiKey.invalidWhitespace",
+          "Stored API key contains surrounding whitespace.",
+        );
+      }
       return {
         redacted: rest as Omit<Profile, "apiKey" | "apiKeyEnv">,
         apiKey,

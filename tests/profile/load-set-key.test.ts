@@ -166,10 +166,11 @@ describe("setApiKey / clearApiKey", () => {
     expect(deobfuscate(profile.apiKey as string)).toBe("sk-local-created");
   });
 
-  it("trims surrounding whitespace before storing the key", async () => {
-    await setApiKey(file, "  sk-padded  ");
-    const profile = await loadProfile(file);
-    expect(deobfuscate(profile.apiKey as string)).toBe("sk-padded");
+  it("rejects surrounding whitespace instead of changing the key", async () => {
+    await expect(setApiKey(file, "  sk-padded  ")).rejects.toMatchObject({
+      code: "apiKey.invalidWhitespace",
+    });
+    await expect(loadProfile(file)).rejects.toMatchObject({ code: "profile.notFound" });
   });
 
   it("preserves unrelated fields and stores only an obfuscated key", async () => {

@@ -79,15 +79,19 @@ describe("resolveProfile", () => {
     }
   });
 
-  it("trims surrounding whitespace from the env value", () => {
+  it("rejects surrounding whitespace in the env value", () => {
     vi.stubEnv("GPTIMG_TEST_KEY", "  from-env  ");
     const p: Profile = { provider: "openai", apiKeyEnv: "GPTIMG_TEST_KEY" };
-    expect(resolveProfile(p).apiKey).toBe("from-env");
+    expect(() => resolveProfile(p)).toThrowError(
+      expect.objectContaining({ code: "apiKey.invalidWhitespace" }),
+    );
   });
 
-  it("trims surrounding whitespace from a stored key", () => {
+  it("rejects surrounding whitespace in a stored key", () => {
     const p: Profile = { provider: "openai", apiKey: obfuscate("  sk-pad  ") };
-    expect(resolveProfile(p).apiKey).toBe("sk-pad");
+    expect(() => resolveProfile(p)).toThrowError(
+      expect.objectContaining({ code: "apiKey.invalidWhitespace" }),
+    );
   });
 
   it("treats a whitespace-only env value as unset and falls through to apiKey", () => {

@@ -1,5 +1,5 @@
 export interface NetworkBudget {
-  /** Per-attempt timeout in ms. `0` disables the timeout (use with caution). */
+  /** Positive per-attempt timeout in ms. */
   timeout: number;
   /** Maximum number of retries after the initial attempt. `0` disables retries. */
   maxRetries: number;
@@ -31,9 +31,9 @@ export const NETWORK_DEFAULTS: Record<NetworkBudgetName, NetworkBudget> = {
   imageGenerate: { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageVision:   { timeout: 120_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageDownload: { timeout:  30_000, maxRetries: 2, retryIntervals: [  500, 1_500] },
-  // Large one-shot file (the BiRefNet weights are ~490 MB). `timeout` is the
-  // per-attempt ceiling for the whole streamed download, generous enough for a
-  // slow link but finite so a stalled connection retries instead of hanging.
+  // Large one-shot file (the BiRefNet weights are ~490 MB). For model downloads,
+  // `timeout` bounds an idle network edge; the acquisition layer adds a separate
+  // size-scaled deadline around the complete transaction.
   modelDownload: { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
 };
 

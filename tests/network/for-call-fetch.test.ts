@@ -253,7 +253,7 @@ describe("fetchWithBudget", () => {
 
     await expect(
       fetchWithBudget(baseURL, {
-        timeout: 100,
+        timeout: 1000,
         maxRetries: 1,
         retryIntervals: [],
       }),

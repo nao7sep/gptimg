@@ -10,7 +10,7 @@ function pickBudget(input: unknown): Partial<NetworkBudget> {
   if (!input || typeof input !== "object") return {};
   const p = input as Record<string, unknown>;
   const out: Partial<NetworkBudget> = {};
-  if (typeof p.timeout === "number" && Number.isFinite(p.timeout) && p.timeout >= 0) {
+  if (typeof p.timeout === "number" && Number.isFinite(p.timeout) && p.timeout > 0) {
     out.timeout = p.timeout;
   }
   if (

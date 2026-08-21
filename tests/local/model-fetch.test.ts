@@ -7,7 +7,12 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultModelsDir } from "../../src/internal/paths.js";
-import { ensureModel, fileSha256, stagingPathFor } from "../../src/local/models/fetch.js";
+import {
+  ensureModel,
+  fileSha256,
+  modelWholeTimeoutMs,
+  stagingPathFor,
+} from "../../src/local/models/fetch.js";
 import type { ModelEntry } from "../../src/local/models/registry.js";
 import type { Logger } from "../../src/log/index.js";
 
@@ -49,7 +54,8 @@ describe("defaultModelsDir", () => {
     const prev = process.env.GPTIMG_MODELS_DIR;
     delete process.env.GPTIMG_MODELS_DIR;
     try {
-      expect(defaultModelsDir("/some/dir")).toBe("/some/dir/models");
+      const profileDir = path.resolve("some", "dir");
+      expect(defaultModelsDir(profileDir)).toBe(path.join(profileDir, "models"));
     } finally {
       if (prev !== undefined) process.env.GPTIMG_MODELS_DIR = prev;
     }
@@ -74,6 +80,17 @@ describe("stagingPathFor", () => {
     expect(path.basename(p)).toMatch(
       new RegExp(`^birefnet-general-fp16-v1-${process.pid}-[A-Za-z0-9_-]{21}\\.tmp$`),
     );
+  });
+});
+
+describe("modelWholeTimeoutMs", () => {
+  it("is finite and scales with artifact size and possible attempts", () => {
+    const small = modelWholeTimeoutMs(1024, 0);
+    const large = modelWholeTimeoutMs(489_666_272, 0);
+    const retried = modelWholeTimeoutMs(489_666_272, 2);
+    expect(Number.isSafeInteger(small)).toBe(true);
+    expect(large).toBeGreaterThan(small);
+    expect(retried).toBeGreaterThan(large);
   });
 });
 
@@ -195,7 +212,7 @@ describe("ensureModel", () => {
     };
 
     await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
-      code: "model.downloadFailed",
+      code: "model.insecureUrl",
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledWith(
@@ -241,6 +258,7 @@ describe("ensureModel", () => {
         name: "cached.bin",
         url: baseURL,
         inputSize: 0,
+        byteSize: 4,
       };
       await writeFile(path.join(tmp, entry.name), Buffer.from([5, 5, 5, 5]));
       const finalPath = await ensureModel(entry, tmp);
@@ -303,12 +321,118 @@ describe("ensureModel", () => {
       res.end(body);
     });
     try {
-      const entry: ModelEntry = { name: "verify-ok.bin", url: baseURL, inputSize: 0, sha256: sha };
+      const entry: ModelEntry = {
+        name: "verify-ok.bin",
+        url: baseURL,
+        inputSize: 0,
+        byteSize: body.length,
+        sha256: sha,
+      };
       const finalPath = await ensureModel(entry, tmp);
       expect(existsSync(finalPath)).toBe(true);
     } finally {
       await closeServer(server);
     }
+  });
+
+  it("rejects a wrong advertised exact size before writing", async () => {
+    const body = Buffer.from("small");
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200, { "content-length": String(body.length) });
+      res.end(body);
+    });
+    try {
+      const entry: ModelEntry = {
+        name: "wrong-advertised-size.bin",
+        url: baseURL,
+        inputSize: 0,
+        byteSize: body.length + 1,
+      };
+      await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
+        code: "model.sizeMismatch",
+      });
+      expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("stops before writing the chunk that crosses the exact-size ceiling", async () => {
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200, { "transfer-encoding": "chunked" });
+      res.end(Buffer.from("12345"));
+    });
+    try {
+      const entry: ModelEntry = {
+        name: "stream-too-large.bin",
+        url: baseURL,
+        inputSize: 0,
+        byteSize: 4,
+      };
+      await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
+        code: "model.sizeExceeded",
+      });
+      expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("rejects a short chunked response against the exact expected size", async () => {
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200, { "transfer-encoding": "chunked" });
+      res.end(Buffer.from("123"));
+    });
+    try {
+      const entry: ModelEntry = {
+        name: "stream-too-short.bin",
+        url: baseURL,
+        inputSize: 0,
+        byteSize: 4,
+      };
+      await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
+        code: "model.sizeMismatch",
+      });
+      expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("replaces an existing cache entry whose exact size is wrong", async () => {
+    const body = Buffer.from("good");
+    const sha = createHash("sha256").update(body).digest("hex");
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200, { "content-length": String(body.length) });
+      res.end(body);
+    });
+    const entry: ModelEntry = {
+      name: "wrong-cache-size.bin",
+      url: baseURL,
+      inputSize: 0,
+      byteSize: body.length,
+      sha256: sha,
+    };
+    await writeFile(path.join(tmp, entry.name), Buffer.from("bad"));
+    try {
+      const finalPath = await ensureModel(entry, tmp);
+      expect(await readFile(finalPath)).toEqual(body);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("rejects a disabled model timeout", async () => {
+    const entry: ModelEntry = {
+      name: "no-timeout.bin",
+      url: "https://example.com/model.bin",
+      inputSize: 0,
+    };
+    await expect(
+      ensureModel(entry, tmp, {
+        budget: { timeout: 0, maxRetries: 0, retryIntervals: [] },
+      }),
+    ).rejects.toMatchObject({ code: "model.invalidBudget" });
   });
 
   it("honors cancellation after download and removes the staged file", async () => {

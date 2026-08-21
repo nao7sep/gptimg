@@ -3,14 +3,15 @@
  *
  * Contract:
  *   - ensureModel(entry, cacheDir) returns the absolute path to the cached
- *     model file. If the file is already present, it is returned with no
- *     network call.
+ *     model file. If a pinned artifact is already present at its exact known
+ *     size, it is returned with no network call.
  *   - The model URL must be https; a non-https remote URL is refused before any
  *     byte is fetched (http is allowed only for a loopback test server).
  *   - Otherwise the file is downloaded under the `modelDownload` network
- *     budget (per-attempt timeout + bounded retries) into a deletable `temp/`
+ *     budget (per-edge idle timeout + bounded retries, inside one size-scaled
+ *     operation deadline) into a deletable `temp/`
  *     dir under the cache root (a per-download-unique name), then published to
- *     the final name via POSIX `link()`, which is atomic and fails with EEXIST
+ *     the final name via `link()`, which is atomic and fails with EEXIST
  *     if another concurrent caller published first. Concurrent callers waste
  *     bandwidth (each downloads its own staged copy) but never corrupt the
  *     cache: only the winning `link()` becomes the final file, all losers unlink
@@ -28,8 +29,8 @@
  * the public model API to verify them again.
  */
 
-import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { link, mkdir, rename, unlink } from "node:fs/promises";
+import { createReadStream, createWriteStream, statSync } from "node:fs";
+import { link, mkdir, open, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
@@ -76,15 +77,86 @@ export async function fileSha256(
   }
 }
 
+function timeoutError(message: string): Error {
+  const error = new Error(message);
+  error.name = "TimeoutError";
+  return error;
+}
+
+function errorFromSignal(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : toAbortError(signal.reason);
+}
+
+/** A resettable bound for DNS/connect/TLS/redirect/body-idle waits. */
+function idleSignal(parent: AbortSignal | undefined, timeoutMs: number): {
+  signal: AbortSignal;
+  reset: () => void;
+  dispose: () => void;
+} {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const onParentAbort = (): void => controller.abort(parent?.reason);
+  const reset = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(
+      () => controller.abort(timeoutError(`Model network edge timed out after ${timeoutMs}ms.`)),
+      timeoutMs,
+    );
+    timer.unref?.();
+  };
+  const dispose = (): void => {
+    if (timer) clearTimeout(timer);
+    parent?.removeEventListener("abort", onParentAbort);
+  };
+
+  if (parent?.aborted) controller.abort(parent.reason);
+  else parent?.addEventListener("abort", onParentAbort, { once: true });
+  reset();
+  return { signal: controller.signal, reset, dispose };
+}
+
+function advertisedLength(headers: Headers): number | undefined {
+  const raw = headers.get("content-length");
+  if (raw === null) return undefined;
+  if (!/^\d+$/.test(raw)) {
+    throw new LocalOpError("model.invalidSize", `Invalid model Content-Length: ${raw}.`);
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new LocalOpError("model.invalidSize", `Model Content-Length is not a safe integer: ${raw}.`);
+  }
+  return value;
+}
+
+async function syncFile(filePath: string, signal: AbortSignal | undefined): Promise<void> {
+  throwIfAborted(signal);
+  const handle = await open(filePath, "r+");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  throwIfAborted(signal);
+}
+
+async function syncDirectory(dirPath: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const handle = await open(dirPath, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 10;
 
 /**
- * One download attempt. Streams `url` to `destPath`, bounded by `timeoutMs`
- * (the whole attempt, via a combined abort signal). Throws a status- or
- * code-bearing error so the retry layer can classify retryability; a fired
- * timeout surfaces as a TimeoutError (retryable). A parent-signal abort is
- * surfaced as AbortError so it is never mistaken for a retryable failure.
+ * One download attempt. Streams `url` to `destPath`; `timeoutMs` bounds each
+ * DNS/connect/TLS/redirect/body-idle edge and the parent signal bounds the full
+ * acquisition. Throws a status- or code-bearing error so the retry layer can
+ * classify retryability.
  */
 async function downloadAttempt(
   url: string,
@@ -93,86 +165,161 @@ async function downloadAttempt(
   parentSignal: AbortSignal | undefined,
   logger: Logger | undefined,
   name: string,
+  expectedBytes: number | undefined,
+  maxBytes: number,
 ): Promise<void> {
-  const signal = combineSignals(parentSignal, timeoutMs);
-
-  const initial = new URL(url);
-  const allowLoopbackHttp = initial.protocol === "http:";
-  let currentUrl = url;
-  let response: Response | undefined;
-  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
-    try {
-      response = await fetch(currentUrl, { signal, redirect: "manual" });
-    } catch (err) {
-      if (parentSignal?.aborted) throw toAbortError(parentSignal.reason);
-      throw err;
-    }
-    if (!REDIRECT_STATUSES.has(response.status)) break;
-    if (redirects === MAX_REDIRECTS) {
-      throw new LocalOpError("model.redirectFailed", `Too many redirects downloading ${url}.`);
-    }
-    const location = response.headers.get("location");
-    if (!location) {
-      throw new LocalOpError(
-        "model.redirectFailed",
-        `Redirect downloading ${currentUrl} did not include a Location header.`,
-      );
-    }
-    await response.body?.cancel();
-    currentUrl = new URL(location, currentUrl).toString();
-    assertSafeUrl(currentUrl, allowLoopbackHttp);
-  }
-  if (!response) throw new LocalOpError("model.downloadFailed", `No response downloading ${url}.`);
-  if (!response.ok || !response.body) {
-    throw new HttpStatusError(response.status, response.headers, "");
-  }
-
-  const total = Number(response.headers.get("content-length") ?? 0);
-  let received = 0;
-  let lastReported = 0;
-  const stream = createWriteStream(destPath);
-
-  await logger?.info("download", `downloading ${name}`, { name });
+  const idle = idleSignal(parentSignal, timeoutMs);
+  const signal = idle.signal;
 
   try {
+    const initial = new URL(url);
+    const allowLoopbackHttp = initial.protocol === "http:";
+    let currentUrl = url;
+    let response: Response | undefined;
+    for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+      idle.reset();
+      try {
+        response = await fetch(currentUrl, { signal, redirect: "manual" });
+      } catch (err) {
+        if (parentSignal?.aborted) throw errorFromSignal(parentSignal);
+        throw err;
+      }
+      if (!REDIRECT_STATUSES.has(response.status)) break;
+      if (redirects === MAX_REDIRECTS) {
+        throw new LocalOpError("model.redirectFailed", `Too many redirects downloading ${url}.`);
+      }
+      const location = response.headers.get("location");
+      if (!location) {
+        throw new LocalOpError(
+          "model.redirectFailed",
+          `Redirect downloading ${currentUrl} did not include a Location header.`,
+        );
+      }
+      await response.body?.cancel();
+      currentUrl = new URL(location, currentUrl).toString();
+      assertSafeUrl(currentUrl, allowLoopbackHttp);
+    }
+    if (!response) throw new LocalOpError("model.downloadFailed", `No response downloading ${url}.`);
+    if (!response.ok || !response.body) {
+      throw new HttpStatusError(response.status, response.headers, "");
+    }
+
+    const total = advertisedLength(response.headers);
+    if (total !== undefined && total > maxBytes) {
+      await response.body.cancel();
+      throw new LocalOpError(
+        "model.sizeExceeded",
+        `Refusing ${name}: advertised ${total} bytes exceeds the ${maxBytes}-byte limit.`,
+      );
+    }
+    if (expectedBytes !== undefined && total !== undefined && total !== expectedBytes) {
+      await response.body.cancel();
+      throw new LocalOpError(
+        "model.sizeMismatch",
+        `Refusing ${name}: advertised ${total} bytes, expected exactly ${expectedBytes}.`,
+      );
+    }
+    let received = 0;
+    let lastReported = 0;
+    const stream = createWriteStream(destPath);
+    const abortWrite = (): void => {
+      stream.destroy(errorFromSignal(signal));
+    };
+    signal.addEventListener("abort", abortWrite, { once: true });
+
+    await logger?.info("download", `downloading ${name}`, { name });
+
     const reader = response.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.length;
-      await new Promise<void>((resolve, reject) => {
-        stream.write(value, (err) => (err ? reject(err) : resolve()));
-      });
-      if (total > 0) {
-        const percent = Math.floor((received / total) * 100);
-        if (percent >= lastReported + 10) {
-          lastReported = percent;
-          // Progress ticks scale with download size — `debug`, so they are
-          // forwarded to the live progress stream but never persisted to an
-          // end-user's log file. The start/end lines below stay `info`.
-          await logger?.debug("download", `${name} ${percent}% (${received}/${total} bytes)`, {
-            name,
-            percent,
-            received,
-            total,
-          });
+    try {
+      for (;;) {
+        idle.reset();
+        const { done, value } = await reader.read();
+        if (done) break;
+        const nextReceived = received + value.length;
+        if (nextReceived > maxBytes) {
+          throw new LocalOpError(
+            "model.sizeExceeded",
+            `Refusing ${name}: streamed bytes exceed the ${maxBytes}-byte limit.`,
+          );
+        }
+        received = nextReceived;
+        await new Promise<void>((resolve, reject) => {
+          stream.write(value, (err) => (err ? reject(err) : resolve()));
+        });
+        if (total !== undefined && total > 0) {
+          const percent = Math.floor((received / total) * 100);
+          if (percent >= lastReported + 10) {
+            lastReported = percent;
+            await logger?.debug("download", `${name} ${percent}% (${received}/${total} bytes)`, {
+              name,
+              percent,
+              received,
+              total,
+            });
+          }
         }
       }
+    } catch (err) {
+      await reader.cancel().catch(() => undefined);
+      await finishWrite(stream).catch(() => undefined);
+      signal.removeEventListener("abort", abortWrite);
+      if (parentSignal?.aborted) throw errorFromSignal(parentSignal);
+      throw err;
     }
-  } catch (err) {
-    await finishWrite(stream).catch(() => undefined);
-    if (parentSignal?.aborted) throw toAbortError(parentSignal.reason);
-    throw err;
-  }
 
-  await finishWrite(stream);
-  await logger?.info("download", `downloaded ${name} (${received} bytes)`, {
-    name,
-    bytes: received,
-  });
+    try {
+      await finishWrite(stream);
+    } finally {
+      signal.removeEventListener("abort", abortWrite);
+    }
+    if (expectedBytes !== undefined && received !== expectedBytes) {
+      throw new LocalOpError(
+        "model.sizeMismatch",
+        `Refusing ${name}: downloaded ${received} bytes, expected exactly ${expectedBytes}.`,
+      );
+    }
+    await logger?.info("download", `downloaded ${name} (${received} bytes)`, {
+      name,
+      bytes: received,
+    });
+  } finally {
+    idle.dispose();
+  }
 }
 
 const TEMP_DIR = "temp";
+const MAX_MODEL_BYTES = 1024 * 1024 * 1024;
+const MIN_TRANSFER_BYTES_PER_SECOND = 32 * 1024;
+const MODEL_OPERATION_OVERHEAD_MS = 15 * 60_000;
+const MAX_TIMER_MS = 2_147_000_000;
+
+export function modelWholeTimeoutMs(byteLimit: number, maxRetries: number): number {
+  const attempts = Math.max(1, maxRetries + 1);
+  return Math.min(
+    MAX_TIMER_MS,
+    MODEL_OPERATION_OVERHEAD_MS +
+      Math.ceil((byteLimit * attempts * 1000) / MIN_TRANSFER_BYTES_PER_SECOND),
+  );
+}
+
+export function inspectCachedModel(
+  filePath: string,
+  expectedBytes: number | undefined,
+): { present: boolean; usable: boolean; sizeBytes?: number } {
+  try {
+    const stat = statSync(filePath);
+    return {
+      present: true,
+      usable: stat.isFile() && (expectedBytes === undefined || stat.size === expectedBytes),
+      sizeBytes: stat.size,
+    };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { present: false, usable: false };
+    }
+    throw err;
+  }
+}
 
 // https-only: a non-https model URL is refused before any byte is fetched, per
 // the managed-runtime-dependencies convention. http is permitted only for a
@@ -226,25 +373,50 @@ export async function ensureModel(
   const { signal, logger } = opts;
   const force = opts.force ?? false;
   const budget = opts.budget ?? NETWORK_DEFAULTS.modelDownload;
-  throwIfAborted(signal);
+  if (!Number.isSafeInteger(entry.byteSize) && entry.byteSize !== undefined) {
+    throw new LocalOpError("model.invalidSize", `Invalid expected byte size for ${entry.name}.`);
+  }
+  if (entry.byteSize !== undefined && entry.byteSize <= 0) {
+    throw new LocalOpError("model.invalidSize", `Invalid expected byte size for ${entry.name}.`);
+  }
+  if (!Number.isSafeInteger(budget.timeout) || budget.timeout <= 0 || budget.timeout > MAX_TIMER_MS) {
+    throw new LocalOpError("model.invalidBudget", "Model network timeout must be positive.");
+  }
+  if (!Number.isSafeInteger(budget.maxRetries) || budget.maxRetries < 0) {
+    throw new LocalOpError("model.invalidBudget", "Model maxRetries must be a non-negative integer.");
+  }
+  const byteLimit = entry.byteSize ?? MAX_MODEL_BYTES;
+  const operationSignal = combineSignals(signal, modelWholeTimeoutMs(byteLimit, budget.maxRetries));
+  throwIfAborted(operationSignal);
   assertSafeUrl(entry.url);
 
   await mkdir(cacheDir, { recursive: true });
   const finalPath = path.join(cacheDir, entry.name);
 
-  if (!force && existsSync(finalPath)) {
+  const initialCache = inspectCachedModel(finalPath, entry.byteSize);
+  if (!force && initialCache.usable) {
     return finalPath;
   }
+  const replaceExisting = initialCache.present;
 
   await mkdir(path.join(cacheDir, TEMP_DIR), { recursive: true });
   let partialPath: string;
   try {
     partialPath = await callWithRetry(
-      { budgetName: "modelDownload", budget, signal, logger },
+      { budgetName: "modelDownload", budget, signal: operationSignal, logger },
       async () => {
         const p = stagingPathFor(cacheDir, entry.name);
         try {
-          await downloadAttempt(entry.url, p, budget.timeout, signal, logger, entry.name);
+          await downloadAttempt(
+            entry.url,
+            p,
+            budget.timeout,
+            operationSignal,
+            logger,
+            entry.name,
+            entry.byteSize,
+            byteLimit,
+          );
         } catch (err) {
           await unlink(p).catch(() => undefined);
           throw err;
@@ -253,7 +425,12 @@ export async function ensureModel(
       },
     );
   } catch (err) {
+    if (signal?.aborted) throw toAbortError(signal.reason);
+    if (operationSignal.aborted) {
+      throw new LocalOpError("model.timeout", `Timed out acquiring ${entry.name}.`, { cause: err });
+    }
     if (isAbortError(err)) throw err;
+    if (err instanceof LocalOpError) throw err;
     throw new LocalOpError(
       "model.downloadFailed",
       `Failed to download ${entry.url}: ${(err as Error).message}`,
@@ -266,7 +443,7 @@ export async function ensureModel(
     // changed or the download is corrupt — fail loudly rather than cache bad
     // bytes. Non-retryable: a fully-downloaded-but-wrong file won't fix itself.
     if (entry.sha256) {
-      const got = await fileSha256(partialPath, signal);
+      const got = await fileSha256(partialPath, operationSignal);
       if (got !== entry.sha256) {
         throw new LocalOpError(
           "model.checksumMismatch",
@@ -276,8 +453,9 @@ export async function ensureModel(
       }
     }
 
-    throwIfAborted(signal);
-    if (force) {
+    await syncFile(partialPath, operationSignal);
+    throwIfAborted(operationSignal);
+    if (force || replaceExisting) {
       // Deliberate reinstall: atomically replace whatever is there.
       try {
         await rename(partialPath, finalPath);
@@ -288,6 +466,8 @@ export async function ensureModel(
           { cause: err },
         );
       }
+      await syncDirectory(cacheDir);
+      throwIfAborted(operationSignal);
       return finalPath;
     }
 
@@ -298,7 +478,10 @@ export async function ensureModel(
       await link(partialPath, finalPath);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST") {
+      if (code === "EEXIST" && !inspectCachedModel(finalPath, entry.byteSize).usable) {
+        throwIfAborted(operationSignal);
+        await rename(partialPath, finalPath);
+      } else if (code !== "EEXIST") {
         throw new LocalOpError(
           "model.downloadFailed",
           `Failed to publish model at ${finalPath}: ${(err as Error).message}`,
@@ -307,9 +490,20 @@ export async function ensureModel(
       }
       // Another concurrent caller won the publish race — drop our copy.
     }
+    await syncDirectory(cacheDir);
+    throwIfAborted(operationSignal);
   } catch (err) {
     await unlink(partialPath).catch(() => undefined);
-    throw err;
+    if (signal?.aborted) throw toAbortError(signal.reason);
+    if (operationSignal.aborted) {
+      throw new LocalOpError("model.timeout", `Timed out acquiring ${entry.name}.`, { cause: err });
+    }
+    if (err instanceof LocalOpError) throw err;
+    throw new LocalOpError(
+      "model.downloadFailed",
+      `Failed to prepare ${entry.name} for publication: ${(err as Error).message}`,
+      { cause: err },
+    );
   }
   await unlink(partialPath).catch(() => undefined);
 

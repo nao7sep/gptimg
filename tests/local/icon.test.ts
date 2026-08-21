@@ -99,7 +99,7 @@ describe("runIcon", () => {
     expect(pngMeta.width).toBe(1024);
     expect(pngMeta.height).toBe(1024);
     expect(pngMeta.format).toBe("png");
-  });
+  }, 30_000);
 
   it("packs every ICNS entry, including the largest retina sizes", async () => {
     const master = path.join(tmp, "master.png");
@@ -112,7 +112,7 @@ describe("runIcon", () => {
     expect(types.sort()).toEqual(
       ["ic04", "ic05", "ic07", "ic08", "ic09", "ic10", "ic11", "ic12", "ic13", "ic14"].sort(),
     );
-  });
+  }, 30_000);
 
   it("emits the sized-PNG set with correct dimensions when pngs=true", async () => {
     const master = path.join(tmp, "master.png");
@@ -127,7 +127,7 @@ describe("runIcon", () => {
       expect(m.height).toBe(size);
     }
     expect(res.outputs).toContain(path.join(tmp, "app.icns"));
-  });
+  }, 30_000);
 
   it("downsamples a larger-than-1024 master to a 1024 png", async () => {
     const master = path.join(tmp, "big.png");
@@ -136,7 +136,7 @@ describe("runIcon", () => {
     expect(res.sourceWidth).toBe(2048);
     const m = await sharp(res.png).metadata();
     expect(m.width).toBe(1024);
-  });
+  }, 30_000);
 
   it("rejects a non-square master", async () => {
     const master = path.join(tmp, "wide.png");

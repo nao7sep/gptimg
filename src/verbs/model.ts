@@ -1,9 +1,8 @@
-import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { toAbortError } from "../errors.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { defaultModelsDir } from "../internal/paths.js";
-import { ensureModel, fileSha256 } from "../local/models/fetch.js";
+import { ensureModel, fileSha256, inspectCachedModel } from "../local/models/fetch.js";
 import { MODELS, type ModelKey } from "../local/models/registry.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadRecipeForCall } from "../recipe/load.js";
@@ -72,13 +71,13 @@ export function listModelsImpl(ctx: ModelContext): ModelListResult {
   const models = (Object.keys(MODELS) as ModelKey[]).map((key) => {
     const entry = MODELS[key];
     const filePath = path.join(cacheDir, entry.name);
-    const cached = existsSync(filePath);
+    const cache = inspectCachedModel(filePath, entry.byteSize);
     return {
       key,
       name: entry.name,
       path: filePath,
-      cached,
-      sizeBytes: cached ? statSync(filePath).size : undefined,
+      cached: cache.usable,
+      sizeBytes: cache.sizeBytes,
     };
   });
   return { models };
@@ -102,9 +101,10 @@ export async function verifyModelsImpl(
     if (opts.signal?.aborted) throw toAbortError(opts.signal.reason);
     const entry = MODELS[key];
     const filePath = path.join(cacheDir, entry.name);
+    const cache = inspectCachedModel(filePath, entry.byteSize);
     let integrity: ModelIntegrity;
     let actualSha256: string | undefined;
-    if (!existsSync(filePath)) {
+    if (!cache.present) {
       integrity = "missing";
     } else if (!entry.sha256) {
       integrity = "unverifiable";

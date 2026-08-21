@@ -8,7 +8,7 @@ describe("stagingPathFor", () => {
   it("names the staged file <stem>-<random>.tmp, in the target's own directory", () => {
     const target = path.join("/some/dir", "profile.json");
     const p = stagingPathFor(target);
-    expect(path.dirname(p)).toBe("/some/dir");
+    expect(path.dirname(p)).toBe(path.dirname(target));
     expect(path.basename(p)).toMatch(/^profile-[A-Za-z0-9_-]{21}\.tmp$/);
   });
 
@@ -48,7 +48,7 @@ describe("writeFileAtomic", () => {
     expect(await readFile(target)).toEqual(data);
   });
 
-  it("honors the mode option", async () => {
+  it.skipIf(process.platform === "win32")("honors the POSIX mode option", async () => {
     const target = path.join(tmp, "secret.json");
     await writeFileAtomic(target, "{}", { encoding: "utf-8", mode: 0o600 });
     const info = await stat(target);

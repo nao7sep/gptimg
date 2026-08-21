@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const NetworkBudgetSchema = z
   .object({
-    timeout: z.number().int().nonnegative().optional(),
+    timeout: z.number().int().positive().optional(),
     maxRetries: z.number().int().min(0).optional(),
     retryIntervals: z.array(z.number().nonnegative()).optional(),
   })

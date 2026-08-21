@@ -205,7 +205,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     expect(icns.readUInt32BE(4)).toBe(icns.length);
     const pngMeta = await sharp(res.png).metadata();
     expect(pngMeta.width).toBe(1024);
-  });
+  }, 30_000);
 
   it("mask (chroma): removes the green field and writes the named mask", async () => {
     const W = 48, H = 48;

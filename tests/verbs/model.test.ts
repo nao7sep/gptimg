@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, truncate, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -31,7 +31,9 @@ describe("installModelImpl logging", () => {
   async function seedCachedModel(profileDir: string): Promise<void> {
     const modelsDir = defaultModelsDir(profileDir);
     await mkdir(modelsDir, { recursive: true });
-    await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
+    const modelPath = path.join(modelsDir, MODELS[key].name);
+    await writeFile(modelPath, Buffer.alloc(0));
+    await truncate(modelPath, MODELS[key].byteSize);
   }
 
   it("routes the log to an explicit path and leaves the default log dir untouched", async () => {
@@ -96,7 +98,9 @@ describe("model verb result shapes", () => {
     const modelsDir = defaultModelsDir(profileDir);
     await mkdir(modelsDir, { recursive: true });
     for (const key of keys) {
-      await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
+      const modelPath = path.join(modelsDir, MODELS[key].name);
+      await writeFile(modelPath, Buffer.alloc(0));
+      await truncate(modelPath, MODELS[key].byteSize);
     }
 
     const sdk = new GptImg({ profileDir, logDir: path.join(tmp, "logs") });
@@ -112,7 +116,10 @@ describe("model verb result shapes", () => {
     const modelsDir = defaultModelsDir(profileDir);
     await mkdir(modelsDir, { recursive: true });
     // Seed only the first model so both a cached and an uncached entry appear.
-    await writeFile(path.join(modelsDir, MODELS[keys[0]!].name), Buffer.from([1, 2, 3]));
+    const cachedEntry = MODELS[keys[0]!];
+    const cachedPath = path.join(modelsDir, cachedEntry.name);
+    await writeFile(cachedPath, Buffer.alloc(0));
+    await truncate(cachedPath, cachedEntry.byteSize);
 
     const sdk = new GptImg({ profileDir, logDir: path.join(tmp, "logs") });
     const result = sdk.model.list();
@@ -151,6 +158,18 @@ describe("model.verify integrity check", () => {
     expect(entry.integrity).toBe("missing");
     expect(entry.actualSha256).toBeUndefined();
     expect(entry.expectedSha256).toBe(MODELS[key].sha256);
+  });
+
+  it("does not report a wrong-sized pinned artifact as cached", async () => {
+    const profileDir = path.join(tmp, "profile");
+    const modelsDir = defaultModelsDir(profileDir);
+    await mkdir(modelsDir, { recursive: true });
+    await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
+
+    const result = new GptImg({ profileDir }).model.list();
+    const entry = result.models.find((model) => model.key === key);
+    expect(entry?.cached).toBe(false);
+    expect(entry?.sizeBytes).toBe(3);
   });
 
   it("honors an already-aborted signal", async () => {
