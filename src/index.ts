@@ -1,4 +1,5 @@
 export { GptImg } from "./gptimg.js";
+export type { ModelInstallOptions, ModelVerifyOptions, VerbCallOptions } from "./gptimg.js";
 export { VERSION } from "./version.js";
 export type { ModelKey } from "./local/models/registry.js";
 export {

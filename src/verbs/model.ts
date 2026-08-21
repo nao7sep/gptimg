@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
+import { toAbortError } from "../errors.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { defaultModelsDir } from "../internal/paths.js";
 import { ensureModel, fileSha256 } from "../local/models/fetch.js";
@@ -30,6 +31,8 @@ export interface ModelInstallOptions extends VerbCallOptions {
    * `yyyymmdd-hhmmss-fff-utc.log` under the log dir. */
   log?: string;
 }
+
+export type ModelVerifyOptions = Pick<VerbCallOptions, "signal">;
 
 export async function installModelImpl(
   ctx: ModelContext,
@@ -89,10 +92,14 @@ export function listModelsImpl(ctx: ModelContext): ModelListResult {
  * for that. Kept separate from `list` (a cheap presence check): hashing a ~0.5 GB
  * model is slow, so it runs only when asked, never on every load.
  */
-export async function verifyModelsImpl(ctx: ModelContext): Promise<ModelVerifyResult> {
+export async function verifyModelsImpl(
+  ctx: ModelContext,
+  opts: ModelVerifyOptions = {},
+): Promise<ModelVerifyResult> {
   const cacheDir = defaultModelsDir(ctx.profileDir);
   const models: ModelVerifyEntry[] = [];
   for (const key of Object.keys(MODELS) as ModelKey[]) {
+    if (opts.signal?.aborted) throw toAbortError(opts.signal.reason);
     const entry = MODELS[key];
     const filePath = path.join(cacheDir, entry.name);
     let integrity: ModelIntegrity;
@@ -102,7 +109,7 @@ export async function verifyModelsImpl(ctx: ModelContext): Promise<ModelVerifyRe
     } else if (!entry.sha256) {
       integrity = "unverifiable";
     } else {
-      actualSha256 = await fileSha256(filePath);
+      actualSha256 = await fileSha256(filePath, opts.signal);
       integrity = actualSha256 === entry.sha256 ? "ok" : "mismatch";
     }
     models.push({

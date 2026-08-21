@@ -75,7 +75,7 @@ import {
   listModelsImpl,
   verifyModelsImpl,
 } from "./verbs/model.js";
-import type { ModelInstallOptions } from "./verbs/model.js";
+import type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.js";
 import type { VerbCallOptions } from "./verbs/options.js";
 import { resizeImpl } from "./verbs/resize.js";
 import { trimImpl } from "./verbs/trim.js";
@@ -85,7 +85,7 @@ import type { ModelKey } from "./local/models/registry.js";
 import type { InstalledModel, ModelInstallResult, ModelListResult, ModelVerifyResult } from "./types.js";
 
 export type { VerbCallOptions } from "./verbs/options.js";
-export type { ModelInstallOptions } from "./verbs/model.js";
+export type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.js";
 
 export class GptImg {
   readonly profileDir: string;
@@ -127,7 +127,8 @@ export class GptImg {
     installAll: (opts?: ModelInstallOptions): Promise<ModelInstallResult> =>
       installAllModelsImpl(this.ctx, opts),
     list: (): ModelListResult => listModelsImpl(this.ctx),
-    verify: (): Promise<ModelVerifyResult> => verifyModelsImpl(this.ctx),
+    verify: (opts?: ModelVerifyOptions): Promise<ModelVerifyResult> =>
+      verifyModelsImpl(this.ctx, opts),
   };
 
   constructor(opts: GptImgOptions = {}) {

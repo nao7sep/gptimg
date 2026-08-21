@@ -2,12 +2,12 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultModelsDir } from "../../src/internal/paths.js";
-import { ensureModel, stagingPathFor } from "../../src/local/models/fetch.js";
+import { ensureModel, fileSha256, stagingPathFor } from "../../src/local/models/fetch.js";
 import type { ModelEntry } from "../../src/local/models/registry.js";
 import type { Logger } from "../../src/log/index.js";
 
@@ -77,6 +77,22 @@ describe("stagingPathFor", () => {
   });
 });
 
+describe("fileSha256", () => {
+  it("stops an in-progress hash when its signal aborts", async () => {
+    const tmp = await mkdtemp(path.join(tmpdir(), "gptimg-model-hash-"));
+    const file = path.join(tmp, "model.bin");
+    await writeFile(file, Buffer.alloc(1024 * 1024, 7));
+    const ctrl = new AbortController();
+    try {
+      const hashing = fileSha256(file, ctrl.signal);
+      queueMicrotask(() => ctrl.abort(new Error("stop")));
+      await expect(hashing).rejects.toMatchObject({ code: "cancelled" });
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("ensureModel", () => {
   let tmp: string;
 
@@ -86,6 +102,7 @@ describe("ensureModel", () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     restoreStderr();
     await rm(tmp, { recursive: true, force: true });
   });
@@ -161,6 +178,55 @@ describe("ensureModel", () => {
       code: "model.insecureUrl",
     });
     expect(existsSync(path.join(tmp, entry.name))).toBe(false);
+  });
+
+  it("refuses an https redirect to an insecure effective URL", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://example.com/model.bin" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const entry: ModelEntry = {
+      name: "redirected-insecure.bin",
+      url: "https://example.com/model.bin",
+      inputSize: 0,
+    };
+
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
+      code: "model.downloadFailed",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith(
+      entry.url,
+      expect.objectContaining({ redirect: "manual" }),
+    );
+    expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
+  });
+
+  it("follows a safe redirect before streaming the model", async () => {
+    const body = Buffer.from("redirected model");
+    const { server, baseURL } = await listen((req, res) => {
+      if (req.url === "/start") {
+        res.writeHead(302, { location: "/model" });
+        res.end();
+        return;
+      }
+      res.writeHead(200);
+      res.end(body);
+    });
+    try {
+      const entry: ModelEntry = {
+        name: "redirected-safe.bin",
+        url: `${baseURL}/start`,
+        inputSize: 0,
+      };
+      const finalPath = await ensureModel(entry, tmp);
+      expect(await readFile(finalPath)).toEqual(body);
+    } finally {
+      await closeServer(server);
+    }
   });
 
   it("skips the download when the cached file already exists", async () => {
@@ -245,6 +311,41 @@ describe("ensureModel", () => {
     }
   });
 
+  it("honors cancellation after download and removes the staged file", async () => {
+    const body = Buffer.from(new Uint8Array([1, 1, 2, 3, 5, 8]));
+    const sha = createHash("sha256").update(body).digest("hex");
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200);
+      res.end(body);
+    });
+    const ctrl = new AbortController();
+    const logger: Logger = {
+      handle: { path: path.join(tmp, "cancel.log"), verb: "model" },
+      info: async (_stage, msg) => {
+        if (msg.startsWith("downloaded")) ctrl.abort(new Error("stop"));
+      },
+      warn: async () => {},
+      error: async () => {},
+      debug: async () => {},
+      close: async () => {},
+    };
+    try {
+      const entry: ModelEntry = {
+        name: "cancel-after-download.bin",
+        url: baseURL,
+        inputSize: 0,
+        sha256: sha,
+      };
+      await expect(ensureModel(entry, tmp, { signal: ctrl.signal, logger })).rejects.toMatchObject({
+        code: "cancelled",
+      });
+      expect(existsSync(path.join(tmp, entry.name))).toBe(false);
+      expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it("force re-downloads and replaces the cached file", async () => {
     let hits = 0;
     const { server, baseURL } = await listen((_req, res) => {
@@ -261,6 +362,24 @@ describe("ensureModel", () => {
       const p2 = await ensureModel(entry, tmp, { force: true });
       expect((await readFile(p2)).toString()).toBe("BBBB");
       expect(hits).toBe(2);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("removes the staged file when force publish fails", async () => {
+    const body = Buffer.from("replacement");
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200);
+      res.end(body);
+    });
+    const entry: ModelEntry = { name: "blocked.bin", url: baseURL, inputSize: 0 };
+    await mkdir(path.join(tmp, entry.name));
+    try {
+      await expect(ensureModel(entry, tmp, { force: true })).rejects.toMatchObject({
+        code: "model.downloadFailed",
+      });
+      expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
     } finally {
       await closeServer(server);
     }

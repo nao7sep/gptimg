@@ -23,8 +23,9 @@
  *     onProgress sink) — never written to a stream directly, so the SDK stays
  *     stream-silent.
  *
- * No content hashing: version reproducibility is the URL's job — pin the
- * registry entry to a specific HuggingFace commit when locking a version.
+ * Shipped models pin both an immutable source URL and a SHA-256. The staged
+ * bytes are hashed before publish; cache hits are trusted until a caller asks
+ * the public model API to verify them again.
  */
 
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
@@ -49,15 +50,34 @@ function finishWrite(stream: ReturnType<typeof createWriteStream>): Promise<void
   });
 }
 
-export function fileSha256(filePath: string): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const h = createHash("sha256");
-    const s = createReadStream(filePath);
-    s.on("error", reject);
-    s.on("data", (chunk) => h.update(chunk));
-    s.on("end", () => resolve(h.digest("hex")));
-  });
+export async function fileSha256(
+  filePath: string,
+  signal?: AbortSignal | undefined,
+): Promise<string> {
+  throwIfAborted(signal);
+  const hash = createHash("sha256");
+  const stream = createReadStream(filePath);
+  const abort = (): void => {
+    stream.destroy(toAbortError(signal?.reason));
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+    for await (const chunk of stream) {
+      throwIfAborted(signal);
+      hash.update(chunk);
+    }
+    throwIfAborted(signal);
+    return hash.digest("hex");
+  } catch (err) {
+    if (signal?.aborted) throw toAbortError(signal.reason);
+    throw err;
+  } finally {
+    signal?.removeEventListener("abort", abort);
+  }
 }
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 10;
 
 /**
  * One download attempt. Streams `url` to `destPath`, bounded by `timeoutMs`
@@ -76,13 +96,33 @@ async function downloadAttempt(
 ): Promise<void> {
   const signal = combineSignals(parentSignal, timeoutMs);
 
-  let response: Response;
-  try {
-    response = await fetch(url, { signal });
-  } catch (err) {
-    if (parentSignal?.aborted) throw toAbortError(parentSignal.reason);
-    throw err;
+  const initial = new URL(url);
+  const allowLoopbackHttp = initial.protocol === "http:";
+  let currentUrl = url;
+  let response: Response | undefined;
+  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+    try {
+      response = await fetch(currentUrl, { signal, redirect: "manual" });
+    } catch (err) {
+      if (parentSignal?.aborted) throw toAbortError(parentSignal.reason);
+      throw err;
+    }
+    if (!REDIRECT_STATUSES.has(response.status)) break;
+    if (redirects === MAX_REDIRECTS) {
+      throw new LocalOpError("model.redirectFailed", `Too many redirects downloading ${url}.`);
+    }
+    const location = response.headers.get("location");
+    if (!location) {
+      throw new LocalOpError(
+        "model.redirectFailed",
+        `Redirect downloading ${currentUrl} did not include a Location header.`,
+      );
+    }
+    await response.body?.cancel();
+    currentUrl = new URL(location, currentUrl).toString();
+    assertSafeUrl(currentUrl, allowLoopbackHttp);
   }
+  if (!response) throw new LocalOpError("model.downloadFailed", `No response downloading ${url}.`);
   if (!response.ok || !response.body) {
     throw new HttpStatusError(response.status, response.headers, "");
   }
@@ -139,7 +179,7 @@ const TEMP_DIR = "temp";
 // loopback host (localhost / 127.0.0.1 / ::1), which carries no network-MITM
 // surface and is how the local test server runs; every shipped registry URL is
 // https.
-function assertSafeUrl(url: string): void {
+function assertSafeUrl(url: string, allowLoopbackHttp = true): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -152,7 +192,7 @@ function assertSafeUrl(url: string): void {
     parsed.hostname === "::1" ||
     parsed.hostname === "[::1]";
   if (parsed.protocol === "https:") return;
-  if (parsed.protocol === "http:" && loopback) return;
+  if (allowLoopbackHttp && parsed.protocol === "http:" && loopback) return;
   throw new LocalOpError(
     "model.insecureUrl",
     `Refusing insecure model URL (${parsed.protocol}//${parsed.hostname}); only https is allowed.`,
@@ -221,43 +261,55 @@ export async function ensureModel(
     );
   }
 
-  // Verify the pinned hash before publishing. A mismatch means the pinned URL
-  // changed or the download is corrupt — fail loudly rather than cache bad
-  // bytes. Non-retryable: a fully-downloaded-but-wrong file won't fix itself.
-  if (entry.sha256) {
-    const got = await fileSha256(partialPath);
-    if (got !== entry.sha256) {
-      await unlink(partialPath).catch(() => undefined);
-      throw new LocalOpError(
-        "model.checksumMismatch",
-        `Downloaded ${entry.name} has sha256 ${got}, expected ${entry.sha256}. ` +
-          `The pinned URL may have changed or the download is corrupt.`,
-      );
-    }
-  }
-
-  if (force) {
-    // Deliberate reinstall: atomically replace whatever is there.
-    await rename(partialPath, finalPath);
-    return finalPath;
-  }
-
-  // POSIX link() is atomic: it succeeds (final name now references our
-  // partial inode) or fails with EEXIST (another caller already published).
-  // Either way our partial is no longer needed under its temp name.
   try {
-    await link(partialPath, finalPath);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== "EEXIST") {
-      await unlink(partialPath).catch(() => undefined);
-      throw new LocalOpError(
-        "model.downloadFailed",
-        `Failed to publish model at ${finalPath}: ${(err as Error).message}`,
-        { cause: err },
-      );
+    // Verify the pinned hash before publishing. A mismatch means the pinned URL
+    // changed or the download is corrupt — fail loudly rather than cache bad
+    // bytes. Non-retryable: a fully-downloaded-but-wrong file won't fix itself.
+    if (entry.sha256) {
+      const got = await fileSha256(partialPath, signal);
+      if (got !== entry.sha256) {
+        throw new LocalOpError(
+          "model.checksumMismatch",
+          `Downloaded ${entry.name} has sha256 ${got}, expected ${entry.sha256}. ` +
+            `The pinned URL may have changed or the download is corrupt.`,
+        );
+      }
     }
-    // Another concurrent caller won the publish race — drop our copy.
+
+    throwIfAborted(signal);
+    if (force) {
+      // Deliberate reinstall: atomically replace whatever is there.
+      try {
+        await rename(partialPath, finalPath);
+      } catch (err) {
+        throw new LocalOpError(
+          "model.downloadFailed",
+          `Failed to publish model at ${finalPath}: ${(err as Error).message}`,
+          { cause: err },
+        );
+      }
+      return finalPath;
+    }
+
+    // link() is atomic on supported filesystems: it succeeds (the final name
+    // now references our staged file) or fails with EEXIST when another caller
+    // published first. Either way the staged name is no longer needed.
+    try {
+      await link(partialPath, finalPath);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") {
+        throw new LocalOpError(
+          "model.downloadFailed",
+          `Failed to publish model at ${finalPath}: ${(err as Error).message}`,
+          { cause: err },
+        );
+      }
+      // Another concurrent caller won the publish race — drop our copy.
+    }
+  } catch (err) {
+    await unlink(partialPath).catch(() => undefined);
+    throw err;
   }
   await unlink(partialPath).catch(() => undefined);
 

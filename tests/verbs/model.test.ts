@@ -153,6 +153,17 @@ describe("model.verify integrity check", () => {
     expect(entry.expectedSha256).toBe(MODELS[key].sha256);
   });
 
+  it("honors an already-aborted signal", async () => {
+    const ctrl = new AbortController();
+    ctrl.abort(new Error("stop"));
+    const profileDir = path.join(tmp, "profile");
+    const sdk = new GptImg({ profileDir });
+
+    await expect(sdk.model.verify({ signal: ctrl.signal })).rejects.toMatchObject({
+      code: "cancelled",
+    });
+  });
+
   it("reports a mismatch when a cached file's bytes do not match the pinned sha256", async () => {
     const profileDir = path.join(tmp, "profile");
     const modelsDir = defaultModelsDir(profileDir);
