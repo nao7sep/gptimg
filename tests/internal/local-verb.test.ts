@@ -211,6 +211,28 @@ describe("withVerbLogger", () => {
       message: "boom",
       data: { code: "output.exists" },
     });
+    expect(entry.data.error).toMatchObject({
+      type: "LocalOpError",
+      message: "boom",
+      stack: expect.stringContaining("LocalOpError: boom"),
+    });
+  });
+
+  it("records a bounded cause chain for failure diagnosis", async () => {
+    const logPath = path.join(tmp, "caused.jsonl");
+    const cause = new TypeError("inner failure");
+    const err = new LocalOpError("output.writeFailed", "outer failure", { cause });
+    await expect(
+      withVerbLogger({ logDir: tmp }, "mask", { log: logPath }, async () => {
+        throw err;
+      }),
+    ).rejects.toBe(err);
+    const entry = JSON.parse((await readFile(logPath, "utf-8")).trim());
+    expect(entry.data.error).toMatchObject({
+      type: "LocalOpError",
+      message: "outer failure",
+      cause: { type: "TypeError", message: "inner failure" },
+    });
   });
 
   it("derives a default millisecond-stamped session log path when logArg is undefined", async () => {

@@ -83,8 +83,18 @@ export function defaultOutDir(profileDir: string): string {
  * Override with `GPTIMG_MODELS_DIR`.
  */
 export function defaultModelsDir(profileDir: string): string {
-  const env = process.env.GPTIMG_MODELS_DIR;
-  if (env && env.length > 0) return env;
+  const override = process.env.GPTIMG_MODELS_DIR;
+  if (override !== undefined && override.length > 0) {
+    const home = homedir();
+    const expanded = expandHomeAndEnv(override, home);
+    if (expanded.length === 0) {
+      throw new ProfileError(
+        "profile.invalidModelsDir",
+        `GPTIMG_MODELS_DIR is set but expands to an empty path: ${JSON.stringify(override)}.`,
+      );
+    }
+    return path.isAbsolute(expanded) ? expanded : path.resolve(home, expanded);
+  }
   return path.join(profileDir, "models");
 }
 

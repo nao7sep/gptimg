@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultModelsDir } from "../../src/internal/paths.js";
 import {
@@ -66,6 +66,36 @@ describe("defaultModelsDir", () => {
     process.env.GPTIMG_MODELS_DIR = "/elsewhere/models";
     try {
       expect(defaultModelsDir("/some/dir")).toBe("/elsewhere/models");
+    } finally {
+      if (prev === undefined) delete process.env.GPTIMG_MODELS_DIR;
+      else process.env.GPTIMG_MODELS_DIR = prev;
+    }
+  });
+
+  it("expands and home-anchors relocatable model directory overrides", () => {
+    const prev = process.env.GPTIMG_MODELS_DIR;
+    const prevRoot = process.env.GPTIMG_TEST_MODEL_ROOT;
+    try {
+      process.env.GPTIMG_TEST_MODEL_ROOT = "model-root";
+      process.env.GPTIMG_MODELS_DIR = "${GPTIMG_TEST_MODEL_ROOT}/cache";
+      expect(defaultModelsDir("/some/dir")).toBe(path.join(homedir(), "model-root", "cache"));
+
+      process.env.GPTIMG_MODELS_DIR = "~/custom-models";
+      expect(defaultModelsDir("/some/dir")).toBe(path.join(homedir(), "custom-models"));
+    } finally {
+      if (prev === undefined) delete process.env.GPTIMG_MODELS_DIR;
+      else process.env.GPTIMG_MODELS_DIR = prev;
+      if (prevRoot === undefined) delete process.env.GPTIMG_TEST_MODEL_ROOT;
+      else process.env.GPTIMG_TEST_MODEL_ROOT = prevRoot;
+    }
+  });
+
+  it("rejects a model directory override that expands to empty", () => {
+    const prev = process.env.GPTIMG_MODELS_DIR;
+    try {
+      delete process.env.GPTIMG_DEFINITELY_UNSET_MODEL_ROOT;
+      process.env.GPTIMG_MODELS_DIR = "${GPTIMG_DEFINITELY_UNSET_MODEL_ROOT}";
+      expect(() => defaultModelsDir("/some/dir")).toThrowError(/expands to an empty path/);
     } finally {
       if (prev === undefined) delete process.env.GPTIMG_MODELS_DIR;
       else process.env.GPTIMG_MODELS_DIR = prev;

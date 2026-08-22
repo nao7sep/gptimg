@@ -9,6 +9,7 @@ import {
   plannedSidecarPaths,
   sidecarPathFor,
   siblingsOnDisk,
+  withOutputGroupLock,
 } from "../../src/internal/output-group.js";
 
 describe("OutputGroup", () => {
@@ -87,6 +88,31 @@ describe("OutputGroup", () => {
     await writeFile(path.join(tmp, "axb.png"), "");
     const group = createOutputGroup(tmp, "a.b", "png");
     expect(siblingsOnDisk(group).map((p) => path.basename(p))).toEqual(["a.b.png"]);
+  });
+
+  it("serializes concurrent publication for the same case-folded stem", async () => {
+    const group = createOutputGroup(tmp, "Photo", "png");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const first = withOutputGroupLock(group, async () => {
+      entered();
+      await held;
+      return "first";
+    });
+    await started;
+
+    await expect(
+      withOutputGroupLock(createOutputGroup(tmp, "photo", "jpg"), async () => "second"),
+    ).rejects.toMatchObject({ code: "output.busy" });
+    release();
+    await expect(first).resolves.toBe("first");
+    await expect(withOutputGroupLock(group, async () => "next")).resolves.toBe("next");
   });
 
   describe("assertOutputGroupAvailable", () => {

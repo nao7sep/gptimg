@@ -68,6 +68,10 @@ export async function loadSession(modelPath: string): Promise<ort.InferenceSessi
       executionProviders: executionProviders(),
       intraOpNumThreads: intraOpThreadCount(),
       interOpNumThreads: 1,
+      // ONNX Runtime otherwise writes optimizer warnings directly to stderr.
+      // A library SDK must remain stream-silent; actual load/run failures still
+      // surface as typed errors through the public call.
+      logSeverityLevel: 3,
     });
     sessions.set(modelPath, session);
     return session;

@@ -74,6 +74,9 @@ const COMBINE_MAX_RADIUS = 1024;
 
 const requiredPath = (label: string) => z.string().min(1, `${label} is required`);
 
+const nonBlankText = (label: string) =>
+  z.string().refine((value) => value.trim().length > 0, `${label} must not be blank`);
+
 const hexColor = (label: string) =>
   z.string().regex(HEX_RE, `${label} must be a #rrggbb hex color`);
 
@@ -97,17 +100,20 @@ function oneOf(values: readonly string[], label: string) {
 // ----- schemas -----
 
 const GenerateArgsSchema = z.object({
-  prompt: z.string().min(1, "prompt must not be empty"),
+  prompt: nonBlankText("prompt"),
+  overwrite: z.boolean().optional(),
 });
 
 const EditArgsSchema = z.object({
-  prompt: z.string().min(1, "prompt must not be empty"),
+  prompt: nonBlankText("prompt"),
   in: requiredPath("in"),
+  overwrite: z.boolean().optional(),
 });
 
 const VisionArgsSchema = z.object({
   in: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
-  check: z.string().min(1, "check must not be empty"),
+  check: nonBlankText("check"),
+  overwrite: z.boolean().optional(),
 });
 
 const MaskArgsSchema = z.object({
@@ -122,6 +128,9 @@ const MaskArgsSchema = z.object({
     .optional(),
   borderSample: positiveInt("must be a positive integer").optional(),
   saturationRatio: z.number().refine((v) => v > 0 && v <= 1, "must be in (0..1]").optional(),
+  preserveInterior: z.boolean().optional(),
+  dryRun: z.boolean().optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const ComposeArgsSchema = z.object({
@@ -130,6 +139,7 @@ const ComposeArgsSchema = z.object({
   // `over` ("transparent" | #hex | <path>) is resolved against the filesystem
   // at runtime, so it is not bounded here.
   removeBleed: hexColor("removeBleed").optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const CombineArgsSchema = z.object({
@@ -139,11 +149,14 @@ const CombineArgsSchema = z.object({
     .number()
     .refine((v) => v >= 0 && v <= COMBINE_MAX_RADIUS, `must be in [0..${COMBINE_MAX_RADIUS}]`)
     .optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const TrimArgsSchema = z.object({
   in: requiredPath("in"),
   margin: z.number().refine((v) => v >= 0 && v <= 1, "must be in [0..1]").optional(),
+  square: z.boolean().optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const DespeckleArgsSchema = z.object({
@@ -158,6 +171,7 @@ const DespeckleArgsSchema = z.object({
     .optional(),
   connectivity: z.number().refine((v) => v === 4 || v === 8, "must be 4 or 8").optional(),
   keep: oneOf(DESPECKLE_KEEP, "keep").optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const KeycheckArgsSchema = z.object({
@@ -182,6 +196,7 @@ const KeycheckArgsSchema = z.object({
     .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
     .optional(),
   heatmap: z.boolean().optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const FramecheckArgsSchema = z.object({
@@ -208,6 +223,7 @@ const GridArgsSchema = z.object({
     .number()
     .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
     .optional(),
+  overwrite: z.boolean().optional(),
   background: z
     .string()
     .refine((v) => v === "transparent" || HEX_RE.test(v), "must be 'transparent' or a #rrggbb hex color")
@@ -222,6 +238,7 @@ const BackplateArgsSchema = z.object({
   radius: z.number().refine((v) => v >= 0 && v <= 0.5, "must be in [0..0.5]").optional(),
   angle: z.number().optional(),
   shape: oneOf(BACKPLATE_SHAPES, "shape").optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const LayerArgsSchema = z.object({
@@ -233,6 +250,7 @@ const LayerArgsSchema = z.object({
     .object({ x: z.number(), y: z.number() })
     .refine((o) => Number.isInteger(o.x) && Number.isInteger(o.y), "topOffset must be integers")
     .optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const ShadowArgsSchema = z.object({
@@ -261,6 +279,8 @@ const ShadowArgsSchema = z.object({
       `must be an integer in [0..${SHADOW_MAX_SPREAD}]`,
     )
     .optional(),
+  keepCanvas: z.boolean().optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const UpscaleArgsSchema = z.object({
@@ -280,6 +300,7 @@ const UpscaleArgsSchema = z.object({
       `must be an integer >= ${SWIN2SR_MIN_TILE}`,
     )
     .optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const ResizeArgsSchema = z.object({
@@ -291,6 +312,7 @@ const ResizeArgsSchema = z.object({
       `must be an integer in [1..${RESIZE_MAX_TO_SIZE}]`,
     ),
   kernel: oneOf(RESAMPLE_KERNELS, "kernel").optional(),
+  overwrite: z.boolean().optional(),
 });
 
 const IconArgsSchema = z.object({
@@ -302,6 +324,8 @@ const IconArgsSchema = z.object({
       "name must be a plain filename stem (no path separators)",
     )
     .optional(),
+  pngs: z.boolean().optional(),
+  overwrite: z.boolean().optional(),
 });
 
 // ----- runner + public validators -----

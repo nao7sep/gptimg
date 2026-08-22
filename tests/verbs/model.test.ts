@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, truncate, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg } from "../../src/gptimg.js";
 import { defaultModelsDir } from "../../src/internal/paths.js";
 import { MODELS, type ModelKey } from "../../src/local/models/registry.js";
@@ -75,6 +75,18 @@ describe("installModelImpl logging", () => {
     // The log file is unavailable, but an SDK never falls back to a standard stream
     // (sdk-toolkit-conventions §4); with no progress sink supplied here, it is silent.
     expect(chunks.join("")).toBe("");
+  });
+
+  it("rejects a truthy string force flag before logging or downloading", async () => {
+    const profileDir = path.join(tmp, "profile");
+    const logDir = path.join(tmp, "logs");
+    const sdk = new GptImg({ profileDir, logDir });
+
+    await expect(sdk.model.install(key, { force: "false" } as never)).rejects.toMatchObject({
+      code: "args.invalid",
+    });
+    expect(existsSync(logDir)).toBe(false);
+    expect(existsSync(defaultModelsDir(profileDir))).toBe(false);
   });
 });
 
@@ -198,5 +210,25 @@ describe("model.verify integrity check", () => {
     expect(entry.integrity).toBe("mismatch");
     expect(entry.actualSha256).toBeDefined();
     expect(entry.actualSha256).not.toBe(MODELS[key].sha256);
+  });
+
+  it("returns a log path and streams bounded progress for a tiny fixture", async () => {
+    const profileDir = path.join(tmp, "profile");
+    const modelsDir = defaultModelsDir(profileDir);
+    await mkdir(modelsDir, { recursive: true });
+    await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
+    const onProgress = vi.fn();
+    const sdk = new GptImg({ profileDir, logDir: path.join(tmp, "logs") });
+
+    const result = await sdk.model.verify({ onProgress });
+
+    expect(result.logPath).toMatch(/\.log$/);
+    expect(existsSync(result.logPath)).toBe(true);
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "verifying cached model", stage: "resolve" }),
+    );
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "model verification result", stage: "response" }),
+    );
   });
 });

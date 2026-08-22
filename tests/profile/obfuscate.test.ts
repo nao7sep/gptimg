@@ -31,4 +31,13 @@ describe("obfuscate / deobfuscate", () => {
     expect(obfuscate("sk-test")).toBe("obf:dHNldC1rcw==");
     expect(obfuscate("key-日本語-🔑-ñ")).toBe("obf:scMtkZSf8C2equisnOall+YteWVr");
   });
+
+  it.each(["obf:!!!", "obf:YQ=", "obf:/w=="])(
+    "rejects malformed encoded storage (%s) with the typed profile error",
+    (stored) => {
+      expect(() => deobfuscate(stored)).toThrowError(
+        expect.objectContaining({ code: "apiKey.invalidObf", errorType: "profile" }),
+      );
+    },
+  );
 });

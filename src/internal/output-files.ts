@@ -18,10 +18,18 @@ export async function ensureOutputDir(outDir: string): Promise<void> {
 export async function writeOutputBytes(
   filePath: string,
   data: Buffer | Uint8Array,
+  overwrite = true,
 ): Promise<void> {
   try {
-    await writeFileAtomic(filePath, Buffer.from(data));
+    await writeFileAtomic(filePath, Buffer.from(data), { overwrite });
   } catch (err) {
+    if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new LocalOpError(
+        "output.exists",
+        `Output exists: ${filePath}. Set overwrite: true to allow.`,
+        { cause: err },
+      );
+    }
     throw new LocalOpError(
       "output.writeFailed",
       `Failed to write output at ${filePath}: ${(err as Error).message}`,

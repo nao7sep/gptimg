@@ -888,6 +888,8 @@ export interface ModelVerifyEntry {
 /** Result of `model verify`: the on-disk integrity of every known model. */
 export interface ModelVerifyResult {
   models: ModelVerifyEntry[];
+  /** JSONL log for this verification session. */
+  logPath: string;
 }
 
 export interface GptImgOptions {

@@ -16,14 +16,26 @@ function sidecarPathForStem(stem: string): string {
   return `${stem}.json`;
 }
 
-export async function writeSidecar(stem: string, sidecar: Sidecar): Promise<string> {
+export async function writeSidecar(
+  stem: string,
+  sidecar: Sidecar,
+  opts: { overwrite?: boolean } = {},
+): Promise<string> {
   const sidecarPath = sidecarPathForStem(stem);
+  const overwrite = opts.overwrite ?? true;
   try {
     await mkdir(path.dirname(sidecarPath), { recursive: true });
     const safe = redact(sidecar);
     const text = JSON.stringify(safe, null, 2) + "\n";
-    await writeFileAtomic(sidecarPath, text, { encoding: "utf-8" });
+    await writeFileAtomic(sidecarPath, text, { encoding: "utf-8", overwrite });
   } catch (err) {
+    if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new LocalOpError(
+        "output.exists",
+        `Output exists: ${sidecarPath}. Set overwrite: true to allow.`,
+        { cause: err },
+      );
+    }
     throw new LocalOpError(
       "sidecar.writeFailed",
       `Failed to write sidecar at ${sidecarPath}: ${(err as Error).message}`,

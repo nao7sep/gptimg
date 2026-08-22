@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -371,6 +371,37 @@ describe("AI verb implementations with mocked provider", () => {
     await expect(
       sdk.generate({ prompt: "third", outDir, outName: "same", overwrite: true }),
     ).resolves.toMatchObject({ partial: false });
+  });
+
+  it("does not interleave concurrent same-stem artifact groups", async () => {
+    let release!: () => void;
+    const bothAtProvider = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    providerCalls.generate.mockImplementation(async () => {
+      if (providerCalls.generate.mock.calls.length === 2) release();
+      await bothAtProvider;
+      return {
+        raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
+        images: [{ data: png }],
+      };
+    });
+    const outDir = path.join(tmp, "concurrent-out");
+    const settled = await Promise.allSettled([
+      sdk.generate({ prompt: "first contender", outDir, outName: "same" }),
+      sdk.generate({ prompt: "second contender", outDir, outName: "same" }),
+    ]);
+
+    expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = settled.find((result) => result.status === "rejected");
+    expect(rejected).toBeDefined();
+    expect(["output.busy", "output.exists"]).toContain(
+      (rejected as PromiseRejectedResult).reason.code,
+    );
+    const winner = settled.findIndex((result) => result.status === "fulfilled");
+    const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
+    expect(sidecar.request.prompt).toBe(winner === 0 ? "first contender" : "second contender");
+    expect((await readdir(outDir)).some((name) => name.endsWith(".lock"))).toBe(false);
   });
 
   it("generate refuses --overwrite when stale indexed siblings from a prior n exist", async () => {

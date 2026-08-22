@@ -74,15 +74,16 @@ function parseVerdict(raw: string | null | undefined): VisionVerdict {
     parsed !== null &&
     typeof (parsed as { ok?: unknown }).ok === "boolean" &&
     typeof (parsed as { score?: unknown }).score === "number" &&
-    Array.isArray((parsed as { reasons?: unknown }).reasons)
+    Array.isArray((parsed as { reasons?: unknown }).reasons) &&
+    (parsed as { reasons: unknown[] }).reasons.every((reason) => typeof reason === "string")
   ) {
-    const v = parsed as { ok: boolean; score: number; reasons: unknown[] };
+    const v = parsed as { ok: boolean; score: number; reasons: string[] };
     return {
       ok: v.ok,
       // The schema declares score as a number but does not bound it; clamp
       // so a stray out-of-range value can't propagate to callers.
       score: Math.max(0, Math.min(1, v.score)),
-      reasons: v.reasons.map((r) => String(r)),
+      reasons: v.reasons,
     };
   }
   throw new ProviderError(

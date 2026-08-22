@@ -20,8 +20,18 @@ export function deobfuscate(stored: string): string {
     return stored;
   }
   const payload = stored.slice(MARKER.length);
+  if (
+    payload.length > 0 &&
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(payload)
+  ) {
+    throw new ProfileError(
+      "apiKey.invalidObf",
+      "Obfuscated apiKey is not valid base64",
+    );
+  }
   try {
-    return reverseBytes(Buffer.from(payload, "base64")).toString("utf-8");
+    const bytes = reverseBytes(Buffer.from(payload, "base64"));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch (err) {
     throw new ProfileError(
       "apiKey.invalidObf",

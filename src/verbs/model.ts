@@ -1,5 +1,5 @@
 import path from "node:path";
-import { toAbortError } from "../errors.js";
+import { LocalOpError, toAbortError } from "../errors.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { defaultModelsDir } from "../internal/paths.js";
 import { ensureModel, fileSha256, inspectCachedModel } from "../local/models/fetch.js";
@@ -31,7 +31,11 @@ export interface ModelInstallOptions extends VerbCallOptions {
   log?: string;
 }
 
-export type ModelVerifyOptions = Pick<VerbCallOptions, "signal">;
+export interface ModelVerifyOptions
+  extends Pick<VerbCallOptions, "signal" | "onProgress"> {
+  /** Path to log JSONL file. Defaults to a per-session log under the log dir. */
+  log?: string;
+}
 
 export async function installModelImpl(
   ctx: ModelContext,
@@ -39,6 +43,9 @@ export async function installModelImpl(
   opts: ModelInstallOptions = {},
 ): Promise<InstalledModel> {
   validateModelKey(key);
+  if (opts.force !== undefined && typeof opts.force !== "boolean") {
+    throw new LocalOpError("args.invalid", "model install: force must be a boolean.");
+  }
   const entry = MODELS[key];
   const budget = resolveNetworkForCall(
     await loadRecipeForCall(opts.recipe, ctx.profileDir),
@@ -96,30 +103,42 @@ export async function verifyModelsImpl(
   opts: ModelVerifyOptions = {},
 ): Promise<ModelVerifyResult> {
   const cacheDir = defaultModelsDir(ctx.profileDir);
-  const models: ModelVerifyEntry[] = [];
-  for (const key of Object.keys(MODELS) as ModelKey[]) {
-    if (opts.signal?.aborted) throw toAbortError(opts.signal.reason);
-    const entry = MODELS[key];
-    const filePath = path.join(cacheDir, entry.name);
-    const cache = inspectCachedModel(filePath, entry.byteSize);
-    let integrity: ModelIntegrity;
-    let actualSha256: string | undefined;
-    if (!cache.present) {
-      integrity = "missing";
-    } else if (!entry.sha256) {
-      integrity = "unverifiable";
-    } else {
-      actualSha256 = await fileSha256(filePath, opts.signal);
-      integrity = actualSha256 === entry.sha256 ? "ok" : "mismatch";
+  return withVerbLogger(ctx, "model", { log: opts.log, onProgress: opts.onProgress }, async (logger) => {
+    const models: ModelVerifyEntry[] = [];
+    for (const key of Object.keys(MODELS) as ModelKey[]) {
+      if (opts.signal?.aborted) throw toAbortError(opts.signal.reason);
+      const entry = MODELS[key];
+      const filePath = path.join(cacheDir, entry.name);
+      const cache = inspectCachedModel(filePath, entry.byteSize);
+      let integrity: ModelIntegrity;
+      let actualSha256: string | undefined;
+      if (!cache.present) {
+        integrity = "missing";
+      } else if (!entry.sha256) {
+        integrity = "unverifiable";
+      } else {
+        await logger.info("resolve", "verifying cached model", {
+          key,
+          name: entry.name,
+          sizeBytes: cache.sizeBytes ?? null,
+        });
+        actualSha256 = await fileSha256(filePath, opts.signal);
+        integrity = actualSha256 === entry.sha256 ? "ok" : "mismatch";
+      }
+      models.push({
+        key,
+        name: entry.name,
+        path: filePath,
+        integrity,
+        expectedSha256: entry.sha256,
+        actualSha256,
+      });
+      await logger.info("response", "model verification result", {
+        key,
+        name: entry.name,
+        integrity,
+      });
     }
-    models.push({
-      key,
-      name: entry.name,
-      path: filePath,
-      integrity,
-      expectedSha256: entry.sha256,
-      actualSha256,
-    });
-  }
-  return { models };
+    return { models, logPath: logger.handle.path };
+  });
 }

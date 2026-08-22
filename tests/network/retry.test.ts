@@ -225,6 +225,35 @@ describe("callWithRetry", () => {
     expect(out).toBe("ok");
   });
 
+  it("caps an untrusted Retry-After value to the configured timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const logger = fakeLogger();
+      const headers = new Headers({ "retry-after": "9999" });
+      const fn = vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error("429"), { status: 429, headers }))
+        .mockResolvedValueOnce("ok");
+      const pending = callWithRetry(
+        {
+          budgetName: "imageGenerate",
+          budget: { ...fast, timeout: 25, maxRetries: 1 },
+          logger,
+        },
+        fn,
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      await expect(pending).resolves.toBe("ok");
+      expect(logger.warn.mock.calls[0]?.[2]).toMatchObject({
+        waitMs: 25,
+        retryAfterHeader: true,
+        retryAfterCapped: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reuses the last retryIntervals entry when count exceeds list", async () => {
     // schedule [1, 1, 1] with maxRetries 5 → still finishes by reusing 1
     const fn = vi

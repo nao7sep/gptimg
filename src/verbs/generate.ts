@@ -14,6 +14,7 @@ import {
   createOutputGroup,
   plannedSidecarPaths,
   sidecarPathFor,
+  withOutputGroupLock,
 } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { multiline } from "../internal/textCleanup.js";
@@ -172,12 +173,6 @@ export async function generateImpl(
     // The artifact group includes every per-image sidecar so overwrite logic
     // catches all of them as a single unit.
     const allSidecarPaths = plannedSidecarPaths(group, suffixCount, suffixCount);
-    assertOutputGroupAvailable(
-      group,
-      [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
-      overwrite,
-    );
-
     const files: OutputFile[] = [];
 
     const requestRecord: Record<string, unknown> = {
@@ -188,46 +183,55 @@ export async function generateImpl(
     if (chromaColor) requestRecord.chroma = { color: chromaColor };
     const redactedResponse = nullBase64InResponse(providerResult.raw);
 
-    await Promise.all(
-      plannedImages.map((item) =>
-        limit(async () => {
-          await writeOutputBytes(item.filePath, item.data);
-          const sha = hash(item.data);
-          // Per-image sidecar: same request and response across siblings (the
-          // call is the same), but `files` carries only this image's entry so
-          // each sidecar is self-describing.
-          const itemSidecarPath = sidecarPathFor(group, item.index, suffixCount);
-          const itemSidecarStem = itemSidecarPath.replace(/\.json$/, "");
-          const itemSidecar: Sidecar = {
-            request: requestRecord,
-            response: redactedResponse,
-            files: [
-              {
-                index: item.index,
-                name: path.basename(item.filePath),
-                sha256: sha,
-                format: item.fmt.format,
-              },
-            ],
-          };
-          await writeSidecar(itemSidecarStem, itemSidecar);
-          files.push({
-            index: item.index,
-            path: item.filePath,
-            sidecarPath: itemSidecarPath,
-            sha256: sha,
-            format: item.fmt.format,
-          });
-          await logger.info("write", `wrote image ${item.index}`, {
-            index: item.index,
-            name: item.fileName,
-            sha256: sha,
-            format: item.fmt.format,
-            sidecar: path.basename(itemSidecarPath),
-          });
-        }),
-      ),
-    );
+    await withOutputGroupLock(group, async () => {
+      // Re-check after acquiring the publication lock: another invocation may
+      // have completed while this one was waiting on the provider.
+      assertOutputGroupAvailable(
+        group,
+        [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
+        overwrite,
+      );
+      await Promise.all(
+        plannedImages.map((item) =>
+          limit(async () => {
+            await writeOutputBytes(item.filePath, item.data, overwrite);
+            const sha = hash(item.data);
+            // Per-image sidecar: same request and response across siblings (the
+            // call is the same), but `files` carries only this image's entry so
+            // each sidecar is self-describing.
+            const itemSidecarPath = sidecarPathFor(group, item.index, suffixCount);
+            const itemSidecarStem = itemSidecarPath.replace(/\.json$/, "");
+            const itemSidecar: Sidecar = {
+              request: requestRecord,
+              response: redactedResponse,
+              files: [
+                {
+                  index: item.index,
+                  name: path.basename(item.filePath),
+                  sha256: sha,
+                  format: item.fmt.format,
+                },
+              ],
+            };
+            await writeSidecar(itemSidecarStem, itemSidecar, { overwrite });
+            files.push({
+              index: item.index,
+              path: item.filePath,
+              sidecarPath: itemSidecarPath,
+              sha256: sha,
+              format: item.fmt.format,
+            });
+            await logger.info("write", `wrote image ${item.index}`, {
+              index: item.index,
+              name: item.fileName,
+              sha256: sha,
+              format: item.fmt.format,
+              sidecar: path.basename(itemSidecarPath),
+            });
+          }),
+        ),
+      );
+    });
     files.sort((a, b) => a.index - b.index);
 
     return {

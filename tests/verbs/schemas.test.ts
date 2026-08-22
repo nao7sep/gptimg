@@ -47,6 +47,17 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateVisionArgs({ in: "", check: "ok" }));
     badArgs(() => validateVisionArgs({ in: ["a.png", ""], check: "ok" }));
     expect(validateVisionArgs({ in: ["a.png", "b.png"], check: "ok" })).toBeTruthy();
+    badArgs(() => validateGenerateArgs({ prompt: " \n\t " }), "blank");
+    badArgs(() => validateEditArgs({ prompt: "\t", in: "a.png" }), "blank");
+    badArgs(() => validateVisionArgs({ in: "a.png", check: "  " }), "blank");
+  });
+
+  it("rejects truthy strings for optional boolean controls", () => {
+    badArgs(() => validateGenerateArgs({ prompt: "x", overwrite: "false" } as never));
+    badArgs(() => validateMaskArgs({ in: "a.png", dryRun: "false" } as never));
+    badArgs(() => validateTrimArgs({ in: "a.png", square: "false" } as never));
+    badArgs(() => validateShadowArgs({ in: "a.png", keepCanvas: "false" } as never));
+    badArgs(() => validateIconArgs({ in: "a.png", pngs: "false" } as never));
   });
 
   it("mask: method enum, key form, numeric bounds", () => {

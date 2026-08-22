@@ -180,7 +180,9 @@ export async function visionImpl(
       },
       files: [],
     };
-    const sidecarPath = await writeSidecar(stemPath, sidecar);
+    const sidecarPath = await writeSidecar(stemPath, sidecar, {
+      overwrite: args.overwrite ?? false,
+    });
     await logger.info("write", "wrote sidecar", {
       name: path.basename(sidecarPath),
     });

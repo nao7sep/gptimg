@@ -113,6 +113,27 @@ export interface VerbLoggerOptions {
   onProgress?: ((entry: LogEntry) => void) | undefined;
 }
 
+function serializeThrownError(
+  err: unknown,
+  seen = new Set<object>(),
+  depth = 0,
+): Record<string, unknown> {
+  if (!(err instanceof Error)) {
+    return { type: typeof err, message: String(err) };
+  }
+  const serialized: Record<string, unknown> = {
+    type: err.constructor?.name || err.name || "Error",
+    message: err.message,
+  };
+  if (err.stack) serialized.stack = err.stack;
+  if (depth >= 4 || seen.has(err)) return serialized;
+  seen.add(err);
+  if (err.cause !== undefined) {
+    serialized.cause = serializeThrownError(err.cause, seen, depth + 1);
+  }
+  return serialized;
+}
+
 /**
  * The single logger envelope for every verb (local and provider-backed):
  *   - resolve log path (`opts.log ?? <yyyymmdd-hhmmss-fff-utc>.log` under ctx.logDir)
@@ -140,8 +161,9 @@ export async function withVerbLogger<T>(
   try {
     return await body(logger);
   } catch (err) {
-    await safeLogError(logger, (err as Error).message, {
+    await safeLogError(logger, err instanceof Error ? err.message : String(err), {
       code: (err as { code?: string }).code ?? null,
+      error: serializeThrownError(err),
     });
     throw err;
   } finally {

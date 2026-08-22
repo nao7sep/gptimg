@@ -62,6 +62,17 @@ describe("writeFileAtomic", () => {
     expect(await readFile(target, "utf-8")).toBe("second");
   });
 
+  it("atomically refuses to replace a target when overwrite is false", async () => {
+    const target = path.join(tmp, "claimed.txt");
+    await writeFileAtomic(target, "winner", { encoding: "utf-8" });
+
+    await expect(
+      writeFileAtomic(target, "loser", { encoding: "utf-8", overwrite: false }),
+    ).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await readFile(target, "utf-8")).toBe("winner");
+    expect(await readdir(tmp)).toEqual(["claimed.txt"]);
+  });
+
   it("leaves no stray temp file behind after a successful write", async () => {
     const target = path.join(tmp, "clean.txt");
     await writeFileAtomic(target, "x", { encoding: "utf-8" });

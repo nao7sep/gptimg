@@ -581,6 +581,7 @@ describe("OpenAI provider implementations", () => {
       "not json", // not valid JSON
       "", // empty response
       JSON.stringify({ ok: true }), // valid JSON, wrong shape
+      JSON.stringify({ ok: true, score: 1, reasons: [{}] }), // reasons must be strings
     ];
     for (const content of badContents) {
       openaiMock.create.mockResolvedValueOnce({

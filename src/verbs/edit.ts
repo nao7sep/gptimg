@@ -14,6 +14,7 @@ import {
   createOutputGroup,
   plannedSidecarPaths,
   sidecarPathFor,
+  withOutputGroupLock,
 } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { multiline } from "../internal/textCleanup.js";
@@ -176,12 +177,6 @@ export async function editImpl(
     const groupExt = plannedImages[0]?.fmt.extension ?? "png";
     const group = createOutputGroup(outDir, stem, groupExt);
     const allSidecarPaths = plannedSidecarPaths(group, suffixCount, suffixCount);
-    assertOutputGroupAvailable(
-      group,
-      [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
-      overwrite,
-    );
-
     const files: OutputFile[] = [];
     const requestRecord = {
       ...params,
@@ -192,43 +187,50 @@ export async function editImpl(
     };
     const redactedResponse = nullBase64InResponse(providerResult.raw);
 
-    await Promise.all(
-      plannedImages.map((item) =>
-        limit(async () => {
-          await writeOutputBytes(item.filePath, item.data);
-          const sha = hash(item.data);
-          const itemSidecarPath = sidecarPathFor(group, item.index, suffixCount);
-          const itemSidecarStem = itemSidecarPath.replace(/\.json$/, "");
-          const itemSidecar: Sidecar = {
-            request: requestRecord,
-            response: redactedResponse,
-            files: [
-              {
-                index: item.index,
-                name: path.basename(item.filePath),
-                sha256: sha,
-                format: item.fmt.format,
-              },
-            ],
-          };
-          await writeSidecar(itemSidecarStem, itemSidecar);
-          files.push({
-            index: item.index,
-            path: item.filePath,
-            sidecarPath: itemSidecarPath,
-            sha256: sha,
-            format: item.fmt.format,
-          });
-          await logger.info("write", `wrote image ${item.index}`, {
-            index: item.index,
-            name: item.fileName,
-            sha256: sha,
-            format: item.fmt.format,
-            sidecar: path.basename(itemSidecarPath),
-          });
-        }),
-      ),
-    );
+    await withOutputGroupLock(group, async () => {
+      assertOutputGroupAvailable(
+        group,
+        [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
+        overwrite,
+      );
+      await Promise.all(
+        plannedImages.map((item) =>
+          limit(async () => {
+            await writeOutputBytes(item.filePath, item.data, overwrite);
+            const sha = hash(item.data);
+            const itemSidecarPath = sidecarPathFor(group, item.index, suffixCount);
+            const itemSidecarStem = itemSidecarPath.replace(/\.json$/, "");
+            const itemSidecar: Sidecar = {
+              request: requestRecord,
+              response: redactedResponse,
+              files: [
+                {
+                  index: item.index,
+                  name: path.basename(item.filePath),
+                  sha256: sha,
+                  format: item.fmt.format,
+                },
+              ],
+            };
+            await writeSidecar(itemSidecarStem, itemSidecar, { overwrite });
+            files.push({
+              index: item.index,
+              path: item.filePath,
+              sidecarPath: itemSidecarPath,
+              sha256: sha,
+              format: item.fmt.format,
+            });
+            await logger.info("write", `wrote image ${item.index}`, {
+              index: item.index,
+              name: item.fileName,
+              sha256: sha,
+              format: item.fmt.format,
+              sidecar: path.basename(itemSidecarPath),
+            });
+          }),
+        ),
+      );
+    });
     files.sort((a, b) => a.index - b.index);
 
     return {

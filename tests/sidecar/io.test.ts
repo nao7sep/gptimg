@@ -39,6 +39,17 @@ describe("sidecar read/write", () => {
     await expect(readSidecar(stem)).resolves.toEqual(JSON.parse(text));
   });
 
+  it("preserves an existing sidecar when overwrite is false", async () => {
+    const first: Sidecar = { request: { prompt: "winner" }, response: {}, files: [] };
+    const second: Sidecar = { request: { prompt: "loser" }, response: {}, files: [] };
+    await writeSidecar(stem, first);
+
+    await expect(writeSidecar(stem, second, { overwrite: false })).rejects.toMatchObject({
+      code: "output.exists",
+    });
+    await expect(readSidecar(stem)).resolves.toMatchObject({ request: { prompt: "winner" } });
+  });
+
   it("reports invalid sidecar JSON as a local image decode failure", async () => {
     await writeFile(`${stem}.json`, "{bad json");
 

@@ -1,4 +1,6 @@
 import { readdirSync } from "node:fs";
+import { open, unlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
 import { indexSuffix } from "./output-naming.js";
@@ -23,6 +25,43 @@ export interface OutputGroup {
   stem: string;
   ext: string;
   sidecarExt: string;
+}
+
+function lockPathFor(group: OutputGroup): string {
+  const identity = path.resolve(group.dir, group.stem).toLowerCase();
+  const digest = createHash("sha256").update(identity).digest("hex").slice(0, 16);
+  return path.join(group.dir, `.gptimg-output-${digest}.lock`);
+}
+
+/** Serialize the short artifact-publication phase for one output stem. */
+export async function withOutputGroupLock<T>(
+  group: OutputGroup,
+  body: () => Promise<T>,
+): Promise<T> {
+  const lockPath = lockPathFor(group);
+  let handle;
+  try {
+    handle = await open(lockPath, "wx");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new LocalOpError(
+        "output.busy",
+        `Another operation is publishing output stem ${JSON.stringify(group.stem)}. Try again.`,
+        { cause: err },
+      );
+    }
+    throw new LocalOpError(
+      "output.lockFailed",
+      `Failed to reserve output stem ${JSON.stringify(group.stem)}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
+  try {
+    return await body();
+  } finally {
+    await handle.close().catch(() => undefined);
+    await unlink(lockPath).catch(() => undefined);
+  }
 }
 
 const SIDECAR_EXT = "json";
