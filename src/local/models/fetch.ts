@@ -441,6 +441,7 @@ export async function ensureModel(
     );
   }
 
+  let namespacePublished = false;
   try {
     // Verify the pinned hash before publishing. A mismatch means the pinned URL
     // changed or the download is corrupt — fail loudly rather than cache bad
@@ -462,6 +463,7 @@ export async function ensureModel(
       // Deliberate reinstall: atomically replace whatever is there.
       try {
         await rename(partialPath, finalPath);
+        namespacePublished = true;
       } catch (err) {
         throw new LocalOpError(
           "model.downloadFailed",
@@ -470,7 +472,6 @@ export async function ensureModel(
         );
       }
       await syncDirectory(cacheDir);
-      throwIfAborted(operationSignal);
       return finalPath;
     }
 
@@ -479,11 +480,13 @@ export async function ensureModel(
     // published first. Either way the staged name is no longer needed.
     try {
       await link(partialPath, finalPath);
+      namespacePublished = true;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "EEXIST" && !inspectCachedModel(finalPath, entry.byteSize).usable) {
         throwIfAborted(operationSignal);
         await rename(partialPath, finalPath);
+        namespacePublished = true;
       } else if (code !== "EEXIST") {
         throw new LocalOpError(
           "model.downloadFailed",
@@ -494,9 +497,19 @@ export async function ensureModel(
       // Another concurrent caller won the publish race — drop our copy.
     }
     await syncDirectory(cacheDir);
-    throwIfAborted(operationSignal);
   } catch (err) {
     await unlink(partialPath).catch(() => undefined);
+    // A successful rename/link is the cancellation commit point. A later
+    // directory-sync error remains an error, but cancellation cannot relabel
+    // an artifact that was already published as cancelled or timed out.
+    if (namespacePublished) {
+      if (err instanceof LocalOpError) throw err;
+      throw new LocalOpError(
+        "model.downloadFailed",
+        `Published ${entry.name}, but failed to sync ${cacheDir}: ${(err as Error).message}`,
+        { cause: err },
+      );
+    }
     if (signal?.aborted) throw toAbortError(signal.reason);
     if (operationSignal.aborted) {
       throw new LocalOpError("model.timeout", `Timed out acquiring ${entry.name}.`, { cause: err });

@@ -39,7 +39,9 @@ jobs:
 
       - name: Verify tag matches package version
         if: github.ref_type == 'tag'
-        run: npm run check:release-tag -- "${{ github.ref_name }}"
+        env:
+          GPTIMG_RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run check:release-tag -- "$GPTIMG_RELEASE_TAG"
 
       # Pack the exact distributable a consumer receives (into the working dir).
       - name: Pack the distributable
