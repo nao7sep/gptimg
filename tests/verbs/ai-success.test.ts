@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -404,6 +404,41 @@ describe("AI verb implementations with mocked provider", () => {
     const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
     expect(sidecar.request.prompt).toBe("first contender");
     expect((await readdir(outDir)).some((name) => name.endsWith(".lock"))).toBe(false);
+  });
+
+  it("rejects a same-stem directory alias before a second provider charge", async () => {
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let providerEntered!: () => void;
+    const firstAtProvider = new Promise<void>((resolve) => {
+      providerEntered = resolve;
+    });
+    providerCalls.generate.mockImplementation(async () => {
+      providerEntered();
+      await firstHeld;
+      return {
+        raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
+        images: [{ data: png }],
+      };
+    });
+    const outDir = path.join(tmp, "alias-concurrent-out");
+    const aliasDir = path.join(tmp, "alias-concurrent-link");
+    await mkdir(outDir);
+    await symlink(outDir, aliasDir, process.platform === "win32" ? "junction" : "dir");
+    const first = sdk.generate({ prompt: "real path", outDir, outName: "same" });
+    await firstAtProvider;
+
+    await expect(
+      sdk.generate({ prompt: "alias path", outDir: aliasDir, outName: "same", overwrite: true }),
+    ).rejects.toMatchObject({ code: "output.busy" });
+    expect(providerCalls.generate).toHaveBeenCalledOnce();
+
+    releaseFirst();
+    await expect(first).resolves.toMatchObject({ partial: false });
+    const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
+    expect(sidecar.request.prompt).toBe("real path");
   });
 
   it("generate refuses --overwrite when stale indexed siblings from a prior n exist", async () => {

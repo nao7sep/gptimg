@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  acquireOutputGroupLock,
   assertOutputGroupAvailable,
   assertStemAvailable,
   createOutputGroup,
@@ -111,22 +112,41 @@ describe("OutputGroup", () => {
     await expect(withOutputGroupLock(group, async () => "next")).resolves.toBe("next");
   });
 
-  it("recovers a lock whose owning process is gone", async () => {
+  it("serializes aliases of the same physical output directory", async () => {
+    const realDir = path.join(tmp, "real");
+    const aliasDir = path.join(tmp, "alias");
+    await mkdir(realDir);
+    await symlink(realDir, aliasDir, process.platform === "win32" ? "junction" : "dir");
+    const realGroup = createOutputGroup(realDir, "same", "png");
+    const aliasGroup = createOutputGroup(aliasDir, "same", "jpg");
+
+    expect(await outputGroupLockPathFor(realGroup)).toBe(await outputGroupLockPathFor(aliasGroup));
+    const first = await acquireOutputGroupLock(realGroup);
+    try {
+      await expect(withOutputGroupLock(aliasGroup, async () => "second")).rejects.toMatchObject({
+        code: "output.busy",
+      });
+    } finally {
+      await first.release();
+    }
+  });
+
+  it("recovers an abandoned lock without relying on a reusable process id", async () => {
     const group = createOutputGroup(tmp, "crashed", "png");
-    const lockPath = outputGroupLockPathFor(group);
+    const lockPath = await outputGroupLockPathFor(group);
     await mkdir(lockPath);
-    await writeFile(path.join(lockPath, "held-2147483647-crashed"), "");
+    await writeFile(path.join(lockPath, "held-aaaaaaaaaaaaaaaaaaaaa"), "");
 
     await expect(withOutputGroupLock(group, async () => "recovered")).resolves.toBe("recovered");
     expect(existsSync(lockPath)).toBe(false);
   });
 
-  it("recovers a released lock even when cleanup failed in this live process", async () => {
+  it("recovers a released lock even when cleanup failed", async () => {
     const group = createOutputGroup(tmp, "released", "png");
-    const lockPath = outputGroupLockPathFor(group);
+    const lockPath = await outputGroupLockPathFor(group);
     await mkdir(lockPath);
-    await writeFile(path.join(lockPath, `held-${process.pid}-old`), "");
-    await writeFile(path.join(lockPath, `released-${process.pid}-old`), "");
+    await writeFile(path.join(lockPath, "held-bbbbbbbbbbbbbbbbbbbbb"), "");
+    await writeFile(path.join(lockPath, "released-bbbbbbbbbbbbbbbbbbbbb"), "");
 
     await expect(withOutputGroupLock(group, async () => "recovered")).resolves.toBe(
       "recovered",
