@@ -19,30 +19,19 @@ export function resolveProfile(profile: Profile): ResolvedProfile {
 
   if (typeof apiKeyEnv === "string" && apiKeyEnv.length > 0) {
     const envValue = process.env[apiKeyEnv];
-    if (envValue && envValue.trim().length > 0) {
-      if (envValue !== envValue.trim()) {
-        throw new ProfileError(
-          "apiKey.invalidWhitespace",
-          `API key from environment variable ${apiKeyEnv} contains surrounding whitespace.`,
-        );
-      }
+    const apiKey = envValue?.trim();
+    if (apiKey) {
       return {
         redacted: rest as Omit<Profile, "apiKey" | "apiKeyEnv">,
-        apiKey: envValue,
+        apiKey,
         apiKeySource: `env:${apiKeyEnv}`,
       };
     }
   }
 
   if (typeof storedKey === "string" && storedKey.length > 0) {
-    const apiKey = deobfuscate(storedKey);
-    if (apiKey.trim().length > 0) {
-      if (apiKey !== apiKey.trim()) {
-        throw new ProfileError(
-          "apiKey.invalidWhitespace",
-          "Stored API key contains surrounding whitespace.",
-        );
-      }
+    const apiKey = deobfuscate(storedKey).trim();
+    if (apiKey) {
       return {
         redacted: rest as Omit<Profile, "apiKey" | "apiKeyEnv">,
         apiKey,
