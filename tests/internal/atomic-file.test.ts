@@ -1,8 +1,8 @@
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stagingPathFor, writeFileAtomic } from "../../src/internal/atomic-file.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanupPublishedTemp, publishFileNoClobber, stagingPathFor, writeFileAtomic } from "../../src/internal/atomic-file.js";
 
 describe("stagingPathFor", () => {
   it("names the staged file <stem>-<random>.tmp, in the target's own directory", () => {
@@ -66,11 +66,37 @@ describe("writeFileAtomic", () => {
     const target = path.join(tmp, "claimed.txt");
     await writeFileAtomic(target, "winner", { encoding: "utf-8" });
 
-    await expect(
-      writeFileAtomic(target, "loser", { encoding: "utf-8", overwrite: false }),
-    ).rejects.toMatchObject({ code: "EEXIST" });
+    await expect(writeFileAtomic(target, "loser", { encoding: "utf-8", overwrite: false })).rejects.toMatchObject({
+      code: "EEXIST",
+    });
     expect(await readFile(target, "utf-8")).toBe("winner");
     expect(await readdir(tmp)).toEqual(["claimed.txt"]);
+  });
+
+  it("falls back to exclusive copy when the filesystem rejects hard links", async () => {
+    const temp = path.join(tmp, "fallback.tmp");
+    const target = path.join(tmp, "fallback.txt");
+    await writeFile(temp, "winner", "utf-8");
+    const unsupportedLink = vi.fn(async () => {
+      throw Object.assign(new Error("hard links unsupported"), {
+        code: "EPERM",
+      });
+    });
+
+    await publishFileNoClobber(temp, target, unsupportedLink);
+    expect(await readFile(target, "utf-8")).toBe("winner");
+
+    await writeFile(temp, "loser", "utf-8");
+    await expect(publishFileNoClobber(temp, target, unsupportedLink)).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await readFile(target, "utf-8")).toBe("winner");
+  });
+
+  it("treats target publication as committed even when temp cleanup fails", async () => {
+    const cleanup = vi.fn(async () => {
+      throw Object.assign(new Error("busy temp"), { code: "EPERM" });
+    });
+    await expect(cleanupPublishedTemp("/published.tmp", cleanup)).resolves.toBeUndefined();
+    expect(cleanup).toHaveBeenCalledOnce();
   });
 
   it("leaves no stray temp file behind after a successful write", async () => {

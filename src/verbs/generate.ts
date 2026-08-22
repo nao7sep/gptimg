@@ -9,12 +9,13 @@ import {
   writeOutputBytes,
 } from "../internal/output-files.js";
 import {
+  acquireOutputGroupLock,
   assertOutputGroupAvailable,
   assertStemAvailable,
   createOutputGroup,
   plannedSidecarPaths,
+  settleOutputPublications,
   sidecarPathFor,
-  withOutputGroupLock,
 } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { multiline } from "../internal/textCleanup.js";
@@ -89,10 +90,10 @@ export async function generateImpl(
     await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem(ts);
     const overwrite = args.overwrite ?? false;
-    // Fail fast before the paid provider call when the stem already carries a
-    // conflicting prior run. The per-image sidecars identify the group
-    // independent of the image format, so this is checkable pre-response; the
-    // full image+sidecar check still runs after the response as the authority.
+    // Reserve before the paid provider edge. A known-live contender therefore
+    // fails without charging, while a crashed/released reservation is recovered.
+    await using _outputLock = await acquireOutputGroupLock(createOutputGroup(outDir, stem, "json"));
+    // Sidecars identify the group independently of the eventual image format.
     assertStemAvailable(outDir, stem, n, overwrite);
 
     await logger.info("request", "calling provider.generate", {
@@ -183,16 +184,14 @@ export async function generateImpl(
     if (chromaColor) requestRecord.chroma = { color: chromaColor };
     const redactedResponse = nullBase64InResponse(providerResult.raw);
 
-    await withOutputGroupLock(group, async () => {
-      // Re-check after acquiring the publication lock: another invocation may
-      // have completed while this one was waiting on the provider.
-      assertOutputGroupAvailable(
-        group,
-        [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
-        overwrite,
-      );
-      await Promise.all(
-        plannedImages.map((item) =>
+    assertOutputGroupAvailable(
+      group,
+      [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
+      overwrite,
+    );
+    await settleOutputPublications(
+      plannedImages.map(
+        (item) => () =>
           limit(async () => {
             await writeOutputBytes(item.filePath, item.data, overwrite);
             const sha = hash(item.data);
@@ -229,9 +228,8 @@ export async function generateImpl(
               sidecar: path.basename(itemSidecarPath),
             });
           }),
-        ),
-      );
-    });
+      ),
+    );
     files.sort((a, b) => a.index - b.index);
 
     return {

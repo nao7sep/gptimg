@@ -9,12 +9,13 @@ import {
   writeOutputBytes,
 } from "../internal/output-files.js";
 import {
+  acquireOutputGroupLock,
   assertOutputGroupAvailable,
   assertStemAvailable,
   createOutputGroup,
   plannedSidecarPaths,
+  settleOutputPublications,
   sidecarPathFor,
-  withOutputGroupLock,
 } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { multiline } from "../internal/textCleanup.js";
@@ -101,9 +102,8 @@ export async function editImpl(
     await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem(ts);
     const overwrite = args.overwrite ?? false;
-    // Fail fast before the paid provider call when the stem already conflicts
-    // (sidecars identify the group independent of image format). The full
-    // image+sidecar check still runs after the response as the authority.
+    await using _outputLock = await acquireOutputGroupLock(createOutputGroup(outDir, stem, "json"));
+    // Fail before the paid provider call when this stem already conflicts.
     assertStemAvailable(outDir, stem, n, overwrite);
 
     await logger.info("request", "calling provider.edit", {
@@ -187,14 +187,14 @@ export async function editImpl(
     };
     const redactedResponse = nullBase64InResponse(providerResult.raw);
 
-    await withOutputGroupLock(group, async () => {
-      assertOutputGroupAvailable(
-        group,
-        [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
-        overwrite,
-      );
-      await Promise.all(
-        plannedImages.map((item) =>
+    assertOutputGroupAvailable(
+      group,
+      [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
+      overwrite,
+    );
+    await settleOutputPublications(
+      plannedImages.map(
+        (item) => () =>
           limit(async () => {
             await writeOutputBytes(item.filePath, item.data, overwrite);
             const sha = hash(item.data);
@@ -228,9 +228,8 @@ export async function editImpl(
               sidecar: path.basename(itemSidecarPath),
             });
           }),
-        ),
-      );
-    });
+      ),
+    );
     files.sort((a, b) => a.index - b.index);
 
     return {

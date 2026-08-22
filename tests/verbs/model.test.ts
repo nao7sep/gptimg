@@ -225,10 +225,32 @@ describe("model.verify integrity check", () => {
     expect(result.logPath).toMatch(/\.log$/);
     expect(existsSync(result.logPath)).toBe(true);
     expect(onProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "verifying cached model", stage: "resolve" }),
+      expect.objectContaining({
+        message: "verifying cached model",
+        stage: "resolve",
+      }),
     );
     expect(onProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "model verification result", stage: "response" }),
+      expect.objectContaining({
+        message: "model verification result",
+        stage: "response",
+      }),
     );
+  });
+
+  it("wraps cached-model filesystem failures in the stable typed error", async () => {
+    const profileDir = path.join(tmp, "verify-failure-profile");
+    const modelPath = path.join(defaultModelsDir(profileDir), MODELS[key].name);
+    await mkdir(modelPath, { recursive: true });
+    const sdk = new GptImg({
+      profileDir,
+      logDir: path.join(tmp, "verify-failure-logs"),
+    });
+
+    await expect(sdk.model.verify()).rejects.toMatchObject({
+      code: "model.verifyFailed",
+      errorType: "localOp",
+      cause: expect.any(Error),
+    });
   });
 });

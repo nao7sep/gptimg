@@ -109,21 +109,30 @@ export async function verifyModelsImpl(
       if (opts.signal?.aborted) throw toAbortError(opts.signal.reason);
       const entry = MODELS[key];
       const filePath = path.join(cacheDir, entry.name);
-      const cache = inspectCachedModel(filePath, entry.byteSize);
       let integrity: ModelIntegrity;
       let actualSha256: string | undefined;
-      if (!cache.present) {
-        integrity = "missing";
-      } else if (!entry.sha256) {
-        integrity = "unverifiable";
-      } else {
-        await logger.info("resolve", "verifying cached model", {
-          key,
-          name: entry.name,
-          sizeBytes: cache.sizeBytes ?? null,
-        });
-        actualSha256 = await fileSha256(filePath, opts.signal);
-        integrity = actualSha256 === entry.sha256 ? "ok" : "mismatch";
+      try {
+        const cache = inspectCachedModel(filePath, entry.byteSize);
+        if (!cache.present) {
+          integrity = "missing";
+        } else if (!entry.sha256) {
+          integrity = "unverifiable";
+        } else {
+          await logger.info("resolve", "verifying cached model", {
+            key,
+            name: entry.name,
+            sizeBytes: cache.sizeBytes ?? null,
+          });
+          actualSha256 = await fileSha256(filePath, opts.signal);
+          integrity = actualSha256 === entry.sha256 ? "ok" : "mismatch";
+        }
+      } catch (err) {
+        if (opts.signal?.aborted) throw toAbortError(opts.signal.reason);
+        throw new LocalOpError(
+          "model.verifyFailed",
+          `Failed to verify cached model ${entry.name}: ${(err as Error).message}`,
+          { cause: err },
+        );
       }
       models.push({
         key,

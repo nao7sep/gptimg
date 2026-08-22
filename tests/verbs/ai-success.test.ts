@@ -373,34 +373,36 @@ describe("AI verb implementations with mocked provider", () => {
     ).resolves.toMatchObject({ partial: false });
   });
 
-  it("does not interleave concurrent same-stem artifact groups", async () => {
-    let release!: () => void;
-    const bothAtProvider = new Promise<void>((resolve) => {
-      release = resolve;
+  it("rejects a known-busy same-stem call before a second provider charge", async () => {
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let providerEntered!: () => void;
+    const firstAtProvider = new Promise<void>((resolve) => {
+      providerEntered = resolve;
     });
     providerCalls.generate.mockImplementation(async () => {
-      if (providerCalls.generate.mock.calls.length === 2) release();
-      await bothAtProvider;
+      providerEntered();
+      await firstHeld;
       return {
         raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
         images: [{ data: png }],
       };
     });
     const outDir = path.join(tmp, "concurrent-out");
-    const settled = await Promise.allSettled([
-      sdk.generate({ prompt: "first contender", outDir, outName: "same" }),
-      sdk.generate({ prompt: "second contender", outDir, outName: "same" }),
-    ]);
+    const first = sdk.generate({ prompt: "first contender", outDir, outName: "same" });
+    await firstAtProvider;
 
-    expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    const rejected = settled.find((result) => result.status === "rejected");
-    expect(rejected).toBeDefined();
-    expect(["output.busy", "output.exists"]).toContain(
-      (rejected as PromiseRejectedResult).reason.code,
-    );
-    const winner = settled.findIndex((result) => result.status === "fulfilled");
+    await expect(
+      sdk.generate({ prompt: "second contender", outDir, outName: "same" }),
+    ).rejects.toMatchObject({ code: "output.busy" });
+    expect(providerCalls.generate).toHaveBeenCalledOnce();
+
+    releaseFirst();
+    await expect(first).resolves.toMatchObject({ partial: false });
     const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
-    expect(sidecar.request.prompt).toBe(winner === 0 ? "first contender" : "second contender");
+    expect(sidecar.request.prompt).toBe("first contender");
     expect((await readdir(outDir)).some((name) => name.endsWith(".lock"))).toBe(false);
   });
 
