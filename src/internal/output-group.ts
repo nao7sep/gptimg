@@ -6,12 +6,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import { LocalOpError } from "../errors.js";
+import { SUPPORTED_IMAGE_EXTENSIONS } from "../image/detectFormat.js";
 import { indexSuffix } from "./output-naming.js";
 
 /**
  * The artifact group produced by a single `generate` or `edit` invocation:
- * a stem plus an image extension plus a sidecar extension, with one sidecar
- * per image (the per-image sidecar contract — no shared sidecar for n>1).
+ * a stem plus any supported emitted image extension plus a sidecar extension,
+ * with one sidecar per image (the per-image sidecar contract — no shared
+ * sidecar for n>1). This makes format changes one coherent overwrite group.
  * Membership is defined purely by filename pattern in `dir`:
  *
  *   - `<stem>.<ext>`                  — single output (n=1)
@@ -30,10 +32,27 @@ export interface OutputGroup {
   sidecarExt: string;
 }
 
+const TARGET_MARKER = ".gptimg-target";
+
+function normalizedOutputGroup(group: OutputGroup): OutputGroup {
+  // Append a marker before resolving so even unusual stems such as `.` and an
+  // empty string retain the same filename semantics as `<stem>.<extension>`.
+  // path.join mirrors the publication path, while path.resolve collapses `.`
+  // and `..` aliases before any lock or sibling decision is made.
+  const target = path.resolve(path.join(group.dir, `${group.stem}${TARGET_MARKER}`));
+  const markedName = path.basename(target);
+  return {
+    ...group,
+    dir: path.dirname(target),
+    stem: markedName.slice(0, -TARGET_MARKER.length),
+  };
+}
+
 export async function outputGroupLockPathFor(group: OutputGroup): Promise<string> {
-  const canonicalDir = await realpath(group.dir);
+  const normalized = normalizedOutputGroup(group);
+  const canonicalDir = await realpath(normalized.dir);
   const directory = await stat(canonicalDir);
-  const identity = `${canonicalDir}\0${directory.dev}:${directory.ino}\0${group.stem.normalize("NFC").toLowerCase()}`;
+  const identity = `${canonicalDir}\0${directory.dev}:${directory.ino}\0${normalized.stem.normalize("NFC").toLowerCase()}`;
   const digest = createHash("sha256").update(identity).digest("hex").slice(0, 16);
   return path.join(canonicalDir, `.gptimg-output-${digest}.lock`);
 }
@@ -289,7 +308,7 @@ export async function settleOutputPublications(publishers: ReadonlyArray<() => P
 const SIDECAR_EXT = "json";
 
 export function createOutputGroup(dir: string, stem: string, ext: string): OutputGroup {
-  return { dir, stem, ext, sidecarExt: SIDECAR_EXT };
+  return normalizedOutputGroup({ dir, stem, ext, sidecarExt: SIDECAR_EXT });
 }
 
 /**
@@ -325,16 +344,26 @@ export function siblingsOnDisk(group: OutputGroup): string[] {
     });
   }
   const stem = escapeRegex(group.stem);
-  const ext = escapeRegex(group.ext);
   const sx = escapeRegex(group.sidecarExt);
+  const imageExts = [...new Set([...SUPPORTED_IMAGE_EXTENSIONS, group.ext])]
+    .filter((ext) => ext !== group.sidecarExt)
+    .map(escapeRegex)
+    .join("|");
   // Case-insensitive: on macOS/Windows a `photo`-stem output collides with a
   // `Photo`-stem group, so it must be detected as a sibling regardless of case.
-  const imagePattern = new RegExp(`^${stem}(?:-\\d+)?\\.${ext}$`, "i");
+  const imagePattern = new RegExp(`^${stem}(?:-\\d+)?\\.(?:${imageExts})$`, "i");
   const sidecarPattern = new RegExp(`^${stem}(?:-\\d+)?\\.${sx}$`, "i");
   return entries
     .filter((name) => imagePattern.test(name) || sidecarPattern.test(name))
     .map((name) => path.join(group.dir, name))
     .sort();
+}
+
+function artifactIdentity(filePath: string, sidecarExt: string): string {
+  const name = path.basename(filePath);
+  const extension = path.extname(name).slice(1).toLowerCase();
+  const stem = name.slice(0, -(extension.length + 1)).normalize("NFC").toLowerCase();
+  return `${extension === sidecarExt.toLowerCase() ? "sidecar" : "image"}:${stem}`;
 }
 
 /**
@@ -345,20 +374,21 @@ export function siblingsOnDisk(group: OutputGroup): string[] {
  *   carries any prior-run artifact is not safe to write into without an
  *   explicit overwrite intent.
  *
- * - With `allowOverwrite`: planned files may exist (they will be replaced).
- *   Group siblings that are NOT in the planned set are reported as
- *   `output.staleSiblings`. The user resolves it by deleting them or
- *   choosing a fresh name. This is the halt the playbook prefers over a
- *   silent cleanup subsystem.
+ * - With `allowOverwrite`: planned artifact slots may exist (they will be
+ *   replaced). An image slot is extension-independent, so a planned PNG may
+ *   replace an old JPEG; sidecars remain their own artifact kind. Group
+ *   siblings outside the planned slots are reported as `output.staleSiblings`.
  */
 export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: string[], allowOverwrite: boolean): void {
   const plannedResolved = new Set<string>();
+  const plannedArtifacts = new Set<string>();
   for (const p of plannedFiles) {
     const r = path.resolve(p);
     if (plannedResolved.has(r)) {
       throw new LocalOpError("output.duplicate", `Multiple planned outputs resolve to the same path: ${p}`);
     }
     plannedResolved.add(r);
+    plannedArtifacts.add(artifactIdentity(p, group.sidecarExt));
   }
 
   const existing = siblingsOnDisk(group);
@@ -367,7 +397,10 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
   if (!allowOverwrite) {
     throw new LocalOpError("output.exists", `Output exists: ${existing[0]}. Use overwrite to allow.`);
   }
-  const stale = existing.filter((p) => !plannedResolved.has(path.resolve(p)));
+  // An image in another supported format is the same logical artifact slot and
+  // is replaceable under explicit overwrite. JSON remains a distinct kind, so
+  // a sidecar-only verb cannot silently adopt an orphan image (or vice versa).
+  const stale = existing.filter((p) => !plannedArtifacts.has(artifactIdentity(p, group.sidecarExt)));
   if (stale.length > 0) {
     const names = stale.map((p) => path.basename(p)).join(", ");
     throw new LocalOpError(
@@ -375,6 +408,37 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
       `Refusing to overwrite: the artifact group "${group.stem}.${group.ext}" in ${group.dir} ` +
         `has ${stale.length} file(s) from a prior run that this run will not replace: ${names}. ` +
         `Delete them or choose a fresh outName.`,
+    );
+  }
+}
+
+/** Remove old supported image formats only after their replacement published. */
+export async function removeSupersededImageFormats(group: OutputGroup, plannedImages: string[]): Promise<void> {
+  const plannedExtensions = new Map<string, string>();
+  for (const filePath of plannedImages) {
+    const extension = path.extname(filePath).slice(1).toLowerCase();
+    plannedExtensions.set(artifactIdentity(filePath, group.sidecarExt), extension);
+  }
+
+  const stale = siblingsOnDisk(group).filter((filePath) => {
+    const extension = path.extname(filePath).slice(1).toLowerCase();
+    if (!SUPPORTED_IMAGE_EXTENSIONS.includes(extension)) return false;
+    const replacementExtension = plannedExtensions.get(artifactIdentity(filePath, group.sidecarExt));
+    return replacementExtension !== undefined && replacementExtension !== extension;
+  });
+  const failures: Error[] = [];
+  for (const filePath of stale) {
+    try {
+      await unlink(filePath);
+    } catch (err) {
+      failures.push(err as Error);
+    }
+  }
+  if (failures.length > 0) {
+    throw new LocalOpError(
+      "output.cleanupFailed",
+      `Published replacement output but failed to remove ${failures.length} superseded image format(s).`,
+      { cause: new AggregateError(failures) },
     );
   }
 }
@@ -387,6 +451,8 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
  * (assertOutputGroupAvailable) still runs after the response as the authority.
  */
 export function assertStemAvailable(dir: string, stem: string, count: number, allowOverwrite: boolean): void {
-  const sidecarGroup = createOutputGroup(dir, stem, SIDECAR_EXT);
-  assertOutputGroupAvailable(sidecarGroup, plannedSidecarPaths(sidecarGroup, count, count), allowOverwrite);
+  const group = createOutputGroup(dir, stem, "png");
+  const sidecars = plannedSidecarPaths(group, count, count);
+  const imagePlaceholders = sidecars.map((sidecar) => sidecar.replace(/\.json$/i, ".png"));
+  assertOutputGroupAvailable(group, [...imagePlaceholders, ...sidecars], allowOverwrite);
 }

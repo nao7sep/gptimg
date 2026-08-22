@@ -3,6 +3,7 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeF
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg } from "../../src/gptimg.js";
 import { obfuscate } from "../../src/profile/obfuscate.js";
@@ -373,7 +374,7 @@ describe("AI verb implementations with mocked provider", () => {
     ).resolves.toMatchObject({ partial: false });
   });
 
-  it("rejects a known-busy same-stem call before a second provider charge", async () => {
+  it("rejects a known-busy lexical stem alias before a second provider charge", async () => {
     let releaseFirst!: () => void;
     const firstHeld = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -395,7 +396,7 @@ describe("AI verb implementations with mocked provider", () => {
     await firstAtProvider;
 
     await expect(
-      sdk.generate({ prompt: "second contender", outDir, outName: "same" }),
+      sdk.generate({ prompt: "second contender", outDir, outName: "nested/../same" }),
     ).rejects.toMatchObject({ code: "output.busy" });
     expect(providerCalls.generate).toHaveBeenCalledOnce();
 
@@ -404,6 +405,21 @@ describe("AI verb implementations with mocked provider", () => {
     const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
     expect(sidecar.request.prompt).toBe("first contender");
     expect((await readdir(outDir)).some((name) => name.endsWith(".lock"))).toBe(false);
+  });
+
+  it("rejects an orphan image before a provider charge", async () => {
+    const outDir = path.join(tmp, "orphan-image-out");
+    await mkdir(outDir);
+    await writeFile(path.join(outDir, "same.png"), png);
+    providerCalls.generate.mockResolvedValue({
+      raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
+      images: [{ data: png }],
+    });
+
+    await expect(
+      sdk.generate({ prompt: "must not be charged", outDir, outName: "same" }),
+    ).rejects.toMatchObject({ code: "output.exists" });
+    expect(providerCalls.generate).not.toHaveBeenCalled();
   });
 
   it("rejects a same-stem directory alias before a second provider charge", async () => {
@@ -514,6 +530,32 @@ describe("AI verb implementations with mocked provider", () => {
         overwrite: true,
       }),
     ).resolves.toMatchObject({ partial: false });
+  });
+
+  it("generate --overwrite replaces an old image format without leaving its sibling", async () => {
+    const outDir = path.join(tmp, "format-overwrite");
+    const jpg = new Uint8Array(await sharp(png).jpeg().toBuffer());
+    providerCalls.generate.mockResolvedValue({
+      raw: { data: [{ b64_json: Buffer.from(jpg).toString("base64") }] },
+      images: [{ data: jpg }],
+    });
+    await sdk.generate({ prompt: "jpeg first", outDir, outName: "same" });
+    expect(existsSync(path.join(outDir, "same.jpg"))).toBe(true);
+
+    providerCalls.generate.mockResolvedValue({
+      raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
+      images: [{ data: png }],
+    });
+    const result = await sdk.generate({
+      prompt: "png replacement",
+      outDir,
+      outName: "same",
+      overwrite: true,
+    });
+
+    expect(result.files[0]?.path).toBe(path.join(outDir, "same.png"));
+    expect(existsSync(path.join(outDir, "same.png"))).toBe(true);
+    expect(existsSync(path.join(outDir, "same.jpg"))).toBe(false);
   });
 
   it("generate rejects sidecar collisions before writing new images", async () => {
@@ -634,6 +676,27 @@ describe("AI verb implementations with mocked provider", () => {
     expect(existsSync(path.join(outDir, "same-2.png"))).toBe(false);
   });
 
+  it("edit --overwrite replaces an old image format without leaving its sibling", async () => {
+    const input = path.join(tmp, "format-edit-input.png");
+    const outDir = path.join(tmp, "format-edit-overwrite");
+    const jpg = new Uint8Array(await sharp(png).jpeg().toBuffer());
+    await copyFile(fixture("green-disk.png"), input);
+    providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: jpg }] });
+    await sdk.edit({ prompt: "jpeg first", in: input, outDir, outName: "same" });
+
+    providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }] });
+    await sdk.edit({
+      prompt: "png replacement",
+      in: input,
+      outDir,
+      outName: "same",
+      overwrite: true,
+    });
+
+    expect(existsSync(path.join(outDir, "same.png"))).toBe(true);
+    expect(existsSync(path.join(outDir, "same.jpg"))).toBe(false);
+  });
+
   it("edit marks invalid image bytes as partial and still writes valid later items", async () => {
     const input = path.join(tmp, "input.png");
     await copyFile(fixture("green-disk.png"), input);
@@ -738,6 +801,23 @@ describe("AI verb implementations with mocked provider", () => {
       applied: false,
       outputWidth: 128,
     });
+  });
+
+  it("vision rejects an orphan image before a provider charge", async () => {
+    const input = path.join(tmp, "vision-orphan-input.png");
+    const outDir = path.join(tmp, "vision-orphan-out");
+    await copyFile(fixture("green-disk.png"), input);
+    await mkdir(outDir);
+    await writeFile(path.join(outDir, "same.png"), png);
+    providerCalls.vision.mockResolvedValue({
+      raw: {},
+      verdict: { ok: true, score: 1, reasons: [] },
+    });
+
+    await expect(
+      sdk.vision({ in: input, check: "must not be charged", outDir, outName: "same" }),
+    ).rejects.toMatchObject({ code: "output.exists" });
+    expect(providerCalls.vision).not.toHaveBeenCalled();
   });
 
   it("reserves direct and aliased vision sidecars before a second provider charge", async () => {

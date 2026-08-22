@@ -39,6 +39,15 @@ describe("OutputGroup", () => {
     expect(plannedSidecarPaths(group, 2, 12)).toEqual([path.join(tmp, "stem-01.json"), path.join(tmp, "stem-02.json")]);
   });
 
+  it("normalizes lexical aliases of the same target stem", () => {
+    expect(createOutputGroup(tmp, "same", "png")).toEqual(
+      createOutputGroup(tmp, "nested/../same", "png"),
+    );
+    expect(createOutputGroup(tmp, "./same", "png")).toEqual(
+      createOutputGroup(tmp, "same", "png"),
+    );
+  });
+
   it("siblingsOnDisk returns empty when the directory does not exist", () => {
     const group = createOutputGroup(path.join(tmp, "missing"), "stem", "png");
     expect(siblingsOnDisk(group)).toEqual([]);
@@ -47,6 +56,8 @@ describe("OutputGroup", () => {
   it("matches stem.<ext>, stem-<digits>.<ext>, stem.json, and stem-<digits>.json; ignores unrelated names", async () => {
     const names = [
       "stem.png",
+      "stem.jpg",
+      "stem.webp",
       "stem-1.png",
       "stem-01.png",
       "stem-10.png",
@@ -65,7 +76,17 @@ describe("OutputGroup", () => {
       siblingsOnDisk(group)
         .map((p) => path.basename(p))
         .sort(),
-    ).toEqual(["stem-01.json", "stem-01.png", "stem-1.png", "stem-10.json", "stem-10.png", "stem.json", "stem.png"]);
+    ).toEqual([
+      "stem-01.json",
+      "stem-01.png",
+      "stem-1.png",
+      "stem-10.json",
+      "stem-10.png",
+      "stem.jpg",
+      "stem.json",
+      "stem.png",
+      "stem.webp",
+    ]);
   });
 
   it("matches case-differing siblings (Photo group detects a photo output)", async () => {
@@ -214,6 +235,22 @@ describe("OutputGroup", () => {
       expect(() => assertOutputGroupAvailable(group, planned, true)).not.toThrow();
     });
 
+    it("allows --overwrite to supersede the same image slot in another supported format", async () => {
+      await writeFile(path.join(tmp, "stem.jpg"), "");
+      await writeFile(path.join(tmp, "stem.json"), "");
+      const group = createOutputGroup(tmp, "stem", "png");
+      const planned = [path.join(tmp, "stem.png"), path.join(tmp, "stem.json")];
+      expect(() => assertOutputGroupAvailable(group, planned, true)).not.toThrow();
+    });
+
+    it("does not let a sidecar-only plan absorb an orphan image under overwrite", async () => {
+      await writeFile(path.join(tmp, "stem.png"), "");
+      const group = createOutputGroup(tmp, "stem", "json");
+      expect(() =>
+        assertOutputGroupAvailable(group, [path.join(tmp, "stem.json")], true),
+      ).toThrow(/prior run/);
+    });
+
     it("rejects internal duplicates in the planned set", async () => {
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem-1.png"), path.join(tmp, "stem-1.png")];
@@ -239,6 +276,11 @@ describe("OutputGroup", () => {
 
     it("throws output.exists without overwrite when a sidecar is present", async () => {
       await writeFile(path.join(tmp, "stem.json"), "");
+      expect(() => assertStemAvailable(tmp, "stem", 1, false)).toThrow(/Output exists/);
+    });
+
+    it("throws output.exists without overwrite when only an image remnant is present", async () => {
+      await writeFile(path.join(tmp, "stem.webp"), "");
       expect(() => assertStemAvailable(tmp, "stem", 1, false)).toThrow(/Output exists/);
     });
 

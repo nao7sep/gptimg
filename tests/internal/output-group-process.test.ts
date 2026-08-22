@@ -55,10 +55,10 @@ describe("cross-process output reservations", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("rejects a live owner and recovers after that process exits without release", async () => {
+  it("rejects a live owner through a lexical stem alias and recovers after its process exits", async () => {
     const childScript = `
       import { acquireOutputGroupLock, createOutputGroup } from ${JSON.stringify(OUTPUT_GROUP_MODULE)};
-      await acquireOutputGroupLock(createOutputGroup(${JSON.stringify(tmp)}, "shared", "png"));
+      await acquireOutputGroupLock(createOutputGroup(${JSON.stringify(tmp)}, "nested/../shared", "png"));
       process.stdout.write("ready\\n");
       process.stdin.resume();
       await new Promise((resolve) => process.stdin.once("end", resolve));

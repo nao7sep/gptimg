@@ -12,6 +12,9 @@ const FORMAT_TO_EXT: Record<string, string> = {
   jxl: "jxl",
 };
 
+/** Canonical filename extensions this SDK can emit after format detection. */
+export const SUPPORTED_IMAGE_EXTENSIONS = [...new Set(Object.values(FORMAT_TO_EXT))] as readonly string[];
+
 export interface DetectedFormat {
   format: string;
   extension: string;

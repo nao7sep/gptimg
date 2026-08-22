@@ -14,6 +14,7 @@ import {
   assertStemAvailable,
   createOutputGroup,
   plannedSidecarPaths,
+  removeSupersededImageFormats,
   settleOutputPublications,
   sidecarPathFor,
 } from "../internal/output-group.js";
@@ -230,6 +231,9 @@ export async function generateImpl(
           }),
       ),
     );
+    if (overwrite) {
+      await removeSupersededImageFormats(group, plannedImages.map((item) => item.filePath));
+    }
     files.sort((a, b) => a.index - b.index);
 
     return {
