@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
 import { ensureOutputDir } from "../internal/output-files.js";
+import { acquireOutputGroupLock, createOutputGroup } from "../internal/output-group.js";
 import { assertSingleFileAvailable, withVerbLogger } from "../internal/local-verb.js";
 import { singleLine } from "../internal/textCleanup.js";
 import type { Logger } from "../log/index.js";
@@ -129,6 +130,7 @@ export async function visionImpl(
     await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem(ts);
     const stemPath = path.join(outDir, stem);
+    await using _outputLock = await acquireOutputGroupLock(createOutputGroup(outDir, stem, "json"));
     assertSingleFileAvailable(`${stemPath}.json`, args.overwrite ?? false);
 
     const inputs = Array.isArray(args.in) ? args.in : [args.in];

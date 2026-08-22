@@ -740,6 +740,51 @@ describe("AI verb implementations with mocked provider", () => {
     });
   });
 
+  it("reserves direct and aliased vision sidecars before a second provider charge", async () => {
+    const input = path.join(tmp, "concurrent-vision.png");
+    await copyFile(fixture("green-disk.png"), input);
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let providerEntered!: () => void;
+    const firstAtProvider = new Promise<void>((resolve) => {
+      providerEntered = resolve;
+    });
+    providerCalls.vision.mockImplementation(async () => {
+      providerEntered();
+      await firstHeld;
+      return {
+        raw: { id: "first-vision" },
+        verdict: { ok: true, score: 1, reasons: [] },
+      };
+    });
+    const outDir = path.join(tmp, "vision-concurrent-out");
+    const aliasDir = path.join(tmp, "vision-concurrent-link");
+    await mkdir(outDir);
+    await symlink(outDir, aliasDir, process.platform === "win32" ? "junction" : "dir");
+    const first = sdk.vision({
+      in: input,
+      check: "first contender",
+      outDir,
+      outName: "same",
+    });
+    await firstAtProvider;
+
+    await expect(
+      sdk.vision({ in: input, check: "direct contender", outDir, outName: "same", overwrite: true }),
+    ).rejects.toMatchObject({ code: "output.busy" });
+    await expect(
+      sdk.vision({ in: input, check: "alias contender", outDir: aliasDir, outName: "same", overwrite: true }),
+    ).rejects.toMatchObject({ code: "output.busy" });
+    expect(providerCalls.vision).toHaveBeenCalledOnce();
+
+    releaseFirst();
+    await expect(first).resolves.toMatchObject({ ok: true, score: 1 });
+    const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
+    expect(sidecar.request.check).toBe("first contender");
+  });
+
   it("vision applies custom shrink settings from a recipe file", async () => {
     const input = path.join(tmp, "recipe-vision.png");
     const recipe = path.join(tmp, "vision-recipe.json");
