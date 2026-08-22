@@ -470,6 +470,42 @@ describe("ensureModel", () => {
     }
   });
 
+  it("settles cancellation during streamed progress without an unhandled write error", async () => {
+    const previous = Buffer.alloc(100, 1);
+    const replacement = Buffer.from(new Uint8Array(100));
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200, { "content-length": String(replacement.length) });
+      res.end(replacement);
+    });
+    const ctrl = new AbortController();
+    const logger: Logger = {
+      handle: { path: path.join(tmp, "cancel-progress.log"), verb: "model" },
+      info: async () => {},
+      warn: async () => {},
+      error: async () => {},
+      debug: async (_stage, _msg, data) => {
+        if (Number(data?.received ?? 0) > 0) ctrl.abort(new Error("stop"));
+      },
+      close: async () => {},
+    };
+    const entry: ModelEntry = {
+      name: "cancel-progress.bin",
+      url: baseURL,
+      inputSize: 0,
+      byteSize: replacement.length,
+    };
+    await writeFile(path.join(tmp, entry.name), previous);
+    try {
+      await expect(
+        ensureModel(entry, tmp, { force: true, signal: ctrl.signal, logger }),
+      ).rejects.toMatchObject({ code: "cancelled" });
+      expect(await readFile(path.join(tmp, entry.name))).toEqual(previous);
+      expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it("force re-downloads and replaces the cached file", async () => {
     let hits = 0;
     const { server, baseURL } = await listen((_req, res) => {

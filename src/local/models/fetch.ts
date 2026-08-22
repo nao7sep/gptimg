@@ -33,6 +33,7 @@ import { createReadStream, createWriteStream, statSync } from "node:fs";
 import { link, mkdir, open, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { finished } from "node:stream/promises";
 import { nanoid } from "nanoid";
 import { LocalOpError, toAbortError } from "../../errors.js";
 import type { Logger } from "../../log/index.js";
@@ -43,12 +44,6 @@ import type { ModelEntry } from "./registry.js";
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw toAbortError(signal.reason);
-}
-
-function finishWrite(stream: ReturnType<typeof createWriteStream>): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    stream.end((err: Error | null | undefined) => (err ? reject(err) : resolve()));
-  });
 }
 
 export async function fileSha256(
@@ -222,6 +217,12 @@ async function downloadAttempt(
     let received = 0;
     let lastReported = 0;
     const stream = createWriteStream(destPath);
+    // Observe the stream from creation so an abort or filesystem failure can
+    // never emit an unhandled `error` event between the failing write and the
+    // download loop's cleanup path. The rejection is still awaited below and
+    // therefore remains part of the operation result.
+    const writeFinished = finished(stream);
+    void writeFinished.catch(() => undefined);
     const abortWrite = (): void => {
       stream.destroy(errorFromSignal(signal));
     };
@@ -261,14 +262,16 @@ async function downloadAttempt(
       }
     } catch (err) {
       await reader.cancel().catch(() => undefined);
-      await finishWrite(stream).catch(() => undefined);
+      if (!stream.destroyed) stream.destroy();
+      await writeFinished.catch(() => undefined);
       signal.removeEventListener("abort", abortWrite);
       if (parentSignal?.aborted) throw errorFromSignal(parentSignal);
       throw err;
     }
 
     try {
-      await finishWrite(stream);
+      stream.end();
+      await writeFinished;
     } finally {
       signal.removeEventListener("abort", abortWrite);
     }
