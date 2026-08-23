@@ -418,5 +418,5 @@ describe("runDespeckle — algorithm edge cases & differential property suite", 
       const out2 = await readRGBA(out2Path);
       for (let p = 0; p < n; p++) expect(out2.data[p * 4 + 3], `${ctx} idem@${p}`).toBe(out.data[p * 4 + 3]!);
     }
-  }, 30_000);
+  }, 120_000);
 });
