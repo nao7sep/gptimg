@@ -20,10 +20,26 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   release:
-    # A single runner: the npm tarball is platform-agnostic, so ubuntu-latest is
-    # just the cheapest host for a pure Node test + pack. Nothing here is Linux-
-    # specific (the fleet ships no Linux binaries; GptImg ships no binary at all).
+    needs: test
+    # The npm tarball is platform-agnostic, so it is packed once after both
+    # supported test legs pass.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -32,10 +48,6 @@ jobs:
           node-version: lts/*
           cache: npm
       - run: npm ci
-
-      # Test gate: a red suite (or type error) means the job fails before packing.
-      - run: npm run typecheck
-      - run: npm test
 
       - name: Verify tag matches package version
         if: github.ref_type == 'tag'
