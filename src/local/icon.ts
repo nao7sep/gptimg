@@ -50,7 +50,15 @@ const ICNS_ENTRIES: ReadonlyArray<{ size: number; types: readonly string[] }> = 
  * the classic, maximally-compatible Windows layout (PNG-in-ICO at 256 is
  * read by every Windows since Vista; small sizes stay BMP for old shells).
  */
-const ICO_SIZES: readonly number[] = [16, 24, 32, 48, 64, 128, 256];
+// Tauri decodes the first ICO entry as its default live window icon instead of
+// selecting the closest frame. Put 32 first so Windows taskbars at common
+// 100-150% scaling downsample a native-size frame instead of enlarging 16 px.
+// The remaining entries cover every Windows 11 AppList target size from
+// 100-400% scaling; 128 is retained for legacy and large-icon consumers.
+// Windows shell consumers select entries by dimensions, not directory order.
+const ICO_SIZES: readonly number[] = [
+  32, 16, 20, 24, 30, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256,
+];
 
 /** Loose sized-PNG set emitted when `pngs` is set. */
 const PNG_SET_SIZES: readonly number[] = [16, 32, 48, 64, 128, 256, 512, 1024];

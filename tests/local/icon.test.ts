@@ -38,6 +38,15 @@ function icnsEntryTypes(buf: Buffer): string[] {
   return types;
 }
 
+/** Parse ICO directory entry widths; a zero width byte denotes 256 px. */
+function icoEntryWidths(buf: Buffer): number[] {
+  const count = buf.readUInt16LE(4);
+  return Array.from({ length: count }, (_, index) => {
+    const width = buf.readUInt8(6 + index * 16);
+    return width === 0 ? 256 : width;
+  });
+}
+
 describe("planIconOutputs", () => {
   it("plans the three core files by default", () => {
     const plan = planIconOutputs("/out", "icon", false);
@@ -93,7 +102,10 @@ describe("runIcon", () => {
     const ico = await readFile(res.ico);
     expect(ico.readUInt16LE(0)).toBe(0);
     expect(ico.readUInt16LE(2)).toBe(1);
-    expect(ico.readUInt16LE(4)).toBe(7); // 16,24,32,48,64,128,256
+    expect(ico.readUInt16LE(4)).toBe(15);
+    expect(icoEntryWidths(ico)).toEqual([
+      32, 16, 20, 24, 30, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256,
+    ]);
 
     const pngMeta = await sharp(res.png).metadata();
     expect(pngMeta.width).toBe(1024);
