@@ -7,7 +7,7 @@ Each verb does one observable operation; composing them into finished assets —
 ## Requirements
 
 - Node.js **22.12+** and npm. GptImg is consumed directly from its TypeScript source — there is no build step; run your scripts with [`tsx`](https://tsx.is) (`npx tsx your-script.ts`).
-- An **OpenAI API key** for the provider-backed verbs (`generate`, `edit`, `vision`), billed to your key. The local image ops need no key and no network.
+- An **OpenAI API key** for the provider-backed verbs (`generate`, `edit`, `vision`), billed to your key. The local image ops need no key; AI matting and upscaling need the one-time model downloads described below, then run offline.
 - For AI matting (`mask({ method: "ai" })`) and `upscale`: a one-time **ONNX model download** (BiRefNet ~0.5 GB, Swin2SR ~53 MB) and the RAM to run them (~1–1.5 GB / ~4.4 GB peak) — run these one at a time. Models are accepted third-party ONNX re-exports from the `onnx-community` organization on Hugging Face (the model authors do not publish ONNX builds), fetched on first use or explicitly via the `model` API, commit-pinned and SHA-256-verified, and cached under `~/.gptimg`. The model API can also re-verify cached files on demand.
 - Cross-platform (Node). Icon packing emits macOS `.icns` and Windows `.ico`.
 
