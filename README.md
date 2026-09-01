@@ -14,7 +14,7 @@ Each verb does one observable operation; composing them into finished assets —
 ## Getting started
 
 ```sh
-git clone <this repo> gptimg
+git clone https://github.com/nao7sep/gptimg.git
 cd gptimg
 npm install
 ```
@@ -32,6 +32,22 @@ const verdict = await img.vision({ in: gen.files[0].path, check: "one donut, cen
 ```
 
 Run it with `npx tsx your-script.ts`.
+
+Every long-running verb accepts the same optional call controls. Pass an `AbortSignal` to cancel at the next safe boundary and `onProgress` to receive the structured stage events that also feed the JSONL log:
+
+```ts
+const controller = new AbortController();
+
+const result = await img.upscale(
+  { in: "cutout.png", toSize: 2048 },
+  {
+    signal: controller.signal,
+    onProgress: event => console.log(event.stage, event.message),
+  },
+);
+```
+
+The package entry point exports the argument, result, error, model, progress, profile, image-helper, and logger types used by its public surface. Source, those types, focused examples, and tests are the API reference; there is no parallel hand-maintained API inventory.
 
 ## License
 

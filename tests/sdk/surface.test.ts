@@ -2,8 +2,18 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { GptImg } from "../../src/gptimg.js";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from "vitest";
+import { GptImg } from "../../src/index.js";
+import type {
+  DetectedFormat,
+  LoadProfileOptions,
+  Logger,
+  ModelVerifyResult,
+  ShrinkBox,
+  ShrinkResult,
+  VisionDetail,
+  VisionRecipe,
+} from "../../src/index.js";
 
 describe("GptImg SDK surface", () => {
   let tmp: string;
@@ -14,6 +24,22 @@ describe("GptImg SDK surface", () => {
 
   afterEach(async () => {
     await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("exports the named types used by public helper signatures", () => {
+    expectTypeOf<Parameters<GptImg["profile"]["load"]>[1]>()
+      .toEqualTypeOf<LoadProfileOptions | undefined>();
+    expectTypeOf<Awaited<ReturnType<GptImg["log"]["createLogger"]>>>()
+      .toEqualTypeOf<Logger>();
+    expectTypeOf<Awaited<ReturnType<GptImg["image"]["detectFormat"]>>>()
+      .toEqualTypeOf<DetectedFormat>();
+    expectTypeOf<Parameters<GptImg["image"]["shrinkForVision"]>[1]>()
+      .toEqualTypeOf<ShrinkBox | undefined>();
+    expectTypeOf<Awaited<ReturnType<GptImg["image"]["shrinkForVision"]>>>()
+      .toEqualTypeOf<ShrinkResult>();
+    expectTypeOf<Awaited<ReturnType<GptImg["model"]["verify"]>>>()
+      .toEqualTypeOf<ModelVerifyResult>();
+    expectTypeOf<VisionRecipe["detail"]>().toEqualTypeOf<VisionDetail | undefined>();
   });
 
   it("uses custom profile and log directories", () => {

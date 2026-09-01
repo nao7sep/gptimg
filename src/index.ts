@@ -2,6 +2,10 @@ export { GptImg } from "./gptimg.js";
 export type { ModelInstallOptions, ModelVerifyOptions, VerbCallOptions } from "./gptimg.js";
 export { VERSION } from "./version.js";
 export type { ModelKey } from "./local/models/registry.js";
+export type { DetectedFormat } from "./image/detectFormat.js";
+export type { ShrinkBox, ShrinkResult } from "./image/shrinkForVision.js";
+export type { Logger } from "./log/index.js";
+export type { LoadProfileOptions } from "./profile/load.js";
 export {
   AbortError,
   GptImgError,
@@ -64,8 +68,11 @@ export type {
   MaskResult,
   MaskStats,
   ModelInstallResult,
+  ModelIntegrity,
   ModelListEntry,
   ModelListResult,
+  ModelVerifyEntry,
+  ModelVerifyResult,
   OutputFile,
   Profile,
   Recipe,
@@ -84,6 +91,7 @@ export type {
   UpscaleArgs,
   UpscaleResult,
   VisionArgs,
+  VisionDetail,
   VisionRecipe,
   VisionResult,
   VisionVerdict,
