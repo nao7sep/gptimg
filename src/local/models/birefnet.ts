@@ -34,7 +34,7 @@ async function resizeRGB(
     raw: { width: srcW, height: srcH, channels: 4 },
   })
     .removeAlpha()
-    .resize(dstW, dstH, { fit: "fill", kernel: "lanczos3" })
+    .resize(dstW, dstH, { fit: "fill", kernel: "linear" })
     .raw()
     .toBuffer();
   return new Uint8Array(rgb);

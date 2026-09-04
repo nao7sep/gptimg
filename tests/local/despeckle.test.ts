@@ -3,7 +3,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runDespeckle } from "../../src/local/despeckle.js";
+import { despeckleRGBA, runDespeckle } from "../../src/local/despeckle.js";
 
 async function writeRawPng(
   filePath: string,
@@ -367,7 +367,7 @@ describe("runDespeckle — algorithm edge cases & differential property suite", 
     expect(alphaAt(out, 1, 1)).toBe(255); // ring kept
   });
 
-  it("matches an independent reference (exact pixels + stats) over random images and params", async () => {
+  it("matches an independent reference (exact pixels + stats) over random images and params", () => {
     const rng = mulberry32(0x5eed1234);
     for (let iter = 0; iter < 40; iter++) {
       const W = 8 + Math.floor(rng() * 24);
@@ -388,12 +388,9 @@ describe("runDespeckle — algorithm edge cases & differential property suite", 
       const connectivity: 4 | 8 = rng() > 0.5 ? 8 : 4;
       const keep: "all" | "largest" = rng() > 0.5 ? "all" : "largest";
 
-      const inPath = path.join(tmp, `r${iter}.png`);
-      const outPath = path.join(tmp, `r${iter}-out.png`);
-      await writeRawPng(inPath, W, H, buf);
-      const res = await runDespeckle({ in: inPath, out: outPath, threshold, minArea, connectivity, keep });
+      const original = buf.slice();
+      const res = despeckleRGBA(buf, W, H, { threshold, minArea, connectivity, keep });
       const ref = referenceDespeckle(inAlpha, W, H, threshold, minArea, connectivity, keep);
-      const out = await readRGBA(outPath);
 
       const ctx = `iter=${iter} W=${W} H=${H} t=${threshold} m=${minArea} c=${connectivity} keep=${keep}`;
       expect(res.flooredPixels, ctx).toBe(ref.flooredPixels);
@@ -401,22 +398,18 @@ describe("runDespeckle — algorithm edge cases & differential property suite", 
       expect(res.removedComponents, ctx).toBe(ref.removedComponents);
       expect(res.removedPixels, ctx).toBe(ref.removedPixels);
 
+      const expected = original.slice();
       for (let p = 0; p < n; p++) {
-        const outA = out.data[p * 4 + 3]!;
-        expect(outA, `${ctx} alpha@${p}`).toBe(ref.expectedAlpha[p]!);
-        expect(out.data[p * 4], `${ctx} R@${p}`).toBe(buf[p * 4]!); // RGB untouched
-        expect(out.data[p * 4 + 1], `${ctx} G@${p}`).toBe(buf[p * 4 + 1]!);
-        expect(out.data[p * 4 + 2], `${ctx} B@${p}`).toBe(buf[p * 4 + 2]!);
-        expect(outA === 0 || outA === inAlpha[p]!, `${ctx} monotonic@${p}`).toBe(true); // 0 or original; never raised
+        expected[p * 4 + 3] = ref.expectedAlpha[p]!;
       }
+      expect(res.data, ctx).toEqual(expected); // exact alpha; RGB untouched; alpha only zeroed
+      expect(buf, `${ctx} input`).toEqual(original); // pure: caller's buffer is untouched
 
       // Idempotence: a second pass with the same params changes nothing.
-      const out2Path = path.join(tmp, `r${iter}-out2.png`);
-      const res2 = await runDespeckle({ in: outPath, out: out2Path, threshold, minArea, connectivity, keep });
+      const res2 = despeckleRGBA(res.data, W, H, { threshold, minArea, connectivity, keep });
       expect(res2.flooredPixels, ctx).toBe(0);
       expect(res2.removedPixels, ctx).toBe(0);
-      const out2 = await readRGBA(out2Path);
-      for (let p = 0; p < n; p++) expect(out2.data[p * 4 + 3], `${ctx} idem@${p}`).toBe(out.data[p * 4 + 3]!);
+      expect(res2.data, ctx).toEqual(res.data);
     }
-  }, 120_000);
+  });
 });

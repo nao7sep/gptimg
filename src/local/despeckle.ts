@@ -60,6 +60,17 @@ export interface DespeckleRunResult {
   height: number;
 }
 
+export interface DespeckleOptions {
+  threshold?: number;
+  minArea?: number;
+  connectivity?: number;
+  keep?: DespeckleKeep;
+}
+
+export interface DespeckleRGBAResult extends Omit<DespeckleRunResult, "output"> {
+  data: Uint8Array;
+}
+
 // 8-connectivity neighbour offsets; the first four are the 4-connectivity set.
 const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
   [0, -1],
@@ -72,21 +83,19 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
   [1, 1],
 ];
 
-export async function runDespeckle(
-  args: DespeckleRunArgs,
-  opts: { signal?: AbortSignal | undefined } = {},
-): Promise<DespeckleRunResult> {
-  const { signal } = opts;
-  throwIfAborted(signal);
-
-  const threshold = args.threshold ?? DESPECKLE_DEFAULTS.threshold;
-  const minArea = args.minArea ?? DESPECKLE_DEFAULTS.minArea;
-  const connectivity = args.connectivity ?? DESPECKLE_DEFAULTS.connectivity;
-  const keep: DespeckleKeep = args.keep ?? DESPECKLE_DEFAULTS.keep;
+/** Apply despeckling in memory without mutating the caller's RGBA buffer. */
+export function despeckleRGBA(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  options: DespeckleOptions = {},
+): DespeckleRGBAResult {
+  const threshold = options.threshold ?? DESPECKLE_DEFAULTS.threshold;
+  const minArea = options.minArea ?? DESPECKLE_DEFAULTS.minArea;
+  const connectivity = options.connectivity ?? DESPECKLE_DEFAULTS.connectivity;
+  const keep: DespeckleKeep = options.keep ?? DESPECKLE_DEFAULTS.keep;
   const neighborCount = connectivity === 8 ? 8 : 4;
-
-  const { data, width, height } = await loadRawRGBA(args.in);
-  throwIfAborted(signal);
+  const data = rgba.slice();
   const n = width * height;
 
   const bboxBefore = computeAlphaBBox(data, width, height);
@@ -180,11 +189,8 @@ export async function runDespeckle(
 
   const bboxAfter = computeAlphaBBox(data, width, height);
 
-  throwIfAborted(signal);
-  await writeRGBA(data, width, height, args.out);
-
   return {
-    output: args.out,
+    data,
     threshold,
     minArea,
     connectivity,
@@ -197,5 +203,26 @@ export async function runDespeckle(
     bboxAfter,
     width,
     height,
+  };
+}
+
+export async function runDespeckle(
+  args: DespeckleRunArgs,
+  opts: { signal?: AbortSignal | undefined } = {},
+): Promise<DespeckleRunResult> {
+  const { signal } = opts;
+  throwIfAborted(signal);
+
+  const { data, width, height } = await loadRawRGBA(args.in);
+  throwIfAborted(signal);
+  const result = despeckleRGBA(data, width, height, args);
+  const { data: outputData, ...summary } = result;
+
+  throwIfAborted(signal);
+  await writeRGBA(outputData, width, height, args.out);
+
+  return {
+    ...summary,
+    output: args.out,
   };
 }
