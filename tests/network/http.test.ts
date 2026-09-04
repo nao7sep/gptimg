@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { combineSignals, HttpStatusError } from "../../src/network/http.js";
 
+async function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
 describe("HttpStatusError", () => {
   it("carries status and headers and names itself", () => {
     const headers = new Headers({ "retry-after": "1" });
@@ -49,7 +56,7 @@ describe("combineSignals", () => {
   it("fires the timeout when there is no parent", async () => {
     const sig = combineSignals(undefined, 5);
     expect(sig.aborted).toBe(false);
-    await new Promise((r) => setTimeout(r, 30));
+    await waitForAbort(sig);
     expect(sig.aborted).toBe(true);
     // AbortSignal.timeout aborts with a TimeoutError.
     expect((sig.reason as Error).name).toBe("TimeoutError");
@@ -71,7 +78,7 @@ describe("combineSignals", () => {
     const ctrl = new AbortController();
     const sig = combineSignals(ctrl.signal, 5);
     expect(sig.aborted).toBe(false);
-    await new Promise((r) => setTimeout(r, 30));
+    await waitForAbort(sig);
     expect(sig.aborted).toBe(true);
     expect((sig.reason as Error).name).toBe("TimeoutError");
   });
