@@ -51,7 +51,7 @@ The package entry point exports the argument, result, error, model, progress, pr
 
 ## License
 
-MIT © 2026 Yoshinao Inoguchi
+[GNU GPL v3 or later](LICENSE) © 2026 Yoshinao Inoguchi
 
 ## Contact
 
