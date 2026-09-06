@@ -24,5 +24,5 @@ function readPackageVersion(): string {
   return version;
 }
 
-/** The running toolkit's semantic version, e.g. "0.1.0". */
+/** The running toolkit's semantic version, e.g. "1.2.3". */
 export const VERSION: string = readPackageVersion();
