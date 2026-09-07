@@ -49,6 +49,13 @@ const result = await img.upscale(
 
 The package entry point exports the argument, result, error, model, progress, profile, image-helper, and logger types used by its public surface. Source, those types, focused examples, and tests are the API reference; there is no parallel hand-maintained API inventory.
 
+## Third-party models
+
+GptImg does not distribute model files in its npm package. The following models are downloaded separately on first use, from immutable revisions whose size and SHA-256 digest are enforced by the model registry:
+
+- [BiRefNet ONNX](https://huggingface.co/onnx-community/BiRefNet-ONNX), licensed under MIT, provides AI matting.
+- [Swin2SR real-world ×4 ONNX](https://huggingface.co/onnx-community/swin2SR-realworld-sr-x4-64-bsrgan-psnr-ONNX), licensed under Apache-2.0, provides super-resolution upscaling.
+
 ## License
 
 [GNU GPL v3 or later](LICENSE) © 2026 Yoshinao Inoguchi

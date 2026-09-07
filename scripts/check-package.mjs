@@ -20,6 +20,19 @@ try {
   ))
   const packed = packResult?.[manifest.name]
   if (typeof packed?.filename !== 'string') throw new Error('npm pack did not report a tarball filename')
+  if (!Array.isArray(packed.files)) throw new Error('npm pack did not report the packed files')
+  const unexpected = packed.files
+    .map((entry) => entry.path)
+    .filter((path) => !['LICENSE', 'README.md', 'package.json'].includes(path) && !path.startsWith('src/'))
+  if (unexpected.length > 0) {
+    throw new Error(`npm package contains unexpected files: ${unexpected.join(', ')}`)
+  }
+  const binaryPayload = packed.files
+    .map((entry) => entry.path)
+    .filter((path) => /\.(?:dll|dylib|exe|node|onnx|so)(?:\.|$)/i.test(path))
+  if (binaryPayload.length > 0) {
+    throw new Error(`npm package contains binary payloads: ${binaryPayload.join(', ')}`)
+  }
   const tarball = join(temp, packed.filename)
   const consumer = join(temp, 'consumer')
 
