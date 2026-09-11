@@ -50,6 +50,23 @@ try {
     `if (VERSION !== ${JSON.stringify(manifest.version)}) throw new Error(\`Unexpected VERSION \${VERSION}\`)`,
     'console.log(`Imported gptimg ${VERSION}`)',
   ].join('\n'))
+  writeFileSync(join(consumer, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'bundler',
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+    },
+    files: ['./smoke.ts'],
+  }))
+
+  execFileSync(
+    process.execPath,
+    [join(repo, 'node_modules', 'typescript', 'bin', 'tsc'), '--project', join(consumer, 'tsconfig.json')],
+    { cwd: consumer, stdio: 'inherit' },
+  )
 
   execFileSync(
     process.execPath,

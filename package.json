@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@shockpkg/icon-encoder": "^3.2.3",
+    "@types/node": "^26.4.1",
     "defu": "^6.1.7",
     "nanoid": "^6.0.1",
     "onnxruntime-node": "^1.29.0",
@@ -51,7 +52,6 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
     "@vitest/coverage-v8": "^4.1.11",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
