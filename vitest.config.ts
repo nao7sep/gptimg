@@ -1,7 +1,10 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // The live lane spends money and downloads models; only npm run check:full
+    // runs it, through vitest.live.config.ts.
+    exclude: [...configDefaults.exclude, "tests/live/**"],
     coverage: {
       // V8's native coverage — the installed provider, no instrumentation step.
       // `include` lists every source file so the report flags logic no test
