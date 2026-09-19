@@ -9,7 +9,7 @@ import { acquireOutputGroupLock, createOutputGroup } from "../../src/internal/ou
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..");
 const OUTPUT_GROUP_MODULE = pathToFileURL(path.join(REPO_ROOT, "src/internal/output-group.ts")).href;
-const CHILD_PROCESS_TIMEOUT_MS = 30_000;
+const CHILD_PROCESS_TIMEOUT_MS = 3_000;
 const TEST_TIMEOUT_MS = CHILD_PROCESS_TIMEOUT_MS * 2;
 
 async function waitForReady(child: ChildProcessWithoutNullStreams): Promise<string> {
