@@ -33,6 +33,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "check": "npm run typecheck && npm test",
+    "check:full": "npm run check",
     "check:package": "node scripts/check-package.mjs",
     "check:release-tag": "tsx scripts/check-release-tag.ts",
     "verify:windows:birefnet": "tsx scripts/verify-windows-birefnet.ts",
