@@ -1,7 +1,7 @@
 import { configDefaults, defineConfig } from "vitest/config";
 
 // The live lane: the pinned local models and the real OpenAI API, run only by
-// npm run check:full. Files run one at a time because they share the model
+// npm run test:full. Files run one at a time because they share the model
 // cache, spend money, and wait on the network.
 export default defineConfig({
   test: {

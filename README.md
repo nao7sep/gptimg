@@ -58,7 +58,7 @@ GptImg does not distribute model files in its npm package. The following models 
 
 ## Tests
 
-`npm run check` typechecks and runs the whole suite, which takes a few seconds. `npm run check:full` then runs the live lane: it installs both models through the SDK's own installer into `node_modules/.cache`, about 540 MB on the first run and again only when a new pin names a new file, runs each on a test image, and calls the real OpenAI API to generate, edit, and judge images. Export `OPENAI_API_KEY` first; the lane makes a few paid OpenAI calls, and the full check fails without the key. The vision test reads a photo from the shared test-fixture corpus in the company repository, which must be checked out beside this one.
+`npm test` typechecks and runs the whole suite, which takes a few seconds. `npm run test:full` then runs the live lane: it installs both models through the SDK's own installer into `node_modules/.cache`, about 540 MB on the first run and again only when a new pin names a new file, runs each on a test image, and calls the real OpenAI API to generate, edit, and judge images. Export `OPENAI_API_KEY` first; the lane makes a few paid OpenAI calls, and the full run fails without the key. The vision test reads a photo from the shared test-fixture corpus in the company repository, which must be checked out beside this one.
 
 ## License
 

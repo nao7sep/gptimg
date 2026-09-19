@@ -1,6 +1,6 @@
 // The SDK end to end through its public class, with nothing substituted: the
 // pinned background-removal and upscaling models, fetched through the SDK's own
-// installer, and the real OpenAI API. Run only by npm run check:full, through
+// installer, and the real OpenAI API. Run only by npm run test:full, through
 // vitest.live.config.ts.
 //
 // The models live in a cache that persists between runs (GPTIMG_MODELS_DIR, the
@@ -43,7 +43,7 @@ async function freshSdk(label: string): Promise<{ img: GptImg; home: string }> {
 
 function requireKey(): void {
   if (!process.env.OPENAI_API_KEY?.trim()) {
-    throw new Error("OPENAI_API_KEY is not set. The full check calls the real OpenAI API; export OPENAI_API_KEY and run it again.");
+    throw new Error("OPENAI_API_KEY is not set. The full run calls the real OpenAI API; export OPENAI_API_KEY and run it again.");
   }
 }
 

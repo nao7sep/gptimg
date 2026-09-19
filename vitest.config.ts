@@ -2,7 +2,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // The live lane spends money and downloads models; only npm run check:full
+    // The live lane spends money and downloads models; only npm run test:full
     // runs it, through vitest.live.config.ts.
     exclude: [...configDefaults.exclude, "tests/live/**"],
     coverage: {

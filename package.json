@@ -31,9 +31,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "vitest run",
-    "check": "npm run typecheck && npm test",
-    "check:full": "npm run check && vitest run --config vitest.live.config.ts",
+    "test": "npm run typecheck && vitest run",
+    "test:full": "npm test && vitest run --config vitest.live.config.ts",
     "check:package": "node scripts/check-package.mjs",
     "check:release-tag": "tsx scripts/check-release-tag.ts",
     "test:watch": "vitest",
