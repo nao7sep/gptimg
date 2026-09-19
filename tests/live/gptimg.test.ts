@@ -8,7 +8,7 @@
 // replace a model only when a new pin names a new file. Each test runs on a
 // throwaway profile whose profile.json names OPENAI_API_KEY and stores no key.
 
-import { copyFile, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +24,10 @@ const CORPUS = join(REPO, "..", "company", "assets", "test-fixtures");
 // A red disc of radius 30 centred on a noisy green backdrop, 128 x 128.
 const DISC = join(REPO, "tests", "fixtures", "green-disk.png");
 const CAT_PHOTO = "photos/similarity/apartment-cat/reference.jpg";
+// The lane proves the code paths, not image quality, so every paid call asks for
+// the cheapest output the provider offers.
+const CHEAPEST_IMAGE = { quality: "low", size: "1024x1024" };
+const CHEAPEST_VISION = { detail: "low" as const };
 
 process.env.GPTIMG_MODELS_DIR = MODELS;
 
@@ -49,6 +53,11 @@ async function copyInto(home: string, source: string): Promise<string> {
     throw new Error(`Cannot read ${source}. The vision test reads the shared test-fixture corpus; check out the company repository beside this one.`);
   });
   return copy;
+}
+
+/** The request a sidecar records, which proves what reached the provider. */
+async function sentRequest(sidecarPath: string): Promise<Record<string, unknown>> {
+  return (JSON.parse(await readFile(sidecarPath, "utf8")) as { request: Record<string, unknown> }).request;
 }
 
 /** Mean RGB over the centred square covering `fraction` of each side. */
@@ -119,11 +128,12 @@ describe("the live SDK", () => {
     const result = await img.generate({
       prompt: "A single flat solid red circle centred on a plain white background. No shading, texture, or other objects.",
       outDir: home,
+      overrides: { generate: CHEAPEST_IMAGE },
     });
     expect(result.partial).toBe(false);
     expect(result.files).toHaveLength(1);
     const [file] = result.files;
-    expect((await stat(file!.sidecarPath)).size).toBeGreaterThan(0);
+    expect(await sentRequest(file!.sidecarPath)).toMatchObject(CHEAPEST_IMAGE);
     expect((await sharp(file!.path).metadata()).format).toBe(file!.format);
     const centre = await centreColour(file!.path, 0.2);
     expect(centre.r, "the centre is red").toBeGreaterThan(centre.g + 80);
@@ -136,10 +146,11 @@ describe("the live SDK", () => {
       in: await copyInto(home, DISC),
       prompt: "Recolour the red disc pure blue. Keep its size and position and keep the green background unchanged.",
       outDir: home,
+      overrides: { edit: CHEAPEST_IMAGE },
     });
     expect(result.files).toHaveLength(1);
     const [file] = result.files;
-    expect((await stat(file!.sidecarPath)).size).toBeGreaterThan(0);
+    expect(await sentRequest(file!.sidecarPath)).toMatchObject(CHEAPEST_IMAGE);
     const centre = await centreColour(file!.path, 0.2);
     expect(centre.b, "the disc is now blue").toBeGreaterThan(centre.r + 80);
   });
@@ -148,10 +159,21 @@ describe("the live SDK", () => {
     requireKey();
     const { img, home } = await freshSdk("vision");
     const photo = await copyInto(home, join(CORPUS, CAT_PHOTO));
-    const holds = await img.vision({ in: photo, check: "A cat is visible in the image.", outDir: home });
+    const holds = await img.vision({
+      in: photo,
+      check: "A cat is visible in the image.",
+      outDir: home,
+      overrides: { vision: CHEAPEST_VISION },
+    });
     expect(holds.ok, holds.reasons.join(" ")).toBe(true);
-    expect((await stat(holds.sidecarPath)).size).toBeGreaterThan(0);
-    const fails = await img.vision({ in: photo, check: "A dog is visible in the image.", outDir: home, outName: "dog-check" });
+    expect(await sentRequest(holds.sidecarPath)).toMatchObject(CHEAPEST_VISION);
+    const fails = await img.vision({
+      in: photo,
+      check: "A dog is visible in the image.",
+      outDir: home,
+      outName: "dog-check",
+      overrides: { vision: CHEAPEST_VISION },
+    });
     expect(fails.ok, fails.reasons.join(" ")).toBe(false);
   });
 });
