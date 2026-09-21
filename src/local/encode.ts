@@ -9,7 +9,7 @@
 import { stat } from "node:fs/promises";
 import sharp from "sharp";
 import { LocalOpError, throwIfAborted } from "../errors.js";
-import { loadRawRGBA, readImageSize, writeImageFile } from "../image/bridge.js";
+import { DELIVERY_PNG_OPTIONS, loadRawRGBA, readImageSize, writeImageFile } from "../image/bridge.js";
 import type { EncodeFormat } from "../types.js";
 
 export const ENCODE_DEFAULTS = {
@@ -73,11 +73,7 @@ export async function runEncode(
   await writeImageFile(args.out, "encode", () => {
     const pipeline = sharp(args.in);
     if (opaque) pipeline.removeAlpha();
-    if (args.format === "png") {
-      // Lossless at the strongest deflate. sharp's `effort` and `palette` quantize, so
-      // neither is set.
-      return pipeline.png({ compressionLevel: 9, adaptiveFiltering: true });
-    }
+    if (args.format === "png") return pipeline.png(DELIVERY_PNG_OPTIONS);
     return lossless
       ? pipeline.webp({ lossless: true, effort: 6 })
       : pipeline.webp({ quality: quality!, alphaQuality: 100, smartSubsample: true, effort: 6 });
