@@ -14,7 +14,7 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { parseHex } from "../color.js";
 
 export const GRID_DEFAULTS = {
@@ -22,10 +22,6 @@ export const GRID_DEFAULTS = {
   gap: 16,
   background: "transparent",
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 export interface GridRunArgs {
   inputs: string[];

@@ -25,7 +25,7 @@
  * calling here, so this module receives a concrete "#rrggbb".
  */
 
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadRawRGBA, writeRGBA } from "../image/bridge.js";
 import { parseHex } from "../color.js";
 import type { AlphaBBox } from "../types.js";
@@ -37,10 +37,6 @@ export const KEYCHECK_DEFAULTS = {
   maxEdgeResidueFraction: 0.02,
   maxInteriorResiduePixels: 0,
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 /**
  * RGB (0..255) → HSV. Hue in [0, 360) or NaN for an achromatic pixel (delta 0);

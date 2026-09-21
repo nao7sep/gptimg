@@ -13,7 +13,7 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { fitLongerSide } from "../image/aspect.js";
 import { loadRawRGBA, resizeSingleChannel, writeRGBA } from "../image/bridge.js";
 import type { Logger } from "../log/index.js";
@@ -29,10 +29,6 @@ export const UPSCALE_DEFAULTS = {
   kernel: "lanczos3" as ResampleKernel,
   tile: SWIN2SR_DEFAULT_TILE,
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 /**
  * ×4 RGB upscaler over interleaved-RGB pixels. Injectable so the resample +

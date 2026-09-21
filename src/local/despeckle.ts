@@ -19,7 +19,7 @@
  * is a graceful no-op (written back unchanged), not an error.
  */
 
-import { toAbortError } from "../errors.js";
+import { throwIfAborted } from "../errors.js";
 import { loadRawRGBA, writeRGBA } from "../image/bridge.js";
 import { computeAlphaBBox } from "./trim.js";
 import type { AlphaBBox, DespeckleKeep } from "../types.js";
@@ -30,10 +30,6 @@ export const DESPECKLE_DEFAULTS = {
   connectivity: 8,
   keep: "all",
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 export interface DespeckleRunArgs {
   in: string;

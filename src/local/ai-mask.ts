@@ -3,15 +3,11 @@
  * layer can dispatch on `method` without caring about the producer details.
  */
 
-import { toAbortError } from "../errors.js";
+import { throwIfAborted } from "../errors.js";
 import { loadRawRGBA } from "../image/bridge.js";
 import type { Logger } from "../log/index.js";
 import type { NetworkBudget } from "../network/defaults.js";
 import { runBirefnet } from "./models/birefnet.js";
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 export interface AiMaskRunArgs {
   in: string;

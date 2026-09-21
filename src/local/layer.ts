@@ -18,7 +18,7 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import type { LayerGravity, LayerOffset } from "../types.js";
 
 export const LAYER_DEFAULTS = {
@@ -32,10 +32,6 @@ export const LAYER_DEFAULTS = {
  * Mirrors RESIZE_MAX_TO_SIZE — the ceiling on a single allocated side.
  */
 const LAYER_MAX_TOP = 16384;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 /**
  * Top-left pixel where a `topW × topH` overlay anchors on a `baseW × baseH`

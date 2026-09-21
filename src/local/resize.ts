@@ -8,17 +8,13 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { fitLongerSide } from "../image/aspect.js";
 import type { ResampleKernel } from "../types.js";
 
 export const RESIZE_DEFAULTS = {
   kernel: "lanczos3" as ResampleKernel,
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 export interface ResizeRunArgs {
   in: string;

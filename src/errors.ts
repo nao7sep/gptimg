@@ -47,3 +47,8 @@ export function toAbortError(err: unknown, fallback = "cancelled"): AbortError {
   }
   return new AbortError(typeof err === "string" && err.length > 0 ? err : fallback);
 }
+
+/** Throws the signal's abort as an `AbortError` when it has fired; a no-op otherwise. */
+export function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw toAbortError(signal.reason);
+}

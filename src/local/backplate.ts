@@ -11,7 +11,7 @@
 
 import sharp from "sharp";
 import { normalizeHex } from "../color.js";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import type { BackplateShape } from "../types.js";
 
 export const BACKPLATE_DEFAULTS = {
@@ -21,10 +21,6 @@ export const BACKPLATE_DEFAULTS = {
   angle: 135,
   shape: "rect" as BackplateShape,
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 /**
  * SVG path "d" for a centered square rounded-rectangle.

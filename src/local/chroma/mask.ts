@@ -14,7 +14,7 @@
  */
 
 import { normalizeHex, parseHex } from "../../color.js";
-import { LocalOpError, toAbortError } from "../../errors.js";
+import { LocalOpError, throwIfAborted } from "../../errors.js";
 import { loadRawRGBA } from "../../image/bridge.js";
 import type { ChromaKeySource, ChromaMaskStats } from "../../types.js";
 import { CHROMA_DEFAULTS } from "./defaults.js";
@@ -43,10 +43,6 @@ export interface ChromaMaskResult {
   width: number;
   height: number;
   stats: ChromaMaskStats;
-}
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
 }
 
 /** Average border pixels in linear-light RGB. */

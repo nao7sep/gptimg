@@ -29,7 +29,7 @@
  */
 
 import { isHexColor, parseHex } from "../color.js";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadMaskPNG, loadRawRGBA, writeRGBA } from "../image/bridge.js";
 import {
   SRGB_TO_LINEAR_LUT,
@@ -50,10 +50,6 @@ export interface ComposeArgs {
   over?: ComposeOver;
   /** Background color to remove from subject pixels. See module doc. */
   removeBleed?: string;
-}
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
 }
 
 export function parseOverColor(value: string): ComposeOver {

@@ -15,7 +15,7 @@
 import path from "node:path";
 import sharp from "sharp";
 import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { writeOutputBytes } from "../internal/output-files.js";
 
 export const ICON_DEFAULTS = {
@@ -62,10 +62,6 @@ const ICO_SIZES: readonly number[] = [
 
 /** Loose sized-PNG set emitted when `pngs` is set. */
 const PNG_SET_SIZES: readonly number[] = [16, 32, 48, 64, 128, 256, 512, 1024];
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 export interface IconPlan {
   icns: string;

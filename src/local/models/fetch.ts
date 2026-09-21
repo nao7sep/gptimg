@@ -35,16 +35,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { finished } from "node:stream/promises";
 import { nanoid } from "nanoid";
-import { LocalOpError, toAbortError } from "../../errors.js";
+import { LocalOpError, throwIfAborted, toAbortError } from "../../errors.js";
 import type { Logger } from "../../log/index.js";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.js";
 import { combineSignals, HttpStatusError } from "../../network/http.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { ModelEntry } from "./registry.js";
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 export async function fileSha256(
   filePath: string,

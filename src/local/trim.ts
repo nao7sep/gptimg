@@ -9,7 +9,7 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadRawRGBA } from "../image/bridge.js";
 import type { AlphaBBox } from "../types.js";
 
@@ -17,10 +17,6 @@ export const TRIM_DEFAULTS = {
   margin: 0.08,
   square: false,
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 /**
  * Tightest rect of pixels where alpha > 0. Returns null when the entire image

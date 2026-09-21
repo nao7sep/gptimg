@@ -11,7 +11,7 @@
  *   feather   a       → separable 3×3 box blur, `radius` passes
  */
 
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadMaskPNG, writeMaskPNG } from "../image/bridge.js";
 import type { CombineOp } from "../enums.js";
 
@@ -21,10 +21,6 @@ export interface CombineArgs {
   out: string;
   /** Number of 3×3 box-blur passes for `feather`. Ignored for other ops. */
   radius?: number;
-}
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
 }
 
 async function loadSameSize(paths: string[]): Promise<{

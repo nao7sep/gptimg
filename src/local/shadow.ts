@@ -13,7 +13,7 @@
 
 import sharp from "sharp";
 import { normalizeHex, parseHex } from "../color.js";
-import { LocalOpError, toAbortError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadRawRGBA } from "../image/bridge.js";
 import type { ShadowOffset } from "../types.js";
 
@@ -25,10 +25,6 @@ export const SHADOW_DEFAULTS = {
   spread: 0,
   keepCanvas: false,
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 export interface ShadowRunArgs {
   in: string;

@@ -32,7 +32,7 @@
  * moves or re-pads pixels (trim/layer), and never judges visual balance (vision).
  */
 
-import { toAbortError } from "../errors.js";
+import { throwIfAborted } from "../errors.js";
 import { loadRawRGBA } from "../image/bridge.js";
 import type {
   AlphaBBox,
@@ -47,10 +47,6 @@ export const FRAMECHECK_DEFAULTS = {
   tolerance: 2,
   axes: "horizontal" as FramecheckAxes,
 } as const;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 export interface FramecheckRunArgs {
   in: string;

@@ -25,7 +25,7 @@
 
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
-import { LocalOpError, toAbortError } from "../../errors.js";
+import { LocalOpError, throwIfAborted } from "../../errors.js";
 import type { Logger } from "../../log/index.js";
 import type { NetworkBudget } from "../../network/defaults.js";
 import { ensureModel } from "./fetch.js";
@@ -44,10 +44,6 @@ import {
 // (e.g. the upscale verb) keep working; the definitions live, dependency-free,
 // in swin2sr-constants.ts.
 export { SWIN2SR_DEFAULT_TILE, SWIN2SR_MIN_TILE, SWIN2SR_SCALE };
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw toAbortError(signal.reason);
-}
 
 const ceilTo = (n: number, m: number): number => Math.ceil(n / m) * m;
 
