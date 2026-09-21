@@ -40,6 +40,8 @@ export async function encodeImpl(
       format: args.format,
       quality: args.quality ?? null,
       lossless: args.lossless ?? null,
+      compressionLevel: args.compressionLevel ?? null,
+      adaptiveFiltering: args.adaptiveFiltering ?? null,
       opaque: args.opaque ?? false,
     });
 
@@ -50,6 +52,8 @@ export async function encodeImpl(
         format: args.format,
         quality: args.quality,
         lossless: args.lossless,
+        compressionLevel: args.compressionLevel,
+        adaptiveFiltering: args.adaptiveFiltering,
         opaque: args.opaque,
       },
       { signal },
@@ -61,7 +65,6 @@ export async function encodeImpl(
       width: result.width,
       height: result.height,
       alpha: result.alpha,
-      quality: result.quality,
       lossless: result.lossless,
       sourceBytes: result.sourceBytes,
       bytes: result.bytes,
@@ -74,7 +77,6 @@ export async function encodeImpl(
       width: result.width,
       height: result.height,
       alpha: result.alpha,
-      quality: result.quality,
       lossless: result.lossless,
       sourceBytes: result.sourceBytes,
       bytes: result.bytes,

@@ -1,7 +1,8 @@
 /**
  * Encode: re-encode an image for delivery, the pipeline's last step. Every other verb writes
  * PNG, the lossless working format that later verbs read back; `encode` writes what an app
- * ships: PNG at the strongest lossless compression, or WebP, lossy or lossless. It never
+ * ships: PNG, always lossless, or WebP, lossy or lossless. Each encoder option is passed on
+ * only when the caller sets it, so the encoder's own defaults apply otherwise. It never
  * changes geometry, which `resize`, `trim` and `layer` do before it, and with `opaque` it
  * refuses transparency rather than flattening it onto a colour it would have to invent.
  */
@@ -12,17 +13,14 @@ import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadRawRGBA, readImageSize, writeImageFile } from "../image/bridge.js";
 import type { EncodeFormat } from "../types.js";
 
-export const ENCODE_DEFAULTS = {
-  /** Lossy WebP quality: indistinguishable from the source at the sizes apps display it. */
-  quality: 90,
-} as const;
-
 export interface EncodeRunArgs {
   in: string;
   out: string;
   format: EncodeFormat;
   quality?: number;
   lossless?: boolean;
+  compressionLevel?: number;
+  adaptiveFiltering?: boolean;
   opaque?: boolean;
 }
 
@@ -32,7 +30,6 @@ export interface EncodeRunResult {
   width: number;
   height: number;
   alpha: boolean;
-  quality: number | null;
   lossless: boolean;
   sourceBytes: number;
   bytes: number;
@@ -69,18 +66,20 @@ export async function runEncode(
   throwIfAborted(signal);
 
   const lossless = args.format === "png" || (args.lossless ?? false);
-  const quality = lossless ? null : (args.quality ?? ENCODE_DEFAULTS.quality);
   await writeImageFile(args.out, "encode", () => {
     const pipeline = sharp(args.in);
     if (opaque) pipeline.removeAlpha();
     if (args.format === "png") {
-      // Lossless at the strongest deflate. sharp's `effort` and `palette` quantize, so
-      // neither is set.
-      return pipeline.png({ compressionLevel: 9, adaptiveFiltering: true });
+      // Only lossless options are offered: sharp's `palette`, `quality` and `effort` quantize.
+      return pipeline.png({
+        ...(args.compressionLevel !== undefined && { compressionLevel: args.compressionLevel }),
+        ...(args.adaptiveFiltering !== undefined && { adaptiveFiltering: args.adaptiveFiltering }),
+      });
     }
-    return lossless
-      ? pipeline.webp({ lossless: true, effort: 6 })
-      : pipeline.webp({ quality: quality!, alphaQuality: 100, smartSubsample: true, effort: 6 });
+    return pipeline.webp({
+      ...(args.lossless !== undefined && { lossless: args.lossless }),
+      ...(args.quality !== undefined && { quality: args.quality }),
+    });
   });
 
   const [source, written, meta] = await Promise.all([stat(args.in), stat(args.out), sharp(args.out).metadata()]);
@@ -90,7 +89,6 @@ export async function runEncode(
     width,
     height,
     alpha: meta.hasAlpha ?? false,
-    quality,
     lossless,
     sourceBytes: source.size,
     bytes: written.size,

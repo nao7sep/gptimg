@@ -558,15 +558,22 @@ export interface ResizeResult {
 export interface EncodeArgs {
   /** Input image (any format sharp reads). Its pixels are written as they are. */
   in: string;
-  /** Output encoding. PNG is always lossless, at the strongest compression. Required. */
+  /** Output encoding. PNG is always lossless. Required. */
   format: EncodeFormat;
-  /** WebP only: lossy quality, an integer 1..100. Default 90. Not with `lossless`. */
+  /** WebP only: lossy quality, an integer 1..100. Unset, the encoder's default applies. Not with `lossless`. */
   quality?: number;
   /**
    * WebP only: encode losslessly. Every visible pixel is kept exactly; the colour under a
    * fully transparent pixel is not. Default false.
    */
   lossless?: boolean;
+  /** PNG only: deflate level, an integer 0..9. Unset, the encoder's default applies. */
+  compressionLevel?: number;
+  /**
+   * PNG only: choose each row's filter by trial, which compresses gradients and textures
+   * better at some cost in time. Unset, the encoder's default applies.
+   */
+  adaptiveFiltering?: boolean;
   /**
    * Require every pixel to be fully opaque and write no alpha channel, for a surface that
    * shows transparency as black (an Apple touch icon). An input with any pixel that is not
@@ -588,8 +595,6 @@ export interface EncodeResult {
   height: number;
   /** Whether the output carries an alpha channel. */
   alpha: boolean;
-  /** The resolved lossy quality; null for PNG and lossless WebP. */
-  quality: number | null;
   /** Whether the output is lossless: every PNG, and WebP with `lossless`. */
   lossless: boolean;
   /** Input file size in bytes. */

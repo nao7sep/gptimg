@@ -42,7 +42,7 @@ describe("runEncode", () => {
 
   const border = (x: number, y: number) => (x < 4 || y < 4 || x > 59 || y > 59 ? 0 : 255);
 
-  it("writes a PNG with every pixel unchanged, no larger than sharp's default PNG", async () => {
+  it("writes a PNG at the encoder's defaults when no option is set, every pixel unchanged", async () => {
     const input = path.join(tmp, "in.png");
     await writeRaw(input, 64, 64, noisyRGBA(64, 64, border));
     const out = path.join(tmp, "out.png");
@@ -50,10 +50,22 @@ describe("runEncode", () => {
     const res = await runEncode({ in: input, out, format: "png" });
 
     expect(await rawRGBA(out)).toEqual(await rawRGBA(input));
-    const defaultPng = await sharp(input).png().toBuffer();
-    expect(res.bytes).toBeLessThanOrEqual(defaultPng.length);
-    expect(res).toMatchObject({ format: "png", width: 64, height: 64, alpha: true, quality: null, lossless: true });
+    expect(res.bytes).toBe((await sharp(input).png().toBuffer()).length);
+    expect(res).toMatchObject({ format: "png", width: 64, height: 64, alpha: true, lossless: true });
     expect((await sharp(out).metadata()).format).toBe("png");
+  });
+
+  it("applies PNG compression options only when set, every pixel unchanged", async () => {
+    const input = path.join(tmp, "in.png");
+    await writeRaw(input, 64, 64, noisyRGBA(64, 64, border));
+    const out = path.join(tmp, "out.png");
+
+    const res = await runEncode({ in: input, out, format: "png", compressionLevel: 9, adaptiveFiltering: true });
+
+    expect(await rawRGBA(out)).toEqual(await rawRGBA(input));
+    expect(res.bytes).toBe(
+      (await sharp(input).png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer()).length,
+    );
   });
 
   it("writes lossless WebP keeping every visible pixel exactly", async () => {
@@ -69,17 +81,20 @@ describe("runEncode", () => {
       expect(written[i + 3]).toBe(source[i + 3]);
       if (source[i + 3]! > 0) expect([...written.subarray(i, i + 3)]).toEqual([...source.subarray(i, i + 3)]);
     }
-    expect(res).toMatchObject({ format: "webp", alpha: true, quality: null, lossless: true });
+    expect(res).toMatchObject({ format: "webp", alpha: true, lossless: true });
   });
 
-  it("writes lossy WebP at the default quality, keeping the alpha channel", async () => {
+  it("writes lossy WebP at the encoder's default quality unless one is set, keeping the alpha channel", async () => {
     const input = path.join(tmp, "in.png");
     await writeRaw(input, 64, 64, noisyRGBA(64, 64, border));
     const out = path.join(tmp, "out.webp");
 
     const res = await runEncode({ in: input, out, format: "webp" });
 
-    expect(res).toMatchObject({ format: "webp", alpha: true, quality: 90, lossless: false });
+    expect(res.bytes).toBe((await sharp(input).webp().toBuffer()).length);
+    const lower = await runEncode({ in: input, out: path.join(tmp, "low.webp"), format: "webp", quality: 30 });
+    expect(lower.bytes).toBe((await sharp(input).webp({ quality: 30 }).toBuffer()).length);
+    expect(res).toMatchObject({ format: "webp", alpha: true, lossless: false });
     expect(await sharp(out).metadata()).toMatchObject({ format: "webp", hasAlpha: true });
     const written = await rawRGBA(out);
     expect(written[3]).toBe(0);

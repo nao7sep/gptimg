@@ -325,6 +325,11 @@ const EncodeArgsSchema = z.object({
     .refine((v) => Number.isInteger(v) && v >= 1 && v <= 100, "must be an integer in [1..100]")
     .optional(),
   lossless: z.boolean().optional(),
+  compressionLevel: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 0 && v <= 9, "must be an integer in [0..9]")
+    .optional(),
+  adaptiveFiltering: z.boolean().optional(),
   opaque: z.boolean().optional(),
   overwrite: z.boolean().optional(),
 });
@@ -432,6 +437,12 @@ export function validateEncodeArgs(args: EncodeArgs): EncodeArgs {
     throw new LocalOpError(
       "args.invalid",
       "encode: quality and lossless apply to webp only; png is always lossless.",
+    );
+  }
+  if (args.format === "webp" && (args.compressionLevel !== undefined || args.adaptiveFiltering !== undefined)) {
+    throw new LocalOpError(
+      "args.invalid",
+      "encode: compressionLevel and adaptiveFiltering apply to png only.",
     );
   }
   if (args.quality !== undefined && args.lossless === true) {

@@ -126,7 +126,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
 
     const webp = await sdk.encode({ in: input, format: "webp", outName: "out" });
     expect(webp.output).toBe(path.join(tmp, "out.webp"));
-    expect(webp).toMatchObject({ format: "webp", width: 40, height: 20, quality: 90, lossless: false });
+    expect(webp).toMatchObject({ format: "webp", width: 40, height: 20, lossless: false });
     expect((await sharp(webp.output).metadata()).format).toBe("webp");
 
     const png = await sdk.encode({ in: input, format: "png" });

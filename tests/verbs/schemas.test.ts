@@ -190,8 +190,12 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateResizeArgs({ in: "a.png", toSize: 99, kernel: "bogus" as never }), "kernel must be one of");
   });
 
-  it("encode: format enum, quality range, and options that apply only to lossy webp", () => {
+  it("encode: format enum, option ranges, and options that apply to one format only", () => {
     expect(validateEncodeArgs({ in: "a.png", format: "png", opaque: true })).toBeTruthy();
+    expect(validateEncodeArgs({ in: "a.png", format: "png", compressionLevel: 9, adaptiveFiltering: true })).toBeTruthy();
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "png", compressionLevel: 10 }), "[0..9]");
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "webp", compressionLevel: 9 }), "png only");
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "webp", adaptiveFiltering: true }), "png only");
     expect(validateEncodeArgs({ in: "a.png", format: "webp", quality: 80 })).toBeTruthy();
     expect(validateEncodeArgs({ in: "a.png", format: "webp", lossless: true })).toBeTruthy();
     badArgs(() => validateEncodeArgs({ in: "a.png" } as never)); // format is required
