@@ -6,6 +6,7 @@ import {
   validateComposeArgs,
   validateDespeckleArgs,
   validateEditArgs,
+  validateEncodeArgs,
   validateFramecheckArgs,
   validateGenerateArgs,
   validateGridArgs,
@@ -189,6 +190,19 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateResizeArgs({ in: "a.png", toSize: 99, kernel: "bogus" as never }), "kernel must be one of");
   });
 
+  it("encode: format enum, quality range, and options that apply only to lossy webp", () => {
+    expect(validateEncodeArgs({ in: "a.png", format: "png", opaque: true })).toBeTruthy();
+    expect(validateEncodeArgs({ in: "a.png", format: "webp", quality: 80 })).toBeTruthy();
+    expect(validateEncodeArgs({ in: "a.png", format: "webp", lossless: true })).toBeTruthy();
+    badArgs(() => validateEncodeArgs({ in: "a.png" } as never)); // format is required
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "gif" as never }), "format must be one of");
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "webp", quality: 0 }), "[1..100]");
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "webp", quality: 90.5 }), "[1..100]");
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "png", quality: 90 }), "webp only");
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "png", lossless: true }), "webp only");
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "webp", quality: 90, lossless: true }), "omit it with lossless");
+  });
+
   it("icon: name stem (no path separators)", () => {
     expect(validateIconArgs({ in: "a.png", name: "app" })).toBeTruthy();
     badArgs(() => validateIconArgs({ in: "a.png", name: "sub/app" }), "path separators");
@@ -215,6 +229,10 @@ describe("verb argument validation (single source of truth)", () => {
       sdk.layer({ base: "b.png", top: "t.png", gravity: "middle" as never }),
     ).rejects.toMatchObject({ code: "args.invalid" });
     await expect(sdk.resize({ in: "a.png", toSize: -1 })).rejects.toMatchObject({
+      code: "args.invalid",
+    });
+    // encode's format-dependent options are checked through the impl too.
+    await expect(sdk.encode({ in: "a.png", format: "png", quality: 90 })).rejects.toMatchObject({
       code: "args.invalid",
     });
     await expect(

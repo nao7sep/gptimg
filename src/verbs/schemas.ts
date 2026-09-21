@@ -25,6 +25,7 @@ import {
   BACKPLATE_SHAPES,
   COMBINE_OPS,
   DESPECKLE_KEEP,
+  ENCODE_FORMATS,
   FRAMECHECK_AXES,
   LAYER_GRAVITIES,
   MASK_METHODS,
@@ -40,6 +41,7 @@ import type {
   ComposeArgs,
   DespeckleArgs,
   EditArgs,
+  EncodeArgs,
   FramecheckArgs,
   GenerateArgs,
   GridArgs,
@@ -315,6 +317,18 @@ const ResizeArgsSchema = z.object({
   overwrite: z.boolean().optional(),
 });
 
+const EncodeArgsSchema = z.object({
+  in: requiredPath("in"),
+  format: oneOf(ENCODE_FORMATS, "format"),
+  quality: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 1 && v <= 100, "must be an integer in [1..100]")
+    .optional(),
+  lossless: z.boolean().optional(),
+  opaque: z.boolean().optional(),
+  overwrite: z.boolean().optional(),
+});
+
 const IconArgsSchema = z.object({
   in: requiredPath("in"),
   name: z
@@ -409,6 +423,24 @@ export function validateUpscaleArgs(args: UpscaleArgs): UpscaleArgs {
 
 export function validateResizeArgs(args: ResizeArgs): ResizeArgs {
   return check(ResizeArgsSchema, args, "resize");
+}
+
+export function validateEncodeArgs(args: EncodeArgs): EncodeArgs {
+  check(EncodeArgsSchema, args, "encode");
+  // Which options apply depends on the format, so it is checked here rather than in the schema.
+  if (args.format === "png" && (args.quality !== undefined || args.lossless !== undefined)) {
+    throw new LocalOpError(
+      "args.invalid",
+      "encode: quality and lossless apply to webp only; png is always lossless.",
+    );
+  }
+  if (args.quality !== undefined && args.lossless === true) {
+    throw new LocalOpError(
+      "args.invalid",
+      "encode: quality applies to lossy webp only; omit it with lossless.",
+    );
+  }
+  return args;
 }
 
 export function validateIconArgs(args: IconArgs): IconArgs {

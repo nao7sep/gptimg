@@ -41,6 +41,13 @@ export const RESAMPLE_KERNELS = [
 ] as const;
 export type ResampleKernel = (typeof RESAMPLE_KERNELS)[number];
 
+/**
+ * Delivery encoding for `encode`. Every other verb writes PNG, the pipeline's lossless
+ * working format; `encode` writes what an app ships.
+ */
+export const ENCODE_FORMATS = ["png", "webp"] as const;
+export type EncodeFormat = (typeof ENCODE_FORMATS)[number];
+
 export const MASK_METHODS = ["chroma", "ai"] as const;
 export type MaskMethod = (typeof MASK_METHODS)[number];
 

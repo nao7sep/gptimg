@@ -63,6 +63,24 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     expect(res.output).toBe(out);
   });
 
+  it("encode rejects an existing output without --overwrite, accepts with it", async () => {
+    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
+    const out = path.join(tmp, "out.webp");
+    await writeFile(out, "blocker");
+
+    await expect(
+      sdk.encode({ in: input, format: "webp", outName: "out" }),
+    ).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "output.exists",
+    });
+
+    const res = await sdk.encode({ in: input, format: "webp", outName: "out", overwrite: true });
+    expect(res.output).toBe(out);
+  });
+
   it("backplate rejects an existing output without --overwrite, accepts with it", async () => {
     const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
     const out = path.join(tmp, "plate.png");

@@ -120,6 +120,21 @@ describe("local verbs success path (via GptImg SDK)", () => {
     expect(meta.format).toBe("png");
   });
 
+  it("encode: writes the format's extension, by default beside the input as <stem>-encode", async () => {
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, 40, 20, diskish(40, 20));
+
+    const webp = await sdk.encode({ in: input, format: "webp", outName: "out" });
+    expect(webp.output).toBe(path.join(tmp, "out.webp"));
+    expect(webp).toMatchObject({ format: "webp", width: 40, height: 20, quality: 90, lossless: false });
+    expect((await sharp(webp.output).metadata()).format).toBe("webp");
+
+    const png = await sdk.encode({ in: input, format: "png" });
+    expect(png.output).toBe(path.join(tmp, "in-encode.png"));
+    expect(png.bytes).toBeGreaterThan(0);
+    expect((await sharp(png.output).metadata()).format).toBe("png");
+  });
+
   it("shadow: writes the named output keeping the input canvas size", async () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 128, 128, diskish(128, 128));

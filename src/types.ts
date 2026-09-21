@@ -2,6 +2,7 @@ export type {
   BackplateShape,
   CombineOp,
   DespeckleKeep,
+  EncodeFormat,
   FramecheckAxes,
   LayerGravity,
   MaskMethod,
@@ -12,6 +13,7 @@ import type {
   BackplateShape,
   CombineOp,
   DespeckleKeep,
+  EncodeFormat,
   FramecheckAxes,
   LayerGravity,
   MaskMethod,
@@ -132,6 +134,7 @@ export type LogVerb =
   | "icon"
   | "upscale"
   | "resize"
+  | "encode"
   | "despeckle"
   | "keycheck"
   | "framecheck"
@@ -547,6 +550,52 @@ export interface ResizeResult {
   height: number;
   toSize: number;
   kernel: ResampleKernel;
+  logPath: string;
+}
+
+// ----- encode -----
+
+export interface EncodeArgs {
+  /** Input image (any format sharp reads). Its pixels are written as they are. */
+  in: string;
+  /** Output encoding. PNG is always lossless, at the strongest compression. Required. */
+  format: EncodeFormat;
+  /** WebP only: lossy quality, an integer 1..100. Default 90. Not with `lossless`. */
+  quality?: number;
+  /**
+   * WebP only: encode losslessly. Every visible pixel is kept exactly; the colour under a
+   * fully transparent pixel is not. Default false.
+   */
+  lossless?: boolean;
+  /**
+   * Require every pixel to be fully opaque and write no alpha channel, for a surface that
+   * shows transparency as black (an Apple touch icon). An input with any pixel that is not
+   * fully opaque is refused, never flattened. Default false: the alpha channel is kept.
+   */
+  opaque?: boolean;
+  outDir?: string;
+  outName?: string;
+  log?: string;
+  overwrite?: boolean;
+}
+
+export interface EncodeResult {
+  input: string;
+  output: string;
+  format: EncodeFormat;
+  /** The image's size, which encoding never changes. */
+  width: number;
+  height: number;
+  /** Whether the output carries an alpha channel. */
+  alpha: boolean;
+  /** The resolved lossy quality; null for PNG and lossless WebP. */
+  quality: number | null;
+  /** Whether the output is lossless: every PNG, and WebP with `lossless`. */
+  lossless: boolean;
+  /** Input file size in bytes. */
+  sourceBytes: number;
+  /** Output file size in bytes. */
+  bytes: number;
   logPath: string;
 }
 

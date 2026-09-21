@@ -30,6 +30,8 @@ import type {
   DespeckleResult,
   EditArgs,
   EditResult,
+  EncodeArgs,
+  EncodeResult,
   FramecheckArgs,
   FramecheckResult,
   GenerateArgs,
@@ -77,6 +79,7 @@ import {
 } from "./verbs/model.js";
 import type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.js";
 import type { VerbCallOptions } from "./verbs/options.js";
+import { encodeImpl } from "./verbs/encode.js";
 import { resizeImpl } from "./verbs/resize.js";
 import { trimImpl } from "./verbs/trim.js";
 import { upscaleImpl } from "./verbs/upscale.js";
@@ -211,6 +214,10 @@ export class GptImg {
 
   resize(args: ResizeArgs, opts?: VerbCallOptions): Promise<ResizeResult> {
     return resizeImpl(this.ctx, args, opts);
+  }
+
+  encode(args: EncodeArgs, opts?: VerbCallOptions): Promise<EncodeResult> {
+    return encodeImpl(this.ctx, args, opts);
   }
 
   grid(args: GridArgs, opts?: VerbCallOptions): Promise<GridResult> {
