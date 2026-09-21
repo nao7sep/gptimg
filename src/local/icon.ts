@@ -14,9 +14,9 @@
 
 import path from "node:path";
 import sharp from "sharp";
-import { IconIcns, IconIco, type IImageData } from "@shockpkg/icon-encoder";
+import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
 import { LocalOpError, throwIfAborted } from "../errors.js";
-import { DELIVERY_PNG_OPTIONS, readImageSize } from "../image/bridge.js";
+import { readImageSize } from "../image/bridge.js";
 import { writeOutputBytes } from "../internal/output-files.js";
 
 export const ICON_DEFAULTS = {
@@ -151,49 +151,39 @@ export async function runIcon(
     );
   }
 
-  // Each size is rendered once as RGBA and shared. The icon encoder encodes its own .icns
-  // and .ico entries from those pixels (PNG at its strongest deflate, with an sRGB chunk, or
-  // BMP), so they go to it unencoded; only the loose PNGs are encoded here, for delivery.
-  const pixels = new Map<number, Promise<IImageData>>();
-  const renderPixels = (size: number): Promise<IImageData> => {
-    let p = pixels.get(size);
+  const cache = new Map<number, Promise<Buffer>>();
+  const render = (size: number): Promise<Buffer> => {
+    let p = cache.get(size);
     if (!p) {
       p = sharp(master)
         .resize(size, size, { fit: "fill", kernel: "lanczos3" })
-        .raw()
-        .toBuffer({ resolveWithObject: true })
-        .then(({ data, info }) => ({ width: info.width, height: info.height, data: new Uint8Array(data) }));
-      pixels.set(size, p);
+        .png()
+        .toBuffer();
+      cache.set(size, p);
     }
     return p;
-  };
-  const renderPng = async (size: number): Promise<Buffer> => {
-    const { width, height, data } = await renderPixels(size);
-    return sharp(Buffer.from(data), { raw: { width, height, channels: 4 } })
-      .png(DELIVERY_PNG_OPTIONS)
-      .toBuffer();
   };
 
   try {
     const icns = new IconIcns();
     icns.toc = true;
     for (const { size, types } of ICNS_ENTRIES) {
-      await icns.addFromRgba(await renderPixels(size), types);
+      await icns.addFromPng(await render(size), types, false);
       throwIfAborted(signal);
     }
 
     const ico = new IconIco();
     for (const size of ICO_SIZES) {
-      await ico.addFromRgba(await renderPixels(size), size >= 256);
+      await ico.addFromPng(await render(size), size >= 256, false);
       throwIfAborted(signal);
     }
 
     await writeOutputBytes(plan.icns, icns.encode());
     await writeOutputBytes(plan.ico, ico.encode());
-    await writeOutputBytes(plan.png, await renderPng(MASTER_SIZE));
+    await writeOutputBytes(plan.png, await render(MASTER_SIZE));
     for (const { size, path: p } of plan.pngSet) {
       throwIfAborted(signal);
-      await writeOutputBytes(p, await renderPng(size));
+      await writeOutputBytes(p, await render(size));
     }
   } catch (err) {
     if ((err as { errorType?: string }).errorType) throw err; // already a LocalOpError

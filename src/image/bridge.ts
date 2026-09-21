@@ -1,4 +1,4 @@
-import sharp, { type PngOptions, type Sharp } from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { LocalOpError } from "../errors.js";
 import type { ResampleKernel } from "../types.js";
 
@@ -8,14 +8,6 @@ export interface RawImage {
   height: number;
   channels: 1 | 3 | 4;
 }
-
-/**
- * PNG encoding for files an app ships (`encode`, and `icon`'s loose PNGs): the
- * strongest lossless deflate, with adaptive row filtering. sharp's `effort` and `palette`
- * quantize, so neither is set. Working files keep sharp's faster default, since later verbs
- * read them straight back.
- */
-export const DELIVERY_PNG_OPTIONS: PngOptions = { compressionLevel: 9, adaptiveFiltering: true };
 
 /**
  * The pixel size of an image file, for the verb that needs it. A file sharp cannot read is

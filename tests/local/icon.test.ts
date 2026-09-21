@@ -141,28 +141,6 @@ describe("runIcon", () => {
     expect(res.outputs).toContain(path.join(tmp, "app.icns"));
   });
 
-  it("writes the loose PNGs with the delivery encoding, their pixels unchanged", async () => {
-    // A gradient, so the compression level shows in the size; a flat fill compresses to
-    // almost nothing at any level.
-    const master = path.join(tmp, "master.png");
-    const data = Buffer.alloc(1024 * 1024 * 4);
-    for (let i = 0; i < 1024 * 1024; i += 1) {
-      data[i * 4] = i % 251;
-      data[i * 4 + 1] = (i >> 10) % 256;
-      data[i * 4 + 2] = (i * 7) % 253;
-      data[i * 4 + 3] = 255;
-    }
-    await sharp(data, { raw: { width: 1024, height: 1024, channels: 4 } }).png().toFile(master);
-
-    const res = await runIcon({ in: master, outDir: tmp });
-
-    const written = await readFile(res.png);
-    const pixels = await sharp(written).ensureAlpha().raw().toBuffer();
-    expect(pixels.equals(await sharp(master).ensureAlpha().raw().toBuffer())).toBe(true);
-    const sharpDefault = await sharp(pixels, { raw: { width: 1024, height: 1024, channels: 4 } }).png().toBuffer();
-    expect(written.length).toBeLessThan(sharpDefault.length);
-  });
-
   it("downsamples a larger-than-1024 master to a 1024 png", async () => {
     const master = path.join(tmp, "big.png");
     await writeSquare(master, 2048);
