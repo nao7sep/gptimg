@@ -10,7 +10,7 @@
 
 import sharp from "sharp";
 import { LocalOpError, throwIfAborted } from "../errors.js";
-import { loadRawRGBA } from "../image/bridge.js";
+import { loadRawRGBA, writeImageFile } from "../image/bridge.js";
 import type { AlphaBBox } from "../types.js";
 
 export const TRIM_DEFAULTS = {
@@ -104,7 +104,7 @@ export async function runTrim(
   const finalW = bbox.width + padLeft + padRight;
   const finalH = bbox.height + padTop + padBottom;
 
-  try {
+  await writeImageFile(args.out, "trim", () => {
     const pipeline = sharp(args.in).extract({
       left: bbox.x,
       top: bbox.y,
@@ -120,14 +120,8 @@ export async function runTrim(
         background: { r: 0, g: 0, b: 0, alpha: 0 },
       });
     }
-    await pipeline.png().toFile(args.out);
-  } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `trim: failed to write ${args.out}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
+    return pipeline.png();
+  });
 
   return {
     output: args.out,

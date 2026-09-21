@@ -16,6 +16,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
 import { LocalOpError, throwIfAborted } from "../errors.js";
+import { readImageSize } from "../image/bridge.js";
 import { writeOutputBytes } from "../internal/output-files.js";
 
 export const ICON_DEFAULTS = {
@@ -120,23 +121,7 @@ export async function runIcon(
   const name = args.name ?? ICON_DEFAULTS.name;
   const pngs = args.pngs ?? ICON_DEFAULTS.pngs;
 
-  let meta;
-  try {
-    meta = await sharp(args.in).metadata();
-  } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
-      `icon: failed to read ${args.in}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
-  const { width, height } = meta;
-  if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) {
-    throw new LocalOpError(
-      "image.noContent",
-      `icon: could not determine dimensions of ${args.in}.`,
-    );
-  }
+  const { width, height } = await readImageSize(args.in, "icon");
   if (width !== height) {
     throw new LocalOpError(
       "args.invalid",

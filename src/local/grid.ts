@@ -15,6 +15,7 @@
 
 import sharp from "sharp";
 import { LocalOpError, throwIfAborted } from "../errors.js";
+import { writeImageFile } from "../image/bridge.js";
 import { parseHex } from "../color.js";
 
 export const GRID_DEFAULTS = {
@@ -105,18 +106,11 @@ export async function runGrid(
     };
   });
 
-  try {
-    await sharp({ create: { width, height, channels: 4, background } })
+  await writeImageFile(args.out, "grid", () =>
+    sharp({ create: { width, height, channels: 4, background } })
       .composite(composites)
-      .png()
-      .toFile(args.out);
-  } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `grid: failed to write ${args.out}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
+      .png(),
+  );
 
   return {
     output: args.out,

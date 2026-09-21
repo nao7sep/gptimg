@@ -14,7 +14,7 @@
 import sharp from "sharp";
 import { normalizeHex, parseHex } from "../color.js";
 import { LocalOpError, throwIfAborted } from "../errors.js";
-import { loadRawRGBA } from "../image/bridge.js";
+import { loadRawRGBA, writeImageFile } from "../image/bridge.js";
 import type { ShadowOffset } from "../types.js";
 
 export const SHADOW_DEFAULTS = {
@@ -197,15 +197,7 @@ export async function runShadow(
   const finalPipe = keepCanvas
     ? sharp(composed).extract({ left: subjX, top: subjY, width: w, height: h })
     : sharp(composed);
-  try {
-    await finalPipe.png().toFile(args.out);
-  } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `shadow: failed to write ${args.out}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
+  await writeImageFile(args.out, "shadow", () => finalPipe.png());
 
   return {
     output: args.out,

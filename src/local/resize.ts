@@ -8,7 +8,8 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, throwIfAborted } from "../errors.js";
+import { throwIfAborted } from "../errors.js";
+import { readImageSize, writeImageFile } from "../image/bridge.js";
 import { fitLongerSide } from "../image/aspect.js";
 import type { ResampleKernel } from "../types.js";
 
@@ -42,44 +43,17 @@ export async function runResize(
 
   const kernel = args.kernel ?? RESIZE_DEFAULTS.kernel;
 
-  let meta;
-  try {
-    meta = await sharp(args.in).metadata();
-  } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
-      `resize: failed to read ${args.in}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
-  if (
-    typeof meta.width !== "number" ||
-    typeof meta.height !== "number" ||
-    meta.width <= 0 ||
-    meta.height <= 0
-  ) {
-    throw new LocalOpError(
-      "image.noContent",
-      `resize: could not determine dimensions of ${args.in}.`,
-    );
-  }
+  const meta = await readImageSize(args.in, "resize");
   throwIfAborted(signal);
 
   const { w, h } = fitLongerSide(meta.width, meta.height, args.toSize);
 
-  try {
-    await sharp(args.in)
+  await writeImageFile(args.out, "resize", () =>
+    sharp(args.in)
       .ensureAlpha()
       .resize(w, h, { fit: "fill", kernel })
-      .png()
-      .toFile(args.out);
-  } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `resize: failed to write ${args.out}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
+      .png(),
+  );
 
   return {
     output: args.out,

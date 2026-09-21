@@ -19,6 +19,7 @@
 
 import sharp from "sharp";
 import { LocalOpError, throwIfAborted } from "../errors.js";
+import { readImageSize, writeImageFile } from "../image/bridge.js";
 import type { LayerGravity, LayerOffset } from "../types.js";
 
 export const LAYER_DEFAULTS = {
@@ -87,34 +88,6 @@ export interface LayerRunResult {
   topOffset: LayerOffset | null;
 }
 
-async function readMetadata(filePath: string): Promise<{
-  width: number;
-  height: number;
-}> {
-  let meta;
-  try {
-    meta = await sharp(filePath).metadata();
-  } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
-      `layer: failed to read ${filePath}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
-  if (
-    typeof meta.width !== "number" ||
-    typeof meta.height !== "number" ||
-    meta.width <= 0 ||
-    meta.height <= 0
-  ) {
-    throw new LocalOpError(
-      "image.noContent",
-      `layer: could not determine dimensions of ${filePath}.`,
-    );
-  }
-  return { width: meta.width, height: meta.height };
-}
-
 export async function runLayer(
   args: LayerRunArgs,
   opts: { signal?: AbortSignal | undefined } = {},
@@ -122,9 +95,9 @@ export async function runLayer(
   const { signal } = opts;
   throwIfAborted(signal);
 
-  const baseMeta = await readMetadata(args.base);
+  const baseMeta = await readImageSize(args.base, "layer");
   throwIfAborted(signal);
-  const topMeta = await readMetadata(args.top);
+  const topMeta = await readImageSize(args.top, "layer");
   throwIfAborted(signal);
 
   // Resize top to scale * min(base.shorter, ...) if requested. We preserve
@@ -238,19 +211,12 @@ export async function runLayer(
     throwIfAborted(signal);
   }
 
-  try {
-    await sharp(args.base)
+  await writeImageFile(args.out, "layer", () =>
+    sharp(args.base)
       .ensureAlpha()
       .composite([{ input: placed, left: dstX, top: dstY }])
-      .png()
-      .toFile(args.out);
-  } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `layer: failed to write ${args.out}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
+      .png(),
+  );
 
   return {
     output: args.out,

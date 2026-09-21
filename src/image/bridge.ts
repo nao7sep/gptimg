@@ -1,4 +1,4 @@
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { LocalOpError } from "../errors.js";
 import type { ResampleKernel } from "../types.js";
 
@@ -7,6 +7,44 @@ export interface RawImage {
   width: number;
   height: number;
   channels: 1 | 3 | 4;
+}
+
+/**
+ * The pixel size of an image file, for the verb that needs it. A file sharp cannot read is
+ * `image.decodeFailed`; one without positive dimensions is `image.noContent`.
+ */
+export async function readImageSize(path: string, verb: string): Promise<{ width: number; height: number }> {
+  let meta;
+  try {
+    meta = await sharp(path).metadata();
+  } catch (err) {
+    throw new LocalOpError(
+      "image.decodeFailed",
+      `${verb}: failed to read ${path}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
+  const { width, height } = meta;
+  if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) {
+    throw new LocalOpError("image.noContent", `${verb}: could not determine dimensions of ${path}.`);
+  }
+  return { width, height };
+}
+
+/**
+ * Builds a sharp pipeline, encoding included, and writes it to `outPath`. Anything that fails
+ * while building or writing it is the verb's `image.writeFailed`.
+ */
+export async function writeImageFile(outPath: string, verb: string, build: () => Sharp): Promise<void> {
+  try {
+    await build().toFile(outPath);
+  } catch (err) {
+    throw new LocalOpError(
+      "image.writeFailed",
+      `${verb}: failed to write ${outPath}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
 }
 
 export async function loadRawRGBA(path: string): Promise<RawImage> {

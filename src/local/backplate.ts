@@ -11,7 +11,8 @@
 
 import sharp from "sharp";
 import { normalizeHex } from "../color.js";
-import { LocalOpError, throwIfAborted } from "../errors.js";
+import { throwIfAborted } from "../errors.js";
+import { writeImageFile } from "../image/bridge.js";
 import type { BackplateShape } from "../types.js";
 
 export const BACKPLATE_DEFAULTS = {
@@ -222,15 +223,7 @@ export async function runBackplate(
   });
   throwIfAborted(signal);
 
-  try {
-    await sharp(Buffer.from(svg)).png().toFile(args.out);
-  } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `backplate: failed to write ${args.out}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  }
+  await writeImageFile(args.out, "backplate", () => sharp(Buffer.from(svg)).png());
 
   return { output: args.out, size, content, radius, shape, from, to, angle };
 }
