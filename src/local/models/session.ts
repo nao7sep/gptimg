@@ -14,7 +14,9 @@ import { LocalOpError } from "../../errors.js";
 const ONNX_THREADS_ENV = "GPTIMG_ONNX_INTRA_OP_THREADS";
 const ONNX_EP_ENV = "GPTIMG_ONNX_EP";
 
-const sessions = new Map<string, ort.InferenceSession>();
+// One creation per model path: concurrent first callers await the same promise
+// instead of each loading its own copy of the weights.
+const sessions = new Map<string, Promise<ort.InferenceSession>>();
 
 /**
  * Intra-op thread count per session. ONNX Runtime's CPU EP defaults to one
@@ -58,13 +60,24 @@ function executionProviders(): string[] {
 
 /**
  * Create (or return a cached) ONNX inference session for `modelPath`. Sessions
- * are cached per path for the lifetime of the process.
+ * are cached per path for the lifetime of the process, and a creation still in
+ * flight is shared with every caller that asks meanwhile. A failed creation is
+ * dropped from the cache so the next call tries again.
  */
-export async function loadSession(modelPath: string): Promise<ort.InferenceSession> {
+export function loadSession(modelPath: string): Promise<ort.InferenceSession> {
   const cached = sessions.get(modelPath);
   if (cached) return cached;
+  const created = createSession(modelPath);
+  sessions.set(modelPath, created);
+  created.catch(() => {
+    if (sessions.get(modelPath) === created) sessions.delete(modelPath);
+  });
+  return created;
+}
+
+async function createSession(modelPath: string): Promise<ort.InferenceSession> {
   try {
-    const session = await ort.InferenceSession.create(modelPath, {
+    return await ort.InferenceSession.create(modelPath, {
       executionProviders: executionProviders(),
       intraOpNumThreads: intraOpThreadCount(),
       interOpNumThreads: 1,
@@ -73,8 +86,6 @@ export async function loadSession(modelPath: string): Promise<ort.InferenceSessi
       // surface as typed errors through the public call.
       logSeverityLevel: 3,
     });
-    sessions.set(modelPath, session);
-    return session;
   } catch (err) {
     throw new LocalOpError(
       "model.loadFailed",
