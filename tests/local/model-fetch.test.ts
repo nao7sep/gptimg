@@ -189,6 +189,24 @@ describe("ensureModel", () => {
     expect(events.some((e) => e.msg.startsWith("downloaded prog.bin"))).toBe(true);
   });
 
+  it("removes staged downloads whose process is gone and keeps those still in flight", async () => {
+    const nanoid21 = "abcDEF123_-abcDEF123_";
+    const tempDir = path.join(tmp, "temp");
+    await mkdir(tempDir, { recursive: true });
+    // macOS caps pids below 100000 and Linux below 2^22, so 99999999 never runs.
+    const abandoned = `birefnet-99999999-${nanoid21}.tmp`;
+    const ours = `birefnet-${process.pid}-${nanoid21}.tmp`;
+    const parents = `birefnet-${process.ppid}-${nanoid21}.tmp`;
+    const unrelated = "notes.txt";
+    for (const name of [abandoned, ours, parents, unrelated]) await writeFile(path.join(tempDir, name), "x");
+    await writeFile(path.join(tmp, "cached.bin"), "12345");
+
+    // A cache hit still sweeps, so leftovers go even when nothing downloads.
+    const entry: ModelEntry = { name: "cached.bin", url: "https://example.invalid/m", inputSize: 0, byteSize: 5 };
+    await expect(ensureModel(entry, tmp)).resolves.toBe(path.join(tmp, "cached.bin"));
+    expect((await readdir(tempDir)).sort()).toEqual([ours, parents, unrelated].sort());
+  });
+
   it("stages the download in temp/ and atomically publishes to the final name", async () => {
     const body = Buffer.from(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
     const { server, baseURL } = await listen((_req, res) => {

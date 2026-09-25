@@ -17,7 +17,8 @@
  *     cache: only the winning `link()` becomes the final file, all losers unlink
  *     their staged copy and return the published path. Staging in temp/ (not as
  *     a sibling of the kept model) keeps a crashed download's partial out of the
- *     model dir, in a clearly-disposable area.
+ *     model dir, in a clearly-disposable area, and the next ensureModel
+ *     removes any staged file whose owning process is gone.
  *   - Each retry attempt downloads to a fresh staged file, so a half-written
  *     file from a failed attempt never poisons the next one.
  *   - Download progress is reported through the logger (and thus the caller's
@@ -30,7 +31,7 @@
  */
 
 import { createReadStream, createWriteStream, statSync } from "node:fs";
-import { link, mkdir, open, rename, unlink } from "node:fs/promises";
+import { link, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { finished } from "node:stream/promises";
@@ -358,6 +359,41 @@ export function stagingPathFor(cacheDir: string, name: string): string {
   return path.join(cacheDir, TEMP_DIR, `${stem}-${process.pid}-${suffix}.tmp`);
 }
 
+const STAGED_NAME = /-(\d+)-[A-Za-z0-9_-]{21}\.tmp$/;
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM: the process exists but belongs to another user.
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Remove staged downloads whose process is gone. A download interrupted by
+ * Ctrl-C or a crash never reaches its own cleanup, and each one can leave
+ * hundreds of MB in temp/. The owning pid is in every staged name, so a file
+ * whose pid no longer runs is abandoned; files of live processes (this one
+ * included) are in flight and stay. Best effort: a file another sweeper
+ * removed first, or one that cannot be removed, is skipped.
+ */
+export async function sweepAbandonedStaging(cacheDir: string): Promise<void> {
+  const tempDir = path.join(cacheDir, TEMP_DIR);
+  let names: string[];
+  try {
+    names = await readdir(tempDir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const pid = Number(STAGED_NAME.exec(name)?.[1]);
+    if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid || processIsAlive(pid)) continue;
+    await unlink(path.join(tempDir, name)).catch(() => undefined);
+  }
+}
+
 export async function ensureModel(
   entry: ModelEntry,
   cacheDir: string,
@@ -390,6 +426,7 @@ export async function ensureModel(
   assertSafeUrl(entry.url);
 
   await mkdir(cacheDir, { recursive: true });
+  await sweepAbandonedStaging(cacheDir);
   const finalPath = path.join(cacheDir, entry.name);
 
   const initialCache = inspectCachedModel(finalPath, entry.byteSize);
