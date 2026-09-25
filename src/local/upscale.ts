@@ -15,13 +15,14 @@
 import sharp from "sharp";
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { fitLongerSide } from "../image/aspect.js";
-import { loadRawRGBA, resizeSingleChannel, writeRGBA } from "../image/bridge.js";
+import { loadRawRGBA, readImageSize, resizeSingleChannel, writeRGBA } from "../image/bridge.js";
 import type { Logger } from "../log/index.js";
 import type { NetworkBudget } from "../network/defaults.js";
 import type { ResampleKernel } from "../types.js";
 import {
   runSwin2srX4,
   SWIN2SR_DEFAULT_TILE,
+  SWIN2SR_SCALE,
 } from "./models/swin2sr.js";
 
 export const UPSCALE_DEFAULTS = {
@@ -29,6 +30,31 @@ export const UPSCALE_DEFAULTS = {
   kernel: "lanczos3" as ResampleKernel,
   tile: SWIN2SR_DEFAULT_TILE,
 } as const;
+
+/**
+ * The largest raw image sharp resamples by default (its `limitInputPixels`).
+ * The ×4 model result goes into sharp as raw pixels for the final resample,
+ * so a source whose ×4 result is larger than this would run the whole model
+ * and then fail at the end.
+ */
+const SHARP_MAX_INPUT_PIXELS = 0x3fff * 0x3fff;
+
+/**
+ * Refuse a source whose ×4 model result the final resample cannot take, up
+ * front, before the model loads or any tile runs.
+ */
+export function assertUpscaleSourceSize(width: number, height: number): void {
+  const modelPixels = width * SWIN2SR_SCALE * height * SWIN2SR_SCALE;
+  if (modelPixels > SHARP_MAX_INPUT_PIXELS) {
+    const maxSourcePixels = Math.floor(SHARP_MAX_INPUT_PIXELS / (SWIN2SR_SCALE * SWIN2SR_SCALE));
+    throw new LocalOpError(
+      "image.tooLarge",
+      `upscale: a ${width}×${height} source is too large; its ×4 result would be ` +
+        `${width * SWIN2SR_SCALE}×${height * SWIN2SR_SCALE}. upscale takes sources up to ` +
+        `${maxSourcePixels} pixels (just under 4096×4096); use resize for large images.`,
+    );
+  }
+}
 
 /**
  * ×4 RGB upscaler over interleaved-RGB pixels. Injectable so the resample +
@@ -96,6 +122,10 @@ export async function runUpscale(
   const toSize = args.toSize ?? UPSCALE_DEFAULTS.toSize;
   const kernel = args.kernel ?? UPSCALE_DEFAULTS.kernel;
   const tile = args.tile ?? UPSCALE_DEFAULTS.tile;
+
+  const source = await readImageSize(args.in, "upscale");
+  assertUpscaleSourceSize(source.width, source.height);
+  throwIfAborted(signal);
 
   const { data, width, height } = await loadRawRGBA(args.in);
   throwIfAborted(signal);

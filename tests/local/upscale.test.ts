@@ -2,8 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runUpscale, type RgbUpscaler } from "../../src/local/upscale.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertUpscaleSourceSize, runUpscale, type RgbUpscaler } from "../../src/local/upscale.js";
 import {
   planTiles,
   tileAndStitch,
@@ -300,5 +300,25 @@ describe("runUpscale", () => {
         { upscaler: nearestX4 },
       ),
     ).rejects.toMatchObject({ errorType: "localOp", code: "image.decodeFailed" });
+  });
+
+  it("refuses a source whose ×4 result the resample cannot take, before the model runs", async () => {
+    const input = path.join(tmp, "big.png");
+    await sharp({ create: { width: 4096, height: 4096, channels: 4, background: "#808080" } })
+      .png()
+      .toFile(input);
+    const upscaler = vi.fn(nearestX4);
+    await expect(
+      runUpscale({ in: input, out: path.join(tmp, "big-up.png"), toSize: 1024 }, tmp, { upscaler }),
+    ).rejects.toMatchObject({ errorType: "localOp", code: "image.tooLarge" });
+    expect(upscaler).not.toHaveBeenCalled();
+  });
+
+  it("puts the source limit exactly where the ×4 result reaches sharp's input pixel limit", () => {
+    // 16384 * 16384 = 268,435,456 > 268,402,689 (sharp's default limit) >= 16384 * 16380.
+    expect(() => assertUpscaleSourceSize(4096, 4096)).toThrow(/too large/);
+    expect(() => assertUpscaleSourceSize(4096, 4095)).not.toThrow();
+    expect(() => assertUpscaleSourceSize(8192, 2047)).not.toThrow();
+    expect(() => assertUpscaleSourceSize(8192, 2048)).toThrow(/too large/);
   });
 });
