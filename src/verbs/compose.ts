@@ -55,6 +55,7 @@ export async function composeImpl(
         in: args.in,
         mask: args.mask,
         out: outPath,
+        overwrite: args.overwrite ?? false,
         over,
         removeBleed: args.removeBleed,
       },

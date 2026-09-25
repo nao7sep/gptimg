@@ -52,6 +52,7 @@ export async function backplateImpl(
     const result = await runBackplate(
       {
         out: outPath,
+        overwrite: args.overwrite ?? false,
         size: args.size,
         content: args.content,
         radius: args.radius,

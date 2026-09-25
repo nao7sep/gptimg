@@ -49,6 +49,7 @@ export async function shadowImpl(
       {
         in: args.in,
         out: outPath,
+        overwrite: args.overwrite ?? false,
         blur: args.blur,
         offset: args.offset,
         color: args.color,

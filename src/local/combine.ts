@@ -19,6 +19,8 @@ export interface CombineArgs {
   op: CombineOp;
   inputs: string[];
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   /** Number of 3×3 box-blur passes for `feather`. Ignored for other ops. */
   radius?: number;
 }
@@ -146,6 +148,6 @@ export async function runCombine(
   }
 
   throwIfAborted(signal);
-  await writeMaskPNG(out, width, height, args.out);
+  await writeMaskPNG(out, width, height, { path: args.out, overwrite: args.overwrite });
   return { output: args.out, width, height, op: args.op };
 }

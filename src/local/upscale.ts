@@ -43,6 +43,8 @@ export type RgbUpscaler = (
 export interface UpscaleRunArgs {
   in: string;
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   toSize?: number;
   kernel?: ResampleKernel;
   tile?: number;
@@ -138,7 +140,7 @@ export async function runUpscale(
       rgba[d + 2] = rgbResized[s + 2]!;
       rgba[d + 3] = alphaResized[p]!;
     }
-    await writeRGBA(rgba, finalW, finalH, args.out);
+    await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite });
   } catch (err) {
     if (err instanceof LocalOpError) throw err;
     throw new LocalOpError(

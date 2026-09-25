@@ -1,9 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { describe, expect, it } from "vitest";
-import { readImageSize, resizeSingleChannel, writeImageFile } from "../../src/image/bridge.js";
+import { readImageSize, resizeSingleChannel, writeImageFile, writeMaskPNG, writeRGBA } from "../../src/image/bridge.js";
 
 describe("resizeSingleChannel", () => {
   it("upsizes single-channel data and stays one channel (exact dstW*dstH bytes)", async () => {
@@ -56,7 +56,7 @@ describe("writeImageFile", () => {
     const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
     try {
       const file = path.join(dir, "out.png");
-      await writeImageFile(file, "grid", () =>
+      await writeImageFile({ path: file }, "grid", () =>
         sharp({ create: { width: 2, height: 2, channels: 4, background: "#fff" } }).png(),
       );
       await expect(sharp(file).metadata()).resolves.toMatchObject({ width: 2, height: 2, format: "png" });
@@ -68,17 +68,72 @@ describe("writeImageFile", () => {
   it("reports a failure while building or writing as the verb's write failure", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
     try {
-      const failingBuild = writeImageFile(path.join(dir, "out.png"), "trim", () => {
+      const failingBuild = writeImageFile({ path: path.join(dir, "out.png") }, "trim", () => {
         throw new Error("bad geometry");
       });
       await expect(failingBuild).rejects.toMatchObject({
         code: "image.writeFailed",
         message: expect.stringMatching(/^trim: failed to write .*bad geometry$/),
       });
-      const missingFolder = writeImageFile(path.join(dir, "missing", "out.png"), "trim", () =>
+      const missingFolder = writeImageFile({ path: path.join(dir, "missing", "out.png") }, "trim", () =>
         sharp({ create: { width: 1, height: 1, channels: 4, background: "#000" } }).png(),
       );
       await expect(missingFolder).rejects.toMatchObject({ code: "image.writeFailed" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("image publication", () => {
+  const onePixel = (): Sharp =>
+    sharp({ create: { width: 1, height: 1, channels: 4, background: "#000" } }).png();
+
+  it("refuses to replace a file without overwrite, even one that appeared after the verb's check", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
+    try {
+      const file = path.join(dir, "out.png");
+      await writeFile(file, "earlier writer");
+      await expect(writeImageFile({ path: file }, "mask", onePixel)).rejects.toMatchObject({
+        code: "output.exists",
+      });
+      await expect(writeRGBA(new Uint8Array(4), 1, 1, { path: file })).rejects.toMatchObject({
+        code: "output.exists",
+      });
+      await expect(writeMaskPNG(new Uint8Array(1), 1, 1, { path: file })).rejects.toMatchObject({
+        code: "output.exists",
+      });
+      await expect(readFile(file, "utf-8")).resolves.toBe("earlier writer");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the previous file intact when an overwrite fails to encode, and leaves no staging file", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
+    try {
+      const file = path.join(dir, "out.png");
+      await writeImageFile({ path: file }, "upscale", onePixel);
+      const before = await readFile(file);
+      // A raw buffer too short for its declared size fails inside the encoder,
+      // as an interrupted or failing libvips run would.
+      await expect(writeRGBA(new Uint8Array(3), 4, 4, { path: file, overwrite: true })).rejects.toMatchObject({
+        code: "image.writeFailed",
+      });
+      await expect(readFile(file)).resolves.toEqual(before);
+      await expect(readdir(dir)).resolves.toEqual(["out.png"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("replaces an existing file with overwrite", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
+    try {
+      const file = path.join(dir, "out.png");
+      await writeFile(file, "old");
+      await writeMaskPNG(new Uint8Array([255]), 1, 1, { path: file, overwrite: true });
+      await expect(sharp(file).metadata()).resolves.toMatchObject({ width: 1, height: 1, format: "png" });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

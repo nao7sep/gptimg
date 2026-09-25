@@ -47,6 +47,8 @@ export interface ComposeArgs {
   in: string;
   mask: string;
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   over?: ComposeOver;
   /** Background color to remove from subject pixels. See module doc. */
   removeBleed?: string;
@@ -290,6 +292,6 @@ export async function runCompose(
   }
 
   throwIfAborted(signal);
-  await writeRGBA(out, width, height, args.out);
+  await writeRGBA(out, width, height, { path: args.out, overwrite: args.overwrite });
   return { output: args.out, width, height, over: over.kind };
 }

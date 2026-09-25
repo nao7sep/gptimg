@@ -72,6 +72,8 @@ export interface LayerRunArgs {
   base: string;
   top: string;
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   /** Resize top so its longer side = scale * min(baseW, baseH). */
   scale?: number;
   gravity?: LayerGravity;
@@ -211,7 +213,7 @@ export async function runLayer(
     throwIfAborted(signal);
   }
 
-  await writeImageFile(args.out, "layer", () =>
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "layer", () =>
     sharp(args.base)
       .ensureAlpha()
       .composite([{ input: placed, left: dstX, top: dstY }])

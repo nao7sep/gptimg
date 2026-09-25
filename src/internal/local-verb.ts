@@ -24,8 +24,10 @@ export function inferStem(filePath: string): string {
 }
 
 /**
- * Refuse to overwrite a single existing file unless explicitly allowed. The
- * group-scoped variant (`assertOutputGroupAvailable` / `assertStemAvailable`
+ * Refuse to overwrite a single existing file unless explicitly allowed. This
+ * is the fail-fast check before a verb does its work; the no-clobber
+ * publication in `image/bridge.ts` stays the authority when another writer
+ * creates the file in the meantime. The group-scoped variant (`assertOutputGroupAvailable` / `assertStemAvailable`
  * in output-group.ts) is for generate/edit's multi-file artifact groups.
  */
 export function assertSingleFileAvailable(

@@ -49,6 +49,7 @@ export async function encodeImpl(
       {
         in: args.in,
         out: outPath,
+        overwrite: args.overwrite ?? false,
         format: args.format,
         quality: args.quality,
         lossless: args.lossless,

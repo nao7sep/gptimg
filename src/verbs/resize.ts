@@ -42,7 +42,7 @@ export async function resizeImpl(
     });
 
     const result = await runResize(
-      { in: args.in, out: outPath, toSize: args.toSize, kernel: args.kernel },
+      { in: args.in, out: outPath, overwrite: args.overwrite ?? false, toSize: args.toSize, kernel: args.kernel },
       { signal },
     );
 

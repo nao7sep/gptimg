@@ -29,6 +29,8 @@ export const SHADOW_DEFAULTS = {
 export interface ShadowRunArgs {
   in: string;
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   blur?: number;
   offset?: ShadowOffset;
   color?: string;
@@ -197,7 +199,7 @@ export async function runShadow(
   const finalPipe = keepCanvas
     ? sharp(composed).extract({ left: subjX, top: subjY, width: w, height: h })
     : sharp(composed);
-  await writeImageFile(args.out, "shadow", () => finalPipe.png());
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "shadow", () => finalPipe.png());
 
   return {
     output: args.out,

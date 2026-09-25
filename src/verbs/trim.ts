@@ -45,6 +45,7 @@ export async function trimImpl(
       {
         in: args.in,
         out: outPath,
+        overwrite: args.overwrite ?? false,
         margin: args.margin,
         square: args.square,
       },

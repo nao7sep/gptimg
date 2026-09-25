@@ -45,6 +45,7 @@ export async function gridImpl(
       {
         inputs: args.inputs,
         out: outPath,
+        overwrite: args.overwrite ?? false,
         cols: args.cols,
         cell: args.cell,
         gap: args.gap,

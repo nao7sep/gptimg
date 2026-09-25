@@ -47,6 +47,7 @@ export async function despeckleImpl(
       {
         in: args.in,
         out: outPath,
+        overwrite: args.overwrite ?? false,
         threshold: args.threshold,
         minArea: args.minArea,
         connectivity: args.connectivity,

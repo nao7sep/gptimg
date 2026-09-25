@@ -27,6 +27,8 @@ export const GRID_DEFAULTS = {
 export interface GridRunArgs {
   inputs: string[];
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   cols?: number;
   cell?: number;
   gap?: number;
@@ -106,7 +108,7 @@ export async function runGrid(
     };
   });
 
-  await writeImageFile(args.out, "grid", () =>
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "grid", () =>
     sharp({ create: { width, height, channels: 4, background } })
       .composite(composites)
       .png(),

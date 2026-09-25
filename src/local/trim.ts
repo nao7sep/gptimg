@@ -50,6 +50,8 @@ export function computeAlphaBBox(
 export interface TrimRunArgs {
   in: string;
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   margin?: number;
   square?: boolean;
 }
@@ -104,7 +106,7 @@ export async function runTrim(
   const finalW = bbox.width + padLeft + padRight;
   const finalH = bbox.height + padTop + padBottom;
 
-  await writeImageFile(args.out, "trim", () => {
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "trim", () => {
     const pipeline = sharp(args.in).extract({
       left: bbox.x,
       top: bbox.y,

@@ -20,6 +20,8 @@ export const RESIZE_DEFAULTS = {
 export interface ResizeRunArgs {
   in: string;
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   toSize: number;
   kernel?: ResampleKernel;
 }
@@ -48,7 +50,7 @@ export async function runResize(
 
   const { w, h } = fitLongerSide(meta.width, meta.height, args.toSize);
 
-  await writeImageFile(args.out, "resize", () =>
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "resize", () =>
     sharp(args.in)
       .ensureAlpha()
       .resize(w, h, { fit: "fill", kernel })

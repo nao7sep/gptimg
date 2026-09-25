@@ -99,6 +99,8 @@ export interface IconRunArgs {
   outDir: string;
   name?: string;
   pngs?: boolean;
+  /** Replace existing files; otherwise each publication is no-clobber. */
+  overwrite?: boolean;
 }
 
 export interface IconRunResult {
@@ -178,12 +180,13 @@ export async function runIcon(
       throwIfAborted(signal);
     }
 
-    await writeOutputBytes(plan.icns, icns.encode());
-    await writeOutputBytes(plan.ico, ico.encode());
-    await writeOutputBytes(plan.png, await render(MASTER_SIZE));
+    const overwrite = args.overwrite ?? false;
+    await writeOutputBytes(plan.icns, icns.encode(), overwrite);
+    await writeOutputBytes(plan.ico, ico.encode(), overwrite);
+    await writeOutputBytes(plan.png, await render(MASTER_SIZE), overwrite);
     for (const { size, path: p } of plan.pngSet) {
       throwIfAborted(signal);
-      await writeOutputBytes(p, await render(size));
+      await writeOutputBytes(p, await render(size), overwrite);
     }
   } catch (err) {
     if ((err as { errorType?: string }).errorType) throw err; // already a LocalOpError

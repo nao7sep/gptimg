@@ -34,6 +34,8 @@ export const DESPECKLE_DEFAULTS = {
 export interface DespeckleRunArgs {
   in: string;
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   threshold?: number;
   minArea?: number;
   connectivity?: number;
@@ -215,7 +217,7 @@ export async function runDespeckle(
   const { data: outputData, ...summary } = result;
 
   throwIfAborted(signal);
-  await writeRGBA(outputData, width, height, args.out);
+  await writeRGBA(outputData, width, height, { path: args.out, overwrite: args.overwrite });
 
   return {
     ...summary,

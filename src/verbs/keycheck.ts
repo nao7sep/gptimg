@@ -81,6 +81,7 @@ export async function keycheckImpl(
         maxEdgeResidueFraction: args.maxEdgeResidueFraction,
         maxInteriorResiduePixels: args.maxInteriorResiduePixels,
         heatmapOut,
+        overwrite: args.overwrite ?? false,
       },
       { signal },
     );

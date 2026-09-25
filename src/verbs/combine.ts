@@ -43,7 +43,7 @@ export async function combineImpl(
     });
 
     const result = await runCombine(
-      { op: args.op, inputs: args.inputs, out: outPath, radius: args.radius },
+      { op: args.op, inputs: args.inputs, out: outPath, overwrite: args.overwrite ?? false, radius: args.radius },
       { signal },
     );
     await logger.info("write", "wrote combined mask", {

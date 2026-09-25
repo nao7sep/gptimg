@@ -40,7 +40,7 @@ export async function iconImpl(
       pngs,
     });
 
-    const result = await runIcon({ in: args.in, outDir, name, pngs }, { signal });
+    const result = await runIcon({ in: args.in, outDir, name, pngs, overwrite: args.overwrite ?? false }, { signal });
 
     await logger.info("write", "wrote icon artifacts", {
       outputs: result.outputs,

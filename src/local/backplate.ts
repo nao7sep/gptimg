@@ -146,6 +146,8 @@ function gradientEndpoints(angleDeg: number): {
 
 export interface BackplateRunArgs {
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   size?: number;
   content?: number;
   radius?: number;
@@ -223,7 +225,7 @@ export async function runBackplate(
   });
   throwIfAborted(signal);
 
-  await writeImageFile(args.out, "backplate", () => sharp(Buffer.from(svg)).png());
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "backplate", () => sharp(Buffer.from(svg)).png());
 
   return { output: args.out, size, content, radius, shape, from, to, angle };
 }

@@ -89,6 +89,8 @@ export interface KeycheckRunArgs {
   maxInteriorResiduePixels?: number;
   /** When set, write a debug heatmap to this path. */
   heatmapOut?: string | undefined;
+  /** Replace an existing file at `heatmapOut`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
 }
 
 export interface KeycheckRunResult {
@@ -233,7 +235,7 @@ export async function runKeycheck(
       }
     }
     throwIfAborted(signal);
-    await writeRGBA(out, width, height, args.heatmapOut);
+    await writeRGBA(out, width, height, { path: args.heatmapOut, overwrite: args.overwrite });
     heatmapPath = args.heatmapOut;
   }
 

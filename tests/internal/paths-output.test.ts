@@ -115,7 +115,7 @@ describe("output file helpers", () => {
     const file = path.join(outDir, "out.bin");
 
     await ensureOutputDir(outDir);
-    await writeOutputBytes(file, new Uint8Array([1, 2, 3]));
+    await writeOutputBytes(file, new Uint8Array([1, 2, 3]), false);
 
     expect(existsSync(outDir)).toBe(true);
     await expect(readFile(file)).resolves.toEqual(Buffer.from([1, 2, 3]));

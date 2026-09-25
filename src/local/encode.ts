@@ -16,6 +16,8 @@ import type { EncodeFormat } from "../types.js";
 export interface EncodeRunArgs {
   in: string;
   out: string;
+  /** Replace an existing file at `out`; otherwise publication is no-clobber. */
+  overwrite?: boolean;
   format: EncodeFormat;
   quality?: number;
   lossless?: boolean;
@@ -66,7 +68,7 @@ export async function runEncode(
   throwIfAborted(signal);
 
   const lossless = args.format === "png" || (args.lossless ?? false);
-  await writeImageFile(args.out, "encode", () => {
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "encode", () => {
     const pipeline = sharp(args.in);
     if (opaque) pipeline.removeAlpha();
     if (args.format === "png") {

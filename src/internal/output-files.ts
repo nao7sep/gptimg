@@ -18,7 +18,7 @@ export async function ensureOutputDir(outDir: string): Promise<void> {
 export async function writeOutputBytes(
   filePath: string,
   data: Buffer | Uint8Array,
-  overwrite = true,
+  overwrite: boolean,
 ): Promise<void> {
   try {
     await writeFileAtomic(filePath, Buffer.from(data), { overwrite });

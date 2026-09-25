@@ -1,5 +1,6 @@
 import sharp, { type Sharp } from "sharp";
 import { LocalOpError } from "../errors.js";
+import { writeFileAtomic } from "../internal/atomic-file.js";
 import type { ResampleKernel } from "../types.js";
 
 export interface RawImage {
@@ -31,20 +32,49 @@ export async function readImageSize(path: string, verb: string): Promise<{ width
   return { width, height };
 }
 
+/** Where a local op publishes its image, and whether it may replace a file there. */
+export interface ImageTarget {
+  path: string;
+  overwrite?: boolean | undefined;
+}
+
 /**
- * Builds a sharp pipeline, encoding included, and writes it to `outPath`. Anything that fails
- * while building or writing it is the verb's `image.writeFailed`.
+ * Publish encoded image bytes at `target.path` through the atomic write: staged
+ * beside the target and then renamed, so an interrupted run never leaves a
+ * truncated file under the final name or destroys the file it was replacing.
+ * Without `overwrite` the publication is no-clobber, so a file that appeared
+ * after the verb's up-front check is refused as `output.exists` rather than
+ * replaced. Any other failure is `image.writeFailed` with `failure` as its
+ * message prefix.
  */
-export async function writeImageFile(outPath: string, verb: string, build: () => Sharp): Promise<void> {
+async function publishImage(target: ImageTarget, bytes: Buffer, failure: string): Promise<void> {
+  const overwrite = target.overwrite ?? false;
   try {
-    await build().toFile(outPath);
+    await writeFileAtomic(target.path, bytes, { overwrite });
   } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `${verb}: failed to write ${outPath}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new LocalOpError("output.exists", `Output exists: ${target.path}. Set overwrite: true to allow.`, {
+        cause: err,
+      });
+    }
+    throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
   }
+}
+
+/**
+ * Builds a sharp pipeline, encoding included, and publishes it at `target`
+ * (see `publishImage`). Anything that fails while building, encoding or
+ * writing it is the verb's `image.writeFailed`.
+ */
+export async function writeImageFile(target: ImageTarget, verb: string, build: () => Sharp): Promise<void> {
+  const failure = `${verb}: failed to write ${target.path}`;
+  let bytes: Buffer;
+  try {
+    bytes = await build().toBuffer();
+  } catch (err) {
+    throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
+  }
+  await publishImage(target, bytes, failure);
 }
 
 export async function loadRawRGBA(path: string): Promise<RawImage> {
@@ -71,21 +101,20 @@ export async function writeRGBA(
   data: Uint8Array,
   width: number,
   height: number,
-  outPath: string,
+  target: ImageTarget,
 ): Promise<void> {
+  const failure = `Failed to write image at ${target.path}`;
+  let bytes: Buffer;
   try {
-    await sharp(Buffer.from(data), {
+    bytes = await sharp(Buffer.from(data), {
       raw: { width, height, channels: 4 },
     })
       .png()
-      .toFile(outPath);
+      .toBuffer();
   } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `Failed to write image at ${outPath}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
   }
+  await publishImage(target, bytes, failure);
 }
 
 /**
@@ -117,21 +146,20 @@ export async function writeMaskPNG(
   mask: Uint8Array,
   width: number,
   height: number,
-  outPath: string,
+  target: ImageTarget,
 ): Promise<void> {
+  const failure = `Failed to write mask at ${target.path}`;
+  let bytes: Buffer;
   try {
-    await sharp(Buffer.from(mask), {
+    bytes = await sharp(Buffer.from(mask), {
       raw: { width, height, channels: 1 },
     })
       .png()
-      .toFile(outPath);
+      .toBuffer();
   } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `Failed to write mask at ${outPath}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
   }
+  await publishImage(target, bytes, failure);
 }
 
 /**

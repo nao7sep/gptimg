@@ -52,6 +52,7 @@ export async function upscaleImpl(
       {
         in: args.in,
         out: outPath,
+        overwrite: args.overwrite ?? false,
         toSize: args.toSize,
         kernel: args.kernel,
         tile: args.tile,

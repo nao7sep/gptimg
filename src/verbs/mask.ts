@@ -116,7 +116,7 @@ export async function maskImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await writeMaskPNG(alpha, width, height, outPath);
+    await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false });
     await logger.info("write", "wrote mask", { path: outPath });
 
     return {

@@ -48,6 +48,7 @@ export async function layerImpl(
         base: args.base,
         top: args.top,
         out: outPath,
+        overwrite: args.overwrite ?? false,
         scale: args.scale,
         gravity: args.gravity,
         topOffset: args.topOffset,
