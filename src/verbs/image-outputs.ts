@@ -40,7 +40,8 @@ export interface PublishProviderImagesArgs {
  * `overwrite`, a slot the run owned but could not fill (an item that failed,
  * or a shorter response) is cleared after publication rather than blocking
  * it, so the group ends up holding exactly this run's files and a partial
- * response still delivers every image it paid for.
+ * response still delivers every image it paid for. A run that publishes no
+ * image leaves the earlier run's files untouched.
  */
 export async function publishProviderImages(
   args: PublishProviderImagesArgs,
@@ -140,7 +141,9 @@ export async function publishProviderImages(
         }),
     ),
   );
-  if (overwrite) {
+  // A run that published nothing leaves the earlier run's files as they are:
+  // a paid call that produced no image must not destroy previous results.
+  if (overwrite && files.length > 0) {
     await removeUnpublishedSlots(
       group,
       owned,

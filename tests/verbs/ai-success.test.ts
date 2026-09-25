@@ -588,7 +588,7 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("generate --overwrite returns partial, not an error, when every item fails", async () => {
+  it("generate --overwrite returns partial and keeps the earlier files when every item fails", async () => {
     const outDir = path.join(tmp, "all-failed-overwrite");
     providerCalls.generate.mockResolvedValue({ raw: { data: [{}] }, images: [{ data: png }] });
     await sdk.generate({ prompt: "first", outDir, outName: "same" });
@@ -597,7 +597,9 @@ describe("AI verb implementations with mocked provider", () => {
     const result = await sdk.generate({ prompt: "second", outDir, outName: "same", overwrite: true });
 
     expect(result).toMatchObject({ partial: true, files: [] });
-    expect(await readdir(outDir)).toEqual([]);
+    expect((await readdir(outDir)).sort()).toEqual(["same.json", "same.png"]);
+    const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
+    expect(sidecar.request.prompt).toBe("first");
   });
 
   it("edit --overwrite delivers a partial response and clears the slot it could not fill", async () => {
