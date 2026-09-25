@@ -1,6 +1,11 @@
 import type { Logger } from "../log/index.js";
 import { toAbortError } from "../errors.js";
-import type { NetworkBudget, NetworkBudgetName } from "./defaults.js";
+import {
+  BUDGET_RESEND_POLICY,
+  type NetworkBudget,
+  type NetworkBudgetName,
+  type ResendPolicy,
+} from "./defaults.js";
 
 // Standard transient statuses plus Cloudflare-origin 5xx codes. 408 (request
 // timeout) and 429 (rate limit) are transient by definition; 520-524 are
@@ -40,13 +45,46 @@ function statusFromError(err: unknown): number | null {
   return typeof s === "number" ? s : null;
 }
 
-function isRetryableError(err: unknown): boolean {
+// Failures that prove a request never reached the provider's work: it was
+// refused, could not be resolved, or was rejected as over capacity before any
+// processing. Everything else in the transient sets may have been processed.
+const UNPROCESSED_HTTP_STATUSES = new Set([408, 429, 503]);
+const UNPROCESSED_NETWORK_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+/**
+ * The first string `code` on the error or its `cause` chain. The OpenAI SDK
+ * wraps a fetch failure in APIConnectionError, and fetch wraps the socket
+ * error in a TypeError, so the system code sits two causes deep.
+ */
+function networkCode(err: unknown): string | null {
+  let cur: unknown = err;
+  for (let depth = 0; depth < 5 && cur && typeof cur === "object"; depth++) {
+    const code = (cur as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+function isRetryableError(err: unknown, policy: ResendPolicy): boolean {
   if (isAbortError(err)) return false;
   const status = statusFromError(err);
-  if (status != null) return RETRYABLE_HTTP_STATUSES.has(status);
+  if (status != null) {
+    return policy === "unprocessed"
+      ? UNPROCESSED_HTTP_STATUSES.has(status)
+      : RETRYABLE_HTTP_STATUSES.has(status);
+  }
   if (!(err instanceof Error)) return false;
-  const code = (err as { code?: string }).code;
-  if (typeof code === "string" && RETRYABLE_NETWORK_CODES.has(code)) return true;
+  const code = networkCode(err);
+  if (policy === "unprocessed") {
+    return code != null && UNPROCESSED_NETWORK_CODES.has(code);
+  }
+  if (code != null && RETRYABLE_NETWORK_CODES.has(code)) return true;
   if (err.name === "TimeoutError") return true;
   // Heuristic: fetch failures land as TypeError with cause; the OpenAI SDK
   // wraps connection errors in APIConnectionError without a status.
@@ -127,7 +165,9 @@ export interface CallWithRetryContext {
 }
 
 /**
- * Invoke `fn` with retry on transient failures. Honors `Retry-After` headers
+ * Invoke `fn` with retry on failures the budget's resend policy allows
+ * (`BUDGET_RESEND_POLICY`): any transient failure for downloads, only provably
+ * unprocessed ones for paid provider calls. Honors `Retry-After` headers
  * over the configured schedule. Aborts immediately when `signal` fires.
  *
  * `fn` is responsible for its own per-attempt timeout — the OpenAI SDK accepts
@@ -150,7 +190,7 @@ export async function callWithRetry<T>(
       }
       const remaining = budget.maxRetries - attempt;
       if (remaining <= 0) throw err;
-      if (!isRetryableError(err)) throw err;
+      if (!isRetryableError(err, BUDGET_RESEND_POLICY[budgetName])) throw err;
       const headerWait = parseRetryAfterMs(err);
       const scheduledWait = computeScheduledWait(
         attempt + 1,

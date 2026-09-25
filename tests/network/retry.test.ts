@@ -74,7 +74,7 @@ describe("callWithRetry", () => {
         .mockRejectedValueOnce(http(status))
         .mockResolvedValueOnce("ok");
       const out = await callWithRetry(
-        { budgetName: "imageGenerate", budget: fast },
+        { budgetName: "imageDownload", budget: fast },
         fn,
       );
       expect(out, `status ${status}`).toBe("ok");
@@ -294,7 +294,7 @@ describe("callWithRetry", () => {
         .mockRejectedValueOnce(named(name))
         .mockResolvedValueOnce("ok");
       const out = await callWithRetry(
-        { budgetName: "imageGenerate", budget: fast },
+        { budgetName: "imageDownload", budget: fast },
         fn,
       );
       expect(out, name).toBe("ok");
@@ -474,5 +474,75 @@ describe("callWithRetry", () => {
     });
     expect(fn).toHaveBeenCalledOnce();
     expect(logger.warn).toHaveBeenCalledOnce();
+  });
+});
+
+// A paid provider call may have been processed and billed even when the client
+// sees a timeout, a dropped connection or a gateway error, so those are never
+// resent. Only failures proving the provider never started the work are.
+describe("callWithRetry on a paid budget", () => {
+  const paid = ["imageGenerate", "imageVision"] as const;
+
+  it("does NOT resend after a timeout, a dropped connection or a gateway error", async () => {
+    const maybeProcessed = [
+      named("TimeoutError"),
+      named("APIConnectionTimeoutError"),
+      named("APIConnectionError"),
+      netCode("ECONNRESET"),
+      netCode("ETIMEDOUT"),
+      netCode("EPIPE"),
+      http(500),
+      http(502),
+      http(504),
+      http(520),
+      http(524),
+    ];
+    for (const budgetName of paid) {
+      for (const err of maybeProcessed) {
+        const fn = vi.fn().mockRejectedValue(err);
+        await expect(
+          callWithRetry({ budgetName, budget: fast }, fn),
+        ).rejects.toBe(err);
+        expect(fn, `${budgetName} ${err.message}`).toHaveBeenCalledOnce();
+      }
+    }
+  });
+
+  it("resends a 408, 429 or 503 rejection", async () => {
+    for (const budgetName of paid) {
+      for (const status of [408, 429, 503]) {
+        const fn = vi
+          .fn()
+          .mockRejectedValueOnce(http(status))
+          .mockResolvedValueOnce("ok");
+        await expect(callWithRetry({ budgetName, budget: fast }, fn)).resolves.toBe("ok");
+        expect(fn, `${budgetName} ${status}`).toHaveBeenCalledTimes(2);
+      }
+    }
+  });
+
+  it("resends a connection that was refused or never resolved, read through the SDK's cause chain", async () => {
+    for (const code of ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]) {
+      // APIConnectionError -> TypeError("fetch failed") -> system error with code.
+      const wrapped = Object.assign(named("APIConnectionError"), {
+        cause: Object.assign(new TypeError("fetch failed"), { cause: netCode(code) }),
+      });
+      const fn = vi.fn().mockRejectedValueOnce(wrapped).mockResolvedValueOnce("ok");
+      await expect(
+        callWithRetry({ budgetName: "imageGenerate", budget: fast }, fn),
+      ).resolves.toBe("ok");
+      expect(fn, code).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it("does NOT resend an SDK connection error whose cause is a mid-request reset", async () => {
+    const wrapped = Object.assign(named("APIConnectionError"), {
+      cause: Object.assign(new TypeError("fetch failed"), { cause: netCode("ECONNRESET") }),
+    });
+    const fn = vi.fn().mockRejectedValue(wrapped);
+    await expect(
+      callWithRetry({ budgetName: "imageGenerate", budget: fast }, fn),
+    ).rejects.toBe(wrapped);
+    expect(fn).toHaveBeenCalledOnce();
   });
 });

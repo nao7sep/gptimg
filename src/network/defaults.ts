@@ -27,6 +27,26 @@ export const NETWORK_BUDGET_NAMES: readonly NetworkBudgetName[] = [
   "modelDownload",
 ];
 
+/**
+ * Which failures a budget may resend.
+ *
+ * - `transient`: any plausibly transient failure (timeouts, dropped
+ *   connections, gateway 5xx). Safe for idempotent downloads.
+ * - `unprocessed`: only failures that prove the provider never started the
+ *   work — a refused or unresolvable connection, or a 408/429/503 rejection.
+ *   A timeout, a dropped connection or a gateway error can arrive after the
+ *   provider already produced (and billed) the result, so a paid call is not
+ *   resent on those; the caller decides whether to spend again.
+ */
+export type ResendPolicy = "transient" | "unprocessed";
+
+export const BUDGET_RESEND_POLICY: Record<NetworkBudgetName, ResendPolicy> = {
+  imageGenerate: "unprocessed",
+  imageVision: "unprocessed",
+  imageDownload: "transient",
+  modelDownload: "transient",
+};
+
 export const NETWORK_DEFAULTS: Record<NetworkBudgetName, NetworkBudget> = {
   imageGenerate: { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageVision:   { timeout: 120_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
