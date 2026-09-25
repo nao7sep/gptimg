@@ -28,7 +28,6 @@ import {
   defaultOutDir,
   defaultProfilePath,
   defaultStem,
-  utcTimestamp,
 } from "../internal/paths.js";
 
 import { VISION_DEFAULTS } from "./defaults.js";
@@ -101,7 +100,6 @@ export async function visionImpl(
   opts: VerbCallOptions = {},
 ): Promise<VisionResult> {
   validateVisionArgs(args);
-  const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
   // The check is a scalar instruction; normalize it to a single line once at the
@@ -128,7 +126,7 @@ export async function visionImpl(
     // name collision fails fast without spending, like generate/edit.
     const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
     await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem(ts);
+    const stem = args.outName ?? defaultStem();
     const stemPath = path.join(outDir, stem);
     const outputGroup = createOutputGroup(outDir, stem, "json");
     await using _outputLock = await acquireOutputGroupLock(outputGroup);

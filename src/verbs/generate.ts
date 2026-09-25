@@ -21,7 +21,6 @@ import {
   defaultOutDir,
   defaultProfilePath,
   defaultStem,
-  utcTimestamp,
 } from "../internal/paths.js";
 
 export interface GenerateContext {
@@ -35,7 +34,6 @@ export async function generateImpl(
   opts: VerbCallOptions = {},
 ): Promise<GenerateResult> {
   validateGenerateArgs(args);
-  const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
   // Normalize the free-text prompt once, at the input boundary, so the same
@@ -69,7 +67,7 @@ export async function generateImpl(
 
     const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
     await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem(ts);
+    const stem = args.outName ?? defaultStem();
     const overwrite = args.overwrite ?? false;
     // Reserve before the paid provider edge. A known-live contender therefore
     // fails without charging, while a crashed/released reservation is recovered.

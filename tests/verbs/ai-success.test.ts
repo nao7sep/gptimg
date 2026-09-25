@@ -621,6 +621,17 @@ describe("AI verb implementations with mocked provider", () => {
     expect((await readdir(outDir)).sort()).toEqual(["same-1.json", "same-1.png"]);
   });
 
+  it("concurrent calls with default names each publish under their own stem", async () => {
+    providerCalls.generate.mockResolvedValue({ raw: { data: [{}] }, images: [{ data: png }] });
+    const outDir = path.join(tmp, "concurrent-defaults");
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => sdk.generate({ prompt: `prompt ${i}`, outDir })),
+    );
+    const stems = new Set(results.map((result) => path.basename(result.files[0]!.path, ".png")));
+    expect(stems.size).toBe(8);
+    expect((await readdir(outDir)).filter((name) => name.endsWith(".png"))).toHaveLength(8);
+  });
+
   it("generate rejects sidecar collisions before writing new images", async () => {
     providerCalls.generate.mockResolvedValue({
       raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },

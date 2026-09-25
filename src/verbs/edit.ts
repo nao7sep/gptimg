@@ -24,7 +24,6 @@ import {
   defaultOutDir,
   defaultProfilePath,
   defaultStem,
-  utcTimestamp,
 } from "../internal/paths.js";
 
 export interface EditContext {
@@ -50,7 +49,6 @@ export async function editImpl(
   opts: VerbCallOptions = {},
 ): Promise<EditResult> {
   validateEditArgs(args);
-  const ts = utcTimestamp();
   const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
   // Normalize the free-text prompt once, at the input boundary, so the same
@@ -83,7 +81,7 @@ export async function editImpl(
 
     const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
     await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem(ts);
+    const stem = args.outName ?? defaultStem();
     const overwrite = args.overwrite ?? false;
     await using _outputLock = await acquireOutputGroupLock(createOutputGroup(outDir, stem, "json"));
     // Fail before the paid provider call when this stem already conflicts.
