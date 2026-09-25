@@ -1,22 +1,11 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
-import pLimit from "p-limit";
 import { LocalOpError } from "../errors.js";
-import { hash } from "../image/hash.js";
-import { detectFormat } from "../image/detectFormat.js";
-import {
-  ensureOutputDir,
-  writeOutputBytes,
-} from "../internal/output-files.js";
+import { ensureOutputDir } from "../internal/output-files.js";
 import {
   acquireOutputGroupLock,
-  assertOutputGroupAvailable,
   assertStemAvailable,
   createOutputGroup,
-  plannedSidecarPaths,
-  removeSupersededImageFormats,
-  settleOutputPublications,
-  sidecarPathFor,
 } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { multiline } from "../internal/textCleanup.js";
@@ -26,16 +15,10 @@ import { resolveProfile } from "../profile/resolve.js";
 import { mergeRecipes } from "../recipe/merge.js";
 import { loadRecipeForCall } from "../recipe/load.js";
 import { validateEditSection } from "../recipe/schemas.js";
-import { nullBase64InResponse } from "../sidecar/nullBase64.js";
-import { writeSidecar } from "../sidecar/write.js";
 import { getProvider } from "../providers/index.js";
-import type {
-  EditArgs,
-  EditResult,
-  OutputFile,
-  Sidecar,
-} from "../types.js";
+import type { EditArgs, EditResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
+import { publishProviderImages } from "./image-outputs.js";
 import { validateEditArgs } from "./schemas.js";
 import {
   defaultOutDir,
@@ -43,7 +26,6 @@ import {
   defaultStem,
   utcTimestamp,
 } from "../internal/paths.js";
-import { imageFileName } from "../internal/output-naming.js";
 
 export interface EditContext {
   profileDir: string;
@@ -133,52 +115,6 @@ export async function editImpl(
       itemCount: providerResult.images.length,
     });
 
-    const limit = pLimit(4);
-    let partial = false;
-    const suffixCount = Math.max(n, providerResult.images.length);
-
-    const plannedImages = (
-      await Promise.all(
-        providerResult.images.map((item, i) =>
-          limit(async () => {
-            const index = i + 1;
-            if (!item.data) {
-              partial = true;
-              await logger.warn("write", `image ${index} failed`, {
-                index,
-                error: item.error ?? null,
-              });
-              return null;
-            }
-            try {
-              const fmt = await detectFormat(item.data);
-              const fileName = imageFileName(stem, index, suffixCount, fmt.extension);
-              const filePath = path.join(outDir, fileName);
-              return { index, data: item.data, fmt, fileName, filePath };
-            } catch (err) {
-              partial = true;
-              await logger.warn("write", `image ${index} format detection failed`, {
-                index,
-                error: (err as Error).message,
-              });
-              return null;
-            }
-          }),
-        ),
-      )
-    ).filter((item): item is NonNullable<typeof item> => item !== null);
-
-    const imageExts = new Set(plannedImages.map((item) => item.fmt.extension));
-    if (imageExts.size > 1) {
-      throw new LocalOpError(
-        "output.mixedExtensions",
-        `Provider returned images with mixed extensions (${[...imageExts].join(", ")}); the artifact group requires a single image format.`,
-      );
-    }
-    const groupExt = plannedImages[0]?.fmt.extension ?? "png";
-    const group = createOutputGroup(outDir, stem, groupExt);
-    const allSidecarPaths = plannedSidecarPaths(group, suffixCount, suffixCount);
-    const files: OutputFile[] = [];
     const requestRecord = {
       ...params,
       prompt,
@@ -186,55 +122,15 @@ export async function editImpl(
       mask: args.mask ? path.basename(args.mask) : null,
       n,
     };
-    const redactedResponse = nullBase64InResponse(providerResult.raw);
-
-    assertOutputGroupAvailable(
-      group,
-      [...plannedImages.map((item) => item.filePath), ...allSidecarPaths],
+    const { files, partial } = await publishProviderImages({
+      outDir,
+      stem,
+      n,
       overwrite,
-    );
-    await settleOutputPublications(
-      plannedImages.map(
-        (item) => () =>
-          limit(async () => {
-            await writeOutputBytes(item.filePath, item.data, overwrite);
-            const sha = hash(item.data);
-            const itemSidecarPath = sidecarPathFor(group, item.index, suffixCount);
-            const itemSidecarStem = itemSidecarPath.replace(/\.json$/, "");
-            const itemSidecar: Sidecar = {
-              request: requestRecord,
-              response: redactedResponse,
-              files: [
-                {
-                  index: item.index,
-                  name: path.basename(item.filePath),
-                  sha256: sha,
-                  format: item.fmt.format,
-                },
-              ],
-            };
-            await writeSidecar(itemSidecarStem, itemSidecar, { overwrite });
-            files.push({
-              index: item.index,
-              path: item.filePath,
-              sidecarPath: itemSidecarPath,
-              sha256: sha,
-              format: item.fmt.format,
-            });
-            await logger.info("write", `wrote image ${item.index}`, {
-              index: item.index,
-              name: item.fileName,
-              sha256: sha,
-              format: item.fmt.format,
-              sidecar: path.basename(itemSidecarPath),
-            });
-          }),
-      ),
-    );
-    if (overwrite) {
-      await removeSupersededImageFormats(group, plannedImages.map((item) => item.filePath));
-    }
-    files.sort((a, b) => a.index - b.index);
+      providerResult,
+      requestRecord,
+      logger,
+    });
 
     return {
       files,

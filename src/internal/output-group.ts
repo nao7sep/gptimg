@@ -375,8 +375,9 @@ function artifactIdentity(filePath: string, sidecarExt: string): string {
  *   explicit overwrite intent.
  *
  * - With `allowOverwrite`: planned artifact slots may exist (they will be
- *   replaced). An image slot is extension-independent, so a planned PNG may
- *   replace an old JPEG; sidecars remain their own artifact kind. Group
+ *   replaced, or cleared when the run does not fill them). An image slot is
+ *   extension-independent, so a planned PNG may replace an old JPEG;
+ *   sidecars remain their own artifact kind. Group
  *   siblings outside the planned slots are reported as `output.staleSiblings`.
  */
 export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: string[], allowOverwrite: boolean): void {
@@ -412,32 +413,59 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
   }
 }
 
-/** Remove old supported image formats only after their replacement published. */
-export async function removeSupersededImageFormats(group: OutputGroup, plannedImages: string[]): Promise<void> {
-  const plannedExtensions = new Map<string, string>();
-  for (const filePath of plannedImages) {
-    const extension = path.extname(filePath).slice(1).toLowerCase();
-    plannedExtensions.set(artifactIdentity(filePath, group.sidecarExt), extension);
-  }
+function fileKey(filePath: string): string {
+  return path.basename(filePath).normalize("NFC").toLowerCase();
+}
 
-  const stale = siblingsOnDisk(group).filter((filePath) => {
-    const extension = path.extname(filePath).slice(1).toLowerCase();
-    if (!SUPPORTED_IMAGE_EXTENSIONS.includes(extension)) return false;
-    const replacementExtension = plannedExtensions.get(artifactIdentity(filePath, group.sidecarExt));
-    return replacementExtension !== undefined && replacementExtension !== extension;
-  });
+/**
+ * Every artifact slot a generate/edit run owns: the `requested` slots it
+ * reserved before the provider call, named for that count, and the slots the
+ * response names, `max(requested, returned)` of them. Images are listed with
+ * the group's extension; an image slot is extension-independent, so any
+ * supported format in that slot is the same artifact.
+ */
+export function ownedSlotFiles(group: OutputGroup, requested: number, returned: number): string[] {
+  const files = new Map<string, string>();
+  const addSlots = (count: number): void => {
+    for (const sidecar of plannedSidecarPaths(group, count, count)) {
+      const image = `${sidecar.slice(0, -(group.sidecarExt.length + 1))}.${group.ext}`;
+      files.set(fileKey(image), image);
+      files.set(fileKey(sidecar), sidecar);
+    }
+  };
+  addSlots(requested);
+  addSlots(Math.max(requested, returned));
+  return [...files.values()];
+}
+
+/**
+ * After an overwrite publishes, clear whatever a prior run left in the slots
+ * this run owns but did not fill: an old image format beside its replacement,
+ * or the image and sidecar of a slot whose new item failed. The group then
+ * holds exactly this run's files.
+ */
+export async function removeUnpublishedSlots(
+  group: OutputGroup,
+  ownedFiles: readonly string[],
+  publishedFiles: readonly string[],
+): Promise<void> {
+  const owned = new Set(ownedFiles.map((filePath) => artifactIdentity(filePath, group.sidecarExt)));
+  const published = new Set(publishedFiles.map(fileKey));
+  const leftovers = siblingsOnDisk(group).filter(
+    (filePath) => owned.has(artifactIdentity(filePath, group.sidecarExt)) && !published.has(fileKey(filePath)),
+  );
   const failures: Error[] = [];
-  for (const filePath of stale) {
+  for (const filePath of leftovers) {
     try {
       await unlink(filePath);
     } catch (err) {
-      failures.push(err as Error);
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") failures.push(err as Error);
     }
   }
   if (failures.length > 0) {
     throw new LocalOpError(
       "output.cleanupFailed",
-      `Published replacement output but failed to remove ${failures.length} superseded image format(s).`,
+      `Published this run's output but failed to remove ${failures.length} file(s) a prior run left in its slots.`,
       { cause: new AggregateError(failures) },
     );
   }
@@ -452,7 +480,5 @@ export async function removeSupersededImageFormats(group: OutputGroup, plannedIm
  */
 export function assertStemAvailable(dir: string, stem: string, count: number, allowOverwrite: boolean): void {
   const group = createOutputGroup(dir, stem, "png");
-  const sidecars = plannedSidecarPaths(group, count, count);
-  const imagePlaceholders = sidecars.map((sidecar) => sidecar.replace(/\.json$/i, ".png"));
-  assertOutputGroupAvailable(group, [...imagePlaceholders, ...sidecars], allowOverwrite);
+  assertOutputGroupAvailable(group, ownedSlotFiles(group, count, 0), allowOverwrite);
 }

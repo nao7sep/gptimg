@@ -558,6 +558,69 @@ describe("AI verb implementations with mocked provider", () => {
     expect(existsSync(path.join(outDir, "same.jpg"))).toBe(false);
   });
 
+  // A paid response that fills fewer slots than the prior run must still be
+  // delivered: the unfilled slots are this run's to clear, not stale siblings.
+  it("generate --overwrite delivers a partial response and clears the slots it could not fill", async () => {
+    const outDir = path.join(tmp, "partial-overwrite");
+    const two = {
+      raw: { data: [{ b64_json: "x" }, { b64_json: "x" }] },
+      images: [{ data: png }, { data: png }],
+    };
+    const n2 = { generate: { n: 2 } };
+    const shortResponses = [
+      { raw: { data: [{ b64_json: "x" }, {}] }, images: [{ data: png }, { data: null, error: "no image" }] },
+      { raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] },
+      { raw: { data: [{ b64_json: "x" }, { b64_json: "x" }] }, images: [{ data: png }, { data: new Uint8Array([1, 2, 3]) }] },
+    ];
+    for (const short of shortResponses) {
+      await rm(outDir, { recursive: true, force: true });
+      providerCalls.generate.mockResolvedValue(two);
+      await sdk.generate({ prompt: "first", outDir, outName: "same", overrides: n2 });
+
+      providerCalls.generate.mockResolvedValue(short);
+      const result = await sdk.generate({ prompt: "second", outDir, outName: "same", overrides: n2, overwrite: true });
+
+      expect(result.partial).toBe(short.images.length === 2);
+      expect(result.files.map((file) => file.path)).toEqual([path.join(outDir, "same-1.png")]);
+      expect((await readdir(outDir)).sort()).toEqual(["same-1.json", "same-1.png"]);
+      const sidecar = JSON.parse(await readFile(path.join(outDir, "same-1.json"), "utf-8"));
+      expect(sidecar.request.prompt).toBe("second");
+    }
+  });
+
+  it("generate --overwrite returns partial, not an error, when every item fails", async () => {
+    const outDir = path.join(tmp, "all-failed-overwrite");
+    providerCalls.generate.mockResolvedValue({ raw: { data: [{}] }, images: [{ data: png }] });
+    await sdk.generate({ prompt: "first", outDir, outName: "same" });
+
+    providerCalls.generate.mockResolvedValue({ raw: { data: [{}] }, images: [{ data: null, error: "no image" }] });
+    const result = await sdk.generate({ prompt: "second", outDir, outName: "same", overwrite: true });
+
+    expect(result).toMatchObject({ partial: true, files: [] });
+    expect(await readdir(outDir)).toEqual([]);
+  });
+
+  it("edit --overwrite delivers a partial response and clears the slot it could not fill", async () => {
+    const input = path.join(tmp, "partial-edit-input.png");
+    const outDir = path.join(tmp, "partial-edit-overwrite");
+    await copyFile(fixture("green-disk.png"), input);
+    providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }, { data: png }] });
+    await sdk.edit({ prompt: "first", in: input, outDir, outName: "same", overrides: { edit: { n: 2 } } });
+
+    providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }, { data: null, error: "no image" }] });
+    const result = await sdk.edit({
+      prompt: "second",
+      in: input,
+      outDir,
+      outName: "same",
+      overrides: { edit: { n: 2 } },
+      overwrite: true,
+    });
+
+    expect(result.partial).toBe(true);
+    expect((await readdir(outDir)).sort()).toEqual(["same-1.json", "same-1.png"]);
+  });
+
   it("generate rejects sidecar collisions before writing new images", async () => {
     providerCalls.generate.mockResolvedValue({
       raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
