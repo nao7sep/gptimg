@@ -42,6 +42,21 @@ export async function maskImpl(
     const method = args.method ?? "chroma";
     const recipe = await loadRecipeForCall(args.recipe, ctx.profileDir);
 
+    // Resolve and check the output before doing any masking work — including,
+    // for method "ai", a model download and inference run — so a rerun without
+    // `overwrite` over an existing output fails fast instead of after paying
+    // for the compute, as every other local verb (e.g. upscale) already does.
+    const outPath = args.dryRun
+      ? undefined
+      : await resolveOutputPath(args, {
+          inputForDir: args.in,
+          stem: defaultStem(args.in),
+          ext: "png",
+        });
+    if (outPath !== undefined) {
+      assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    }
+
     let alpha: Uint8Array;
     let width: number;
     let height: number;
@@ -100,7 +115,7 @@ export async function maskImpl(
 
     await logger.info("stats", "mask complete", { stats });
 
-    if (args.dryRun) {
+    if (args.dryRun || outPath === undefined) {
       return {
         input: args.in,
         output: null,
@@ -108,13 +123,6 @@ export async function maskImpl(
         logPath: logger.handle.path,
       };
     }
-
-    const outPath = await resolveOutputPath(args, {
-      inputForDir: args.in,
-      stem: defaultStem(args.in),
-      ext: "png",
-    });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false });
     await logger.info("write", "wrote mask", { path: outPath });

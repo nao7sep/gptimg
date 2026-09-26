@@ -2,8 +2,16 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg } from "../../src/index.js";
+
+// mask's AI method is mocked so the order-of-checks test below never loads the
+// real ~0.5 GB BiRefNet model or runs inference — it only needs to prove the
+// producer is never called when the output already exists.
+const aiMaskFromFile = vi.fn();
+vi.mock("../../src/local/ai-mask.js", () => ({
+  aiMaskFromFile: (...args: unknown[]) => aiMaskFromFile(...args),
+}));
 
 /**
  * Verb-level integration tests for the shared overwrite check. The pure ops
@@ -151,5 +159,53 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
 
     const res = await sdk.despeckle({ in: input, outName: "out", overwrite: true });
     expect(res.output).toBe(out);
+  });
+
+  it("mask (chroma) rejects an existing output without --overwrite, accepts with it", async () => {
+    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, 16, 16, makeOpaque(16, 16, 0, 255, 0));
+    const out = path.join(tmp, "out-mask.png");
+    await writeFile(out, "blocker");
+
+    await expect(
+      sdk.mask({ in: input, method: "chroma", outName: "out-mask" }),
+    ).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "output.exists",
+    });
+
+    const res = await sdk.mask({ in: input, method: "chroma", outName: "out-mask", overwrite: true });
+    expect(res.output).toBe(out);
+  });
+
+  it("mask (ai) checks the output before running the mask, never loading the model for a refused overwrite", async () => {
+    aiMaskFromFile.mockReset();
+    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, 16, 16, makeOpaque(16, 16, 0, 255, 0));
+    const out = path.join(tmp, "out-ai-mask.png");
+    await writeFile(out, "blocker");
+
+    await expect(
+      sdk.mask({ in: input, method: "ai", outName: "out-ai-mask" }),
+    ).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "output.exists",
+    });
+    // The regression this guards: the fix moves this check ahead of the model
+    // download and inference, so a refused overwrite must never reach the
+    // (mocked) AI producer at all.
+    expect(aiMaskFromFile).not.toHaveBeenCalled();
+
+    aiMaskFromFile.mockResolvedValue({
+      alpha: new Uint8Array(16 * 16).fill(255),
+      width: 16,
+      height: 16,
+      stats: { method: "ai", model: "birefnet", removedPixels: 0, removedFraction: 0, width: 16, height: 16 },
+    });
+    const res = await sdk.mask({ in: input, method: "ai", outName: "out-ai-mask", overwrite: true });
+    expect(res.output).toBe(out);
+    expect(aiMaskFromFile).toHaveBeenCalledTimes(1);
   });
 });
