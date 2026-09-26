@@ -443,20 +443,23 @@ describe("OpenAI provider implementations", () => {
   // to act on. `length` is quieter still: the content is present and reads like a full verdict.
   // (ai-model-routing-conventions: never invent a cause the provider gave you.)
   it.each([
-    ["a refusal", { finish_reason: "stop", message: { content: null, refusal: "I can't assess that." } }, /declined to verify this image: I can't assess that\./],
-    ["a content filter", { finish_reason: "content_filter", message: { content: null } }, /content filter rejected/],
-    ["a truncated verdict", { finish_reason: "length", message: { content: '{"ok":true,"score":1,' } }, /truncated/],
-  ])("reports %s with the provider's own reason", async (_label, choice, expected) => {
+    ["a refusal", { finish_reason: "stop", message: { content: null, refusal: "I can't assess that." } }, /declined to verify this image: I can't assess that\./, "provider.refused"],
+    ["a content filter", { finish_reason: "content_filter", message: { content: null } }, /content filter rejected/, "provider.contentFiltered"],
+    ["a truncated verdict", { finish_reason: "length", message: { content: '{"ok":true,"score":1,' } }, /truncated/, "provider.truncated"],
+  ])("reports %s with the provider's own reason and a distinct code", async (_label, choice, expected, expectedCode) => {
     openaiMock.create.mockResolvedValue({ choices: [choice] });
-    await expect(
-      openaiVision({
-        check: "is it green?",
-        images: [{ data: png, format: "png", detail: "auto" }],
-        params: { model: "gpt-5.6-luna" },
-        profile,
-        network,
-      }),
-    ).rejects.toThrow(expected);
+    const call = openaiVision({
+      check: "is it green?",
+      images: [{ data: png, format: "png", detail: "auto" }],
+      params: { model: "gpt-5.6-luna" },
+      profile,
+      network,
+    });
+    await expect(call).rejects.toThrow(expected);
+    // Each outcome needs its own code so a caller can branch on "change the
+    // input" vs. "raise max tokens" without parsing message text; all three
+    // sharing the provider's name ("openai") would make that impossible.
+    await expect(call).rejects.toMatchObject({ code: expectedCode });
   });
 
   it("vision sends data URLs and parses structured verdicts", async () => {

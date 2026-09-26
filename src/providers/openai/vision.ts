@@ -162,19 +162,19 @@ export async function openaiVision(
   const choice = response.choices?.[0];
   if (choice?.message?.refusal) {
     throw new ProviderError(
-      "openai",
+      "provider.refused",
       `The model declined to verify this image: ${choice.message.refusal}`,
     );
   }
   if (choice?.finish_reason === "content_filter") {
     throw new ProviderError(
-      "openai",
+      "provider.contentFiltered",
       "OpenAI's content filter rejected this image verification. The input was rejected, not lost.",
     );
   }
   if (choice?.finish_reason === "length") {
     throw new ProviderError(
-      "openai",
+      "provider.truncated",
       "The model stopped at its output limit, so this verdict is truncated rather than complete.",
     );
   }
