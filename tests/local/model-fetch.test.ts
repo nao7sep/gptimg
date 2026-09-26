@@ -10,6 +10,7 @@ import { defaultModelsDir } from "../../src/internal/paths.js";
 import {
   ensureModel,
   fileSha256,
+  hostTag,
   modelWholeTimeoutMs,
   stagingPathFor,
 } from "../../src/local/models/fetch.js";
@@ -104,11 +105,11 @@ describe("defaultModelsDir", () => {
 });
 
 describe("stagingPathFor", () => {
-  it("names the staged file <stem>-<pid>-<random>.tmp inside temp/, derived from the model's stem", () => {
+  it("names the staged file <stem>-<hostTag>-<pid>-<random>.tmp inside temp/, derived from the model's stem", () => {
     const p = stagingPathFor("/cache", "birefnet-general-fp16-v1.onnx");
     expect(path.dirname(p)).toBe(path.join("/cache", "temp"));
     expect(path.basename(p)).toMatch(
-      new RegExp(`^birefnet-general-fp16-v1-${process.pid}-[A-Za-z0-9_-]{21}\\.tmp$`),
+      new RegExp(`^birefnet-general-fp16-v1-${hostTag()}-${process.pid}-[A-Za-z0-9_-]{21}\\.tmp$`),
     );
   });
 });
@@ -191,20 +192,30 @@ describe("ensureModel", () => {
 
   it("removes staged downloads whose process is gone and keeps those still in flight", async () => {
     const nanoid21 = "abcDEF123_-abcDEF123_";
+    const tag = hostTag();
     const tempDir = path.join(tmp, "temp");
     await mkdir(tempDir, { recursive: true });
     // macOS caps pids below 100000 and Linux below 2^22, so 99999999 never runs.
-    const abandoned = `birefnet-99999999-${nanoid21}.tmp`;
-    const ours = `birefnet-${process.pid}-${nanoid21}.tmp`;
-    const parents = `birefnet-${process.ppid}-${nanoid21}.tmp`;
+    const abandoned = `birefnet-${tag}-99999999-${nanoid21}.tmp`;
+    const ours = `birefnet-${tag}-${process.pid}-${nanoid21}.tmp`;
+    const parents = `birefnet-${tag}-${process.ppid}-${nanoid21}.tmp`;
+    // A dead-here pid tagged for a different host: GPTIMG_MODELS_DIR can point
+    // several hosts at the same shared directory, and this host's pid table
+    // says nothing about whether that other host's download is still running,
+    // so it must survive the sweep untouched.
+    const otherHostAbandoned = `birefnet-deadbeef-99999999-${nanoid21}.tmp`;
     const unrelated = "notes.txt";
-    for (const name of [abandoned, ours, parents, unrelated]) await writeFile(path.join(tempDir, name), "x");
+    for (const name of [abandoned, ours, parents, otherHostAbandoned, unrelated]) {
+      await writeFile(path.join(tempDir, name), "x");
+    }
     await writeFile(path.join(tmp, "cached.bin"), "12345");
 
     // A cache hit still sweeps, so leftovers go even when nothing downloads.
     const entry: ModelEntry = { name: "cached.bin", url: "https://example.invalid/m", inputSize: 0, byteSize: 5 };
     await expect(ensureModel(entry, tmp)).resolves.toBe(path.join(tmp, "cached.bin"));
-    expect((await readdir(tempDir)).sort()).toEqual([ours, parents, unrelated].sort());
+    expect((await readdir(tempDir)).sort()).toEqual(
+      [ours, parents, otherHostAbandoned, unrelated].sort(),
+    );
   });
 
   it("stages the download in temp/ and atomically publishes to the final name", async () => {

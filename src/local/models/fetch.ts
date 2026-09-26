@@ -32,6 +32,7 @@
 
 import { createReadStream, createWriteStream, statSync } from "node:fs";
 import { link, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
+import { hostname } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { finished } from "node:stream/promises";
@@ -346,20 +347,34 @@ function assertSafeUrl(url: string, allowLoopbackHttp = true): void {
   );
 }
 
+// A short, filename-safe tag identifying this host, so a staged file's owner
+// can be told apart from a same-pid process on another machine. `GPTIMG_MODELS_DIR`
+// exists precisely so the cache can be relocated onto shared storage (a NAS, a
+// container bind mount), where two hosts' pid spaces overlap: pid 4021 dead on
+// host A says nothing about whether host B's pid 4021 is still downloading.
+// Hashed rather than embedding the raw hostname, which can contain characters
+// outside the staged-name grammar (spaces, dots, unicode) and would otherwise
+// need its own escaping.
+export function hostTag(): string {
+  return createHash("sha256").update(hostname()).digest("hex").slice(0, 8);
+}
+
 // A per-download staging path inside the deletable temp/ dir under the cache
 // root — same filesystem as the final path, so publish by link()/rename() stays
 // atomic, and a leftover temp file lands in temp/, not beside the kept models.
-// Named `<stem>-<pid>-<random>.tmp` per the derived-filename grammar: the
-// model's own stem (so a leftover is traceable to its target), hyphen-joined
-// to the pid+random discriminator that keeps concurrent downloads of the same
-// model from colliding, and one `.tmp` extension for the file's current role.
+// Named `<stem>-<hostTag>-<pid>-<random>.tmp` per the derived-filename grammar:
+// the model's own stem (so a leftover is traceable to its target), hyphen-joined
+// to the host tag (so ownership is scoped to the machine that started the
+// download), the pid, and the random discriminator that keeps concurrent
+// downloads of the same model on the same host from colliding, and one `.tmp`
+// extension for the file's current role.
 export function stagingPathFor(cacheDir: string, name: string): string {
   const stem = path.parse(name).name;
   const suffix = nanoid();
-  return path.join(cacheDir, TEMP_DIR, `${stem}-${process.pid}-${suffix}.tmp`);
+  return path.join(cacheDir, TEMP_DIR, `${stem}-${hostTag()}-${process.pid}-${suffix}.tmp`);
 }
 
-const STAGED_NAME = /-(\d+)-[A-Za-z0-9_-]{21}\.tmp$/;
+const STAGED_NAME = /-([0-9a-f]{8})-(\d+)-[A-Za-z0-9_-]{21}\.tmp$/;
 
 function processIsAlive(pid: number): boolean {
   try {
@@ -372,12 +387,16 @@ function processIsAlive(pid: number): boolean {
 }
 
 /**
- * Remove staged downloads whose process is gone. A download interrupted by
- * Ctrl-C or a crash never reaches its own cleanup, and each one can leave
- * hundreds of MB in temp/. The owning pid is in every staged name, so a file
- * whose pid no longer runs is abandoned; files of live processes (this one
- * included) are in flight and stay. Best effort: a file another sweeper
- * removed first, or one that cannot be removed, is skipped.
+ * Remove staged downloads whose process is gone on *this* host. A download
+ * interrupted by Ctrl-C or a crash never reaches its own cleanup, and each one
+ * can leave hundreds of MB in temp/. The owning host tag and pid are in every
+ * staged name; a file tagged for another host is left alone regardless of
+ * whether its pid happens to be alive here — pid liveness is only meaningful
+ * within the host that reported it, and `GPTIMG_MODELS_DIR` can point several
+ * hosts at the same shared directory. Among this host's own files, one whose
+ * pid no longer runs is abandoned; files of live processes (this one included)
+ * are in flight and stay. Best effort: a file another sweeper removed first,
+ * or one that cannot be removed, is skipped.
  */
 export async function sweepAbandonedStaging(cacheDir: string): Promise<void> {
   const tempDir = path.join(cacheDir, TEMP_DIR);
@@ -387,8 +406,13 @@ export async function sweepAbandonedStaging(cacheDir: string): Promise<void> {
   } catch {
     return;
   }
+  const thisHostTag = hostTag();
   for (const name of names) {
-    const pid = Number(STAGED_NAME.exec(name)?.[1]);
+    const match = STAGED_NAME.exec(name);
+    if (!match) continue;
+    const [, taggedHost, pidText] = match;
+    if (taggedHost !== thisHostTag) continue;
+    const pid = Number(pidText);
     if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid || processIsAlive(pid)) continue;
     await unlink(path.join(tempDir, name)).catch(() => undefined);
   }
