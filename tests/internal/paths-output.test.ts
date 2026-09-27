@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync, statSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -12,6 +12,7 @@ import {
   defaultProfilePath,
   defaultRecipePath,
   defaultStem,
+  ensureSecureProfileRoot,
   utcTimestampMs,
 } from "../../src/internal/paths.js";
 
@@ -96,6 +97,35 @@ describe("defaultProfileDir (GPTIMG_HOME)", () => {
     process.env.GPTIMG_HOME = "${GPTIMG_DEFINITELY_UNSET_VAR_42}";
     expect(() => defaultProfileDir()).toThrow();
     expect(() => defaultProfileDir()).toThrowError(/expands to an empty path/);
+  });
+});
+
+describe("ensureSecureProfileRoot", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-root-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it.skipIf(process.platform === "win32")("creates a fresh root owner-only (0700)", () => {
+    const root = path.join(tmp, "profile-root");
+    ensureSecureProfileRoot(root);
+    expect(existsSync(root)).toBe(true);
+    expect(statSync(root).mode & 0o777).toBe(0o700);
+  });
+
+  it.skipIf(process.platform === "win32")("tightens an existing broader root to 0700", () => {
+    const root = path.join(tmp, "existing-root");
+    ensureSecureProfileRoot(root);
+    chmodSync(root, 0o755);
+    expect(statSync(root).mode & 0o777).toBe(0o755);
+
+    ensureSecureProfileRoot(root);
+    expect(statSync(root).mode & 0o777).toBe(0o700);
   });
 });
 

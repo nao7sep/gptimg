@@ -1,3 +1,4 @@
+import { chmodSync, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { customAlphabet } from "nanoid";
@@ -61,6 +62,36 @@ export function defaultProfileDir(): string {
     return path.isAbsolute(expanded) ? expanded : path.resolve(home, expanded);
   }
   return path.join(home, ".gptimg");
+}
+
+/**
+ * Create the profile root (if absent) and enforce an owner-only (0700) mode
+ * on it, per the storage-path convention: created that way, and tightened at
+ * each launch when an existing root is broader, because derived data and
+ * logs must never be readable by accounts that cannot read their sources.
+ * Windows uses its own permission model and is unaffected. Only the root
+ * itself is touched, never its contents (`profile.json`, `logs/`, `models/`).
+ *
+ * This is the one place that secures the root; `GptImg`'s constructor calls
+ * it once per instance before anything is written under `profileDir`, so
+ * `profile.json`, `logs/`, and the models cache all inherit the same root
+ * regardless of which one is written first.
+ *
+ * A failure to tighten an existing root is swallowed rather than thrown or
+ * printed: hardening a root that already exists must not stop the app, and
+ * an SDK never writes to a standard stream (sdk-toolkit-conventions §4/§7).
+ */
+export function ensureSecureProfileRoot(profileDir: string): void {
+  mkdirSync(profileDir, { recursive: true, mode: 0o700 });
+  if (process.platform === "win32") return;
+  try {
+    const mode = statSync(profileDir).mode & 0o777;
+    if (mode !== 0o700) {
+      chmodSync(profileDir, 0o700);
+    }
+  } catch {
+    // Best-effort hardening only; the app proceeds either way.
+  }
 }
 
 export function defaultProfilePath(profileDir: string): string {

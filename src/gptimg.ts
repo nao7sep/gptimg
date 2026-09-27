@@ -18,6 +18,7 @@ import {
   defaultLogDir,
   defaultProfileDir,
   defaultProfilePath,
+  ensureSecureProfileRoot,
 } from "./internal/paths.js";
 import type {
   BackplateArgs,
@@ -136,6 +137,7 @@ export class GptImg {
 
   constructor(opts: GptImgOptions = {}) {
     this.profileDir = opts.profileDir ?? defaultProfileDir();
+    ensureSecureProfileRoot(this.profileDir);
     this.logDir = opts.logDir ?? defaultLogDir(this.profileDir);
 
     this.profile = {
