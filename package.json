@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "npm@12.0.2",
-  "description": "Batteries-included TypeScript toolkit for AI image generation, vision, and local chroma-key post-processing.",
+  "description": "Generate, edit and read images with OpenAI from TypeScript, then mask, compose and upscale them locally.",
   "license": "GPL-3.0-or-later",
   "author": {
     "name": "Yoshinao Inoguchi",
