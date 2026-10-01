@@ -120,7 +120,7 @@ describe("image publication", () => {
       await expect(writeRGBA(new Uint8Array(3), 4, 4, { path: file, overwrite: true })).rejects.toMatchObject({
         code: "image.writeFailed",
       });
-      await expect(readFile(file)).resolves.toEqual(before);
+      expect((await readFile(file)).equals(before)).toBe(true);
       await expect(readdir(dir)).resolves.toEqual(["out.png"]);
     } finally {
       await rm(dir, { recursive: true, force: true });

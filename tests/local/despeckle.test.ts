@@ -402,14 +402,14 @@ describe("runDespeckle — algorithm edge cases & differential property suite", 
       for (let p = 0; p < n; p++) {
         expected[p * 4 + 3] = ref.expectedAlpha[p]!;
       }
-      expect(res.data, ctx).toEqual(expected); // exact alpha; RGB untouched; alpha only zeroed
-      expect(buf, `${ctx} input`).toEqual(original); // pure: caller's buffer is untouched
+      expect(Buffer.from(res.data).equals(Buffer.from(expected)), ctx).toBe(true); // exact alpha; RGB untouched; alpha only zeroed
+      expect(Buffer.from(buf).equals(Buffer.from(original)), `${ctx} input`).toBe(true); // pure: caller's buffer is untouched
 
       // Idempotence: a second pass with the same params changes nothing.
       const res2 = despeckleRGBA(res.data, W, H, { threshold, minArea, connectivity, keep });
       expect(res2.flooredPixels, ctx).toBe(0);
       expect(res2.removedPixels, ctx).toBe(0);
-      expect(res2.data, ctx).toEqual(res.data);
+      expect(Buffer.from(res2.data).equals(Buffer.from(res.data)), ctx).toBe(true);
     }
   });
 });

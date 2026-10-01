@@ -105,7 +105,7 @@ describe("OpenAI provider implementations", () => {
       { model: "gpt-image-2", prompt: "prompt" },
       expect.objectContaining({ maxRetries: 0, signal: undefined }),
     );
-    expect(result.images[0]?.data).toEqual(png);
+    expect(Buffer.from(result.images[0]!.data!).equals(Buffer.from(png))).toBe(true);
   });
 
   // response_format is neither injected nor stripped. The images endpoint rejects
@@ -184,7 +184,7 @@ describe("OpenAI provider implementations", () => {
       network,
     });
 
-    expect(result.images[0]?.data).toEqual(png);
+    expect(Buffer.from(result.images[0]!.data!).equals(Buffer.from(png))).toBe(true);
   });
 
   it("generate honors an already-aborted signal before calling the SDK method", async () => {
@@ -233,7 +233,7 @@ describe("OpenAI provider implementations", () => {
       mask: { mockFile: true },
     });
     expect(openaiMock.edit.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
-    expect(result.images[0]?.data).toEqual(png);
+    expect(Buffer.from(result.images[0]!.data!).equals(Buffer.from(png))).toBe(true);
   });
 
   it("edit uses the params model and falls back to the provider default", async () => {
@@ -316,7 +316,7 @@ describe("OpenAI provider implementations", () => {
       network,
     });
 
-    expect(result.images[0]?.data).toEqual(png);
+    expect(Buffer.from(result.images[0]!.data!).equals(Buffer.from(png))).toBe(true);
     expect(result.images[0]?.error).toBeUndefined();
   });
 
