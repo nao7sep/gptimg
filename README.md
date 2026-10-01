@@ -33,6 +33,8 @@ const verdict = await img.vision({ in: gen.files[0].path, check: "one donut, cen
 
 Run it with `npx tsx your-script.ts`.
 
+The key lives inside the profile on purpose: a profile is the unit you manage cost by, so each profile carries the key it spends. Keys are stored obfuscated in a `0600` file, never in plain text, and an environment variable named for the provider overrides the stored key.
+
 Every long-running verb accepts the same optional call controls. Pass an `AbortSignal` to cancel at the next safe boundary and `onProgress` to receive the structured stage events that also feed the JSONL log:
 
 ```ts
