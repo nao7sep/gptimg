@@ -9,7 +9,7 @@ import { ProfileError } from "../errors.js";
  * (or `~/`) becomes the home directory, and `$VAR` / `${VAR}` / `%VAR%`
  * references are substituted from the environment (an unset reference expands
  * to the empty string, matching shell behavior). This runs on values that come
- * from the environment (`GPTIMG_HOME`), never on internal literals, per the
+ * from the environment (`GPTIMG_DATA_DIR`), never on internal literals, per the
  * storage-path convention's "expand before use" rule.
  */
 function expandHomeAndEnv(value: string, home: string): string {
@@ -29,7 +29,7 @@ function expandHomeAndEnv(value: string, home: string): string {
  * The single storage root for GptImg, per the storage-path convention.
  *
  * Resolution order:
- *   1. `GPTIMG_HOME`, if set and non-empty — the relocation override. Its value
+ *   1. `GPTIMG_DATA_DIR`, if set and non-empty — the relocation override. Its value
  *      is expanded (leading `~`, `$VAR`/`%VAR%`) and then made absolute. A
  *      relative value is resolved against the home directory, NEVER against
  *      `process.cwd()`, so the override can never reintroduce a cwd dependence.
@@ -38,7 +38,7 @@ function expandHomeAndEnv(value: string, home: string): string {
  *   2. Otherwise the default `~/.gptimg`.
  *
  * Resolved lazily (a function, not a module-level constant) so a process that
- * sets `GPTIMG_HOME` late — and a test that relocates the root through the
+ * sets `GPTIMG_DATA_DIR` late — and a test that relocates the root through the
  * documented env-var seam rather than a private setter — is honored, and so the
  * root is never frozen from a half-set environment at import time.
  *
@@ -48,13 +48,13 @@ function expandHomeAndEnv(value: string, home: string): string {
  */
 export function defaultProfileDir(): string {
   const home = homedir();
-  const override = process.env.GPTIMG_HOME;
+  const override = process.env.GPTIMG_DATA_DIR;
   if (override !== undefined && override.length > 0) {
     const expanded = expandHomeAndEnv(override, home);
     if (expanded.length === 0) {
       throw new ProfileError(
         "profile.invalidHome",
-        `GPTIMG_HOME is set but expands to an empty path: ${JSON.stringify(override)}. ` +
+        `GPTIMG_DATA_DIR is set but expands to an empty path: ${JSON.stringify(override)}. ` +
           `Unset it to use the default ~/.gptimg, or set it to a usable directory.`,
       );
     }
