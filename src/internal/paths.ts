@@ -130,14 +130,8 @@ export function defaultModelsDir(profileDir: string): string {
   return path.join(profileDir, "models");
 }
 
-// The default per-session log lives in the app's own logs dir and follows the
-// logging convention's filename form — here `yyyymmdd-hhmmss-fff-utc.log`. The
-// default caller stamps it with `utcTimestampMs` (below): the millisecond-precision
-// `-fff` variant the timestamp conventions reserve for concurrent-by-design tools,
-// so two runs starting in the same UTC second get distinct log files instead of
-// interleaving into one. No app name (the path already implies it) and no `.jsonl`
-// (a `.log` file holding JSON Lines is the convention). A caller's `log` option
-// overrides this and is named by the caller.
+// The default session log file, named per the logging-conventions and stamped
+// with `utcTimestampMs`. A caller's `log` option overrides it.
 export function defaultLogPath(logDir: string, ts: string): string {
   return path.join(logDir, `${ts}.log`);
 }
@@ -152,20 +146,17 @@ function utcBody(now: Date): string {
 }
 
 /**
- * Returns `yyyymmdd-hhmmss-fff-utc` — second precision plus a millisecond part.
- * This is the `-fff` exception in the timestamp conventions, permitted for a
- * tool designed to run concurrently. GptImg is exactly that case: it names the
- * per-session log file with this so two runs that start in the same UTC second
- * get distinct log files instead of interleaving into one. OS clock via Date.
- * The default output stem (`defaultStem`) starts with the same stamp.
+ * `yyyymmdd-hhmmss-fff-utc`, the machine-paced filename stamp of the
+ * timestamp-conventions. It names the session log and starts the default
+ * output stem (`defaultStem`).
  */
 export function utcTimestampMs(now: Date = new Date()): string {
   const ms = String(now.getUTCMilliseconds()).padStart(3, "0");
   return `${utcBody(now)}-${ms}-utc`;
 }
 
-// Lowercase letters and digits only, per the filename form (no capitals or
-// symbols). Six characters give about 2.2 billion values per millisecond.
+// Lowercase letters and digits, per the timestamp-conventions' filename form.
+// Six characters give about 2.2 billion values per millisecond.
 const outputDiscriminator = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
 
 /**
