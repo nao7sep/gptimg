@@ -5,12 +5,9 @@ import { customAlphabet } from "nanoid";
 import { ProfileError } from "../errors.js";
 
 /**
- * Expand a configured path string before it is made absolute: a leading `~`
- * (or `~/`) becomes the home directory, and `$VAR` / `${VAR}` / `%VAR%`
- * references are substituted from the environment (an unset reference expands
- * to the empty string, matching shell behavior). This runs on values that come
- * from the environment (`GPTIMG_DATA_DIR`), never on internal literals, per the
- * storage-path convention's "expand before use" rule.
+ * Expand a path value taken from the environment (`GPTIMG_DATA_DIR`,
+ * `GPTIMG_MODELS_DIR`), per the storage-path-conventions. An unset reference
+ * expands to the empty string, as in a shell.
  */
 function expandHomeAndEnv(value: string, home: string): string {
   let out = value;
@@ -26,25 +23,11 @@ function expandHomeAndEnv(value: string, home: string): string {
 }
 
 /**
- * The single storage root for GptImg, per the storage-path convention.
+ * GptImg's storage root, per the storage-path-conventions.
  *
- * Resolution order:
- *   1. `GPTIMG_DATA_DIR`, if set and non-empty — the relocation override. Its value
- *      is expanded (leading `~`, `$VAR`/`%VAR%`) and then made absolute. A
- *      relative value is resolved against the home directory, NEVER against
- *      `process.cwd()`, so the override can never reintroduce a cwd dependence.
- *      A value that expands to empty is unusable and is a startup error rather
- *      than a silent fallback to the default.
- *   2. Otherwise the default `~/.gptimg`.
- *
- * Resolved lazily (a function, not a module-level constant) so a process that
- * sets `GPTIMG_DATA_DIR` late — and a test that relocates the root through the
- * documented env-var seam rather than a private setter — is honored, and so the
- * root is never frozen from a half-set environment at import time.
- *
- * The finer per-subpath overrides (`profileDir`/`logDir` constructor options,
- * `GPTIMG_MODELS_DIR`) layer ABOVE this: a caller that injects an explicit
- * directory bypasses the root entirely for that subpath.
+ * The `profileDir`/`logDir` constructor options and `GPTIMG_MODELS_DIR` layer
+ * above it: a caller that injects a directory bypasses the root for that
+ * subpath.
  */
 export function defaultProfileDir(): string {
   const home = homedir();
@@ -58,28 +41,18 @@ export function defaultProfileDir(): string {
           `Unset it to use the default ~/.gptimg, or set it to a usable directory.`,
       );
     }
-    // Absolutize against HOME, never the working directory.
     return path.isAbsolute(expanded) ? expanded : path.resolve(home, expanded);
   }
   return path.join(home, ".gptimg");
 }
 
 /**
- * Create the profile root (if absent) and enforce an owner-only (0700) mode
- * on it, per the storage-path convention: created that way, and tightened at
- * each launch when an existing root is broader, because derived data and
- * logs must never be readable by accounts that cannot read their sources.
- * Windows uses its own permission model and is unaffected. Only the root
- * itself is touched, never its contents (`profile.json`, `logs/`, `models/`).
+ * Create the profile root and secure it, per the storage-path-conventions.
+ * Only the root itself is touched, never its contents. `GptImg`'s constructor
+ * calls it once per instance before anything is written under `profileDir`.
  *
- * This is the one place that secures the root; `GptImg`'s constructor calls
- * it once per instance before anything is written under `profileDir`, so
- * `profile.json`, `logs/`, and the models cache all inherit the same root
- * regardless of which one is written first.
- *
- * A failure to tighten an existing root is swallowed rather than thrown or
- * printed: hardening a root that already exists must not stop the app, and
- * an SDK never writes to a standard stream (sdk-toolkit-conventions §4/§7).
+ * A failure to tighten an existing root is swallowed so it never stops the
+ * caller (sdk-toolkit-conventions, *Output*).
  */
 export function ensureSecureProfileRoot(profileDir: string): void {
   mkdirSync(profileDir, { recursive: true, mode: 0o700 });
