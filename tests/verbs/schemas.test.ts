@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { GptImg } from "../../src/gptimg.js";
 import {
@@ -225,36 +228,41 @@ describe("verb argument validation (single source of truth)", () => {
     // Calling the SDK directly (the only surface) with a bad enum or out-of-range
     // value must reject before any I/O — proving the constraint lives in the SDK's
     // own validator, not merely in a caller's type annotations.
-    const sdk = new GptImg();
-    await expect(
-      sdk.backplate({ from: "#000000", to: "#ffffff", shape: "blob" as never }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(
-      sdk.layer({ base: "b.png", top: "t.png", gravity: "middle" as never }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(sdk.resize({ in: "a.png", toSize: -1 })).rejects.toMatchObject({
-      code: "args.invalid",
-    });
-    // encode's format-dependent options are checked through the impl too.
-    await expect(sdk.encode({ in: "a.png", format: "png", quality: 90 })).rejects.toMatchObject({
-      code: "args.invalid",
-    });
-    await expect(
-      sdk.despeckle({ in: "a.png", connectivity: 6 }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    // combine validates through the impl too (op enum + arity), not only via the
-    // standalone validator.
-    await expect(
-      sdk.combine({ op: "nope" as never, inputs: ["a.png"] }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(
-      sdk.combine({ op: "union", inputs: ["only-one.png"] }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(
-      sdk.keycheck({ in: "a.png", key: "green" as never }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-    await expect(sdk.grid({ inputs: [] })).rejects.toMatchObject({
-      code: "args.invalid",
-    });
+    const tmp = await mkdtemp(path.join(tmpdir(), "gptimg-schemas-"));
+    try {
+      const sdk = new GptImg({ profileDir: tmp, logDir: path.join(tmp, "logs") });
+      await expect(
+        sdk.backplate({ from: "#000000", to: "#ffffff", shape: "blob" as never }),
+      ).rejects.toMatchObject({ code: "args.invalid" });
+      await expect(
+        sdk.layer({ base: "b.png", top: "t.png", gravity: "middle" as never }),
+      ).rejects.toMatchObject({ code: "args.invalid" });
+      await expect(sdk.resize({ in: "a.png", toSize: -1 })).rejects.toMatchObject({
+        code: "args.invalid",
+      });
+      // encode's format-dependent options are checked through the impl too.
+      await expect(sdk.encode({ in: "a.png", format: "png", quality: 90 })).rejects.toMatchObject({
+        code: "args.invalid",
+      });
+      await expect(
+        sdk.despeckle({ in: "a.png", connectivity: 6 }),
+      ).rejects.toMatchObject({ code: "args.invalid" });
+      // combine validates through the impl too (op enum + arity), not only via the
+      // standalone validator.
+      await expect(
+        sdk.combine({ op: "nope" as never, inputs: ["a.png"] }),
+      ).rejects.toMatchObject({ code: "args.invalid" });
+      await expect(
+        sdk.combine({ op: "union", inputs: ["only-one.png"] }),
+      ).rejects.toMatchObject({ code: "args.invalid" });
+      await expect(
+        sdk.keycheck({ in: "a.png", key: "green" as never }),
+      ).rejects.toMatchObject({ code: "args.invalid" });
+      await expect(sdk.grid({ inputs: [] })).rejects.toMatchObject({
+        code: "args.invalid",
+      });
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 });
