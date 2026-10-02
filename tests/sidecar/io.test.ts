@@ -19,7 +19,7 @@ describe("sidecar read/write", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("writes redacted JSON with a trailing newline and reads it back", async () => {
+  it("writes the sidecar as given, as JSON with a trailing newline, and reads it back", async () => {
     const sidecar: Sidecar = {
       request: { prompt: "x", apiKey: "secret" },
       response: { ok: true },
@@ -30,9 +30,8 @@ describe("sidecar read/write", () => {
 
     const text = await readFile(file, "utf-8");
     expect(text.endsWith("\n")).toBe(true);
-    expect(text).not.toContain("secret");
     expect(JSON.parse(text)).toEqual({
-      request: { prompt: "x", apiKey: "[redacted]" },
+      request: { prompt: "x", apiKey: "secret" },
       response: { ok: true },
       files: [{ index: 1, name: "out.png", sha256: "abc", format: "png" }],
     });

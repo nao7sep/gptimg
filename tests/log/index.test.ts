@@ -28,7 +28,7 @@ describe("log helpers", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("opens, appends redacted JSONL entries with the envelope keys, and closes", async () => {
+  it("opens, appends JSONL entries with the envelope keys and data as given, and closes", async () => {
     const handle = await openLog(file, "generate");
     await appendLog(handle, {
       time: "2026-01-01T00:00:00.000Z",
@@ -47,7 +47,7 @@ describe("log helpers", () => {
       level: "info",
       stage: "request",
       message: "hello",
-      data: { apiKey: "[redacted]", value: 1 },
+      data: { apiKey: "secret", value: 1 },
     });
   });
 

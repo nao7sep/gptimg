@@ -1,6 +1,5 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { redact } from "../profile/redact.js";
 import type { LogEntry, LogHandle, LogLevel, LogStage, LogVerb } from "../types.js";
 
 /**
@@ -49,7 +48,7 @@ function announceLogFailure(handle: LogHandle, err: unknown, onEvent?: (entry: L
     message: "log file unavailable",
     verb: handle.verb,
     stage: "log",
-    data: redact({ path: handle.path, error: err instanceof Error ? err.message : String(err) }),
+    data: { path: handle.path, error: err instanceof Error ? err.message : String(err) },
   };
   try {
     onEvent(notice);
@@ -94,7 +93,7 @@ export async function appendLog(
     verb: entry.verb ?? handle.verb,
     stage: entry.stage,
   };
-  if (entry.data) final.data = redact(entry.data);
+  if (entry.data) final.data = entry.data;
 
   // Fan out to the live progress sink (a caller's `onProgress` handler) before the
   // file write, so a watcher sees the event immediately. Everything but `error`
