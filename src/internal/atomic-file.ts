@@ -13,8 +13,8 @@ export interface AtomicWriteOptions {
 }
 
 /**
- * The house atomic-write mechanism, per the storage-path convention's *Atomic
- * writes* section: a same-directory `<stem>-<discriminator>.tmp` temp file,
+ * The house atomic-write mechanism, per the storage-path-conventions, *Atomic
+ * writes*: a same-directory `<stem>-<discriminator>.tmp` temp file,
  * written and then atomically published by rename or hard link. Same-directory
  * placement is load-bearing — both operations stay on one filesystem, so
  * staging anywhere else (a central temp dir) could degrade to a non-atomic

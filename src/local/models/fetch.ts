@@ -323,7 +323,7 @@ export function inspectCachedModel(
 }
 
 // https-only: a non-https model URL is refused before any byte is fetched, per
-// the managed-runtime-dependencies convention. http is permitted only for a
+// the managed-runtime-dependencies-conventions. http is permitted only for a
 // loopback host (localhost / 127.0.0.1 / ::1), which carries no network-MITM
 // surface and is how the local test server runs; every shipped registry URL is
 // https.

@@ -5,7 +5,7 @@ import type { LogEntry, LogHandle, LogLevel, LogStage, LogVerb } from "../types.
 /**
  * `debug` logging is a developer-only firehose: it is written to the session log
  * file only when explicitly enabled, so it never floods an end-user's disk
- * (logging conventions). GptImg ships a single compiled artifact everywhere —
+ * (logging-conventions). GptImg ships a single compiled artifact everywhere —
  * there is no separate "dev build" — so the one gate is the `GPTIMG_DEBUG`
  * environment variable. Accept the two forms a human reaches for (`1` / `true`,
  * case- and space-insensitive) so a mis-typed `true` is not a silent no-op. Read
@@ -24,7 +24,7 @@ function serialize(entry: LogEntry): string {
 // Handles for which a file-logging failure has already been surfaced. The notice
 // goes through the caller's progress sink (`onEvent`) exactly ONCE per session, not
 // on every line — and never to a standard stream: an SDK prints nothing, ever
-// (sdk-toolkit-conventions §4). With no sink the SDK is silent; the live event
+// (sdk-toolkit-conventions, *Output*). With no sink the SDK is silent; the live event
 // stream, which is independent of the file, already carries every event. Module-
 // private (a WeakSet, not a field) so the public LogHandle stays a plain `{path, verb}`.
 const failureAnnounced = new WeakSet<LogHandle>();
@@ -34,9 +34,9 @@ const failureAnnounced = new WeakSet<LogHandle>();
  * print. The notice is one warn-level record forwarded through the caller's
  * progress sink (`onEvent`) — the same envelope a normal line uses — so a watcher
  * learns the on-disk log is unavailable. With no sink the SDK stays silent
- * (sdk-toolkit-conventions §4, §6); the live event stream already carries every
- * non-error event and errors still reach the caller as thrown exceptions, so the
- * file failing loses no part of the contract.
+ * (sdk-toolkit-conventions, *Output* and *Progress*); the live event stream
+ * already carries every non-error event and errors still reach the caller as
+ * thrown exceptions, so the file failing loses no part of the contract.
  */
 function announceLogFailure(handle: LogHandle, err: unknown, onEvent?: (entry: LogEntry) => void): void {
   if (failureAnnounced.has(handle)) return;

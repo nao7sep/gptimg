@@ -70,7 +70,7 @@ export function assertSingleFileAvailable(
  *
  * The working directory is never a base: a path the app writes is anchored to
  * the home directory or to the source file, never to how the process was
- * launched (the storage-path convention). A verb that provides neither an input
+ * launched (storage-path-conventions). A verb that provides neither an input
  * file nor a fallback directory is a programmer error and throws, rather than
  * silently writing under the cwd.
  *

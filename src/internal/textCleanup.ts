@@ -1,23 +1,11 @@
 /**
- * Whitespace cleanup for free-text inputs, per the fleet text-cleanup
- * conventions. This is GptImg's own copy of the two patterns it uses — there is
- * no shared package; each app carries a small local helper (see
- * `text-cleanup-conventions`). The algorithms here are the canonical,
- * test-proven shapes from that convention; do not rewrite them.
- *
- * Only the two patterns GptImg actually needs are present:
+ * Whitespace cleanup for free-text inputs, per the text-cleanup-conventions.
+ * GptImg carries two of its patterns:
  *   - `singleLine` — for scalar instruction fields (the vision `check`).
  *   - `multiline`  — for body fields whose line structure matters (the
  *     generate/edit `prompt`).
- * The `multiline-truncation` pattern is intentionally omitted: GptImg has no
- * preview/snippet surface that needs it. Add it (copying the convention's
- * verified version) only if a real case appears.
- *
- * "Whitespace" and "blank" follow the language built-ins, per the convention:
- * `\s`, `String.prototype.trim`, and `l.trim() === ""` already cover the
- * full-width space U+3000 and NBSP, so no character table is maintained. These
- * functions normalize for display/storage tidiness; they do NOT validate, and
- * must never run on identity-bearing fields (filename stems, keys).
+ * `multiline-truncation` is omitted: GptImg has no preview or snippet surface.
+ * Filename stems and keys never pass through these helpers.
  */
 
 /**

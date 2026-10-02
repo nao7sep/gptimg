@@ -4,7 +4,7 @@ const MARKER = "obf:";
 
 // Reverse a byte sequence on a copy, never mutating the input. Operating on the
 // UTF-8 bytes (not on string characters) keeps this byte-for-byte identical to
-// the api-key-storage convention's canonical `obf:` algorithm in every language;
+// the api-key-storage-conventions' canonical `obf:` algorithm in every language;
 // for the ASCII keys stored in practice it is the same result either way.
 function reverseBytes(bytes: Buffer): Buffer {
   return Buffer.from(bytes).reverse();
