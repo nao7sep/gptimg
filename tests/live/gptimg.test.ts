@@ -28,6 +28,9 @@ const CAT_PHOTO = "photos/similarity/apartment-cat/reference.jpg";
 // the cheapest output the provider offers.
 const CHEAPEST_IMAGE = { quality: "low", size: "1024x1024" };
 const CHEAPEST_VISION = { detail: "low" as const };
+const IMAGE_MODELS = ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2"] as const;
+// Models the vision guide does not list as honouring `detail`, checked against the real API.
+const DETAIL_CHECKED_VISION_MODELS = ["gpt-6-luna", "gpt-6.1-sol"] as const;
 
 process.env.GPTIMG_MODELS_DIR = MODELS;
 
@@ -122,38 +125,87 @@ describe("the live SDK", () => {
     expect(centre.r, "the disc stays red").toBeGreaterThan(centre.g + 80);
   });
 
-  it("generates an image through the real OpenAI API", async () => {
-    requireKey();
-    const { img, home } = await freshSdk("generate");
-    const result = await img.generate({
-      prompt: "A single flat solid red circle centred on a plain white background. No shading, texture, or other objects.",
-      outDir: home,
-      overrides: { generate: CHEAPEST_IMAGE },
+  // Every supported image model, through both verbs, so each row's branch is proven against
+  // the real API rather than only the default.
+  for (const model of IMAGE_MODELS) {
+    it(`generates an image with ${model} through the real OpenAI API`, async () => {
+      requireKey();
+      const { img, home } = await freshSdk(`generate-${model}`);
+      const result = await img.generate({
+        prompt: "A single flat solid red circle centred on a plain white background. No shading, texture, or other objects.",
+        outDir: home,
+        overrides: { generate: { ...CHEAPEST_IMAGE, model } },
+      });
+      expect(result.partial).toBe(false);
+      expect(result.files).toHaveLength(1);
+      const [file] = result.files;
+      expect(await sentRequest(file!.sidecarPath)).toMatchObject({ ...CHEAPEST_IMAGE, model });
+      expect((await sharp(file!.path).metadata()).format).toBe(file!.format);
+      const centre = await centreColour(file!.path, 0.2);
+      expect(centre.r, "the centre is red").toBeGreaterThan(centre.g + 80);
     });
-    expect(result.partial).toBe(false);
-    expect(result.files).toHaveLength(1);
+
+    it(`edits an image with ${model} through the real OpenAI API`, async () => {
+      requireKey();
+      const { img, home } = await freshSdk(`edit-${model}`);
+      const result = await img.edit({
+        in: await copyInto(home, DISC),
+        prompt: "Recolour the red disc pure blue. Keep its size and position and keep the green background unchanged.",
+        outDir: home,
+        overrides: { edit: { ...CHEAPEST_IMAGE, model } },
+      });
+      expect(result.files).toHaveLength(1);
+      const [file] = result.files;
+      expect(await sentRequest(file!.sidecarPath)).toMatchObject({ ...CHEAPEST_IMAGE, model });
+      const centre = await centreColour(file!.path, 0.2);
+      expect(centre.b, "the disc is now blue").toBeGreaterThan(centre.r + 80);
+    });
+  }
+
+  it("writes the provider's WebP as a .webp whose sidecar names the default model and the file", async () => {
+    requireKey();
+    const { img, home } = await freshSdk("generate-webp");
+    const result = await img.generate({
+      prompt: "A single flat solid red circle centred on a plain white background.",
+      outDir: home,
+      overrides: { generate: { ...CHEAPEST_IMAGE, output_format: "webp" } },
+    });
     const [file] = result.files;
-    expect(await sentRequest(file!.sidecarPath)).toMatchObject(CHEAPEST_IMAGE);
-    expect((await sharp(file!.path).metadata()).format).toBe(file!.format);
-    const centre = await centreColour(file!.path, 0.2);
-    expect(centre.r, "the centre is red").toBeGreaterThan(centre.g + 80);
+    expect(file!.path.endsWith(".webp")).toBe(true);
+    expect((await sharp(file!.path).metadata()).format).toBe("webp");
+    const sidecar = JSON.parse(await readFile(file!.sidecarPath, "utf8")) as {
+      request: Record<string, unknown>;
+      response: { usage?: unknown };
+      files: Array<{ format: string; sha256: string }>;
+    };
+    expect(sidecar.request).toMatchObject({ model: "gpt-image-2.5-flare", output_format: "webp" });
+    expect(sidecar.files[0]).toMatchObject({ format: "webp", sha256: file!.sha256 });
+    expect(sidecar.response.usage, "the provider's usage is kept").toBeDefined();
   });
 
-  it("edits an image through the real OpenAI API", async () => {
-    requireKey();
-    const { img, home } = await freshSdk("edit");
-    const result = await img.edit({
-      in: await copyInto(home, DISC),
-      prompt: "Recolour the red disc pure blue. Keep its size and position and keep the green background unchanged.",
-      outDir: home,
-      overrides: { edit: CHEAPEST_IMAGE },
+  // A vision model honours detail=low when a low-detail check bills far fewer prompt tokens than
+  // the full image would (320 against 2621 on gpt-5.6-luna for a 1536x1536 image).
+  for (const model of DETAIL_CHECKED_VISION_MODELS) {
+    it(`bills ${model} a low-detail image at low-detail cost`, async () => {
+      requireKey();
+      const { img, home } = await freshSdk(`detail-${model}`);
+      const photo = await copyInto(home, join(CORPUS, CAT_PHOTO));
+      const holds = await img.vision({
+        in: photo,
+        check: "A cat is visible in the image.",
+        outDir: home,
+        overrides: { vision: { ...CHEAPEST_VISION, model } },
+      });
+      const sidecar = JSON.parse(await readFile(holds.sidecarPath, "utf8")) as {
+        request: Record<string, unknown>;
+        response: { raw: { usage?: { prompt_tokens?: number } } };
+      };
+      expect(sidecar.request).toMatchObject({ model, ...CHEAPEST_VISION });
+      const promptTokens = sidecar.response.raw.usage?.prompt_tokens ?? Number.POSITIVE_INFINITY;
+      expect(promptTokens, `${model} prompt tokens at detail=low`).toBeLessThan(1_000);
+      expect(holds.ok, holds.reasons.join(" ")).toBe(true);
     });
-    expect(result.files).toHaveLength(1);
-    const [file] = result.files;
-    expect(await sentRequest(file!.sidecarPath)).toMatchObject(CHEAPEST_IMAGE);
-    const centre = await centreColour(file!.path, 0.2);
-    expect(centre.b, "the disc is now blue").toBeGreaterThan(centre.r + 80);
-  });
+  }
 
   it("judges a corpus photo through the real OpenAI vision model", async () => {
     requireKey();
@@ -166,7 +218,7 @@ describe("the live SDK", () => {
       overrides: { vision: CHEAPEST_VISION },
     });
     expect(holds.ok, holds.reasons.join(" ")).toBe(true);
-    expect(await sentRequest(holds.sidecarPath)).toMatchObject(CHEAPEST_VISION);
+    expect(await sentRequest(holds.sidecarPath)).toMatchObject({ ...CHEAPEST_VISION, model: "gpt-6-luna" });
     const fails = await img.vision({
       in: photo,
       check: "A dog is visible in the image.",

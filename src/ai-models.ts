@@ -30,7 +30,8 @@ export const AI_ROLES = [
   // Changes an existing image from a prompt and optional mask; the precise editing model suits it.
   { id: "edit", kind: "image-edit" },
   // Judges images against a yes/no criterion. Its checks are not expected to find complex or
-  // very small defects, so the fast tier's default model suits it.
+  // very small defects, so the fast tier's default model suits it. The default must honour
+  // `detail`, which some models ignore; the live suite checks gpt-6-luna bills low detail low.
   { id: "vision", kind: "vision" },
 ] as const satisfies readonly { id: string; kind: AiKind }[];
 
