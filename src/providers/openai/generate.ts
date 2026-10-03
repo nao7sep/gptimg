@@ -4,7 +4,8 @@ import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { GenerateProviderArgs, ProviderImageResult } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
-import { OPENAI_MODEL_DEFAULTS } from "./defaults.js";
+import { defaultModelFor } from "../../ai-models.js";
+import { buildImageRequest } from "./request.js";
 
 /**
  * `response_format` is never sent, and never stripped from a caller who sends it.
@@ -20,13 +21,13 @@ export async function openaiGenerate(
   args: GenerateProviderArgs,
 ): Promise<ProviderImageResult> {
   const client = buildOpenAIClient(args.profile);
-  const model = resolveModel(args.params.model, OPENAI_MODEL_DEFAULTS.generate);
+  const model = resolveModel(args.params.model, defaultModelFor("openai", "image-generate"));
 
-  const params: Record<string, unknown> = {
+  const params = buildImageRequest(model, {
     ...args.params,
     model,
     prompt: args.prompt,
-  };
+  });
 
   const { primary, download, logger, signal } = args.network;
 

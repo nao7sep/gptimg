@@ -4,7 +4,9 @@ import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { VisionVerdict } from "../../types.js";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
-import { OPENAI_MODEL_DEFAULTS, OPENAI_VISION_SYSTEM_PROMPT } from "./defaults.js";
+import { defaultModelFor } from "../../ai-models.js";
+import { OPENAI_VISION_SYSTEM_PROMPT } from "./defaults.js";
+import { buildVisionRequest } from "./request.js";
 
 const VERDICT_SCHEMA = {
   name: "VisionVerdict",
@@ -95,7 +97,7 @@ function parseVerdict(raw: string | null | undefined): VisionVerdict {
 export async function openaiVision(
   args: VisionProviderArgs,
 ): Promise<ProviderVisionResult> {
-  const model = resolveModel(args.params.model, OPENAI_MODEL_DEFAULTS.vision);
+  const model = resolveModel(args.params.model, defaultModelFor("openai", "vision"));
   const client = buildOpenAIClient(args.profile);
 
   const { systemPrompt: paramsSystemPrompt, ...passthroughParams } = args.params;
@@ -115,7 +117,7 @@ export async function openaiVision(
     },
   ];
 
-  const params: Record<string, unknown> = {
+  const params = buildVisionRequest(model, {
     ...passthroughParams,
     model,
     messages,
@@ -123,7 +125,7 @@ export async function openaiVision(
       type: "json_schema",
       json_schema: VERDICT_SCHEMA,
     },
-  };
+  });
 
   const { primary, logger, signal } = args.network;
 

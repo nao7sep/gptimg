@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.js";
-import { OPENAI_MODEL_DEFAULTS } from "../../src/providers/openai/defaults.js";
 import { openaiEdit } from "../../src/providers/openai/edit.js";
 import { openaiGenerate } from "../../src/providers/openai/generate.js";
 import { openaiVision } from "../../src/providers/openai/vision.js";
@@ -159,7 +158,7 @@ describe("OpenAI provider implementations", () => {
       network,
     });
     expect(openaiMock.generate.mock.calls[0]?.[0]).toMatchObject({
-      model: "gpt-image-2",
+      model: "gpt-image-2.5-flare",
     });
   });
 
@@ -259,7 +258,7 @@ describe("OpenAI provider implementations", () => {
       network,
     });
     expect(openaiMock.edit.mock.calls[0]?.[0]).toMatchObject({
-      model: "gpt-image-2",
+      model: "gpt-image-2.5-sunburst",
     });
   });
 
@@ -553,7 +552,7 @@ describe("OpenAI provider implementations", () => {
       network,
     });
     expect(openaiMock.create.mock.calls[0]?.[0]).toMatchObject({
-      model: OPENAI_MODEL_DEFAULTS.vision,
+      model: "gpt-6-luna",
     });
   });
 

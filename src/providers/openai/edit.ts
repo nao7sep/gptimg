@@ -4,14 +4,15 @@ import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
-import { OPENAI_MODEL_DEFAULTS } from "./defaults.js";
+import { defaultModelFor } from "../../ai-models.js";
+import { buildImageRequest } from "./request.js";
 import { imageFileForEditUpload } from "./upload.js";
 
 export async function openaiEdit(
   args: EditProviderArgs,
 ): Promise<ProviderImageResult> {
   const client = buildOpenAIClient(args.profile);
-  const model = resolveModel(args.params.model, OPENAI_MODEL_DEFAULTS.edit);
+  const model = resolveModel(args.params.model, defaultModelFor("openai", "image-edit"));
 
   let imageFile;
   let maskFile;
@@ -29,13 +30,13 @@ export async function openaiEdit(
     );
   }
 
-  const params: Record<string, unknown> = {
+  const params = buildImageRequest(model, {
     ...args.params,
     model,
     prompt: args.prompt,
     image: imageFile,
-  };
-  if (maskFile) params.mask = maskFile;
+    ...(maskFile && { mask: maskFile }),
+  });
 
   const { primary, download, logger, signal } = args.network;
 
