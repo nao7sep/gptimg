@@ -1,3 +1,5 @@
+import { defaultModelFor } from "../ai-models.js";
+import { resolveModel } from "../providers/openai/client.js";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
@@ -69,7 +71,11 @@ export async function editImpl(
     if (args.overrides) recipe = mergeRecipes(recipe, args.overrides);
     const network = resolveNetworkForCall(recipe);
     const section = validateEditSection(recipe.edit);
-    const params: Record<string, unknown> = { ...section };
+    // The model is settled before the call, so the log and the sidecar name the one sent.
+    const params: Record<string, unknown> = {
+      ...section,
+      model: resolveModel(section.model, defaultModelFor("openai", "image-edit")),
+    };
 
     const n =
       typeof params.n === "number" && (params.n as number) > 0

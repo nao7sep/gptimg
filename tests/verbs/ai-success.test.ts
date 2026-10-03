@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -971,4 +972,55 @@ describe("AI verb implementations with mocked provider", () => {
     });
   });
 
+  it("sidecars name the model sent, the file actually written and the provider's usage", async () => {
+    const webp = new Uint8Array(await sharp(Buffer.from(png)).webp({ quality: 80 }).toBuffer());
+    providerCalls.generate.mockResolvedValue({
+      raw: {
+        data: [{ b64_json: Buffer.from(webp).toString("base64") }],
+        output_format: "webp",
+        usage: { input_tokens: 9, output_tokens: 196, total_tokens: 205 },
+      },
+      images: [{ data: webp }],
+    });
+    providerCalls.edit.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
+    providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 0.9, reasons: ["green"] } });
+
+    const outDir = path.join(tmp, "records");
+    const generated = await sdk.generate({
+      prompt: "a disk",
+      outDir,
+      outName: "gen",
+      overrides: { generate: { output_format: "webp" } },
+    });
+    const [file] = generated.files;
+    expect(file?.path).toBe(path.join(outDir, "gen.webp"));
+    expect(file?.format).toBe("webp");
+    expect((await sharp(file!.path).metadata()).format).toBe("webp");
+    const sidecar = JSON.parse(await readFile(file!.sidecarPath, "utf-8")) as {
+      request: Record<string, unknown>;
+      response: { data: Array<{ b64_json: string | null }>; usage: unknown; output_format: string };
+      files: Array<{ name: string; sha256: string; format: string }>;
+    };
+    expect(sidecar.request).toMatchObject({ model: "gpt-image-2.5-flare", output_format: "webp", prompt: "a disk" });
+    expect(sidecar.files).toEqual([
+      { index: 1, name: "gen.webp", format: "webp", sha256: createHash("sha256").update(await readFile(file!.path)).digest("hex") },
+    ]);
+    expect(sidecar.response.data[0]?.b64_json).toBeNull();
+    expect(sidecar.response.usage).toEqual({ input_tokens: 9, output_tokens: 196, total_tokens: 205 });
+    expect(sidecar.response.output_format).toBe("webp");
+    const requestLine = lines(await readFile(generated.logPath, "utf-8")).find((line) => line.stage === "request");
+    expect(JSON.stringify(requestLine)).toContain('"model":"gpt-image-2.5-flare"');
+
+    const input = path.join(tmp, "edit-input.png");
+    await copyFile(fixture("green-disk.png"), input);
+    const edited = await sdk.edit({ in: input, prompt: "make it blue", outDir, outName: "edited" });
+    const editSidecar = JSON.parse(await readFile(edited.files[0]!.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
+    expect(editSidecar.request.model).toBe("gpt-image-2.5-sunburst");
+    expect(providerCalls.edit.mock.calls[0]?.[0].params.model).toBe("gpt-image-2.5-sunburst");
+
+    const judged = await sdk.vision({ in: input, check: "is it green?", outDir, outName: "judged" });
+    const visionSidecar = JSON.parse(await readFile(judged.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
+    expect(visionSidecar.request.model).toBe("gpt-6-luna");
+    expect(providerCalls.vision.mock.calls[0]?.[0].params.model).toBe("gpt-6-luna");
+  });
 });

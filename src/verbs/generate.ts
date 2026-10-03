@@ -1,3 +1,5 @@
+import { defaultModelFor } from "../ai-models.js";
+import { resolveModel } from "../providers/openai/client.js";
 import { ensureOutputDir } from "../internal/output-files.js";
 import {
   acquireOutputGroupLock,
@@ -57,7 +59,11 @@ export async function generateImpl(
     const section = validateGenerateSection(recipe.generate);
     const chromaSection = validateChromaSection(recipe.chroma);
 
-    const params: Record<string, unknown> = { ...section };
+    // The model is settled before the call, so the log and the sidecar name the one sent.
+    const params: Record<string, unknown> = {
+      ...section,
+      model: resolveModel(section.model, defaultModelFor("openai", "image-generate")),
+    };
     const chromaColor =
       typeof chromaSection.color === "string" && chromaSection.color.length > 0
         ? chromaSection.color

@@ -1,3 +1,5 @@
+import { defaultModelFor } from "../ai-models.js";
+import { resolveModel } from "../providers/openai/client.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
@@ -119,7 +121,9 @@ export async function visionImpl(
     if (args.overrides) recipe = mergeRecipes(recipe, args.overrides);
     const network = resolveNetworkForCall(recipe);
     const section = validateVisionSection(recipe.vision);
-    const { shrink: configuredShrink, detail, ...params } = section;
+    const { shrink: configuredShrink, detail, ...sectionParams } = section;
+    // The model is settled before the call, so the log and the sidecar name the one sent.
+    const params = { ...sectionParams, model: resolveModel(sectionParams.model, defaultModelFor("openai", "vision")) };
     const shrink = configuredShrink ?? VISION_DEFAULTS.shrink;
 
     // Resolve + guard the sidecar path before the (paid) provider call so a
