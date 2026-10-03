@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -30,7 +32,7 @@ export async function despeckleImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -41,6 +43,7 @@ export async function despeckleImpl(
       minArea: args.minArea ?? null,
       connectivity: args.connectivity ?? null,
       keep: args.keep ?? null,
+      ...encodingLogFields(args),
     });
 
     const result = await runDespeckle(
@@ -48,6 +51,7 @@ export async function despeckleImpl(
         in: args.in,
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         threshold: args.threshold,
         minArea: args.minArea,
         connectivity: args.connectivity,

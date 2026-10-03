@@ -56,7 +56,7 @@ describe("writeImageFile", () => {
     const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
     try {
       const file = path.join(dir, "out.png");
-      await writeImageFile({ path: file }, "grid", () =>
+      await writeImageFile({ path: file }, "grid", {}, () =>
         sharp({ create: { width: 2, height: 2, channels: 4, background: "#fff" } }).png(),
       );
       await expect(sharp(file).metadata()).resolves.toMatchObject({ width: 2, height: 2, format: "png" });
@@ -68,14 +68,14 @@ describe("writeImageFile", () => {
   it("reports a failure while building or writing as the verb's write failure", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
     try {
-      const failingBuild = writeImageFile({ path: path.join(dir, "out.png") }, "trim", () => {
+      const failingBuild = writeImageFile({ path: path.join(dir, "out.png") }, "trim", {}, () => {
         throw new Error("bad geometry");
       });
       await expect(failingBuild).rejects.toMatchObject({
         code: "image.writeFailed",
         message: expect.stringMatching(/^trim: failed to write .*bad geometry$/),
       });
-      const missingFolder = writeImageFile({ path: path.join(dir, "missing", "out.png") }, "trim", () =>
+      const missingFolder = writeImageFile({ path: path.join(dir, "missing", "out.png") }, "trim", {}, () =>
         sharp({ create: { width: 1, height: 1, channels: 4, background: "#000" } }).png(),
       );
       await expect(missingFolder).rejects.toMatchObject({ code: "image.writeFailed" });
@@ -94,13 +94,13 @@ describe("image publication", () => {
     try {
       const file = path.join(dir, "out.png");
       await writeFile(file, "earlier writer");
-      await expect(writeImageFile({ path: file }, "mask", onePixel)).rejects.toMatchObject({
+      await expect(writeImageFile({ path: file }, "mask", {}, onePixel)).rejects.toMatchObject({
         code: "output.exists",
       });
-      await expect(writeRGBA(new Uint8Array(4), 1, 1, { path: file })).rejects.toMatchObject({
+      await expect(writeRGBA(new Uint8Array(4), 1, 1, { path: file }, {})).rejects.toMatchObject({
         code: "output.exists",
       });
-      await expect(writeMaskPNG(new Uint8Array(1), 1, 1, { path: file })).rejects.toMatchObject({
+      await expect(writeMaskPNG(new Uint8Array(1), 1, 1, { path: file }, {})).rejects.toMatchObject({
         code: "output.exists",
       });
       await expect(readFile(file, "utf-8")).resolves.toBe("earlier writer");
@@ -113,11 +113,11 @@ describe("image publication", () => {
     const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
     try {
       const file = path.join(dir, "out.png");
-      await writeImageFile({ path: file }, "upscale", onePixel);
+      await writeImageFile({ path: file }, "upscale", {}, onePixel);
       const before = await readFile(file);
       // A raw buffer too short for its declared size fails inside the encoder,
       // as an interrupted or failing libvips run would.
-      await expect(writeRGBA(new Uint8Array(3), 4, 4, { path: file, overwrite: true })).rejects.toMatchObject({
+      await expect(writeRGBA(new Uint8Array(3), 4, 4, { path: file, overwrite: true }, {})).rejects.toMatchObject({
         code: "image.writeFailed",
       });
       expect((await readFile(file)).equals(before)).toBe(true);
@@ -132,7 +132,7 @@ describe("image publication", () => {
     try {
       const file = path.join(dir, "out.png");
       await writeFile(file, "old");
-      await writeMaskPNG(new Uint8Array([255]), 1, 1, { path: file, overwrite: true });
+      await writeMaskPNG(new Uint8Array([255]), 1, 1, { path: file, overwrite: true }, {});
       await expect(sharp(file).metadata()).resolves.toMatchObject({ width: 1, height: 1, format: "png" });
     } finally {
       await rm(dir, { recursive: true, force: true });

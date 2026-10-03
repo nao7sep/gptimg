@@ -1,6 +1,8 @@
 import { normalizeHex } from "../color.js";
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -56,7 +58,7 @@ export async function keycheckImpl(
       heatmapOut = await resolveOutputPath(args, {
         inputForDir: args.in,
         stem: defaultStem(args.in),
-        ext: "png",
+        ext: args.format ?? "png",
       });
       assertSingleFileAvailable(heatmapOut, args.overwrite ?? false);
     }
@@ -69,6 +71,7 @@ export async function keycheckImpl(
       minSaturation: args.minSaturation ?? null,
       minValue: args.minValue ?? null,
       heatmap: args.heatmap ?? false,
+      ...encodingLogFields(args),
     });
 
     const result = await runKeycheck(
@@ -82,6 +85,7 @@ export async function keycheckImpl(
         maxInteriorResiduePixels: args.maxInteriorResiduePixels,
         heatmapOut,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
       },
       { signal },
     );

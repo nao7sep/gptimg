@@ -18,7 +18,7 @@ import { fitLongerSide } from "../image/aspect.js";
 import { loadRawRGBA, readImageSize, resizeSingleChannel, writeRGBA } from "../image/bridge.js";
 import type { Logger } from "../log/index.js";
 import type { NetworkBudget } from "../network/defaults.js";
-import type { ResampleKernel } from "../types.js";
+import type { EncodingArgs, ResampleKernel } from "../types.js";
 import {
   runSwin2srX4,
   SWIN2SR_DEFAULT_TILE,
@@ -66,7 +66,7 @@ export type RgbUpscaler = (
   height: number,
 ) => Promise<{ rgb: Uint8Array; width: number; height: number; tiles?: number }>;
 
-export interface UpscaleRunArgs {
+export interface UpscaleRunArgs extends EncodingArgs {
   in: string;
   out: string;
   /** Replace an existing file at `out`; otherwise publication is no-clobber. */
@@ -170,7 +170,7 @@ export async function runUpscale(
       rgba[d + 2] = rgbResized[s + 2]!;
       rgba[d + 3] = alphaResized[p]!;
     }
-    await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite });
+    await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite }, args);
   } catch (err) {
     if (err instanceof LocalOpError) throw err;
     throw new LocalOpError(

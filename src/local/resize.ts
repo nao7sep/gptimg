@@ -11,13 +11,13 @@ import sharp from "sharp";
 import { throwIfAborted } from "../errors.js";
 import { readImageSize, writeImageFile } from "../image/bridge.js";
 import { fitLongerSide } from "../image/aspect.js";
-import type { ResampleKernel } from "../types.js";
+import type { EncodingArgs, ResampleKernel } from "../types.js";
 
 export const RESIZE_DEFAULTS = {
   kernel: "lanczos3" as ResampleKernel,
 } as const;
 
-export interface ResizeRunArgs {
+export interface ResizeRunArgs extends EncodingArgs {
   in: string;
   out: string;
   /** Replace an existing file at `out`; otherwise publication is no-clobber. */
@@ -50,11 +50,10 @@ export async function runResize(
 
   const { w, h } = fitLongerSide(meta.width, meta.height, args.toSize);
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "resize", () =>
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "resize", args, () =>
     sharp(args.in)
       .ensureAlpha()
-      .resize(w, h, { fit: "fill", kernel })
-      .png(),
+      .resize(w, h, { fit: "fill", kernel }),
   );
 
   return {

@@ -14,7 +14,7 @@ import { createLogger, safeLogError, type Logger } from "../log/index.js";
 import { ensureOutputDir } from "./output-files.js";
 import { imageFileName } from "./output-naming.js";
 import { defaultLogPath, utcTimestampMs } from "./paths.js";
-import type { LogEntry, LogVerb } from "../types.js";
+import type { EncodingArgs, LogEntry, LogVerb, PngEncodingArgs } from "../types.js";
 
 /** Stem (basename without extension) of a file path. `foo/bar.png` → `bar`. */
 export function inferStem(filePath: string): string {
@@ -171,4 +171,46 @@ export async function withVerbLogger<T>(
   } finally {
     await logger.close();
   }
+}
+
+const PNG_ENCODING_KEYS = ["compressionLevel", "adaptiveFiltering"] as const;
+const ENCODING_KEYS = ["format", "quality", "lossless", "smartSubsample", ...PNG_ENCODING_KEYS, "opaque"] as const;
+
+function pickDefined<K extends keyof EncodingArgs>(args: EncodingArgs, keys: readonly K[]): Pick<EncodingArgs, K> {
+  const picked: Pick<EncodingArgs, K> = {} as Pick<EncodingArgs, K>;
+  for (const key of keys) {
+    if (args[key] !== undefined) picked[key] = args[key];
+  }
+  return picked;
+}
+
+/** The encoding options the caller set, and no others, to hand on to the encoder. */
+export function encodingOf(args: EncodingArgs): EncodingArgs {
+  return pickDefined(args, ENCODING_KEYS);
+}
+
+/** The lossless PNG options the caller set, and no others, for a verb that fixes its format. */
+export function pngEncodingOf(args: PngEncodingArgs): PngEncodingArgs {
+  return pickDefined(args, PNG_ENCODING_KEYS);
+}
+
+/** The encoding fields a verb's start log line carries; an option left unset is logged as null. */
+export function encodingLogFields(args: EncodingArgs): Record<string, unknown> {
+  return {
+    format: args.format ?? "png",
+    quality: args.quality ?? null,
+    lossless: args.lossless ?? null,
+    smartSubsample: args.smartSubsample ?? null,
+    compressionLevel: args.compressionLevel ?? null,
+    adaptiveFiltering: args.adaptiveFiltering ?? null,
+    opaque: args.opaque ?? false,
+  };
+}
+
+/** The same for a verb that fixes its format to PNG. */
+export function pngEncodingLogFields(args: PngEncodingArgs): Record<string, unknown> {
+  return {
+    compressionLevel: args.compressionLevel ?? null,
+    adaptiveFiltering: args.adaptiveFiltering ?? null,
+  };
 }

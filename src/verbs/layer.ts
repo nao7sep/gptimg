@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -30,7 +32,7 @@ export async function layerImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.base,
       stem: defaultStem(args.base),
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -41,6 +43,7 @@ export async function layerImpl(
       scale: args.scale ?? null,
       gravity: args.gravity ?? null,
       topOffset: args.topOffset ?? null,
+      ...encodingLogFields(args),
     });
 
     const result = await runLayer(
@@ -49,6 +52,7 @@ export async function layerImpl(
         top: args.top,
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         scale: args.scale,
         gravity: args.gravity,
         topOffset: args.topOffset,

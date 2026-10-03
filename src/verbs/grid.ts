@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   resolveOutputPath,
   withVerbLogger,
 } from "../internal/local-verb.js";
@@ -28,7 +30,7 @@ export async function gridImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.inputs[0]!,
       stem: "grid",
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -39,6 +41,7 @@ export async function gridImpl(
       cell: args.cell ?? null,
       gap: args.gap ?? null,
       background: args.background ?? null,
+      ...encodingLogFields(args),
     });
 
     const result = await runGrid(
@@ -46,6 +49,7 @@ export async function gridImpl(
         inputs: args.inputs,
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         cols: args.cols,
         cell: args.cell,
         gap: args.gap,

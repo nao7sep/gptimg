@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
@@ -129,6 +130,62 @@ describe("runResize", () => {
       const out = await readRGBA(res.output);
       expect(out.width).toBe(48);
     }
+  });
+
+  it("with no encoding option writes exactly the bytes of a bare sharp png()", async () => {
+    const inPath = path.join(tmp, "in.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, 100, 100, diskish(100, 100));
+
+    await runResize({ in: inPath, out: outPath, toSize: 50 });
+
+    const bare = await sharp(inPath)
+      .ensureAlpha()
+      .resize(50, 50, { fit: "fill", kernel: "lanczos3" })
+      .png()
+      .toBuffer();
+    expect((await readFile(outPath)).equals(bare)).toBe(true);
+  });
+
+  it("writes WebP at the given quality and keeps the alpha channel", async () => {
+    const inPath = path.join(tmp, "in.png");
+    const outPath = path.join(tmp, "out.webp");
+    await writeRawPng(inPath, 100, 100, diskish(100, 100));
+
+    await runResize({ in: inPath, out: outPath, toSize: 50, format: "webp", quality: 80 });
+
+    const meta = await sharp(outPath).metadata();
+    expect(meta.format).toBe("webp");
+    expect(meta.hasAlpha).toBe(true);
+    const out = await readRGBA(outPath);
+    expect(pixelAt(out, 1, 1).a).toBe(0);
+    expect(pixelAt(out, 25, 25).a).toBe(255);
+    expect((await readFile(outPath)).equals(await sharp(inPath).ensureAlpha().resize(50, 50, { fit: "fill", kernel: "lanczos3" }).webp({ quality: 80 }).toBuffer())).toBe(true);
+  });
+
+  it("with opaque refuses a translucent pixel and writes nothing", async () => {
+    const inPath = path.join(tmp, "in.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, 100, 100, diskish(100, 100));
+
+    await expect(runResize({ in: inPath, out: outPath, toSize: 50, opaque: true })).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "image.notOpaque",
+    });
+    expect(existsSync(outPath)).toBe(false);
+  });
+
+  it("with opaque writes an opaque image with no alpha channel", async () => {
+    const inPath = path.join(tmp, "in.png");
+    const outPath = path.join(tmp, "out.png");
+    const solid = new Uint8Array(100 * 100 * 4).fill(255);
+    await writeRawPng(inPath, 100, 100, solid);
+
+    await runResize({ in: inPath, out: outPath, toSize: 50, opaque: true });
+
+    const meta = await sharp(outPath).metadata();
+    expect(meta.hasAlpha).toBe(false);
+    expect(meta.channels).toBe(3);
   });
 
   // to-size range and kernel-enum rejections now live in verbs/schemas.ts

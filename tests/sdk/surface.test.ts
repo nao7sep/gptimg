@@ -6,9 +6,14 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from "vites
 import { GptImg } from "../../src/index.js";
 import type {
   DetectedFormat,
+  EncodeFormat,
+  EncodingArgs,
   LoadProfileOptions,
   Logger,
+  MaskArgs,
   ModelVerifyResult,
+  PngEncodingArgs,
+  ResizeArgs,
   ShrinkBox,
   ShrinkResult,
   VisionDetail,
@@ -40,6 +45,10 @@ describe("GptImg SDK surface", () => {
     expectTypeOf<Awaited<ReturnType<GptImg["model"]["verify"]>>>()
       .toEqualTypeOf<ModelVerifyResult>();
     expectTypeOf<VisionRecipe["detail"]>().toEqualTypeOf<VisionDetail | undefined>();
+    expectTypeOf<EncodingArgs["format"]>().toEqualTypeOf<EncodeFormat | undefined>();
+    expectTypeOf<ResizeArgs>().toMatchTypeOf<EncodingArgs>();
+    expectTypeOf<MaskArgs>().toMatchTypeOf<PngEncodingArgs>();
+    expectTypeOf<MaskArgs>().not.toHaveProperty("format");
   });
 
   it("uses custom profile and log directories", () => {

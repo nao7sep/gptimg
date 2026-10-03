@@ -11,7 +11,7 @@
 import sharp from "sharp";
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadRawRGBA, writeImageFile } from "../image/bridge.js";
-import type { AlphaBBox } from "../types.js";
+import type { AlphaBBox, EncodingArgs } from "../types.js";
 
 export const TRIM_DEFAULTS = {
   margin: 0.08,
@@ -47,7 +47,7 @@ export function computeAlphaBBox(
   return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
-export interface TrimRunArgs {
+export interface TrimRunArgs extends EncodingArgs {
   in: string;
   out: string;
   /** Replace an existing file at `out`; otherwise publication is no-clobber. */
@@ -106,7 +106,7 @@ export async function runTrim(
   const finalW = bbox.width + padLeft + padRight;
   const finalH = bbox.height + padTop + padBottom;
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "trim", () => {
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "trim", args, () => {
     const pipeline = sharp(args.in).extract({
       left: bbox.x,
       top: bbox.y,
@@ -122,7 +122,7 @@ export async function runTrim(
         background: { r: 0, g: 0, b: 0, alpha: 0 },
       });
     }
-    return pipeline.png();
+    return pipeline;
   });
 
   return {

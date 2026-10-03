@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -30,7 +32,7 @@ export async function trimImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -39,6 +41,7 @@ export async function trimImpl(
       out: outPath,
       margin: args.margin ?? null,
       square: args.square ?? false,
+      ...encodingLogFields(args),
     });
 
     const result = await runTrim(
@@ -46,6 +49,7 @@ export async function trimImpl(
         in: args.in,
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         margin: args.margin,
         square: args.square,
       },

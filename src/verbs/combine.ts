@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  pngEncodingLogFields,
+  pngEncodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -40,10 +42,18 @@ export async function combineImpl(
       inputs: args.inputs,
       out: outPath,
       radius: args.radius ?? null,
+      ...pngEncodingLogFields(args),
     });
 
     const result = await runCombine(
-      { op: args.op, inputs: args.inputs, out: outPath, overwrite: args.overwrite ?? false, radius: args.radius },
+      {
+        op: args.op,
+        inputs: args.inputs,
+        out: outPath,
+        overwrite: args.overwrite ?? false,
+        ...pngEncodingOf(args),
+        radius: args.radius,
+      },
       { signal },
     );
     await logger.info("write", "wrote combined mask", {

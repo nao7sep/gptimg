@@ -16,8 +16,9 @@ import path from "node:path";
 import sharp from "sharp";
 import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
 import { LocalOpError, throwIfAborted } from "../errors.js";
-import { readImageSize } from "../image/bridge.js";
+import { encodeImage, readImageSize } from "../image/bridge.js";
 import { writeOutputBytes } from "../internal/output-files.js";
+import type { PngEncodingArgs } from "../types.js";
 
 export const ICON_DEFAULTS = {
   name: "icon",
@@ -94,7 +95,7 @@ export function planIconOutputs(
   return { icns, ico, png, pngSet, all: [icns, ico, png, ...pngSet.map((p) => p.path)] };
 }
 
-export interface IconRunArgs {
+export interface IconRunArgs extends PngEncodingArgs {
   in: string;
   outDir: string;
   name?: string;
@@ -157,10 +158,11 @@ export async function runIcon(
   const render = (size: number): Promise<Buffer> => {
     let p = cache.get(size);
     if (!p) {
-      p = sharp(master)
-        .resize(size, size, { fit: "fill", kernel: "lanczos3" })
-        .png()
-        .toBuffer();
+      p = encodeImage(
+        sharp(master).resize(size, size, { fit: "fill", kernel: "lanczos3" }),
+        args,
+        "icon",
+      );
       cache.set(size, p);
     }
     return p;

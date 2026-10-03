@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -30,7 +32,7 @@ export async function resizeImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -39,10 +41,18 @@ export async function resizeImpl(
       out: outPath,
       toSize: args.toSize,
       kernel: args.kernel ?? null,
+      ...encodingLogFields(args),
     });
 
     const result = await runResize(
-      { in: args.in, out: outPath, overwrite: args.overwrite ?? false, toSize: args.toSize, kernel: args.kernel },
+      {
+        in: args.in,
+        out: outPath,
+        overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
+        toSize: args.toSize,
+        kernel: args.kernel,
+      },
       { signal },
     );
 

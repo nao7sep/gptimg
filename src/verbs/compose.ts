@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -34,7 +36,7 @@ export async function composeImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -48,6 +50,7 @@ export async function composeImpl(
       out: outPath,
       over: over?.kind ?? "transparent",
       removeBleed: args.removeBleed ?? null,
+      ...encodingLogFields(args),
     });
 
     const result = await runCompose(
@@ -56,6 +59,7 @@ export async function composeImpl(
         mask: args.mask,
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         over,
         removeBleed: args.removeBleed,
       },

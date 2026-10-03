@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
@@ -60,6 +61,56 @@ describe("runDespeckle", () => {
   });
   afterEach(async () => {
     await rm(tmp, { recursive: true, force: true });
+  });
+
+  describe("encoding", () => {
+    // A block with one half-transparent pixel inside it, which no despeckle step removes.
+    const W = 12, H = 12;
+    const cutout = (): Uint8Array => {
+      const buf = blank(W, H);
+      fillRect(buf, W, 2, 2, 9, 9, 255);
+      setA(buf, W, 5, 5, 128);
+      return buf;
+    };
+
+    it("with no encoding option writes exactly the bytes of a bare sharp png()", async () => {
+      const inPath = path.join(tmp, "in.png");
+      const outPath = path.join(tmp, "out.png");
+      await writeRawPng(inPath, W, H, cutout());
+
+      await runDespeckle({ in: inPath, out: outPath });
+
+      const out = await readRGBA(outPath);
+      const bare = await sharp(Buffer.from(out.data), { raw: { width: W, height: H, channels: 4 } })
+        .png()
+        .toBuffer();
+      expect((await readFile(outPath)).equals(bare)).toBe(true);
+    });
+
+    it("writes WebP at the given quality and keeps the alpha channel", async () => {
+      const inPath = path.join(tmp, "in.png");
+      const outPath = path.join(tmp, "out.webp");
+      await writeRawPng(inPath, W, H, cutout());
+
+      await runDespeckle({ in: inPath, out: outPath, format: "webp", quality: 80 });
+
+      const meta = await sharp(outPath).metadata();
+      expect(meta.format).toBe("webp");
+      expect(meta.hasAlpha).toBe(true);
+      expect(alphaAt(await readRGBA(outPath), 0, 0)).toBe(0);
+    });
+
+    it("with opaque refuses a translucent pixel and writes nothing", async () => {
+      const inPath = path.join(tmp, "in.png");
+      const outPath = path.join(tmp, "out.png");
+      await writeRawPng(inPath, W, H, cutout());
+
+      await expect(runDespeckle({ in: inPath, out: outPath, opaque: true })).rejects.toMatchObject({
+        errorType: "localOp",
+        code: "image.notOpaque",
+      });
+      expect(existsSync(outPath)).toBe(false);
+    });
   });
 
   it("floors alpha below threshold and keeps alpha >= threshold", async () => {

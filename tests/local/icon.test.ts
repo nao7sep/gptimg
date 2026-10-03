@@ -113,6 +113,29 @@ describe("runIcon", () => {
     expect(pngMeta.format).toBe("png");
   });
 
+  it("with no encoding option writes a png of exactly the bytes a bare sharp png() gives", async () => {
+    const master = path.join(tmp, "master.png");
+    await writeSquare(master, 1024);
+
+    const res = await runIcon({ in: master, outDir: tmp });
+
+    const decoded = await sharp(master).ensureAlpha().png().toBuffer();
+    const bare = await sharp(decoded).resize(1024, 1024, { fit: "fill", kernel: "lanczos3" }).png().toBuffer();
+    expect((await readFile(res.png)).equals(bare)).toBe(true);
+  });
+
+  it("applies a lossless PNG option to its png output", async () => {
+    const master = path.join(tmp, "master.png");
+    await writeSquare(master, 1024);
+    const plain = await runIcon({ in: master, outDir: tmp, name: "plain" });
+    const stored = await runIcon({ in: master, outDir: tmp, name: "stored", compressionLevel: 0 });
+
+    expect((await readFile(stored.png)).length).toBeGreaterThan((await readFile(plain.png)).length);
+    expect(await sharp(stored.png).metadata()).toMatchObject({ format: "png", width: 1024, height: 1024 });
+    // The icon encoder decodes the frames it is handed, so the option never changes the pixels.
+    expect((await readFile(stored.ico)).equals(await readFile(plain.ico))).toBe(true);
+  });
+
   it("packs every ICNS entry, including the largest retina sizes", async () => {
     const master = path.join(tmp, "master.png");
     await writeSquare(master, 1024);

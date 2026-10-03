@@ -1,7 +1,7 @@
 import sharp, { type Sharp } from "sharp";
 import { LocalOpError } from "../errors.js";
 import { writeFileAtomic } from "../internal/atomic-file.js";
-import type { ResampleKernel } from "../types.js";
+import type { EncodingArgs, PngEncodingArgs, ResampleKernel } from "../types.js";
 
 export interface RawImage {
   data: Uint8Array;
@@ -62,19 +62,79 @@ async function publishImage(target: ImageTarget, bytes: Buffer, failure: string)
 }
 
 /**
- * Builds a sharp pipeline, encoding included, and publishes it at `target`
- * (see `publishImage`). Anything that fails while building, encoding or
- * writing it is the verb's `image.writeFailed`.
+ * Encodes a sharp pipeline's pixels as the caller asked, passing sharp only the options the
+ * caller set (PLAYBOOK, "Leave a library's defaults to the library"). PNG offers only the
+ * lossless options, because sharp's `palette`, `quality` and `effort` quantize. With `opaque`
+ * the pixels are checked first and a translucent one is refused as `image.notOpaque`, never
+ * flattened. `failure` prefixes that refusal's message.
  */
-export async function writeImageFile(target: ImageTarget, verb: string, build: () => Sharp): Promise<void> {
-  const failure = `${verb}: failed to write ${target.path}`;
+export async function encodeImage(pipeline: Sharp, encoding: EncodingArgs, failure: string): Promise<Buffer> {
+  let image = pipeline;
+  if (encoding.opaque === true) {
+    // The pixels are rendered once to a lossless PNG and re-read, because a pipeline that already
+    // called `ensureAlpha` keeps its alpha channel through a later `removeAlpha`. A PNG rather than
+    // raw pixels keeps the source's density, so an opaque file's bytes stay what they were.
+    const rendered = await pipeline.clone().ensureAlpha().png().toBuffer();
+    const data = await sharp(rendered).raw().toBuffer();
+    let translucent = 0;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i]! < 255) translucent += 1;
+    }
+    if (translucent > 0) {
+      throw new LocalOpError(
+        "image.notOpaque",
+        `${failure}: ${translucent} pixel(s) are not fully opaque; an opaque encoding would turn them solid.`,
+      );
+    }
+    image = sharp(rendered).removeAlpha();
+  }
+  if (encoding.format === "webp") {
+    image.webp({
+      ...(encoding.lossless !== undefined && { lossless: encoding.lossless }),
+      ...(encoding.quality !== undefined && { quality: encoding.quality }),
+      ...(encoding.smartSubsample !== undefined && { smartSubsample: encoding.smartSubsample }),
+    });
+  } else {
+    image.png({
+      ...(encoding.compressionLevel !== undefined && { compressionLevel: encoding.compressionLevel }),
+      ...(encoding.adaptiveFiltering !== undefined && { adaptiveFiltering: encoding.adaptiveFiltering }),
+    });
+  }
+  return image.toBuffer();
+}
+
+/**
+ * Builds the sharp pipeline, encodes it (see `encodeImage`) and publishes it at `target`
+ * (see `publishImage`). Anything that fails while building or encoding is `image.writeFailed`
+ * with `failure` as its message prefix; a refusal the encoding itself raises keeps its code.
+ */
+async function encodeAndPublish(
+  target: ImageTarget,
+  failure: string,
+  encoding: EncodingArgs,
+  build: () => Sharp,
+): Promise<void> {
   let bytes: Buffer;
   try {
-    bytes = await build().toBuffer();
+    bytes = await encodeImage(build(), encoding, failure);
   } catch (err) {
+    if (err instanceof LocalOpError) throw err;
     throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
   }
   await publishImage(target, bytes, failure);
+}
+
+/**
+ * Builds a sharp pipeline, without its encoding, and writes it at `target` encoded as
+ * `encoding` asks.
+ */
+export async function writeImageFile(
+  target: ImageTarget,
+  verb: string,
+  encoding: EncodingArgs,
+  build: () => Sharp,
+): Promise<void> {
+  await encodeAndPublish(target, `${verb}: failed to write ${target.path}`, encoding, build);
 }
 
 export async function loadRawRGBA(path: string): Promise<RawImage> {
@@ -102,19 +162,11 @@ export async function writeRGBA(
   width: number,
   height: number,
   target: ImageTarget,
+  encoding: EncodingArgs,
 ): Promise<void> {
-  const failure = `Failed to write image at ${target.path}`;
-  let bytes: Buffer;
-  try {
-    bytes = await sharp(Buffer.from(data), {
-      raw: { width, height, channels: 4 },
-    })
-      .png()
-      .toBuffer();
-  } catch (err) {
-    throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
-  }
-  await publishImage(target, bytes, failure);
+  await encodeAndPublish(target, `Failed to write image at ${target.path}`, encoding, () =>
+    sharp(Buffer.from(data), { raw: { width, height, channels: 4 } }),
+  );
 }
 
 /**
@@ -141,25 +193,17 @@ export async function resizeSingleChannel(
   return new Uint8Array(out);
 }
 
-/** Write a grayscale mask (0..255) as a single-channel PNG. */
+/** Write a grayscale mask (0..255) as a single-channel PNG, at the lossless options given. */
 export async function writeMaskPNG(
   mask: Uint8Array,
   width: number,
   height: number,
   target: ImageTarget,
+  encoding: PngEncodingArgs,
 ): Promise<void> {
-  const failure = `Failed to write mask at ${target.path}`;
-  let bytes: Buffer;
-  try {
-    bytes = await sharp(Buffer.from(mask), {
-      raw: { width, height, channels: 1 },
-    })
-      .png()
-      .toBuffer();
-  } catch (err) {
-    throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
-  }
-  await publishImage(target, bytes, failure);
+  await encodeAndPublish(target, `Failed to write mask at ${target.path}`, encoding, () =>
+    sharp(Buffer.from(mask), { raw: { width, height, channels: 1 } }),
+  );
 }
 
 /**

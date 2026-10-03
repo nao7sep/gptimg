@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -37,12 +39,7 @@ export async function encodeImpl(
     await logger.info("resolve", "encode start", {
       input: args.in,
       out: outPath,
-      format: args.format,
-      quality: args.quality ?? null,
-      lossless: args.lossless ?? null,
-      compressionLevel: args.compressionLevel ?? null,
-      adaptiveFiltering: args.adaptiveFiltering ?? null,
-      opaque: args.opaque ?? false,
+      ...encodingLogFields(args),
     });
 
     const result = await runEncode(
@@ -50,12 +47,8 @@ export async function encodeImpl(
         in: args.in,
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         format: args.format,
-        quality: args.quality,
-        lossless: args.lossless,
-        compressionLevel: args.compressionLevel,
-        adaptiveFiltering: args.adaptiveFiltering,
-        opaque: args.opaque,
       },
       { signal },
     );

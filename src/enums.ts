@@ -42,8 +42,8 @@ export const RESAMPLE_KERNELS = [
 export type ResampleKernel = (typeof RESAMPLE_KERNELS)[number];
 
 /**
- * Delivery encoding for `encode`. Every other verb writes PNG, the pipeline's lossless
- * working format; `encode` writes what an app ships.
+ * Delivery encoding, for every verb that writes an image. PNG is the default and the lossless
+ * working format later verbs read back; WebP is what an app can ship.
  */
 export const ENCODE_FORMATS = ["png", "webp"] as const;
 export type EncodeFormat = (typeof ENCODE_FORMATS)[number];

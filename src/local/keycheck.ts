@@ -28,7 +28,7 @@
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadRawRGBA, writeRGBA } from "../image/bridge.js";
 import { parseHex } from "../color.js";
-import type { AlphaBBox } from "../types.js";
+import type { AlphaBBox, EncodingArgs } from "../types.js";
 
 export const KEYCHECK_DEFAULTS = {
   hueTolerance: 20,
@@ -78,7 +78,7 @@ export function hueDistance(a: number, b: number): number {
   return diff > 180 ? 360 - diff : diff;
 }
 
-export interface KeycheckRunArgs {
+export interface KeycheckRunArgs extends EncodingArgs {
   in: string;
   /** Already-resolved key colour, "#rrggbb". */
   key: string;
@@ -235,7 +235,7 @@ export async function runKeycheck(
       }
     }
     throwIfAborted(signal);
-    await writeRGBA(out, width, height, { path: args.heatmapOut, overwrite: args.overwrite });
+    await writeRGBA(out, width, height, { path: args.heatmapOut, overwrite: args.overwrite }, args);
     heatmapPath = args.heatmapOut;
   }
 

@@ -42,6 +42,7 @@ import type {
   DespeckleArgs,
   EditArgs,
   EncodeArgs,
+  EncodingArgs,
   FramecheckArgs,
   GenerateArgs,
   GridArgs,
@@ -49,6 +50,7 @@ import type {
   KeycheckArgs,
   LayerArgs,
   MaskArgs,
+  PngEncodingArgs,
   ResizeArgs,
   ShadowArgs,
   TrimArgs,
@@ -99,6 +101,28 @@ function oneOf(values: readonly string[], label: string) {
     .refine((v) => values.includes(v), `${label} must be one of: ${values.join(", ")}`);
 }
 
+// The encoder options of every verb that writes an image; the format-dependent rules between
+// them are `checkEncoding`'s, because they need the whole argument set.
+const PNG_ENCODING_FIELDS = {
+  compressionLevel: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 0 && v <= 9, "must be an integer in [0..9]")
+    .optional(),
+  adaptiveFiltering: z.boolean().optional(),
+};
+
+const ENCODING_FIELDS = {
+  ...PNG_ENCODING_FIELDS,
+  format: oneOf(ENCODE_FORMATS, "format").optional(),
+  quality: z
+    .number()
+    .refine((v) => Number.isInteger(v) && v >= 1 && v <= 100, "must be an integer in [1..100]")
+    .optional(),
+  lossless: z.boolean().optional(),
+  smartSubsample: z.boolean().optional(),
+  opaque: z.boolean().optional(),
+};
+
 // ----- schemas -----
 
 const GenerateArgsSchema = z.object({
@@ -119,6 +143,7 @@ const VisionArgsSchema = z.object({
 });
 
 const MaskArgsSchema = z.object({
+  ...PNG_ENCODING_FIELDS,
   in: requiredPath("in"),
   method: oneOf(MASK_METHODS, "method").optional(),
   key: z
@@ -136,6 +161,7 @@ const MaskArgsSchema = z.object({
 });
 
 const ComposeArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   in: requiredPath("in"),
   mask: requiredPath("mask"),
   // `over` ("transparent" | #hex | <path>) is resolved against the filesystem
@@ -145,6 +171,7 @@ const ComposeArgsSchema = z.object({
 });
 
 const CombineArgsSchema = z.object({
+  ...PNG_ENCODING_FIELDS,
   op: oneOf(COMBINE_OPS, "op"),
   inputs: z.array(z.string().min(1)),
   radius: z
@@ -155,6 +182,7 @@ const CombineArgsSchema = z.object({
 });
 
 const TrimArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   in: requiredPath("in"),
   margin: z.number().refine((v) => v >= 0 && v <= 1, "must be in [0..1]").optional(),
   square: z.boolean().optional(),
@@ -162,6 +190,7 @@ const TrimArgsSchema = z.object({
 });
 
 const DespeckleArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   in: requiredPath("in"),
   threshold: z
     .number()
@@ -177,6 +206,7 @@ const DespeckleArgsSchema = z.object({
 });
 
 const KeycheckArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   in: requiredPath("in"),
   // Required and concrete: "from-sidecar" or an explicit hex. No "auto" — there
   // is no background left in a keyed cutout to sample a key from.
@@ -218,6 +248,7 @@ const FramecheckArgsSchema = z.object({
 });
 
 const GridArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   inputs: z.array(z.string().min(1)).min(1, "inputs must have at least one path"),
   cols: positiveInt("must be a positive integer").optional(),
   cell: positiveInt("must be a positive integer").optional(),
@@ -233,6 +264,7 @@ const GridArgsSchema = z.object({
 });
 
 const BackplateArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   from: hexColor("from"),
   to: hexColor("to"),
   size: positiveInt("must be a positive integer").optional(),
@@ -244,6 +276,7 @@ const BackplateArgsSchema = z.object({
 });
 
 const LayerArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   base: requiredPath("base"),
   top: requiredPath("top"),
   scale: z.number().refine((v) => v > 0, "must be a positive number").optional(),
@@ -256,6 +289,7 @@ const LayerArgsSchema = z.object({
 });
 
 const ShadowArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   in: requiredPath("in"),
   blur: z
     .number()
@@ -286,6 +320,7 @@ const ShadowArgsSchema = z.object({
 });
 
 const UpscaleArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   in: requiredPath("in"),
   toSize: z
     .number()
@@ -306,6 +341,7 @@ const UpscaleArgsSchema = z.object({
 });
 
 const ResizeArgsSchema = z.object({
+  ...ENCODING_FIELDS,
   in: requiredPath("in"),
   toSize: z
     .number()
@@ -319,22 +355,13 @@ const ResizeArgsSchema = z.object({
 
 const EncodeArgsSchema = z.object({
   in: requiredPath("in"),
+  ...ENCODING_FIELDS,
   format: oneOf(ENCODE_FORMATS, "format"),
-  quality: z
-    .number()
-    .refine((v) => Number.isInteger(v) && v >= 1 && v <= 100, "must be an integer in [1..100]")
-    .optional(),
-  lossless: z.boolean().optional(),
-  compressionLevel: z
-    .number()
-    .refine((v) => Number.isInteger(v) && v >= 0 && v <= 9, "must be an integer in [0..9]")
-    .optional(),
-  adaptiveFiltering: z.boolean().optional(),
-  opaque: z.boolean().optional(),
   overwrite: z.boolean().optional(),
 });
 
 const IconArgsSchema = z.object({
+  ...PNG_ENCODING_FIELDS,
   in: requiredPath("in"),
   name: z
     .string()
@@ -357,6 +384,47 @@ function check<T>(schema: z.ZodType, args: T, verb: string): T {
   return args;
 }
 
+/** The format-dependent rules of the encoder options, for a verb that takes all of them. */
+function checkEncoding<T extends EncodingArgs>(schema: z.ZodType, args: T, verb: string): T {
+  check(schema, args, verb);
+  const format = args.format ?? "png";
+  if (format === "png" && (args.quality !== undefined || args.lossless !== undefined || args.smartSubsample !== undefined)) {
+    throw new LocalOpError(
+      "args.invalid",
+      `${verb}: quality, lossless and smartSubsample apply to webp only; png is always lossless.`,
+    );
+  }
+  if (format === "webp" && (args.compressionLevel !== undefined || args.adaptiveFiltering !== undefined)) {
+    throw new LocalOpError(
+      "args.invalid",
+      `${verb}: compressionLevel and adaptiveFiltering apply to png only.`,
+    );
+  }
+  if (args.quality !== undefined && args.lossless === true) {
+    throw new LocalOpError(
+      "args.invalid",
+      `${verb}: quality applies to lossy webp only; omit it with lossless.`,
+    );
+  }
+  return args;
+}
+
+const NON_PNG_ENCODING_KEYS = ["format", "quality", "lossless", "smartSubsample", "opaque"] as const;
+
+/** The same for a verb whose format is fixed to PNG: only the lossless PNG options are accepted. */
+function checkPngEncoding<T extends PngEncodingArgs>(schema: z.ZodType, args: T, verb: string): T {
+  check(schema, args, verb);
+  const given = args as Record<string, unknown>;
+  const refused = NON_PNG_ENCODING_KEYS.find((key) => given[key] !== undefined);
+  if (refused !== undefined) {
+    throw new LocalOpError(
+      "args.invalid",
+      `${verb}: ${refused} is not accepted; ${verb} writes png and takes compressionLevel and adaptiveFiltering only.`,
+    );
+  }
+  return args;
+}
+
 export function validateGenerateArgs(args: GenerateArgs): GenerateArgs {
   return check(GenerateArgsSchema, args, "generate");
 }
@@ -370,15 +438,15 @@ export function validateVisionArgs(args: VisionArgs): VisionArgs {
 }
 
 export function validateMaskArgs(args: MaskArgs): MaskArgs {
-  return check(MaskArgsSchema, args, "mask");
+  return checkPngEncoding(MaskArgsSchema, args, "mask");
 }
 
 export function validateComposeArgs(args: ComposeArgs): ComposeArgs {
-  return check(ComposeArgsSchema, args, "compose");
+  return checkEncoding(ComposeArgsSchema, args, "compose");
 }
 
 export function validateCombineArgs(args: CombineArgs): CombineArgs {
-  check(CombineArgsSchema, args, "combine");
+  checkPngEncoding(CombineArgsSchema, args, "combine");
   // Arity depends on the op, so it is checked here rather than in the schema.
   const want = args.op === "invert" || args.op === "feather" ? 1 : 2;
   if (args.inputs.length !== want) {
@@ -391,15 +459,15 @@ export function validateCombineArgs(args: CombineArgs): CombineArgs {
 }
 
 export function validateTrimArgs(args: TrimArgs): TrimArgs {
-  return check(TrimArgsSchema, args, "trim");
+  return checkEncoding(TrimArgsSchema, args, "trim");
 }
 
 export function validateDespeckleArgs(args: DespeckleArgs): DespeckleArgs {
-  return check(DespeckleArgsSchema, args, "despeckle");
+  return checkEncoding(DespeckleArgsSchema, args, "despeckle");
 }
 
 export function validateKeycheckArgs(args: KeycheckArgs): KeycheckArgs {
-  return check(KeycheckArgsSchema, args, "keycheck");
+  return checkEncoding(KeycheckArgsSchema, args, "keycheck");
 }
 
 export function validateFramecheckArgs(args: FramecheckArgs): FramecheckArgs {
@@ -407,55 +475,35 @@ export function validateFramecheckArgs(args: FramecheckArgs): FramecheckArgs {
 }
 
 export function validateGridArgs(args: GridArgs): GridArgs {
-  return check(GridArgsSchema, args, "grid");
+  return checkEncoding(GridArgsSchema, args, "grid");
 }
 
 export function validateBackplateArgs(args: BackplateArgs): BackplateArgs {
-  return check(BackplateArgsSchema, args, "backplate");
+  return checkEncoding(BackplateArgsSchema, args, "backplate");
 }
 
 export function validateLayerArgs(args: LayerArgs): LayerArgs {
-  return check(LayerArgsSchema, args, "layer");
+  return checkEncoding(LayerArgsSchema, args, "layer");
 }
 
 export function validateShadowArgs(args: ShadowArgs): ShadowArgs {
-  return check(ShadowArgsSchema, args, "shadow");
+  return checkEncoding(ShadowArgsSchema, args, "shadow");
 }
 
 export function validateUpscaleArgs(args: UpscaleArgs): UpscaleArgs {
-  return check(UpscaleArgsSchema, args, "upscale");
+  return checkEncoding(UpscaleArgsSchema, args, "upscale");
 }
 
 export function validateResizeArgs(args: ResizeArgs): ResizeArgs {
-  return check(ResizeArgsSchema, args, "resize");
+  return checkEncoding(ResizeArgsSchema, args, "resize");
 }
 
 export function validateEncodeArgs(args: EncodeArgs): EncodeArgs {
-  check(EncodeArgsSchema, args, "encode");
-  // Which options apply depends on the format, so it is checked here rather than in the schema.
-  if (args.format === "png" && (args.quality !== undefined || args.lossless !== undefined)) {
-    throw new LocalOpError(
-      "args.invalid",
-      "encode: quality and lossless apply to webp only; png is always lossless.",
-    );
-  }
-  if (args.format === "webp" && (args.compressionLevel !== undefined || args.adaptiveFiltering !== undefined)) {
-    throw new LocalOpError(
-      "args.invalid",
-      "encode: compressionLevel and adaptiveFiltering apply to png only.",
-    );
-  }
-  if (args.quality !== undefined && args.lossless === true) {
-    throw new LocalOpError(
-      "args.invalid",
-      "encode: quality applies to lossy webp only; omit it with lossless.",
-    );
-  }
-  return args;
+  return checkEncoding(EncodeArgsSchema, args, "encode");
 }
 
 export function validateIconArgs(args: IconArgs): IconArgs {
-  return check(IconArgsSchema, args, "icon");
+  return checkPngEncoding(IconArgsSchema, args, "icon");
 }
 
 /** Validate a model key against the registry. Throws `args.invalid` when unknown. */

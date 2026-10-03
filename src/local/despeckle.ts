@@ -22,7 +22,7 @@
 import { throwIfAborted } from "../errors.js";
 import { loadRawRGBA, writeRGBA } from "../image/bridge.js";
 import { computeAlphaBBox } from "./trim.js";
-import type { AlphaBBox, DespeckleKeep } from "../types.js";
+import type { AlphaBBox, DespeckleKeep, EncodingArgs } from "../types.js";
 
 export const DESPECKLE_DEFAULTS = {
   threshold: 5,
@@ -31,7 +31,7 @@ export const DESPECKLE_DEFAULTS = {
   keep: "all",
 } as const;
 
-export interface DespeckleRunArgs {
+export interface DespeckleRunArgs extends EncodingArgs {
   in: string;
   out: string;
   /** Replace an existing file at `out`; otherwise publication is no-clobber. */
@@ -217,7 +217,7 @@ export async function runDespeckle(
   const { data: outputData, ...summary } = result;
 
   throwIfAborted(signal);
-  await writeRGBA(outputData, width, height, { path: args.out, overwrite: args.overwrite });
+  await writeRGBA(outputData, width, height, { path: args.out, overwrite: args.overwrite }, args);
 
   return {
     ...summary,

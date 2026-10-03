@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -30,7 +32,7 @@ export async function shadowImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -43,6 +45,7 @@ export async function shadowImpl(
       opacity: args.opacity ?? null,
       spread: args.spread ?? null,
       keepCanvas: args.keepCanvas ?? null,
+      ...encodingLogFields(args),
     });
 
     const result = await runShadow(
@@ -50,6 +53,7 @@ export async function shadowImpl(
         in: args.in,
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         blur: args.blur,
         offset: args.offset,
         color: args.color,

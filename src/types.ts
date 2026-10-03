@@ -245,7 +245,7 @@ export interface AiMaskStats {
 
 export type MaskStats = ChromaMaskStats | AiMaskStats;
 
-export interface MaskArgs {
+export interface MaskArgs extends PngEncodingArgs {
   in: string;
   method?: MaskMethod;
   /** "auto" | "from-sidecar" | "#rrggbb" — chroma-method only. */
@@ -271,7 +271,7 @@ export interface MaskResult {
   logPath: string;
 }
 
-export interface ComposeArgs {
+export interface ComposeArgs extends EncodingArgs {
   in: string;
   mask: string;
   /**
@@ -316,7 +316,7 @@ export interface AlphaBBox {
   height: number;
 }
 
-export interface TrimArgs {
+export interface TrimArgs extends EncodingArgs {
   in: string;
   /** Margin to re-pad, as a fraction of the longer bbox side. 0..1. Default 0.08. */
   margin?: number;
@@ -347,7 +347,7 @@ export interface TrimResult {
 
 // ----- backplate -----
 
-export interface BackplateArgs {
+export interface BackplateArgs extends EncodingArgs {
   /** Output PNG side length in pixels. Default 1024. */
   size?: number;
   /** Content side length as a fraction of `size` (the squircle occupies this). Default 0.80. */
@@ -396,7 +396,7 @@ export interface LayerOffset {
   y: number;
 }
 
-export interface LayerArgs {
+export interface LayerArgs extends EncodingArgs {
   /** Base RGBA image (the bottom layer, e.g. a backplate). */
   base: string;
   /** Top RGBA image (the foreground, e.g. trimmed content). */
@@ -442,7 +442,7 @@ export interface ShadowOffset {
   y: number;
 }
 
-export interface ShadowArgs {
+export interface ShadowArgs extends EncodingArgs {
   /** RGBA image with transparency; its alpha shape casts the shadow. */
   in: string;
   /** Gaussian blur sigma for the shadow edge, in pixels. Default 12. */
@@ -489,7 +489,7 @@ export interface ShadowResult {
 
 // ----- upscale -----
 
-export interface UpscaleArgs {
+export interface UpscaleArgs extends EncodingArgs {
   /** Input RGBA image (e.g. a trimmed content cutout). */
   in: string;
   /** Final output longer-side length in px (aspect preserved). Default 1024. */
@@ -527,7 +527,7 @@ export interface UpscaleResult {
 
 // ----- resize -----
 
-export interface ResizeArgs {
+export interface ResizeArgs extends EncodingArgs {
   /** Input image (any format sharp reads); alpha preserved if present. */
   in: string;
   /** Output longer-side length in px (aspect preserved). Required. */
@@ -555,11 +555,29 @@ export interface ResizeResult {
 
 // ----- encode -----
 
-export interface EncodeArgs {
-  /** Input image (any format sharp reads). Its pixels are written as they are. */
-  in: string;
-  /** Output encoding. PNG is always lossless. Required. */
-  format: EncodeFormat;
+/**
+ * The lossless PNG options of the encoder. A verb whose format is fixed to PNG takes only
+ * these; each is passed to the encoder only when set, so its own default applies otherwise.
+ */
+export interface PngEncodingArgs {
+  /** Deflate level, an integer 0..9. Unset, the encoder's default applies. */
+  compressionLevel?: number;
+  /**
+   * Choose each row's filter by trial, which compresses gradients and textures better at some
+   * cost in time. Unset, the encoder's default applies.
+   */
+  adaptiveFiltering?: boolean;
+}
+
+/**
+ * How a verb that writes an image encodes it. Each option is passed to the encoder only when
+ * set, so the encoder's own defaults apply otherwise: with none set the file is a PNG at the
+ * encoder's defaults. A PNG-only option with `format: "webp"`, or a WebP-only option with PNG,
+ * is `args.invalid`.
+ */
+export interface EncodingArgs extends PngEncodingArgs {
+  /** Output encoding; the output extension follows it. PNG is always lossless. Default "png". */
+  format?: EncodeFormat;
   /** WebP only: lossy quality, an integer 1..100. Unset, the encoder's default applies. Not with `lossless`. */
   quality?: number;
   /**
@@ -567,19 +585,24 @@ export interface EncodeArgs {
    * fully transparent pixel is not. Default false.
    */
   lossless?: boolean;
-  /** PNG only: deflate level, an integer 0..9. Unset, the encoder's default applies. */
-  compressionLevel?: number;
   /**
-   * PNG only: choose each row's filter by trial, which compresses gradients and textures
-   * better at some cost in time. Unset, the encoder's default applies.
+   * WebP only: keep the colour of sharp coloured edges that lossy chroma subsampling would
+   * smear. Unset, the encoder's default applies.
    */
-  adaptiveFiltering?: boolean;
+  smartSubsample?: boolean;
   /**
-   * Require every pixel to be fully opaque and write no alpha channel, for a surface that
-   * shows transparency as black (an Apple touch icon). An input with any pixel that is not
-   * fully opaque is refused, never flattened. Default false: the alpha channel is kept.
+   * Require every pixel of the written image to be fully opaque and write no alpha channel,
+   * for a surface that shows transparency as black (an Apple touch icon). A translucent pixel
+   * is refused, never flattened. Default false: the alpha channel is kept.
    */
   opaque?: boolean;
+}
+
+export interface EncodeArgs extends EncodingArgs {
+  /** Input image (any format sharp reads). Its pixels are written as they are. */
+  in: string;
+  /** Output encoding. Required. */
+  format: EncodeFormat;
   outDir?: string;
   outName?: string;
   log?: string;
@@ -606,7 +629,7 @@ export interface EncodeResult {
 
 // ----- icon -----
 
-export interface IconArgs {
+export interface IconArgs extends PngEncodingArgs {
   /**
    * Square master PNG, at least 1024×1024 — e.g. the vision-approved icon from
    * the backplate/layer pipeline. Smaller sizes are downsampled from it.
@@ -637,7 +660,7 @@ export interface IconResult {
   logPath: string;
 }
 
-export interface CombineArgs {
+export interface CombineArgs extends PngEncodingArgs {
   op: CombineOp;
   /** 1 input for `invert`/`feather`, 2 inputs for the binary ops. */
   inputs: string[];
@@ -660,7 +683,7 @@ export interface CombineResult {
 
 // ----- despeckle -----
 
-export interface DespeckleArgs {
+export interface DespeckleArgs extends EncodingArgs {
   /** Input RGBA cutout whose alpha matte is cleaned. */
   in: string;
   /** Keep alpha ≥ threshold; zero below (the floor, and the component on-level). Integer 0..255. Default 5. */
@@ -719,7 +742,7 @@ export type KeyResidueVerdict = "clean" | "residue";
  * a legitimately key-*adjacent* subject color is not flagged). Residue on the
  * alpha edge is fringe; residue in the interior is a missed background patch.
  */
-export interface KeycheckArgs {
+export interface KeycheckArgs extends EncodingArgs {
   /** Keyed RGBA cutout to inspect (typically post mask → compose). */
   in: string;
   /** Key color to scan for: "from-sidecar" (read the generate sidecar beside `in`) or "#rrggbb". Required — keycheck does not guess a key. */
@@ -852,7 +875,7 @@ export interface FramecheckResult {
 
 // ----- grid -----
 
-export interface GridArgs {
+export interface GridArgs extends EncodingArgs {
   /** Images to tile, in order. At least one. */
   inputs: string[];
   /** Number of columns. Default ceil(sqrt(count of readable inputs)). */

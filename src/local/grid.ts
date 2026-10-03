@@ -17,6 +17,7 @@ import sharp from "sharp";
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { writeImageFile } from "../image/bridge.js";
 import { parseHex } from "../color.js";
+import type { EncodingArgs } from "../types.js";
 
 export const GRID_DEFAULTS = {
   cell: 256,
@@ -24,7 +25,7 @@ export const GRID_DEFAULTS = {
   background: "transparent",
 } as const;
 
-export interface GridRunArgs {
+export interface GridRunArgs extends EncodingArgs {
   inputs: string[];
   out: string;
   /** Replace an existing file at `out`; otherwise publication is no-clobber. */
@@ -108,10 +109,8 @@ export async function runGrid(
     };
   });
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "grid", () =>
-    sharp({ create: { width, height, channels: 4, background } })
-      .composite(composites)
-      .png(),
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "grid", args, () =>
+    sharp({ create: { width, height, channels: 4, background } }).composite(composites),
   );
 
   return {

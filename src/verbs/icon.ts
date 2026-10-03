@@ -1,6 +1,8 @@
 import path from "node:path";
 import {
   assertSingleFileAvailable,
+  pngEncodingLogFields,
+  pngEncodingOf,
   withVerbLogger,
 } from "../internal/local-verb.js";
 import { ensureOutputDir } from "../internal/output-files.js";
@@ -38,9 +40,13 @@ export async function iconImpl(
       outDir,
       name,
       pngs,
+      ...pngEncodingLogFields(args),
     });
 
-    const result = await runIcon({ in: args.in, outDir, name, pngs, overwrite: args.overwrite ?? false }, { signal });
+    const result = await runIcon(
+      { in: args.in, outDir, name, pngs, overwrite: args.overwrite ?? false, ...pngEncodingOf(args) },
+      { signal },
+    );
 
     await logger.info("write", "wrote icon artifacts", {
       outputs: result.outputs,

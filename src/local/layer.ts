@@ -20,7 +20,7 @@
 import sharp from "sharp";
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { readImageSize, writeImageFile } from "../image/bridge.js";
-import type { LayerGravity, LayerOffset } from "../types.js";
+import type { EncodingArgs, LayerGravity, LayerOffset } from "../types.js";
 
 export const LAYER_DEFAULTS = {
   gravity: "center" as LayerGravity,
@@ -68,7 +68,7 @@ function gravityToTopLeft(
   return { x, y };
 }
 
-export interface LayerRunArgs {
+export interface LayerRunArgs extends EncodingArgs {
   base: string;
   top: string;
   out: string;
@@ -213,11 +213,10 @@ export async function runLayer(
     throwIfAborted(signal);
   }
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "layer", () =>
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "layer", args, () =>
     sharp(args.base)
       .ensureAlpha()
-      .composite([{ input: placed, left: dstX, top: dstY }])
-      .png(),
+      .composite([{ input: placed, left: dstX, top: dstY }]),
   );
 
   return {

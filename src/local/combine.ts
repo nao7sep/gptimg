@@ -14,8 +14,9 @@
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadMaskPNG, writeMaskPNG } from "../image/bridge.js";
 import type { CombineOp } from "../enums.js";
+import type { PngEncodingArgs } from "../types.js";
 
-export interface CombineArgs {
+export interface CombineArgs extends PngEncodingArgs {
   op: CombineOp;
   inputs: string[];
   out: string;
@@ -148,6 +149,6 @@ export async function runCombine(
   }
 
   throwIfAborted(signal);
-  await writeMaskPNG(out, width, height, { path: args.out, overwrite: args.overwrite });
+  await writeMaskPNG(out, width, height, { path: args.out, overwrite: args.overwrite }, args);
   return { output: args.out, width, height, op: args.op };
 }

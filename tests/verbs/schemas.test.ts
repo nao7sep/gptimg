@@ -208,6 +208,52 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateEncodeArgs({ in: "a.png", format: "png", quality: 90 }), "webp only");
     badArgs(() => validateEncodeArgs({ in: "a.png", format: "png", lossless: true }), "webp only");
     badArgs(() => validateEncodeArgs({ in: "a.png", format: "webp", quality: 90, lossless: true }), "omit it with lossless");
+    expect(validateEncodeArgs({ in: "a.png", format: "webp", smartSubsample: true })).toBeTruthy();
+    badArgs(() => validateEncodeArgs({ in: "a.png", format: "png", smartSubsample: true }), "webp only");
+  });
+
+  it("every image-writing verb checks the encoder options against its format", () => {
+    const verbs: Array<[string, (args: never) => unknown, object]> = [
+      ["resize", validateResizeArgs as never, { in: "a.png", toSize: 8 }],
+      ["trim", validateTrimArgs as never, { in: "a.png" }],
+      ["shadow", validateShadowArgs as never, { in: "a.png" }],
+      ["layer", validateLayerArgs as never, { base: "b.png", top: "t.png" }],
+      ["backplate", validateBackplateArgs as never, { from: "#000000", to: "#ffffff" }],
+      ["grid", validateGridArgs as never, { inputs: ["a.png"] }],
+      ["upscale", validateUpscaleArgs as never, { in: "a.png" }],
+      ["despeckle", validateDespeckleArgs as never, { in: "a.png" }],
+      ["compose", validateComposeArgs as never, { in: "a.png", mask: "m.png" }],
+      ["keycheck", validateKeycheckArgs as never, { in: "a.png", key: "#00ff00" }],
+    ];
+    for (const [verb, validate, base] of verbs) {
+      expect(() => validate({ ...base, format: "webp", quality: 80, smartSubsample: true, opaque: true } as never), verb).not.toThrow();
+      expect(() => validate({ ...base, format: "png", compressionLevel: 9, adaptiveFiltering: true } as never), verb).not.toThrow();
+      expect(() => validate({ ...base } as never), verb).not.toThrow();
+      badArgs(() => validate({ ...base, format: "webp", compressionLevel: 9 } as never), "png only");
+      badArgs(() => validate({ ...base, format: "webp", adaptiveFiltering: true } as never), "png only");
+      badArgs(() => validate({ ...base, format: "png", quality: 80 } as never), "webp only");
+      badArgs(() => validate({ ...base, quality: 80 } as never), "webp only"); // format unset is png
+      badArgs(() => validate({ ...base, lossless: true } as never), "webp only");
+      badArgs(() => validate({ ...base, format: "png", smartSubsample: true } as never), "webp only");
+      badArgs(() => validate({ ...base, format: "webp", quality: 80, lossless: true } as never), "omit it with lossless");
+      badArgs(() => validate({ ...base, format: "gif" } as never), "format must be one of");
+      badArgs(() => validate({ ...base, quality: 0, format: "webp" } as never), "[1..100]");
+    }
+  });
+
+  it("mask / combine / icon: only the lossless PNG options are accepted", () => {
+    const verbs: Array<[string, (args: never) => unknown, object]> = [
+      ["mask", validateMaskArgs as never, { in: "a.png" }],
+      ["combine", validateCombineArgs as never, { op: "invert", inputs: ["a.png"] }],
+      ["icon", validateIconArgs as never, { in: "a.png" }],
+    ];
+    for (const [verb, validate, base] of verbs) {
+      expect(() => validate({ ...base, compressionLevel: 9, adaptiveFiltering: true } as never), verb).not.toThrow();
+      badArgs(() => validate({ ...base, compressionLevel: 10 } as never), "[0..9]");
+      for (const refused of [{ format: "webp" }, { format: "png" }, { quality: 80 }, { lossless: true }, { smartSubsample: true }, { opaque: true }]) {
+        badArgs(() => validate({ ...base, ...refused } as never), "is not accepted");
+      }
+    }
   });
 
   it("icon: name stem (no path separators)", () => {

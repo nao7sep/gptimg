@@ -15,7 +15,7 @@ import sharp from "sharp";
 import { normalizeHex, parseHex } from "../color.js";
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadRawRGBA, writeImageFile } from "../image/bridge.js";
-import type { ShadowOffset } from "../types.js";
+import type { EncodingArgs, ShadowOffset } from "../types.js";
 
 export const SHADOW_DEFAULTS = {
   blur: 12,
@@ -26,7 +26,7 @@ export const SHADOW_DEFAULTS = {
   keepCanvas: false,
 } as const;
 
-export interface ShadowRunArgs {
+export interface ShadowRunArgs extends EncodingArgs {
   in: string;
   out: string;
   /** Replace an existing file at `out`; otherwise publication is no-clobber. */
@@ -199,7 +199,7 @@ export async function runShadow(
   const finalPipe = keepCanvas
     ? sharp(composed).extract({ left: subjX, top: subjY, width: w, height: h })
     : sharp(composed);
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "shadow", () => finalPipe.png());
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "shadow", args, () => finalPipe);
 
   return {
     output: args.out,

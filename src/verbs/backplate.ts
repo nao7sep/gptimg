@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   resolveOutputPath,
   withVerbLogger,
 } from "../internal/local-verb.js";
@@ -34,7 +36,7 @@ export async function backplateImpl(
     const outPath = await resolveOutputPath(args, {
       fallbackDir: defaultOutDir(ctx.profileDir),
       stem: defaultStem(size),
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -47,12 +49,14 @@ export async function backplateImpl(
       shape: args.shape ?? null,
       from: args.from,
       to: args.to,
+      ...encodingLogFields(args),
     });
 
     const result = await runBackplate(
       {
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         size: args.size,
         content: args.content,
         radius: args.radius,

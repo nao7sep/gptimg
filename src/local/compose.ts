@@ -31,6 +31,7 @@
 import { isHexColor, parseHex } from "../color.js";
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { loadMaskPNG, loadRawRGBA, writeRGBA } from "../image/bridge.js";
+import type { EncodingArgs } from "../types.js";
 import {
   SRGB_TO_LINEAR_LUT,
   analyzeKey,
@@ -43,7 +44,7 @@ export type ComposeOver =
   | { kind: "color"; r: number; g: number; b: number }
   | { kind: "image"; path: string };
 
-export interface ComposeArgs {
+export interface ComposeArgs extends EncodingArgs {
   in: string;
   mask: string;
   out: string;
@@ -292,6 +293,6 @@ export async function runCompose(
   }
 
   throwIfAborted(signal);
-  await writeRGBA(out, width, height, { path: args.out, overwrite: args.overwrite });
+  await writeRGBA(out, width, height, { path: args.out, overwrite: args.overwrite }, args);
   return { output: args.out, width, height, over: over.kind };
 }

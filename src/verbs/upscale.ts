@@ -1,5 +1,7 @@
 import {
   assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
   inferStem,
   resolveOutputPath,
   withVerbLogger,
@@ -33,7 +35,7 @@ export async function upscaleImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: "png",
+      ext: args.format ?? "png",
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
@@ -46,6 +48,7 @@ export async function upscaleImpl(
       toSize: args.toSize ?? null,
       kernel: args.kernel ?? null,
       tile: args.tile ?? null,
+      ...encodingLogFields(args),
     });
 
     const result = await runUpscale(
@@ -53,6 +56,7 @@ export async function upscaleImpl(
         in: args.in,
         out: outPath,
         overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
         toSize: args.toSize,
         kernel: args.kernel,
         tile: args.tile,

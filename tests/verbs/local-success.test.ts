@@ -249,6 +249,22 @@ describe("local verbs success path (via GptImg SDK)", () => {
     expect(data[center]).toBe(255); // subject kept
   });
 
+  it("mask: takes the lossless PNG options and writes a PNG mask, and refuses a WebP format", async () => {
+    const W = 48, H = 48;
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, W, H, greenWithSubject(W, H));
+
+    const res = await sdk.mask({ in: input, key: "#00ff00", outName: "out", compressionLevel: 9, adaptiveFiltering: true });
+    expect(res.output).toBe(path.join(tmp, "out.png"));
+    expect((await sharp(path.join(tmp, "out.png")).metadata()).format).toBe("png");
+
+    await expect(
+      sdk.mask({ in: input, key: "#00ff00", outName: "other", format: "webp" } as never),
+    ).rejects.toMatchObject({ code: "args.invalid" });
+    expect(existsSync(path.join(tmp, "other.webp"))).toBe(false);
+    expect(existsSync(path.join(tmp, "other.png"))).toBe(false);
+  });
+
   it("despeckle: removes a far speckle and writes the named output", async () => {
     // 24x16 cutout: a solid block + one lone opaque speckle far from it.
     const W = 24, H = 16;

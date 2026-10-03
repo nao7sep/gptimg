@@ -3,6 +3,8 @@ import { writeMaskPNG } from "../image/bridge.js";
 import {
   assertSingleFileAvailable,
   inferStem,
+  pngEncodingLogFields,
+  pngEncodingOf,
   resolveOutputPath,
   withVerbLogger,
 } from "../internal/local-verb.js";
@@ -72,6 +74,7 @@ export async function maskImpl(
         key: resolved.key ?? "auto",
         preserveInterior: resolved.preserveInterior ?? false,
         dryRun: resolved.dryRun ?? false,
+        ...pngEncodingLogFields(args),
       });
 
       const result = await chromaMaskFromFile(
@@ -94,6 +97,7 @@ export async function maskImpl(
         input: args.in,
         method,
         dryRun: args.dryRun ?? false,
+        ...pngEncodingLogFields(args),
       });
 
       const cacheDir = defaultModelsDir(ctx.profileDir);
@@ -124,7 +128,7 @@ export async function maskImpl(
       };
     }
 
-    await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false });
+    await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false }, pngEncodingOf(args));
     await logger.info("write", "wrote mask", { path: outPath });
 
     return {

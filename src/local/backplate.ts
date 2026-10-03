@@ -13,7 +13,7 @@ import sharp from "sharp";
 import { normalizeHex } from "../color.js";
 import { throwIfAborted } from "../errors.js";
 import { writeImageFile } from "../image/bridge.js";
-import type { BackplateShape } from "../types.js";
+import type { BackplateShape, EncodingArgs } from "../types.js";
 
 export const BACKPLATE_DEFAULTS = {
   size: 1024,
@@ -144,7 +144,7 @@ function gradientEndpoints(angleDeg: number): {
   };
 }
 
-export interface BackplateRunArgs {
+export interface BackplateRunArgs extends EncodingArgs {
   out: string;
   /** Replace an existing file at `out`; otherwise publication is no-clobber. */
   overwrite?: boolean;
@@ -225,7 +225,7 @@ export async function runBackplate(
   });
   throwIfAborted(signal);
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "backplate", () => sharp(Buffer.from(svg)).png());
+  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "backplate", args, () => sharp(Buffer.from(svg)));
 
   return { output: args.out, size, content, radius, shape, from, to, angle };
 }
