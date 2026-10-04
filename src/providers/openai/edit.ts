@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import path from "node:path";
 import { LocalOpError, ProviderError } from "../../errors.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
@@ -38,12 +39,19 @@ export async function openaiEdit(
     ...(maskFile && { mask: maskFile }),
   });
 
+  // The uploads are recorded by file name; their bytes stay out of the log.
+  const request = {
+    ...params,
+    image: path.basename(args.imagePath),
+    ...(args.maskPath && { mask: path.basename(args.maskPath) }),
+  };
+
   const { primary, download, logger, signal } = args.network;
 
   let response: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
   try {
     response = (await callWithRetry(
-      { budgetName: "imageGenerate", budget: primary, signal, logger },
+      { budgetName: "imageGenerate", budget: primary, signal, logger, request },
       () =>
         client.images.edit(params as never, {
           timeout: primary.timeout,

@@ -34,7 +34,7 @@ export async function openaiGenerate(
   let response: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
   try {
     response = (await callWithRetry(
-      { budgetName: "imageGenerate", budget: primary, signal, logger },
+      { budgetName: "imageGenerate", budget: primary, signal, logger, request: params },
       () =>
         client.images.generate(params as never, {
           timeout: primary.timeout,

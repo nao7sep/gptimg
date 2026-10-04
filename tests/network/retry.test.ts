@@ -425,13 +425,15 @@ describe("callWithRetry", () => {
       budget: "imageGenerate",
       attempt: 1,
       maxRetries: fast.maxRetries,
-      reason: 429,
+      status: 429,
+      error: { name: "Error", message: "429", code: null },
       retryAfterHeader: true,
     });
+    expect(data).not.toHaveProperty("request");
   });
 
-  // The reason field falls back to the Error name when there is no status.
-  it("logs the error name as the reason when there is no status", async () => {
+  // With no status, the error's name, message and network code say what failed.
+  it("logs the error when there is no status", async () => {
     const logger = fakeLogger();
     const fn = vi
       .fn()
@@ -442,7 +444,36 @@ describe("callWithRetry", () => {
       fn,
     );
     const [, , data] = logger.warn.mock.calls[0]!;
-    expect(data).toMatchObject({ reason: "Error", retryAfterHeader: false });
+    expect(data).toMatchObject({
+      status: null,
+      error: { name: "Error", code: "ECONNRESET" },
+      retryAfterHeader: false,
+    });
+  });
+
+  it("records each failed attempt with its request, the last one before rethrowing", async () => {
+    const logger = fakeLogger();
+    const request = { model: "m", prompt: "p" };
+    const final = http(400);
+    const fn = vi.fn().mockRejectedValueOnce(http(429)).mockRejectedValueOnce(final);
+    await expect(
+      callWithRetry({ budgetName: "imageGenerate", budget: fast, logger, request }, fn),
+    ).rejects.toBe(final);
+    expect(logger.warn.mock.calls.map(([stage, , data]) => [stage, data.attempt, data.status, data.request])).toEqual([
+      ["retry", 1, 429, request],
+      ["response", 2, 400, request],
+    ]);
+    expect(logger.warn.mock.calls[1]?.[1]).toBe("imageGenerate attempt 2 failed");
+  });
+
+  it("records the last attempt once the retries run out", async () => {
+    const logger = fakeLogger();
+    const fn = vi.fn().mockRejectedValue(http(503));
+    await expect(
+      callWithRetry({ budgetName: "imageGenerate", budget: fast, logger }, fn),
+    ).rejects.toMatchObject({ status: 503 });
+    const stages = logger.warn.mock.calls.map(([stage]) => stage);
+    expect(stages).toEqual([...Array(fast.maxRetries).fill("retry"), "response"]);
   });
 
   // Covers abortableSleep's aborted-at-entry guard: the signal aborts while the

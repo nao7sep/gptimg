@@ -38,11 +38,13 @@ function mimeFromFormat(format: string): string {
  * 'auto', 'high', 'original']"). A local gate here was worse than no gate; it
  * refused detail=original on the -mini models, which accept it.
  */
-function imageContentParts(images: VisionProviderArgs["images"]) {
+function imageContentParts(images: VisionProviderArgs["images"], withBytes: boolean) {
   return images.map((img) => ({
     type: "image_url" as const,
     image_url: {
-      url: `data:${mimeFromFormat(img.format)};base64,${Buffer.from(img.data).toString("base64")}`,
+      url: withBytes
+        ? `data:${mimeFromFormat(img.format)};base64,${Buffer.from(img.data).toString("base64")}`
+        : null,
       ...(img.detail ? { detail: img.detail } : {}),
     },
   }));
@@ -106,26 +108,29 @@ export async function openaiVision(
       ? paramsSystemPrompt
       : OPENAI_VISION_SYSTEM_PROMPT;
 
-  const messages = [
-    { role: "system" as const, content: systemPrompt },
-    {
-      role: "user" as const,
-      content: [
-        { type: "text" as const, text: args.check },
-        ...imageContentParts(args.images),
+  // The request as sent, or as recorded: the record nulls each image's data URL,
+  // as a sidecar nulls returned image bytes.
+  const buildRequest = (withBytes: boolean) =>
+    buildVisionRequest(model, {
+      ...passthroughParams,
+      model,
+      messages: [
+        { role: "system" as const, content: systemPrompt },
+        {
+          role: "user" as const,
+          content: [
+            { type: "text" as const, text: args.check },
+            ...imageContentParts(args.images, withBytes),
+          ],
+        },
       ],
-    },
-  ];
-
-  const params = buildVisionRequest(model, {
-    ...passthroughParams,
-    model,
-    messages,
-    response_format: {
-      type: "json_schema",
-      json_schema: VERDICT_SCHEMA,
-    },
-  });
+      response_format: {
+        type: "json_schema",
+        json_schema: VERDICT_SCHEMA,
+      },
+    });
+  const params = buildRequest(true);
+  const request = buildRequest(false);
 
   const { primary, logger, signal } = args.network;
 
@@ -137,7 +142,7 @@ export async function openaiVision(
   };
   try {
     response = (await callWithRetry(
-      { budgetName: "imageVision", budget: primary, signal, logger },
+      { budgetName: "imageVision", budget: primary, signal, logger, request },
       () =>
         client.chat.completions.create(params as never, {
           timeout: primary.timeout,

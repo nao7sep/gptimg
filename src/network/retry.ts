@@ -162,6 +162,31 @@ export interface CallWithRetryContext {
   budget: NetworkBudget;
   signal?: AbortSignal | undefined;
   logger?: Logger | undefined;
+  /**
+   * The request each attempt sends, in the form a record may hold; a failed
+   * attempt's log line carries it (data-lifecycle-conventions, *Records*).
+   */
+  request?: Record<string, unknown> | undefined;
+}
+
+/** What one failed attempt's log line records about the attempt and its failure. */
+function failedAttemptFields(
+  ctx: CallWithRetryContext,
+  attempt: number,
+  err: unknown,
+): Record<string, unknown> {
+  return {
+    budget: ctx.budgetName,
+    attempt,
+    maxRetries: ctx.budget.maxRetries,
+    ...(ctx.request ? { request: ctx.request } : {}),
+    status: statusFromError(err),
+    error: {
+      name: err instanceof Error ? err.name : typeof err,
+      message: err instanceof Error ? err.message : String(err),
+      code: networkCode(err),
+    },
+  };
 }
 
 /**
@@ -169,6 +194,9 @@ export interface CallWithRetryContext {
  * (`BUDGET_RESEND_POLICY`): any transient failure for downloads, only provably
  * unprocessed ones for paid provider calls. Honors `Retry-After` headers
  * over the configured schedule. Aborts immediately when `signal` fires.
+ *
+ * Each failed attempt is its own log line: a retried one as the `retry` line,
+ * the last one as a `response` line before the failure is rethrown.
  *
  * `fn` is responsible for its own per-attempt timeout — the OpenAI SDK accepts
  * `{ timeout, signal }` per request; `fetchWithBudget` builds its own combined
@@ -189,8 +217,16 @@ export async function callWithRetry<T>(
         throw toAbortError(signal?.aborted ? (signal.reason ?? err) : err);
       }
       const remaining = budget.maxRetries - attempt;
-      if (remaining <= 0) throw err;
-      if (!isRetryableError(err, BUDGET_RESEND_POLICY[budgetName])) throw err;
+      if (remaining <= 0 || !isRetryableError(err, BUDGET_RESEND_POLICY[budgetName])) {
+        if (logger) {
+          await logger.warn(
+            "response",
+            `${budgetName} attempt ${attempt + 1} failed`,
+            failedAttemptFields(ctx, attempt + 1, err),
+          );
+        }
+        throw err;
+      }
       const headerWait = parseRetryAfterMs(err);
       const scheduledWait = computeScheduledWait(
         attempt + 1,
@@ -209,13 +245,8 @@ export async function callWithRetry<T>(
           "retry",
           `retrying ${budgetName} after ${Math.round(waitMs)}ms`,
           {
-            budget: budgetName,
-            attempt,
-            maxRetries: budget.maxRetries,
+            ...failedAttemptFields(ctx, attempt, err),
             waitMs: Math.round(waitMs),
-            reason:
-              statusFromError(err) ??
-              (err instanceof Error ? err.name : "unknown"),
             retryAfterHeader: headerWait != null,
             retryAfterCapped,
           },
