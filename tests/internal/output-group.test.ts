@@ -156,10 +156,21 @@ describe("OutputGroup", () => {
     const group = createOutputGroup(tmp, "crashed", "png");
     const lockPath = await outputGroupLockPathFor(group);
     await mkdir(lockPath);
-    await writeFile(path.join(lockPath, "held-aaaaaaaaaaaaaaaaaaaaa"), "");
+    // The marker records a socket directory where no guardian listens.
+    await writeFile(path.join(lockPath, "held-aaaaaaaaaaaaaaaaaaaaa"), tmp);
 
     await expect(withOutputGroupLock(group, async () => "recovered")).resolves.toBe("recovered");
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("never presumes a held marker without a recorded socket directory abandoned", async () => {
+    const group = createOutputGroup(tmp, "unrecorded", "png");
+    const lockPath = await outputGroupLockPathFor(group);
+    await mkdir(lockPath);
+    await writeFile(path.join(lockPath, "held-ccccccccccccccccccccc"), "");
+
+    await expect(acquireOutputGroupLock(group)).rejects.toMatchObject({ code: "output.busy" });
+    expect(existsSync(path.join(lockPath, "held-ccccccccccccccccccccc"))).toBe(true);
   });
 
   it("recovers a released lock even when cleanup failed", async () => {

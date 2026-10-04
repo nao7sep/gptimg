@@ -1,5 +1,5 @@
 import { readdirSync } from "node:fs";
-import { mkdir, readdir, realpath, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createConnection, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
@@ -60,12 +60,21 @@ export async function outputGroupLockPathFor(group: OutputGroup): Promise<string
 const HELD_MARKER = /^held-([A-Za-z0-9_-]{21})$/;
 const GUARDIAN_PROBE_TIMEOUT_MS = 1_000;
 
-function guardianEndpointFor(lockPath: string, token: string): string {
+/** The guardian endpoint for one claim; Windows names a pipe, so `socketDir` matters only elsewhere. */
+export function guardianEndpointFor(lockPath: string, token: string, socketDir: string): string {
   const digest = createHash("sha256").update(`${lockPath}\0${token}`).digest("hex").slice(0, 24);
   if (process.platform === "win32") return `\\\\.\\pipe\\gptimg-output-${digest}`;
-  const socketName = `gi-${digest}.sock`;
-  const preferred = path.join(tmpdir(), socketName);
-  return Buffer.byteLength(preferred) <= 90 ? preferred : path.join("/tmp", socketName);
+  return path.join(socketDir, `gi-${digest}.sock`);
+}
+
+/**
+ * Where a new claim's guardian socket lives: this process's temp directory,
+ * or `/tmp` when that would make the socket path too long to bind. The held
+ * marker records the choice, because a contender's TMPDIR may differ.
+ */
+function guardianSocketDirFor(lockPath: string, token: string): string {
+  const preferred = tmpdir();
+  return Buffer.byteLength(guardianEndpointFor(lockPath, token, preferred)) <= 90 ? preferred : "/tmp";
 }
 
 async function startGuardian(endpoint: string): Promise<Server> {
@@ -126,12 +135,13 @@ async function prepareLockClaim(lockPath: string): Promise<PreparedLockClaim> {
   const token = nanoid();
   const markerName = `held-${token}`;
   const claimPath = `${lockPath}.claim-${token}`;
-  const endpoint = guardianEndpointFor(lockPath, token);
+  const socketDir = guardianSocketDirFor(lockPath, token);
+  const endpoint = guardianEndpointFor(lockPath, token, socketDir);
   await mkdir(claimPath);
   let server: Server | undefined;
   try {
     server = await startGuardian(endpoint);
-    await writeFile(path.join(claimPath, markerName), "", { flag: "wx" });
+    await writeFile(path.join(claimPath, markerName), socketDir, { flag: "wx" });
     return { claimPath, endpoint, markerName, server };
   } catch (err) {
     if (server) await closeGuardian(server, endpoint);
@@ -170,7 +180,18 @@ async function recoverReleasedOrAbandonedLock(lockPath: string): Promise<boolean
   const released = entries.some((name) => name.startsWith("released-"));
   const held = entries.find((name) => HELD_MARKER.test(name));
   const token = held ? HELD_MARKER.exec(held)?.[1] : undefined;
-  const endpoint = token ? guardianEndpointFor(lockPath, token) : undefined;
+  let endpoint: string | undefined;
+  if (held && token) {
+    let socketDir: string;
+    try {
+      socketDir = await readFile(path.join(lockPath, held), "utf-8");
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === "ENOENT";
+    }
+    // A marker without a recorded directory names no guardian to probe, so
+    // its lock is never presumed abandoned.
+    if (path.isAbsolute(socketDir)) endpoint = guardianEndpointFor(lockPath, token, socketDir);
+  }
   const recoverable = released || (endpoint !== undefined && !(await guardianIsAlive(endpoint)));
   if (!recoverable) return false;
 
