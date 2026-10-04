@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -8,6 +9,7 @@ import {
   assertOutputGroupAvailable,
   assertStemAvailable,
   createOutputGroup,
+  guardianEndpointFor,
   plannedSidecarPaths,
   outputGroupLockPathFor,
   settleOutputPublications,
@@ -163,14 +165,35 @@ describe("OutputGroup", () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
-  it("never presumes a held marker without a recorded socket directory abandoned", async () => {
+  it("recovers a v0.1.0 lock, whose marker records no socket directory, once no guardian answers", async () => {
     const group = createOutputGroup(tmp, "unrecorded", "png");
     const lockPath = await outputGroupLockPathFor(group);
     await mkdir(lockPath);
     await writeFile(path.join(lockPath, "held-ccccccccccccccccccccc"), "");
 
-    await expect(acquireOutputGroupLock(group)).rejects.toMatchObject({ code: "output.busy" });
-    expect(existsSync(path.join(lockPath, "held-ccccccccccccccccccccc"))).toBe(true);
+    await expect(withOutputGroupLock(group, async () => "recovered")).resolves.toBe("recovered");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("keeps a live v0.1.0 holder's lock, whose guardian answers where that version put it", async () => {
+    const group = createOutputGroup(tmp, "unrecorded-live", "png");
+    const lockPath = await outputGroupLockPathFor(group);
+    const token = "ddddddddddddddddddddd";
+    await mkdir(lockPath);
+    await writeFile(path.join(lockPath, `held-${token}`), "");
+    const preferred = guardianEndpointFor(lockPath, token, tmpdir());
+    const endpoint =
+      process.platform === "win32" || Buffer.byteLength(preferred) <= 90
+        ? preferred
+        : guardianEndpointFor(lockPath, token, "/tmp");
+    const guardian = createServer((socket) => socket.end());
+    await new Promise<void>((resolve) => guardian.listen(endpoint, resolve));
+    try {
+      await expect(acquireOutputGroupLock(group)).rejects.toMatchObject({ code: "output.busy" });
+      expect(existsSync(path.join(lockPath, `held-${token}`))).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => guardian.close(() => resolve()));
+    }
   });
 
   it("recovers a released lock even when cleanup failed", async () => {

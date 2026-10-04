@@ -180,7 +180,7 @@ async function recoverReleasedOrAbandonedLock(lockPath: string): Promise<boolean
   const released = entries.some((name) => name.startsWith("released-"));
   const held = entries.find((name) => HELD_MARKER.test(name));
   const token = held ? HELD_MARKER.exec(held)?.[1] : undefined;
-  let endpoint: string | undefined;
+  let endpoints: string[] = [];
   if (held && token) {
     let socketDir: string;
     try {
@@ -188,11 +188,22 @@ async function recoverReleasedOrAbandonedLock(lockPath: string): Promise<boolean
     } catch (err) {
       return (err as NodeJS.ErrnoException).code === "ENOENT";
     }
-    // A marker without a recorded directory names no guardian to probe, so
-    // its lock is never presumed abandoned.
-    if (path.isAbsolute(socketDir)) endpoint = guardianEndpointFor(lockPath, token, socketDir);
+    // A marker from before the directory was recorded (v0.1.0) is empty; its
+    // holder put the socket where guardianSocketDirFor puts it now, under the
+    // holder's TMPDIR, so probe this process's choice and /tmp.
+    const socketDirs = path.isAbsolute(socketDir)
+      ? [socketDir]
+      : [...new Set([guardianSocketDirFor(lockPath, token), "/tmp"])];
+    endpoints = [...new Set(socketDirs.map((dir) => guardianEndpointFor(lockPath, token, dir)))];
   }
-  const recoverable = released || (endpoint !== undefined && !(await guardianIsAlive(endpoint)));
+  let anyAlive = false;
+  for (const endpoint of endpoints) {
+    if (await guardianIsAlive(endpoint)) {
+      anyAlive = true;
+      break;
+    }
+  }
+  const recoverable = released || (endpoints.length > 0 && !anyAlive);
   if (!recoverable) return false;
 
   let removedObservedEntry = entries.length === 0;
@@ -204,7 +215,9 @@ async function recoverReleasedOrAbandonedLock(lockPath: string): Promise<boolean
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") return false;
     }
   }
-  if (endpoint && process.platform !== "win32") await unlink(endpoint).catch(() => undefined);
+  if (process.platform !== "win32") {
+    for (const endpoint of endpoints) await unlink(endpoint).catch(() => undefined);
+  }
   // Only the contender that removed an observed marker may remove the
   // directory. This avoids an ABA race where a second stale-lock contender
   // deletes a newly acquired lock after the first one recovered the old lock.
