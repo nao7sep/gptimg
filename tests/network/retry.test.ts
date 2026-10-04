@@ -476,6 +476,27 @@ describe("callWithRetry", () => {
     expect(stages).toEqual([...Array(fast.maxRetries).fill("retry"), "response"]);
   });
 
+  it("records a cancelled attempt with its request and the cancelled outcome", async () => {
+    const info = vi.fn(async () => {});
+    const logger = { ...fakeLogger(), info } as unknown as Logger;
+    const ctrl = new AbortController();
+    const request = { model: "m", prompt: "p" };
+    const fn = vi.fn(async () => {
+      ctrl.abort(new Error("stop"));
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    });
+    await expect(
+      callWithRetry({ budgetName: "imageGenerate", budget: fast, signal: ctrl.signal, logger, request }, fn),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(info.mock.calls).toEqual([
+      [
+        "cancelled",
+        "imageGenerate attempt 1 cancelled",
+        { budget: "imageGenerate", attempt: 1, maxRetries: fast.maxRetries, request, outcome: "cancelled" },
+      ],
+    ]);
+  });
+
   // Covers abortableSleep's aborted-at-entry guard: the signal aborts while the
   // pre-sleep logger.warn await is pending, so the sleep is entered already
   // aborted and rejects synchronously rather than scheduling a timer.

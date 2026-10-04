@@ -813,4 +813,65 @@ describe("OpenAI provider failure records", () => {
       /^data:image\/png;base64,/,
     );
   });
+
+  it("vision records the request and the response when the answer yields no verdict", async () => {
+    const answers = [
+      { choices: [{ message: { content: null, refusal: "I cannot judge this." } }] },
+      { choices: [{ finish_reason: "content_filter", message: { content: null } }] },
+      { choices: [{ finish_reason: "stop", message: { content: "not json" } }] },
+    ];
+    for (const [i, answer] of answers.entries()) {
+      openaiMock.create.mockResolvedValueOnce(answer);
+      const logPath = path.join(tmp, `vision-${i}.log`);
+      const logger = await createLogger(logPath, "vision");
+      await expect(
+        openaiVision({
+          check: "is it green?",
+          images: [{ data: png, format: "png" }],
+          params: { model: "gpt-6-luna" },
+          profile,
+          network: { ...network, logger },
+        }),
+      ).rejects.toMatchObject({ errorType: "provider" });
+
+      const { text, lines } = await records(logPath);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({ level: "warn", stage: "response", data: { response: answer } });
+      expect(lines[0]!.data.request.messages[1].content[1]).toEqual({ type: "image_url", image_url: { url: null } });
+      expect(lines[0]!.data.error.code).toMatch(/^provider\./);
+      expect(text).not.toContain("base64");
+      expect(text).not.toContain("sk-local");
+    }
+  });
+
+  it("generate records a cancelled attempt with its request", async () => {
+    const ctrl = new AbortController();
+    openaiMock.generate.mockImplementation(async () => {
+      ctrl.abort(new Error("stop"));
+      throw Object.assign(new Error("Request was aborted."), { name: "AbortError" });
+    });
+    const { network: net, logPath } = await failingNetwork();
+
+    await expect(
+      openaiGenerate({
+        prompt: "a green disk",
+        params: { model: "gpt-image-2", quality: "low" },
+        profile,
+        network: { ...net, signal: ctrl.signal },
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    const { text, lines } = await records(logPath);
+    expect(lines).toEqual([
+      expect.objectContaining({
+        stage: "cancelled",
+        data: expect.objectContaining({
+          attempt: 1,
+          request: { model: "gpt-image-2", quality: "low", prompt: "a green disk" },
+          outcome: "cancelled",
+        }),
+      }),
+    ]);
+    expect(text).not.toContain("sk-local");
+  });
 });

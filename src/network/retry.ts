@@ -163,10 +163,21 @@ export interface CallWithRetryContext {
   signal?: AbortSignal | undefined;
   logger?: Logger | undefined;
   /**
-   * The request each attempt sends, in the form a record may hold; a failed
-   * attempt's log line carries it (data-lifecycle-conventions, *Records*).
+   * The request each attempt sends, in the form a record may hold; the log line
+   * of each attempt that does not succeed carries it (data-lifecycle-conventions,
+   * *Records*).
    */
   request?: Record<string, unknown> | undefined;
+}
+
+/** What one attempt's log line records about the attempt itself. */
+function attemptFields(ctx: CallWithRetryContext, attempt: number): Record<string, unknown> {
+  return {
+    budget: ctx.budgetName,
+    attempt,
+    maxRetries: ctx.budget.maxRetries,
+    ...(ctx.request ? { request: ctx.request } : {}),
+  };
 }
 
 /** What one failed attempt's log line records about the attempt and its failure. */
@@ -176,10 +187,7 @@ function failedAttemptFields(
   err: unknown,
 ): Record<string, unknown> {
   return {
-    budget: ctx.budgetName,
-    attempt,
-    maxRetries: ctx.budget.maxRetries,
-    ...(ctx.request ? { request: ctx.request } : {}),
+    ...attemptFields(ctx, attempt),
     status: statusFromError(err),
     error: {
       name: err instanceof Error ? err.name : typeof err,
@@ -195,8 +203,9 @@ function failedAttemptFields(
  * unprocessed ones for paid provider calls. Honors `Retry-After` headers
  * over the configured schedule. Aborts immediately when `signal` fires.
  *
- * Each failed attempt is its own log line: a retried one as the `retry` line,
- * the last one as a `response` line before the failure is rethrown.
+ * Each attempt that does not succeed is its own log line: a retried one as the
+ * `retry` line, the last failed one as a `response` line before the failure is
+ * rethrown, and a cancelled one as a `cancelled` line.
  *
  * `fn` is responsible for its own per-attempt timeout — the OpenAI SDK accepts
  * `{ timeout, signal }` per request; `fetchWithBudget` builds its own combined
@@ -214,6 +223,12 @@ export async function callWithRetry<T>(
       return await fn();
     } catch (err) {
       if (isAbortError(err) || signal?.aborted) {
+        if (logger) {
+          await logger.info("cancelled", `${budgetName} attempt ${attempt + 1} cancelled`, {
+            ...attemptFields(ctx, attempt + 1),
+            outcome: "cancelled",
+          });
+        }
         throw toAbortError(signal?.aborted ? (signal.reason ?? err) : err);
       }
       const remaining = budget.maxRetries - attempt;

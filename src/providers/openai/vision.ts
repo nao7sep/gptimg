@@ -96,6 +96,45 @@ function parseVerdict(raw: string | null | undefined): VisionVerdict {
   );
 }
 
+interface ChatResponse {
+  choices?: Array<{
+    finish_reason?: string | null;
+    message?: { content?: string | null; refusal?: string | null };
+  }>;
+}
+
+/** The verdict a chat response carries, or the provider's stated reason it carries none. */
+function verdictFrom(response: ChatResponse): VisionVerdict {
+  // The provider's own account of a result that is not what was asked for, read BEFORE the
+  // content (ai-model-routing-conventions: *never invent a cause the provider gave you*). A
+  // refusal arrives as a `refusal` string with null content, so reading `content` alone reports
+  // a parse failure and hides the stated reason — the caller then cannot tell "the model
+  // declined" from "the model answered in a shape we could not read", and only the first is
+  // something the user can act on. `length` is the quiet one: the content is present and reads
+  // like a complete verdict.
+  const choice = response.choices?.[0];
+  if (choice?.message?.refusal) {
+    throw new ProviderError(
+      "provider.refused",
+      `The model declined to verify this image: ${choice.message.refusal}`,
+    );
+  }
+  if (choice?.finish_reason === "content_filter") {
+    throw new ProviderError(
+      "provider.contentFiltered",
+      "OpenAI's content filter rejected this image verification. The input was rejected, not lost.",
+    );
+  }
+  if (choice?.finish_reason === "length") {
+    throw new ProviderError(
+      "provider.truncated",
+      "The model stopped at its output limit, so this verdict is truncated rather than complete.",
+    );
+  }
+
+  return parseVerdict(choice?.message?.content);
+}
+
 export async function openaiVision(
   args: VisionProviderArgs,
 ): Promise<ProviderVisionResult> {
@@ -134,12 +173,7 @@ export async function openaiVision(
 
   const { primary, logger, signal } = args.network;
 
-  let response: {
-    choices?: Array<{
-      finish_reason?: string | null;
-      message?: { content?: string | null; refusal?: string | null };
-    }>;
-  };
+  let response: ChatResponse;
   try {
     response = (await callWithRetry(
       { budgetName: "imageVision", budget: primary, signal, logger, request },
@@ -159,34 +193,22 @@ export async function openaiVision(
     );
   }
 
-  // The provider's own account of a result that is not what was asked for, read BEFORE the
-  // content (ai-model-routing-conventions: *never invent a cause the provider gave you*). A
-  // refusal arrives as a `refusal` string with null content, so reading `content` alone reports
-  // a parse failure and hides the stated reason — the caller then cannot tell "the model
-  // declined" from "the model answered in a shape we could not read", and only the first is
-  // something the user can act on. `length` is the quiet one: the content is present and reads
-  // like a complete verdict.
-  const choice = response.choices?.[0];
-  if (choice?.message?.refusal) {
-    throw new ProviderError(
-      "provider.refused",
-      `The model declined to verify this image: ${choice.message.refusal}`,
-    );
+  // A response the call cannot turn into a verdict is recorded with its request, so
+  // the failure can be diagnosed (data-lifecycle-conventions, *Records*).
+  let verdict: VisionVerdict;
+  try {
+    verdict = verdictFrom(response);
+  } catch (err) {
+    await logger?.warn("response", "vision response yielded no verdict", {
+      request,
+      response,
+      error: {
+        name: (err as Error).name,
+        code: (err as { code?: unknown }).code ?? null,
+        message: (err as Error).message,
+      },
+    });
+    throw err;
   }
-  if (choice?.finish_reason === "content_filter") {
-    throw new ProviderError(
-      "provider.contentFiltered",
-      "OpenAI's content filter rejected this image verification. The input was rejected, not lost.",
-    );
-  }
-  if (choice?.finish_reason === "length") {
-    throw new ProviderError(
-      "provider.truncated",
-      "The model stopped at its output limit, so this verdict is truncated rather than complete.",
-    );
-  }
-
-  const content = choice?.message?.content;
-  const verdict = parseVerdict(content);
   return { raw: response, verdict };
 }
