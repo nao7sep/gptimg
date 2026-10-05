@@ -37,6 +37,7 @@ export async function fetchWithBudget(
       budget,
       signal: opts.signal,
       logger: opts.logger,
+      request: { url },
     },
     () => fetchOnce(url, budget.timeout, opts.signal),
   );

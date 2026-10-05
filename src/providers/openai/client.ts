@@ -19,6 +19,20 @@ export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
   return new OpenAI(opts as ConstructorParameters<typeof OpenAI>[0]);
 }
 
+/**
+ * The headers the client sends from the profile: the key as its bearer token, and the
+ * organization and project when the profile sets them. Each attempt's log line records them
+ * (data-lifecycle-conventions, *Nothing is cut*).
+ */
+export function profileHeaders(profile: ResolvedProfile): Record<string, string> {
+  const { organization, project } = profile.redacted;
+  return {
+    Authorization: `Bearer ${profile.apiKey}`,
+    ...(organization && { "OpenAI-Organization": organization }),
+    ...(project && { "OpenAI-Project": project }),
+  };
+}
+
 export function resolveModel(paramModel: unknown, fallback: string): string {
   if (typeof paramModel === "string" && paramModel.length > 0) return paramModel;
   return fallback;

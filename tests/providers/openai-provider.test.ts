@@ -712,7 +712,9 @@ describe("OpenAI provider failure records", () => {
     return { text, lines: text.trimEnd().split("\n").map((line) => JSON.parse(line)) };
   }
 
-  it("generate records every attempt's request and status, and no credential", async () => {
+  const headers = { Authorization: "Bearer sk-local" };
+
+  it("generate records every attempt's whole request, headers and key included, and its status", async () => {
     openaiMock.generate.mockRejectedValueOnce(apiError(429)).mockRejectedValueOnce(apiError(400));
     const { network: net, logPath } = await failingNetwork();
 
@@ -725,13 +727,16 @@ describe("OpenAI provider failure records", () => {
       }),
     ).rejects.toMatchObject({ code: "provider.requestFailed" });
 
-    const { text, lines } = await records(logPath);
+    const { lines } = await records(logPath);
     const request = {
-      model: "gpt-image-2",
-      size: "1024x1024",
-      quality: "low",
-      background: "transparent",
-      prompt: "a green disk",
+      headers,
+      body: {
+        model: "gpt-image-2",
+        size: "1024x1024",
+        quality: "low",
+        background: "transparent",
+        prompt: "a green disk",
+      },
     };
     expect(lines).toEqual([
       expect.objectContaining({
@@ -751,8 +756,48 @@ describe("OpenAI provider failure records", () => {
         data: expect.objectContaining({ attempt: 2, request, status: 400 }),
       }),
     ]);
-    expect(text).not.toContain("sk-local");
-    expect(text).not.toContain("authorization");
+  });
+
+  it("records the profile's organization and project headers beside the key", async () => {
+    openaiMock.generate.mockRejectedValue(apiError(400));
+    const { network: net, logPath } = await failingNetwork();
+    await expect(
+      openaiGenerate({
+        prompt: "p",
+        params: { model: "gpt-image-2" },
+        profile: { ...profile, redacted: { provider: "openai", organization: "org-1", project: "proj-1" } },
+        network: net,
+      }),
+    ).rejects.toMatchObject({ code: "provider.requestFailed" });
+    const { lines } = await records(logPath);
+    expect(lines[0]!.data.request.headers).toEqual({
+      Authorization: "Bearer sk-local",
+      "OpenAI-Organization": "org-1",
+      "OpenAI-Project": "proj-1",
+    });
+  });
+
+  it("records a failed download attempt with its whole URL, query token included", async () => {
+    const { server, url } = await listen((_req, res) => {
+      res.writeHead(403).end("expired");
+    });
+    const signedUrl = `${url}?se=2026-10-05&sig=secret-token`;
+    openaiMock.generate.mockResolvedValue({ data: [{ url: signedUrl }] });
+    const { network: net, logPath } = await failingNetwork();
+
+    const result = await openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net }).finally(
+      () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
+    );
+
+    expect(result.images[0]).toMatchObject({ data: null });
+    const { lines } = await records(logPath);
+    expect(lines).toEqual([
+      expect.objectContaining({
+        stage: "response",
+        message: "imageDownload attempt 1 failed",
+        data: expect.objectContaining({ request: { url: signedUrl }, status: 403 }),
+      }),
+    ]);
   });
 
   it("generate keeps the built request when the request never left", async () => {
@@ -771,7 +816,7 @@ describe("OpenAI provider failure records", () => {
     expect(lines).toHaveLength(NETWORK_DEFAULTS.imageGenerate.maxRetries + 1);
     for (const line of lines) {
       expect(line.data).toMatchObject({
-        request: { model: "gpt-image-2", prompt: "p" },
+        request: { headers, body: { model: "gpt-image-2", prompt: "p" } },
         status: null,
         error: { name: "APIConnectionError", code: "ECONNREFUSED" },
       });
@@ -779,7 +824,7 @@ describe("OpenAI provider failure records", () => {
     expect(lines.map((line) => line.data.attempt)).toEqual([1, 2, 3]);
   });
 
-  it("edit records its uploads by file name, never their bytes", async () => {
+  it("edit records its uploads by file name, which hold their bytes, beside the headers", async () => {
     openaiMock.edit.mockRejectedValue(apiError(400));
     const { network: net, logPath } = await failingNetwork();
 
@@ -794,19 +839,21 @@ describe("OpenAI provider failure records", () => {
       }),
     ).rejects.toMatchObject({ code: "provider.requestFailed" });
 
-    const { text, lines } = await records(logPath);
+    const { lines } = await records(logPath);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.data.request).toEqual({
-      model: "gpt-image-2",
-      quality: "low",
-      prompt: "edit it",
-      image: "green-disk.png",
-      mask: "donut.png",
+      headers,
+      body: {
+        model: "gpt-image-2",
+        quality: "low",
+        prompt: "edit it",
+        image: "green-disk.png",
+        mask: "donut.png",
+      },
     });
-    expect(text).not.toContain("sk-local");
   });
 
-  it("vision records its request with each image's data URL nulled", async () => {
+  it("vision records its whole request but each image's data URL, which the input file holds", async () => {
     openaiMock.create.mockRejectedValue(apiError(400));
     const { network: net, logPath } = await failingNetwork();
 
@@ -822,14 +869,14 @@ describe("OpenAI provider failure records", () => {
 
     const { text, lines } = await records(logPath);
     expect(lines).toHaveLength(1);
-    const request = lines[0]!.data.request;
-    expect(request).toMatchObject({ model: "gpt-6-luna", response_format: { type: "json_schema" } });
-    expect(request.messages[1].content).toEqual([
+    const { headers: recordedHeaders, body } = lines[0]!.data.request;
+    expect(recordedHeaders).toEqual(headers);
+    expect(body).toMatchObject({ model: "gpt-6-luna", response_format: { type: "json_schema" } });
+    expect(body.messages[1].content).toEqual([
       { type: "text", text: "is it green?" },
       { type: "image_url", image_url: { url: null, detail: "high" } },
     ]);
     expect(text).not.toContain("base64");
-    expect(text).not.toContain("sk-local");
     // The call itself still sent the bytes.
     expect(openaiMock.create.mock.calls[0]?.[0].messages[1].content[1].image_url.url).toMatch(
       /^data:image\/png;base64,/,
@@ -859,10 +906,10 @@ describe("OpenAI provider failure records", () => {
       const { text, lines } = await records(logPath);
       expect(lines).toHaveLength(1);
       expect(lines[0]).toMatchObject({ level: "warn", stage: "response", data: { response: answer } });
-      expect(lines[0]!.data.request.messages[1].content[1]).toEqual({ type: "image_url", image_url: { url: null } });
+      expect(lines[0]!.data.request.headers).toEqual(headers);
+      expect(lines[0]!.data.request.body.messages[1].content[1]).toEqual({ type: "image_url", image_url: { url: null } });
       expect(lines[0]!.data.error.code).toMatch(/^provider\./);
       expect(text).not.toContain("base64");
-      expect(text).not.toContain("sk-local");
     }
   });
 
@@ -883,17 +930,16 @@ describe("OpenAI provider failure records", () => {
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
 
-    const { text, lines } = await records(logPath);
+    const { lines } = await records(logPath);
     expect(lines).toEqual([
       expect.objectContaining({
         stage: "cancelled",
         data: expect.objectContaining({
           attempt: 1,
-          request: { model: "gpt-image-2", quality: "low", prompt: "a green disk" },
+          request: { headers, body: { model: "gpt-image-2", quality: "low", prompt: "a green disk" } },
           outcome: "cancelled",
         }),
       }),
     ]);
-    expect(text).not.toContain("sk-local");
   });
 });

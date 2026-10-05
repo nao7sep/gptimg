@@ -30,9 +30,9 @@ export interface Profile {
 }
 
 export interface ResolvedProfile {
-  /** Original profile fields excluding secret-bearing keys. Safe to log/serialize. */
+  /** Original profile fields other than the key and where it comes from. */
   redacted: Omit<Profile, "apiKey" | "apiKeyEnv">;
-  /** Resolved API key value. NEVER log or serialize. */
+  /** Resolved API key value; a provider attempt's log line records it in its headers. */
   apiKey: string;
   /** Where the key came from: "env:NAME" or "profile.apiKey". */
   apiKeySource: string;

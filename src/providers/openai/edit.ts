@@ -4,7 +4,7 @@ import { LocalOpError, ProviderError } from "../../errors.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
-import { buildOpenAIClient, resolveModel } from "./client.js";
+import { buildOpenAIClient, profileHeaders, resolveModel } from "./client.js";
 import { defaultModelFor } from "../../ai-models.js";
 import { buildImageRequest } from "./request.js";
 import { imageFileForEditUpload } from "./upload.js";
@@ -39,11 +39,14 @@ export async function openaiEdit(
     ...(maskFile && { mask: maskFile }),
   });
 
-  // The uploads are recorded by file name; their bytes stay out of the log.
+  // The uploads are recorded by file name: those files already hold their bytes.
   const request = {
-    ...params,
-    image: path.basename(args.imagePath),
-    ...(args.maskPath && { mask: path.basename(args.maskPath) }),
+    headers: profileHeaders(args.profile),
+    body: {
+      ...params,
+      image: path.basename(args.imagePath),
+      ...(args.maskPath && { mask: path.basename(args.maskPath) }),
+    },
   };
 
   const { primary, download, logger, signal } = args.network;

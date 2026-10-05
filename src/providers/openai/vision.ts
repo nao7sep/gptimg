@@ -3,7 +3,7 @@ import { ProviderError } from "../../errors.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { VisionVerdict } from "../../types.js";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
-import { buildOpenAIClient, resolveModel } from "./client.js";
+import { buildOpenAIClient, profileHeaders, resolveModel } from "./client.js";
 import { defaultModelFor } from "../../ai-models.js";
 import { OPENAI_VISION_SYSTEM_PROMPT } from "./defaults.js";
 import { resolveVisionReasoning } from "../../recipe/model-check.js";
@@ -152,8 +152,8 @@ export async function openaiVision(
       ? paramsSystemPrompt
       : OPENAI_VISION_SYSTEM_PROMPT;
 
-  // The request as sent, or as recorded: the record nulls each image's data URL,
-  // as a sidecar nulls returned image bytes.
+  // The request as sent, or as recorded: the record nulls each image's data URL, since the
+  // input file holds the image and the log's prepared-input line records how it was shrunk.
   const buildRequest = (withBytes: boolean) =>
     buildVisionRequest(model, {
       ...passthroughParams,
@@ -174,7 +174,7 @@ export async function openaiVision(
       },
     }, reasoning);
   const params = buildRequest(true);
-  const request = buildRequest(false);
+  const request = { headers: profileHeaders(args.profile), body: buildRequest(false) };
 
   const { primary, logger, signal } = args.network;
 

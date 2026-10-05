@@ -163,9 +163,9 @@ export interface CallWithRetryContext {
   signal?: AbortSignal | undefined;
   logger?: Logger | undefined;
   /**
-   * The request each attempt sends, in the form a record may hold; the log line
-   * of each attempt that does not succeed carries it (data-lifecycle-conventions,
-   * *Records*).
+   * The request each attempt sends, headers and key included; the log line of
+   * each attempt that does not succeed carries it (data-lifecycle-conventions,
+   * *Records* and *Nothing is cut*).
    */
   request?: Record<string, unknown> | undefined;
 }

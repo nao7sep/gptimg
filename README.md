@@ -35,6 +35,8 @@ Run it with `npx tsx your-script.ts`.
 
 The key lives inside the profile on purpose: a profile is the unit you manage cost by, so each profile carries the key it spends. Keys are stored obfuscated in a `0600` file, never in plain text, and an environment variable named for the provider overrides the stored key.
 
+Each provider call or image download attempt that fails, retries or is cancelled gets its own JSONL log line holding the request it sent: headers and API key included for a provider call, the whole URL for a download. Only image bytes stay out, since the image files hold them. Keep the log folder as private as the profile.
+
 Every long-running verb accepts the same optional call controls. Pass an `AbortSignal` to cancel at the next safe boundary and `onProgress` to receive the structured stage events that also feed the JSONL log:
 
 ```ts
