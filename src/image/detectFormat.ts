@@ -1,19 +1,6 @@
 import sharp from "sharp";
 import { LocalOpError } from "../errors.js";
-
-const FORMAT_TO_EXT: Record<string, string> = {
-  jpeg: "jpg",
-  png: "png",
-  webp: "webp",
-  gif: "gif",
-  tiff: "tiff",
-  avif: "avif",
-  heif: "heif",
-  jxl: "jxl",
-};
-
-/** Canonical filename extensions this SDK can emit after format detection. */
-export const SUPPORTED_IMAGE_EXTENSIONS = [...new Set(Object.values(FORMAT_TO_EXT))] as readonly string[];
+import { FORMAT_TO_EXT } from "./formats.js";
 
 export interface DetectedFormat {
   format: string;

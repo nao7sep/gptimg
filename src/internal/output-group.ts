@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import { LocalOpError } from "../errors.js";
-import { SUPPORTED_IMAGE_EXTENSIONS } from "../image/detectFormat.js";
+import { SUPPORTED_IMAGE_EXTENSIONS } from "../image/formats.js";
 import { indexSuffix } from "./output-naming.js";
 
 /**
