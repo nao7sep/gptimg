@@ -43,7 +43,7 @@ const homes: string[] = [];
 async function freshSdk(label: string): Promise<{ img: GptImg; home: string }> {
   const home = await mkdtemp(join(CACHE, `${label}-`));
   homes.push(home);
-  await writeFile(join(home, "profile.json"), `${JSON.stringify({ provider: "openai", apiKeyEnv: "OPENAI_API_KEY" })}\n`);
+  await writeFile(join(home, "profile.json"), `${JSON.stringify({ formatVersion: 1, provider: "openai", apiKeyEnv: "OPENAI_API_KEY" })}\n`);
   return { img: new GptImg({ profileDir: home }), home };
 }
 

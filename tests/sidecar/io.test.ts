@@ -36,11 +36,13 @@ describe("sidecar read/write", () => {
     await expect(readSidecar(stem)).resolves.toEqual(sidecar);
   });
 
-  it("reads a sidecar with no formatVersion as format 1", async () => {
-    const sidecar: Sidecar = { request: { prompt: "old" }, response: {}, files: [] };
-    await writeFile(`${stem}.json`, JSON.stringify(sidecar));
+  it("treats a sidecar with no formatVersion as unreadable", async () => {
+    await writeFile(`${stem}.json`, JSON.stringify({ request: { prompt: "old" }, response: {}, files: [] }));
 
-    await expect(readSidecar(stem)).resolves.toEqual(sidecar);
+    await expect(readSidecar(stem)).rejects.toMatchObject({
+      errorType: "localOp",
+      code: "image.decodeFailed",
+    });
   });
 
   it("refuses a sidecar of a newer format and leaves it byte-identical", async () => {

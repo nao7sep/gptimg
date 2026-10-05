@@ -55,6 +55,7 @@ export async function loadRecipe(
       name: "recipe",
       path: filePath,
       ErrorClass: RecipeError,
+      invalidCode: "recipe.validationFailed",
     }),
   );
 }

@@ -61,6 +61,7 @@ describe("AI verb implementations with mocked provider", () => {
     await writeFile(
       defaultProfile,
       JSON.stringify({
+        formatVersion: 1,
         provider: "openai",
         apiKey: obfuscate("sk-profile-only"),
       }) + "\n",
@@ -163,6 +164,7 @@ describe("AI verb implementations with mocked provider", () => {
     await writeFile(
       profilePath,
       JSON.stringify({
+        formatVersion: 1,
         provider: "openai",
         apiKey: obfuscate("sk-custom-profile"),
       }) + "\n",
@@ -171,6 +173,7 @@ describe("AI verb implementations with mocked provider", () => {
     await writeFile(
       recipePath,
       JSON.stringify({
+        formatVersion: 1,
         generate: {
           size: "1024x1024",
           quality: "low",
@@ -332,6 +335,7 @@ describe("AI verb implementations with mocked provider", () => {
     await writeFile(
       recipe,
       JSON.stringify({
+        formatVersion: 1,
         generate: { quality: "medium" },
         edit: { size: "1024x1024", n: 1 },
       }) + "\n",
@@ -948,7 +952,7 @@ describe("AI verb implementations with mocked provider", () => {
     await copyFile(fixture("green-disk.png"), input);
     await writeFile(
       recipe,
-      JSON.stringify({ vision: { shrink: { width: 32, height: 32 } } }) + "\n",
+      JSON.stringify({ formatVersion: 1, vision: { shrink: { width: 32, height: 32 } } }) + "\n",
     );
     providerCalls.vision.mockResolvedValue({
       raw: {},

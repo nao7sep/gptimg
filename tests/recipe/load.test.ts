@@ -43,6 +43,7 @@ describe("loadRecipe", () => {
     await writeFile(
       file,
       JSON.stringify({
+        formatVersion: 1,
         generate: { size: "1024x1024", n: 2 },
         vision: { shrink: { width: 512, height: 512 } },
         chroma: { color: "#00ff00" },
@@ -67,7 +68,7 @@ describe("loadRecipe", () => {
   });
 
   it("rejects malformed recipe sections", async () => {
-    const cases: [string, unknown][] = [
+    const cases: [string, Record<string, unknown>][] = [
       ["generate-n", { generate: { n: 0 } }],
       ["chroma-color", { chroma: { color: "green" } }],
       ["edit", { edit: { size: 123 } }],
@@ -76,7 +77,7 @@ describe("loadRecipe", () => {
     ];
     for (const [name, value] of cases) {
       const file = path.join(tmp, `${name}.json`);
-      await writeFile(file, JSON.stringify(value));
+      await writeFile(file, JSON.stringify({ formatVersion: 1, ...value }));
       await expect(loadRecipe(file), name).rejects.toMatchObject({
         code: "recipe.validationFailed",
       });
@@ -108,7 +109,7 @@ describe("loadRecipeForCall", () => {
   it("loads the default recipe from the profile dir when present", async () => {
     await writeFile(
       defaultRecipePath(tmp),
-      JSON.stringify({ generate: { n: 3 } }) + "\n",
+      JSON.stringify({ formatVersion: 1, generate: { n: 3 } }) + "\n",
     );
     await expect(loadRecipeForCall(undefined, tmp)).resolves.toEqual({
       generate: { n: 3 },
@@ -129,10 +130,11 @@ describe("recipe format version", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("reads a recipe with no formatVersion as format 1", async () => {
-    await writeFile(file, JSON.stringify({ generate: { n: 2 } }));
-
-    await expect(loadRecipe(file)).resolves.toEqual({ generate: { n: 2 } });
+  it("treats a recipe with no formatVersion, or one that is not an object, as unreadable", async () => {
+    for (const text of [JSON.stringify({ generate: { n: 2 } }), "{}", "null", "[]"]) {
+      await writeFile(file, text);
+      await expect(loadRecipe(file), text).rejects.toMatchObject({ code: "recipe.validationFailed" });
+    }
   });
 
   it("reads the current format version and returns the recipe without it", async () => {
@@ -169,7 +171,7 @@ describe("recipe format version", () => {
     for (const value of [0, -1, 2.5, "1", true]) {
       await writeFile(file, JSON.stringify({ formatVersion: value }));
       await expect(loadRecipe(file), JSON.stringify(value)).rejects.toMatchObject({
-        code: "recipe.invalidFormatVersion",
+        code: "recipe.validationFailed",
       });
     }
   });

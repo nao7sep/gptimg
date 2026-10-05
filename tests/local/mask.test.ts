@@ -45,6 +45,7 @@ describe("chromaMask: green disk fixture", () => {
       await writeFile(
         path.join(tmp, "generated-01.json"),
         JSON.stringify({
+          formatVersion: 1,
           request: { chroma: { color: "#00ff00" } },
           response: {},
           files: [],
@@ -71,6 +72,7 @@ describe("chromaMask: green disk fixture", () => {
       await writeFile(
         path.join(tmp, "donut-2024-05-28.json"),
         JSON.stringify({
+          formatVersion: 1,
           request: { chroma: { color: "#00ff00" } },
           response: {},
           files: [],

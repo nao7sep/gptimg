@@ -107,6 +107,7 @@ describe("AI verb abort propagation", () => {
     await writeFile(
       defaultProfile,
       JSON.stringify({
+        formatVersion: 1,
         provider: "openai",
         apiKey: obfuscate("sk-profile-only"),
       }) + "\n",

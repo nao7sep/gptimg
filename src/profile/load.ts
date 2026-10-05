@@ -104,6 +104,7 @@ function parseProfile(text: string, filePath: string): Profile {
     name: "profile",
     path: filePath,
     ErrorClass: ProfileError,
+    invalidCode: "profile.validationFailed",
   });
   const result = ProfileSchema.safeParse(body);
   if (!result.success) {

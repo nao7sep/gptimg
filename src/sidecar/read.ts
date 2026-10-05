@@ -30,5 +30,6 @@ export async function readSidecar(stem: string): Promise<Sidecar> {
     name: "sidecar",
     path: sidecarPath,
     ErrorClass: LocalOpError,
+    invalidCode: "image.decodeFailed",
   }) as Sidecar;
 }

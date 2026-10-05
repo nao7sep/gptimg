@@ -5,25 +5,31 @@ type StoreErrorClass = new (code: string, message: string) => GptImgError;
 /**
  * Check the `formatVersion` of a parsed store and return the store without it
  * (store-recovery-conventions). It runs before the store's shape check, since
- * this build does not know a newer format's shape; a value that is not a JSON
- * object is returned unchanged for that shape check to reject.
+ * this build does not know a newer format's shape.
  *
- * Throws `<store>.newerFormat` for a version newer than `current` and
- * `<store>.invalidFormatVersion` for one that is not a positive integer, each
- * as the store's own error class and naming the file. Neither writes anything.
+ * A store that is not a JSON object, or whose `formatVersion` is missing or not
+ * a positive integer, throws the store's own `invalidCode`; a newer version
+ * throws `<store>.newerFormat`. Each error is the store's own class and names
+ * the file. Neither writes anything.
  */
 export function takeFormatVersion(
   parsed: unknown,
   current: number,
-  store: { name: "profile" | "recipe" | "sidecar"; path: string; ErrorClass: StoreErrorClass },
+  store: {
+    name: "profile" | "recipe" | "sidecar";
+    path: string;
+    ErrorClass: StoreErrorClass;
+    invalidCode: string;
+  },
 ): unknown {
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return parsed;
-  const { formatVersion, ...body } = parsed as Record<string, unknown>;
-  if (formatVersion === undefined) return body;
+  const { formatVersion, ...body } =
+    typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
   if (typeof formatVersion !== "number" || !Number.isInteger(formatVersion) || formatVersion < 1) {
     throw new store.ErrorClass(
-      `${store.name}.invalidFormatVersion`,
-      `formatVersion in ${store.path} must be a positive integer, not ${JSON.stringify(formatVersion)}`,
+      store.invalidCode,
+      `${store.path} must be a JSON object whose formatVersion is a positive integer`,
     );
   }
   if (formatVersion > current) {

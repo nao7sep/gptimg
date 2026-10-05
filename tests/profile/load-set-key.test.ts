@@ -27,6 +27,7 @@ describe("loadProfile", () => {
     await writeFile(
       file,
       JSON.stringify({
+        formatVersion: 1,
         provider: "openai",
         organization: "org-local",
         project: "proj-local",
@@ -55,7 +56,7 @@ describe("loadProfile", () => {
   });
 
   it("rejects malformed, unknown, and legacy profile fields", async () => {
-    const cases: [string, unknown][] = [
+    const cases: [string, Record<string, unknown>][] = [
       ["missing-provider", {}],
       ["empty-provider", { provider: "" }],
       ["unknown-field", { provider: "openai", model: "gpt-image-2" }],
@@ -65,7 +66,7 @@ describe("loadProfile", () => {
     ];
     for (const [name, value] of cases) {
       const file = path.join(tmp, `${name}.json`);
-      await writeFile(file, JSON.stringify(value));
+      await writeFile(file, JSON.stringify({ formatVersion: 1, ...value }));
       await expect(loadProfile(file), name).rejects.toMatchObject({
         code: "profile.validationFailed",
       });
@@ -94,7 +95,7 @@ describePosix("loadProfile insecure-mode halt (POSIX)", () => {
     const file = path.join(tmp, "loose.json");
     await writeFile(
       file,
-      JSON.stringify({ provider: "openai", apiKey: "sk-loose" }) + "\n",
+      JSON.stringify({ formatVersion: 1, provider: "openai", apiKey: "sk-loose" }) + "\n",
     );
     await chmod(file, 0o644);
 
@@ -108,7 +109,7 @@ describePosix("loadProfile insecure-mode halt (POSIX)", () => {
     const file = path.join(tmp, "tight.json");
     await writeFile(
       file,
-      JSON.stringify({ provider: "openai", apiKey: "sk-tight" }) + "\n",
+      JSON.stringify({ formatVersion: 1, provider: "openai", apiKey: "sk-tight" }) + "\n",
     );
     await chmod(file, 0o600);
 
@@ -122,7 +123,7 @@ describePosix("loadProfile insecure-mode halt (POSIX)", () => {
     const file = path.join(tmp, "env-only.json");
     await writeFile(
       file,
-      JSON.stringify({ provider: "openai", apiKeyEnv: "OPENAI_API_KEY" }) + "\n",
+      JSON.stringify({ formatVersion: 1, provider: "openai", apiKeyEnv: "OPENAI_API_KEY" }) + "\n",
     );
     await chmod(file, 0o644);
 
@@ -179,6 +180,7 @@ describe("setApiKey / clearApiKey", () => {
     await writeFile(
       file,
       JSON.stringify({
+        formatVersion: 1,
         provider: "openai",
         apiKeyEnv: "GPTIMG_TEST_KEY",
         organization: "org-local",
@@ -222,7 +224,7 @@ describe("setApiKey / clearApiKey", () => {
 
   it("rewrites a matching plaintext key into its obfuscated form", async () => {
     await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, JSON.stringify({ provider: "openai", apiKey: "sk-plain" }) + "\n");
+    await writeFile(file, JSON.stringify({ formatVersion: 1, provider: "openai", apiKey: "sk-plain" }) + "\n");
 
     await setApiKey(file, "sk-plain");
 
@@ -250,6 +252,7 @@ describe("setApiKey / clearApiKey", () => {
     await writeFile(
       file,
       JSON.stringify({
+        formatVersion: 1,
         provider: "openai",
         apiKey: "sk-plain",
         apiKeyEnv: "GPTIMG_TEST_KEY",
@@ -269,6 +272,7 @@ describe("setApiKey / clearApiKey", () => {
     await writeFile(
       file,
       JSON.stringify({
+        formatVersion: 1,
         provider: "openai",
         apiKeyEnv: "GPTIMG_TEST_KEY",
       }) + "\n",
@@ -303,7 +307,7 @@ describe("setApiKey / clearApiKey", () => {
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(
       file,
-      JSON.stringify({ provider: "openai", apiKeyEnv: "OPENAI_API_KEY" }) + "\n",
+      JSON.stringify({ formatVersion: 1, provider: "openai", apiKeyEnv: "OPENAI_API_KEY" }) + "\n",
     );
     await chmod(file, 0o644);
 
@@ -320,7 +324,7 @@ describe("setApiKey / clearApiKey", () => {
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(
       file,
-      JSON.stringify({ provider: "openai", apiKey: "stale-key-on-disk" }) + "\n",
+      JSON.stringify({ formatVersion: 1, provider: "openai", apiKey: "stale-key-on-disk" }) + "\n",
     );
     await chmod(file, 0o644);
 
@@ -341,6 +345,7 @@ describe("setApiKey / clearApiKey", () => {
     await writeFile(
       file,
       JSON.stringify({
+        formatVersion: 1,
         provider: "openai",
         apiKey: "leaked-key",
         apiKeyEnv: "OPENAI_API_KEY",
@@ -372,10 +377,13 @@ describe("profile format version", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("reads a profile with no formatVersion as format 1", async () => {
-    await writeFile(file, JSON.stringify({ provider: "openai", apiKeyEnv: "KEY" }) + "\n");
+  it("treats a profile with no formatVersion as unreadable", async () => {
+    const text = JSON.stringify({ provider: "openai", apiKeyEnv: "KEY" }) + "\n";
+    await writeFile(file, text);
 
-    await expect(loadProfile(file)).resolves.toEqual({ provider: "openai", apiKeyEnv: "KEY" });
+    await expect(loadProfile(file)).rejects.toMatchObject({ code: "profile.validationFailed" });
+    await expect(setApiKey(file, "sk-new")).rejects.toMatchObject({ code: "profile.validationFailed" });
+    expect(await readFile(file, "utf-8")).toBe(text);
   });
 
   it("writes the current format version and reads it back", async () => {
@@ -416,7 +424,7 @@ describe("profile format version", () => {
     for (const value of [0, 1.5, "1", null]) {
       await writeFile(file, JSON.stringify({ formatVersion: value, provider: "openai" }));
       await expect(loadProfile(file), JSON.stringify(value)).rejects.toMatchObject({
-        code: "profile.invalidFormatVersion",
+        code: "profile.validationFailed",
       });
     }
   });

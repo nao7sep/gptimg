@@ -71,7 +71,7 @@ describe("GptImg SDK surface", () => {
     expect(sdk.profile.resolve(profile).apiKey).toBe("sk-sdk");
     await sdk.profile.clearApiKey({ path: profilePath });
 
-    await writeFile(recipePath, '{"generate":{"n":1}}\n');
+    await writeFile(recipePath, '{"formatVersion":1,"generate":{"n":1}}\n');
     expect(await sdk.recipe.load(recipePath)).toEqual({ generate: { n: 1 } });
     expect(sdk.recipe.merge({}, { vision: { shrink: { width: 1, height: 1 } } })).toEqual({
       vision: { shrink: { width: 1, height: 1 } },
@@ -106,7 +106,7 @@ describe("GptImg SDK surface", () => {
     await sharp(Buffer.from(rgba), { raw: { width: W, height: H, channels: 4 } }).png().toFile(imgPath);
     await writeFile(
       path.join(tmp, "cutout.json"),
-      JSON.stringify({ request: { chroma: { color: "#00ff00" } }, response: {}, files: [] }),
+      JSON.stringify({ formatVersion: 1, request: { chroma: { color: "#00ff00" } }, response: {}, files: [] }),
     );
 
     const res = await sdk.keycheck({ in: imgPath, key: "from-sidecar" });
