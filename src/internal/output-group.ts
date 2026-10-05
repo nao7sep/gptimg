@@ -188,13 +188,9 @@ async function recoverReleasedOrAbandonedLock(lockPath: string): Promise<boolean
     } catch (err) {
       return (err as NodeJS.ErrnoException).code === "ENOENT";
     }
-    // A marker from before the directory was recorded (v0.1.0) is empty; its
-    // holder put the socket where guardianSocketDirFor puts it now, under the
-    // holder's TMPDIR, so probe this process's choice and /tmp.
-    const socketDirs = path.isAbsolute(socketDir)
-      ? [socketDir]
-      : [...new Set([guardianSocketDirFor(lockPath, token), "/tmp"])];
-    endpoints = [...new Set(socketDirs.map((dir) => guardianEndpointFor(lockPath, token, dir)))];
+    // A marker naming no absolute socket directory is unreadable: with no
+    // endpoint to probe, the lock stays held unless it was released.
+    if (path.isAbsolute(socketDir)) endpoints = [guardianEndpointFor(lockPath, token, socketDir)];
   }
   let anyAlive = false;
   for (const endpoint of endpoints) {
