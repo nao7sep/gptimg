@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HEX_RE } from "../color.js";
+import { VISION_DETAILS } from "../enums.js";
 import { RecipeError } from "../errors.js";
 import { formatZodError } from "../internal/zodError.js";
 import { NetworkSchema } from "../network/schema.js";
@@ -11,14 +12,27 @@ import type {
   VisionRecipe,
 } from "../types.js";
 
+// A supported model's values are checked against its row (recipe/model-check.ts); here only
+// their types are.
 const IMAGE_PARAMS_SHAPE = {
   model: z.string().optional(),
   size: z.string().optional(),
   quality: z.string().optional(),
+  background: z.string().optional(),
+  output_format: z.string().optional(),
+  output_compression: z.number().optional(),
   n: z.number().int().positive().optional(),
 };
 
-const GenerateRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
+// gptimg always sends moderation "low" (ai-model-lineup-20261004), so a recipe cannot set it.
+const GenerateRecipeSchema = z
+  .object({
+    ...IMAGE_PARAMS_SHAPE,
+    moderation: z
+      .never({ error: 'moderation is not a recipe field; gptimg always sends moderation "low"' })
+      .optional(),
+  })
+  .passthrough();
 
 const EditRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
 
@@ -31,7 +45,8 @@ const VisionRecipeSchema = z
   .object({
     model: z.string().optional(),
     shrink: VisionShrinkSchema.optional(),
-    detail: z.enum(["low", "high", "original", "auto"]).optional(),
+    detail: z.enum(VISION_DETAILS).optional(),
+    reasoning: z.string().optional(),
     systemPrompt: z.string().optional(),
   })
   .passthrough();

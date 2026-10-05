@@ -557,6 +557,28 @@ describe("OpenAI provider implementations", () => {
     });
   });
 
+  it("vision sends a supported model's effort as reasoning_effort, its own default when unset", async () => {
+    openaiMock.create.mockResolvedValue({
+      choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
+    });
+    const cases: Array<[Record<string, unknown>, string | undefined]> = [
+      [{}, "none"],
+      [{ model: "gpt-6-astra" }, "medium"],
+      [{ model: "gpt-5.6-terra", reasoning: "none" }, "none"],
+      [{ model: "gpt-6-luna", reasoning: "max" }, "max"],
+      [{ model: "gpt-5.6-sol" }, undefined],
+      [{ model: "custom-vision-model", reasoning: "low" }, "low"],
+    ];
+    for (const [params, effort] of cases) {
+      openaiMock.create.mockClear();
+      await openaiVision({ check: "is it green?", images: [{ data: png, format: "png" }], params, profile, network });
+      const request = openaiMock.create.mock.calls[0]?.[0];
+      expect(request.reasoning_effort, JSON.stringify(params)).toBe(effort);
+      expect(request, JSON.stringify(params)).not.toHaveProperty("reasoning");
+      expect(request.response_format.json_schema.strict).toBe(true);
+    }
+  });
+
   it("vision honors an already-aborted signal before calling the SDK method", async () => {
     const ctrl = new AbortController();
     ctrl.abort(new Error("stop"));

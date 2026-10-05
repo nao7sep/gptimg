@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../../src/ai-models.js";
 import { GptImg } from "../../src/index.js";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
@@ -25,10 +26,12 @@ const CORPUS = join(REPO, "..", "company", "assets", "test-fixtures");
 const DISC = join(REPO, "tests", "fixtures", "green-disk.png");
 const CAT_PHOTO = "photos/similarity/apartment-cat/reference.jpg";
 // The lane proves the code paths, not image quality, so every paid call asks for
-// the cheapest output the provider offers.
-const CHEAPEST_IMAGE = { quality: "low", size: "1024x1024" };
+// the cheapest output the provider offers: the lowest quality and the smallest size
+// the image rows' size rule allows (655,360 pixels).
+const CHEAPEST_IMAGE = { quality: "low", size: "1024x640" };
 const CHEAPEST_VISION = { detail: "low" as const };
-const IMAGE_MODELS = ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2"] as const;
+const IMAGE_MODELS = SUPPORTED_MODELS.filter((row): row is ImageModelRow => "image" in row).map((row) => row.id);
+const VISION_ROWS = SUPPORTED_MODELS.filter((row): row is VisionModelRow => "thinking" in row);
 // Models the vision guide does not list as honouring `detail`, checked against the real API.
 const DETAIL_CHECKED_VISION_MODELS = ["gpt-6-luna", "gpt-6.1-sol"] as const;
 
@@ -139,7 +142,7 @@ describe("the live SDK", () => {
       expect(result.partial).toBe(false);
       expect(result.files).toHaveLength(1);
       const [file] = result.files;
-      expect(await sentRequest(file!.sidecarPath)).toMatchObject({ ...CHEAPEST_IMAGE, model });
+      expect(await sentRequest(file!.sidecarPath)).toMatchObject({ ...CHEAPEST_IMAGE, model, moderation: "low" });
       expect((await sharp(file!.path).metadata()).format).toBe(file!.format);
       const centre = await centreColour(file!.path, 0.2);
       expect(centre.r, "the centre is red").toBeGreaterThan(centre.g + 80);
@@ -204,6 +207,27 @@ describe("the live SDK", () => {
       const promptTokens = sidecar.response.raw.usage?.prompt_tokens ?? Number.POSITIVE_INFINITY;
       expect(promptTokens, `${model} prompt tokens at detail=low`).toBeLessThan(1_000);
       expect(holds.ok, holds.reasons.join(" ")).toBe(true);
+    });
+  }
+
+  // Every supported vision row at its own default effort, sent as reasoning_effort, and the
+  // default detail, sent as "auto", on a 128 px image.
+  for (const row of VISION_ROWS) {
+    it(`judges a tiny image with ${row.id} at its default effort and detail`, async () => {
+      requireKey();
+      const { img, home } = await freshSdk(`effort-${row.id}`);
+      const result = await img.vision({
+        in: await copyInto(home, DISC),
+        check: "A red disc is visible.",
+        outDir: home,
+        overrides: { vision: { model: row.id } },
+      });
+      expect(await sentRequest(result.sidecarPath)).toMatchObject({
+        model: row.id,
+        detail: "auto",
+        reasoning: row.defaultThinking,
+      });
+      expect(typeof result.ok, result.reasons.join(" ")).toBe("boolean");
     });
   }
 

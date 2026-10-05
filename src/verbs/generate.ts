@@ -13,6 +13,7 @@ import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
 import { mergeRecipes } from "../recipe/merge.js";
 import { loadRecipeForCall } from "../recipe/load.js";
+import { checkImageParams } from "../recipe/model-check.js";
 import { validateChromaSection, validateGenerateSection } from "../recipe/schemas.js";
 import { getProvider } from "../providers/index.js";
 import type { GenerateArgs, GenerateResult } from "../types.js";
@@ -59,11 +60,15 @@ export async function generateImpl(
     const section = validateGenerateSection(recipe.generate);
     const chromaSection = validateChromaSection(recipe.chroma);
 
-    // The model is settled before the call, so the log and the sidecar name the one sent.
+    // The model is settled and its values checked before the call, so the log and the sidecar
+    // name what is sent. Moderation is the most permissive value OpenAI takes
+    // (ai-model-lineup-20261004), sent for every model.
     const params: Record<string, unknown> = {
       ...section,
       model: resolveModel(section.model, defaultModelFor("openai", "image-generate")),
+      moderation: "low",
     };
+    checkImageParams("generate", params);
     const chromaColor =
       typeof chromaSection.color === "string" && chromaSection.color.length > 0
         ? chromaSection.color

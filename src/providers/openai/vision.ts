@@ -6,6 +6,7 @@ import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
 import { buildOpenAIClient, resolveModel } from "./client.js";
 import { defaultModelFor } from "../../ai-models.js";
 import { OPENAI_VISION_SYSTEM_PROMPT } from "./defaults.js";
+import { resolveVisionReasoning } from "../../recipe/model-check.js";
 import { buildVisionRequest } from "./request.js";
 
 const VERDICT_SCHEMA = {
@@ -141,7 +142,11 @@ export async function openaiVision(
   const model = resolveModel(args.params.model, defaultModelFor("openai", "vision"));
   const client = buildOpenAIClient(args.profile);
 
-  const { systemPrompt: paramsSystemPrompt, ...passthroughParams } = args.params;
+  const { systemPrompt: paramsSystemPrompt, reasoning: paramsReasoning, ...passthroughParams } = args.params;
+  const reasoning = resolveVisionReasoning(
+    model,
+    typeof paramsReasoning === "string" ? paramsReasoning : undefined,
+  );
   const systemPrompt =
     typeof paramsSystemPrompt === "string" && paramsSystemPrompt.length > 0
       ? paramsSystemPrompt
@@ -167,7 +172,7 @@ export async function openaiVision(
         type: "json_schema",
         json_schema: VERDICT_SCHEMA,
       },
-    });
+    }, reasoning);
   const params = buildRequest(true);
   const request = buildRequest(false);
 

@@ -64,7 +64,8 @@ export type CombineOp = (typeof COMBINE_OPS)[number];
 export const DESPECKLE_KEEP = ["all", "largest"] as const;
 export type DespeckleKeep = (typeof DESPECKLE_KEEP)[number];
 
-export const VISION_DETAILS = ["low", "high", "original", "auto"] as const;
+/** The vision `detail` values, OpenAI's literal `auto` first (the default), then its own order. */
+export const VISION_DETAILS = ["auto", "low", "high", "original"] as const;
 export type VisionDetail = (typeof VISION_DETAILS)[number];
 
 /**

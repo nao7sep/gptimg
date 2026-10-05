@@ -172,11 +172,11 @@ describe("AI verb implementations with mocked provider", () => {
       recipePath,
       JSON.stringify({
         generate: {
-          size: "from-file",
-          quality: "file-quality",
+          size: "1024x1024",
+          quality: "low",
           n: 1,
         },
-        edit: { size: "file-edit-size" },
+        edit: { size: "1536x1024" },
       }) + "\n",
     );
     providerCalls.generate.mockResolvedValue({
@@ -190,7 +190,7 @@ describe("AI verb implementations with mocked provider", () => {
       recipe: recipePath,
       outDir: path.join(tmp, "layered-out"),
       outName: "layered",
-      overrides: { generate: { quality: "set-quality", n: 3 }, edit: { size: "set-edit-size" } },
+      overrides: { generate: { quality: "high", n: 3 }, edit: { size: "1024x1536" } },
     });
 
     expect(path.basename(result.files[0]?.path ?? "")).toBe("layered-1.png");
@@ -201,8 +201,8 @@ describe("AI verb implementations with mocked provider", () => {
         apiKeySource: "profile.apiKey",
       },
       params: {
-        size: "from-file",
-        quality: "set-quality",
+        size: "1024x1024",
+        quality: "high",
         n: 3,
       },
     });
@@ -332,8 +332,8 @@ describe("AI verb implementations with mocked provider", () => {
     await writeFile(
       recipe,
       JSON.stringify({
-        generate: { quality: "generate-only" },
-        edit: { size: "edit-from-file", n: 1 },
+        generate: { quality: "medium" },
+        edit: { size: "1024x1024", n: 1 },
       }) + "\n",
     );
     providerCalls.edit.mockResolvedValue({
@@ -347,12 +347,12 @@ describe("AI verb implementations with mocked provider", () => {
       recipe,
       outDir: path.join(tmp, "recipe-edit-out"),
       outName: "recipe-edit",
-      overrides: { edit: { size: "edit-from-set", n: 2 } },
+      overrides: { edit: { size: "1536x1024", n: 2 } },
     });
 
     const call = providerCalls.edit.mock.calls[0]?.[0];
     expect(call?.params).toMatchObject({
-      size: "edit-from-set",
+      size: "1536x1024",
       n: 2,
     });
     expect(call?.params).not.toHaveProperty("quality");
@@ -1022,5 +1022,100 @@ describe("AI verb implementations with mocked provider", () => {
     const visionSidecar = JSON.parse(await readFile(judged.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
     expect(visionSidecar.request.model).toBe("gpt-6-luna");
     expect(providerCalls.vision.mock.calls[0]?.[0].params.model).toBe("gpt-6-luna");
+  });
+
+  it("generate sends moderation low for every model and records it", async () => {
+    providerCalls.generate.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
+    const outDir = path.join(tmp, "moderation");
+    for (const model of [undefined, "gpt-image-2", "some-future-image-model"]) {
+      providerCalls.generate.mockClear();
+      const outName = `gen-${model ?? "default"}`;
+      const result = await sdk.generate({ prompt: "a disk", outDir, outName, overrides: { generate: { model } } });
+      expect(providerCalls.generate.mock.calls[0]?.[0].params.moderation, outName).toBe("low");
+      const sidecar = JSON.parse(await readFile(result.files[0]!.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
+      expect(sidecar.request.moderation, outName).toBe("low");
+    }
+  });
+
+  it("generate refuses a recipe that sets moderation, before any provider call", async () => {
+    await expect(
+      sdk.generate({
+        prompt: "a disk",
+        outDir: path.join(tmp, "moderation-refused"),
+        overrides: { generate: { moderation: "auto" } as never },
+      }),
+    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("moderation") });
+    expect(providerCalls.generate).not.toHaveBeenCalled();
+  });
+
+  it("generate and edit refuse a value the chosen model does not take, before any provider call", async () => {
+    const outDir = path.join(tmp, "refused");
+    await expect(
+      sdk.generate({ prompt: "a disk", outDir, overrides: { generate: { model: "gpt-image-2", quality: "xhigh" } } }),
+    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("gpt-image-2 takes quality") });
+    const input = path.join(tmp, "refused-input.png");
+    await copyFile(fixture("green-disk.png"), input);
+    await expect(
+      sdk.edit({
+        in: input,
+        prompt: "make it blue",
+        outDir,
+        overrides: { edit: { background: "transparent", output_format: "jpeg" } },
+      }),
+    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("transparent background") });
+    expect(providerCalls.generate).not.toHaveBeenCalled();
+    expect(providerCalls.edit).not.toHaveBeenCalled();
+  });
+
+  it("generate sends a supported model's chosen values as chosen, auto included", async () => {
+    providerCalls.generate.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
+    const chosen = { quality: "auto", background: "opaque", output_format: "jpeg", output_compression: 100, size: "auto" };
+    await sdk.generate({ prompt: "a disk", outDir: path.join(tmp, "chosen"), overrides: { generate: chosen } });
+    expect(providerCalls.generate.mock.calls[0]?.[0].params).toEqual({
+      ...chosen,
+      model: "gpt-image-2.5-flare",
+      moderation: "low",
+    });
+  });
+
+  it("vision sends detail auto and the model's own default effort when the recipe sets neither", async () => {
+    providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
+    const input = path.join(tmp, "effort.png");
+    await copyFile(fixture("green-disk.png"), input);
+    const outDir = path.join(tmp, "effort");
+    const expected: Array<[string | undefined, string | undefined]> = [
+      [undefined, "none"],
+      ["gpt-6-luna", "none"],
+      ["gpt-5.6-terra", "medium"],
+      ["gpt-6.1-sol", "medium"],
+      ["gpt-6-astra", "medium"],
+      ["some-future-chat-model", undefined],
+      ["gpt-5.6-luna", undefined],
+    ];
+    for (const [model, reasoning] of expected) {
+      providerCalls.vision.mockClear();
+      const outName = `effort-${model ?? "default"}`;
+      const result = await sdk.vision({ in: input, check: "green?", outDir, outName, overrides: { vision: { model } } });
+      const call = providerCalls.vision.mock.calls[0]?.[0];
+      expect(call?.params.reasoning, outName).toBe(reasoning);
+      expect(call?.images[0]?.detail, outName).toBe("auto");
+      const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
+      expect(sidecar.request.reasoning, outName).toBe(reasoning);
+      expect(sidecar.request.detail, outName).toBe("auto");
+    }
+  });
+
+  it("vision sends a chosen effort, and refuses one the model does not take before any provider call", async () => {
+    providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
+    const input = path.join(tmp, "chosen-effort.png");
+    await copyFile(fixture("green-disk.png"), input);
+    const outDir = path.join(tmp, "chosen-effort");
+    await sdk.vision({ in: input, check: "green?", outDir, outName: "high", overrides: { vision: { reasoning: "high" } } });
+    expect(providerCalls.vision.mock.calls[0]?.[0].params).toMatchObject({ model: "gpt-6-luna", reasoning: "high" });
+    providerCalls.vision.mockClear();
+    await expect(
+      sdk.vision({ in: input, check: "green?", outDir, outName: "none", overrides: { vision: { model: "gpt-6-astra", reasoning: "none" } } }),
+    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("gpt-6-astra takes reasoning") });
+    expect(providerCalls.vision).not.toHaveBeenCalled();
   });
 });

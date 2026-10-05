@@ -49,6 +49,8 @@ const result = await img.upscale(
 );
 ```
 
+The AI verbs default to the models listed in `src/ai-models.ts`. A recipe that names a listed model is checked against that model's values (quality, background, output format and compression, and size for images; reasoning effort for `vision`) before any paid call, so a value the model does not take fails without spending. Any other model id is sent as given, and OpenAI's answer is the verdict. `generate` always sends moderation `"low"`, so a recipe cannot set it.
+
 The package entry point exports the argument, result, error, model, progress, profile, image-helper, and logger types used by its public surface. Source, those types, focused examples, and tests are the API reference; there is no parallel hand-maintained API inventory.
 
 ## Third-party models

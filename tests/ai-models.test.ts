@@ -1,10 +1,20 @@
 // Guard test for the model table and the request branches (ai-model-routing-conventions):
-// every row has its branch, every branch has its row, each role has exactly one default,
-// and an id with no row gets the plain request untouched.
+// the lineup's rows, their order, lists and defaults are pinned; every row has its branch and
+// every branch its row; each role has exactly one default; and an id with no row gets the plain
+// request untouched.
 
 import { describe, expect, it } from "vitest";
 
-import { AI_ROLES, SUPPORTED_MODELS, defaultModelFor, modelsFor, type AiKind } from "../src/ai-models.js";
+import {
+  AI_ROLES,
+  MODEL_LINEUP,
+  SUPPORTED_MODELS,
+  defaultModelFor,
+  modelsFor,
+  type AiKind,
+  type ImageModelRow,
+  type VisionModelRow,
+} from "../src/ai-models.js";
 import {
   IMAGE_REQUEST_BRANCHES,
   VISION_REQUEST_BRANCHES,
@@ -13,8 +23,60 @@ import {
 } from "../src/providers/openai/request.js";
 
 const IMAGE_KINDS: readonly AiKind[] = ["image-generate", "image-edit"];
+const REMOVED_VISION_IDS = ["gpt-5.6-sol", "gpt-5.6-luna"] as const;
+
+const imageRows = SUPPORTED_MODELS.filter((row): row is ImageModelRow => "image" in row);
+const visionRows = SUPPORTED_MODELS.filter((row): row is VisionModelRow => "thinking" in row);
 
 describe("the model table", () => {
+  it("rests on the 2026-10-04 lineup", () => {
+    expect(MODEL_LINEUP).toBe("ai-model-lineup-20261004");
+  });
+
+  it("lists the lineup's rows in order, highest tier first", () => {
+    expect(SUPPORTED_MODELS.map((row) => [row.id, row.kinds, row.defaultFor])).toEqual([
+      ["gpt-image-2.5-flare", ["image-generate", "image-edit"], ["image-generate"]],
+      ["gpt-image-2.5-sunburst", ["image-generate", "image-edit"], ["image-edit"]],
+      ["gpt-image-2", ["image-generate", "image-edit"], []],
+      ["gpt-6-astra", ["vision"], []],
+      ["gpt-6.1-sol", ["vision"], []],
+      ["gpt-5.6-terra", ["vision"], []],
+      ["gpt-6-luna", ["vision"], ["vision"]],
+    ]);
+    for (const row of SUPPORTED_MODELS) expect(row.provider, row.id).toBe("openai");
+  });
+
+  it("pins each image row's values and size rule", () => {
+    const shared = {
+      backgrounds: ["auto", "transparent", "opaque"],
+      outputFormats: ["png", "jpeg", "webp"],
+      compression: { min: 0, max: 100, formats: ["jpeg", "webp"] },
+      size: { multipleOf: 16, maxRatio: 3, minPixels: 655_360, maxPixels: 8_294_400 },
+    };
+    expect(Object.fromEntries(imageRows.map((row) => [row.id, row.image]))).toEqual({
+      "gpt-image-2.5-flare": { qualities: ["auto", "low", "medium", "high", "xhigh", "max"], ...shared },
+      "gpt-image-2.5-sunburst": { qualities: ["auto", "low", "medium", "high", "xhigh", "max"], ...shared },
+      "gpt-image-2": { qualities: ["auto", "low", "medium", "high"], ...shared },
+    });
+  });
+
+  it("pins each vision row's effort list and its tier's default", () => {
+    expect(Object.fromEntries(visionRows.map((row) => [row.id, [row.thinking, row.defaultThinking]]))).toEqual({
+      "gpt-6-astra": [["low", "medium", "high", "xhigh", "max"], "medium"],
+      "gpt-6.1-sol": [["low", "medium", "high", "xhigh", "max"], "medium"],
+      "gpt-5.6-terra": [["none", "low", "medium", "high", "xhigh", "max"], "medium"],
+      "gpt-6-luna": [["none", "low", "medium", "high", "xhigh", "max"], "none"],
+    });
+    for (const row of visionRows) expect(row.thinking, row.id).toContain(row.defaultThinking);
+  });
+
+  it("no longer lists the removed vision models", () => {
+    for (const id of REMOVED_VISION_IDS) {
+      expect(SUPPORTED_MODELS.some((row) => row.id === id), id).toBe(false);
+      expect(VISION_REQUEST_BRANCHES[id], id).toBeUndefined();
+    }
+  });
+
   it("gives every image row an image branch and every vision row a vision branch", () => {
     for (const row of SUPPORTED_MODELS) {
       if (row.kinds.some((kind) => IMAGE_KINDS.includes(kind))) {
@@ -27,10 +89,13 @@ describe("the model table", () => {
   });
 
   it("has a row for every branch", () => {
-    const imageRows = SUPPORTED_MODELS.filter((row) => row.kinds.some((kind) => IMAGE_KINDS.includes(kind))).map((row) => row.id);
-    const visionRows = SUPPORTED_MODELS.filter((row) => row.kinds.includes("vision")).map((row) => row.id);
-    expect(Object.keys(IMAGE_REQUEST_BRANCHES).sort()).toEqual([...imageRows].sort());
-    expect(Object.keys(VISION_REQUEST_BRANCHES).sort()).toEqual([...visionRows].sort());
+    expect(Object.keys(IMAGE_REQUEST_BRANCHES).sort()).toEqual(imageRows.map((row) => row.id).sort());
+    expect(Object.keys(VISION_REQUEST_BRANCHES).sort()).toEqual(visionRows.map((row) => row.id).sort());
+  });
+
+  it("gives image rows image kinds and vision rows the vision kind", () => {
+    for (const row of imageRows) expect(row.kinds, row.id).toEqual(["image-generate", "image-edit"]);
+    for (const row of visionRows) expect(row.kinds, row.id).toEqual(["vision"]);
   });
 
   it("lists each id once", () => {
@@ -64,17 +129,41 @@ describe("the request builder", () => {
     const request = { model: "some-future-image-model", prompt: "p", quality: "low" };
     expect(buildImageRequest("some-future-image-model", { ...request })).toEqual(request);
     const vision = { model: "some-future-chat-model", messages: [] };
-    expect(buildVisionRequest("some-future-chat-model", { ...vision })).toEqual(vision);
+    expect(buildVisionRequest("some-future-chat-model", { ...vision }, undefined)).toEqual(vision);
   });
 
-  it("adds nothing for a supported id, whose branches say they need nothing", () => {
-    for (const id of Object.keys(IMAGE_REQUEST_BRANCHES)) {
-      const request = { model: id, prompt: "p" };
-      expect(buildImageRequest(id, { ...request }), id).toEqual(request);
+  it("sends a removed vision id as an unlisted one: no effort unless the caller set one", () => {
+    for (const id of REMOVED_VISION_IDS) {
+      const vision = { model: id, messages: [] };
+      expect(buildVisionRequest(id, { ...vision }, undefined), id).toEqual(vision);
+      expect(buildVisionRequest(id, { ...vision }, "low"), id).toEqual({ ...vision, reasoning_effort: "low" });
     }
-    for (const id of Object.keys(VISION_REQUEST_BRANCHES)) {
-      const request = { model: id, messages: [] };
-      expect(buildVisionRequest(id, { ...request }), id).toEqual(request);
+  });
+
+  it("sends every image row's every value as chosen, auto included", () => {
+    for (const row of imageRows) {
+      for (const quality of row.image.qualities) {
+        for (const background of row.image.backgrounds) {
+          const request = { model: row.id, prompt: "p", quality, background, moderation: "low", size: "auto" };
+          expect(buildImageRequest(row.id, { ...request }), `${row.id} ${quality} ${background}`).toEqual(request);
+        }
+      }
+      for (const output_format of row.image.outputFormats) {
+        const request = { model: row.id, prompt: "p", output_format, output_compression: 100 };
+        expect(buildImageRequest(row.id, { ...request }), `${row.id} ${output_format}`).toEqual(request);
+      }
+    }
+  });
+
+  it("sends every vision row's every effort as reasoning_effort, and changes nothing else", () => {
+    for (const row of visionRows) {
+      for (const reasoning of row.thinking) {
+        const request = { model: row.id, messages: [], response_format: { type: "json_schema" } };
+        expect(buildVisionRequest(row.id, { ...request }, reasoning), `${row.id} ${reasoning}`).toEqual({
+          ...request,
+          reasoning_effort: reasoning,
+        });
+      }
     }
   });
 });

@@ -16,6 +16,7 @@ import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
 import { mergeRecipes } from "../recipe/merge.js";
 import { loadRecipeForCall } from "../recipe/load.js";
+import { checkImageParams } from "../recipe/model-check.js";
 import { validateEditSection } from "../recipe/schemas.js";
 import { getProvider } from "../providers/index.js";
 import type { EditArgs, EditResult } from "../types.js";
@@ -71,11 +72,13 @@ export async function editImpl(
     if (args.overrides) recipe = mergeRecipes(recipe, args.overrides);
     const network = resolveNetworkForCall(recipe);
     const section = validateEditSection(recipe.edit);
-    // The model is settled before the call, so the log and the sidecar name the one sent.
+    // The model is settled and its values checked before the call, so the log and the sidecar
+    // name what is sent.
     const params: Record<string, unknown> = {
       ...section,
       model: resolveModel(section.model, defaultModelFor("openai", "image-edit")),
     };
+    checkImageParams("edit", params);
 
     const n =
       typeof params.n === "number" && (params.n as number) > 0
