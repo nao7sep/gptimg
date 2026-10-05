@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { writeFileAtomic } from "../internal/atomic-file.js";
 import { ProfileError } from "../errors.js";
@@ -36,10 +36,28 @@ async function writeProfile(filePath: string, profile: Profile): Promise<void> {
 }
 
 /**
+ * Repair a loose-mode profile whose content is already current, so an
+ * unchanged `setApiKey` keeps the 0o600 contract without rewriting the file.
+ */
+async function tightenMode(filePath: string): Promise<void> {
+  try {
+    await chmod(filePath, 0o600);
+  } catch (err) {
+    throw new ProfileError(
+      "profile.writeFailed",
+      `Failed to restrict profile mode at ${filePath}: ${(err as Error).message}`,
+      { cause: err },
+    );
+  }
+}
+
+/**
  * Write `apiKey` to the profile, storing its trimmed value in obfuscated form
  * (`"obf:" + base64` of the reversed UTF-8 bytes). Preserves every other field. Atomic.
  * If the profile file does not exist, a minimal `{ provider: "openai" }`
- * profile is created.
+ * profile is created. When the profile already stores exactly that value, the
+ * file is not rewritten (content-lifecycle-conventions, *Files*); only its
+ * mode is tightened to 0o600.
  *
  * The key must contain a non-whitespace character. Surrounding whitespace is
  * transport noise and is removed before storage so it cannot surface later as a
@@ -62,7 +80,12 @@ export async function setApiKey(filePath: string, rawKey: string): Promise<void>
       throw err;
     }
   }
-  profile.apiKey = obfuscate(apiKey);
+  const stored = obfuscate(apiKey);
+  if (profile.apiKey === stored) {
+    await tightenMode(filePath);
+    return;
+  }
+  profile.apiKey = stored;
   await writeProfile(filePath, profile);
 }
 

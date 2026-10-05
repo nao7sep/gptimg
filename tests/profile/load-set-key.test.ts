@@ -205,6 +205,45 @@ describe("setApiKey / clearApiKey", () => {
     expect(deobfuscate(profile.apiKey)).toBe("sk-local-secret");
   });
 
+  it("leaves the file untouched when the same key is saved again", async () => {
+    await setApiKey(file, "sk-unchanged");
+    const before = await stat(file);
+    const textBefore = await readFile(file, "utf-8");
+
+    // Padding is trimmed, so this is the same stored value.
+    await setApiKey(file, "  sk-unchanged\n");
+
+    const after = await stat(file);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+    expect(await readFile(file, "utf-8")).toBe(textBefore);
+  });
+
+  it("rewrites a matching plaintext key into its obfuscated form", async () => {
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({ provider: "openai", apiKey: "sk-plain" }) + "\n");
+
+    await setApiKey(file, "sk-plain");
+
+    const text = await readFile(file, "utf-8");
+    expect(text).not.toContain("sk-plain");
+    const profile = await loadProfile(file);
+    expect(deobfuscate(profile.apiKey as string)).toBe("sk-plain");
+  });
+
+  it.skipIf(!POSIX)("tightens a loose mode without rewriting when the same key is saved again", async () => {
+    await setApiKey(file, "sk-unchanged");
+    await chmod(file, 0o644);
+    const before = await stat(file);
+
+    await setApiKey(file, "sk-unchanged");
+
+    const after = await stat(file);
+    expect(after.mode & 0o777).toBe(0o600);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
   it("clearApiKey removes only apiKey and keeps apiKeyEnv", async () => {
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(

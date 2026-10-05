@@ -15,10 +15,10 @@ const ENFORCE_FILE_MODE = process.platform !== "win32";
  * `enforceMode` (default true): on POSIX, refuse to return a profile that
  * carries an `apiKey` when the file is readable beyond the owner. Set false
  * from callers whose purpose is to *modify* the profile (e.g. `clearApiKey`,
- * `setApiKey`) — those callers immediately rewrite the file at 0o600, so the
- * insecure state is being repaired rather than ignored. When false, the
- * file's mode is not fetched at all; there is no failure surface from a
- * stat-only error on the modify paths.
+ * `setApiKey`) — those callers immediately rewrite the file at 0o600 (or, for
+ * an unchanged key, tighten its mode), so the insecure state is being
+ * repaired rather than ignored. When false, the file's mode is not fetched at
+ * all; there is no failure surface from a stat-only error on the modify paths.
  */
 export interface LoadProfileOptions {
   enforceMode?: boolean;
