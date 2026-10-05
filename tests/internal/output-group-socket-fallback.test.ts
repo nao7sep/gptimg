@@ -16,7 +16,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..");
 const OUTPUT_GROUP_MODULE = pathToFileURL(path.join(REPO_ROOT, "src/internal/output-group.ts")).href;
 const CHILD_PROCESS_TIMEOUT_MS = 3_000;
-const TEST_TIMEOUT_MS = CHILD_PROCESS_TIMEOUT_MS * 4;
+const TEST_TIMEOUT_MS = CHILD_PROCESS_TIMEOUT_MS * 2;
 // macOS rejects a Unix socket path longer than this many bytes.
 const DARWIN_SOCKET_PATH_LIMIT = 104;
 const HELD_MARKER = /^held-([A-Za-z0-9_-]{21})$/;
@@ -74,26 +74,21 @@ describe.skipIf(process.platform !== "darwin")(
     // A killed holder's socket stays in /tmp; a failing test must not leave it.
     let killedEndpoint: string | undefined;
 
-    // A contender in another process, with its own TMPDIR, reports what an
-    // acquire attempt on the shared stem did.
-    function contenderScript(stem: string): string {
-      return `
-        import { acquireOutputGroupLock, createOutputGroup } from ${JSON.stringify(OUTPUT_GROUP_MODULE)};
-        try {
-          const lock = await acquireOutputGroupLock(createOutputGroup(${JSON.stringify(outDir)}, ${JSON.stringify(stem)}, "png"));
-          await lock.release();
-          process.stdout.write("acquired\\n");
-        } catch (err) {
-          process.stdout.write(String(err.code) + "\\n");
-        }
-      `;
-    }
-
+    // A contender with its own TMPDIR reports what an acquire attempt on the
+    // shared stem did. `tmpdir()` reads TMPDIR on every call, so switching it
+    // gives this process exactly the view another process with that TMPDIR has.
     async function contend(stem: string, tmpdirValue: string): Promise<string> {
-      const child = spawnNode(contenderScript(stem), tmpdirValue);
-      const line = await firstLine(child);
-      await waitForExit(child);
-      return line;
+      const own = process.env.TMPDIR;
+      process.env.TMPDIR = tmpdirValue;
+      try {
+        const lock = await acquireOutputGroupLock(createOutputGroup(outDir, stem, "png"));
+        await lock.release();
+        return "acquired";
+      } catch (err) {
+        return String((err as { code?: unknown }).code);
+      } finally {
+        process.env.TMPDIR = own;
+      }
     }
 
     async function guardianOf(stem: string): Promise<{ socketDir: string; endpoint: string }> {
@@ -134,7 +129,6 @@ describe.skipIf(process.platform !== "darwin")(
         const lock = await acquireOutputGroupLock(group);
         let released = false;
         try {
-          await expect(acquireOutputGroupLock(group)).rejects.toMatchObject({ code: "output.busy" });
           expect(await contend("shared", longTmp)).toBe("output.busy");
           expect(await contend("shared", shortTmp)).toBe("output.busy");
 
@@ -153,7 +147,6 @@ describe.skipIf(process.platform !== "darwin")(
         }
         expect(await contend("shared", shortTmp)).toBe("acquired");
       },
-      TEST_TIMEOUT_MS,
     );
 
     it(

@@ -253,7 +253,9 @@ describe("fetchWithBudget", () => {
 
     await expect(
       fetchWithBudget(baseURL, {
-        timeout: 1000,
+        // The held first attempt waits out this whole budget; the second only
+        // needs a loopback reply.
+        timeout: 250,
         maxRetries: 1,
         retryIntervals: [],
       }),

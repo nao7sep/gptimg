@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { planIconOutputs, runIcon } from "../../src/local/icon.js";
 
 /** A solid square RGBA PNG of the given size. */
@@ -77,7 +77,23 @@ describe("planIconOutputs", () => {
 });
 
 describe("runIcon", () => {
+  // One master and one default run serve every test that only inspects what a
+  // run wrote: the icon encoder re-encodes each frame itself, so a run costs
+  // far more than reading its files.
+  let shared: string;
+  let master: string;
+  let res: Awaited<ReturnType<typeof runIcon>>;
   let tmp: string;
+
+  beforeAll(async () => {
+    shared = await mkdtemp(path.join(tmpdir(), "gptimg-icon-shared-"));
+    master = path.join(shared, "master.png");
+    await writeSquare(master, 1024);
+    res = await runIcon({ in: master, outDir: shared, name: "app", pngs: true });
+  });
+  afterAll(async () => {
+    await rm(shared, { recursive: true, force: true });
+  });
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-icon-"));
   });
@@ -86,11 +102,6 @@ describe("runIcon", () => {
   });
 
   it("writes a valid icns, ico, and 1024 png from a 1024 master", async () => {
-    const master = path.join(tmp, "master.png");
-    await writeSquare(master, 1024);
-
-    const res = await runIcon({ in: master, outDir: tmp });
-    expect(res.outputs).toEqual([res.icns, res.ico, res.png]);
     expect(res.sourceWidth).toBe(1024);
 
     // ICNS magic: "icns" + big-endian total length matching the file.
@@ -114,33 +125,22 @@ describe("runIcon", () => {
   });
 
   it("with no encoding option writes a png of exactly the bytes a bare sharp png() gives", async () => {
-    const master = path.join(tmp, "master.png");
-    await writeSquare(master, 1024);
-
-    const res = await runIcon({ in: master, outDir: tmp });
-
     const decoded = await sharp(master).ensureAlpha().png().toBuffer();
     const bare = await sharp(decoded).resize(1024, 1024, { fit: "fill", kernel: "lanczos3" }).png().toBuffer();
     expect((await readFile(res.png)).equals(bare)).toBe(true);
   });
 
-  it("applies a lossless PNG option to its png output", async () => {
-    const master = path.join(tmp, "master.png");
-    await writeSquare(master, 1024);
-    const plain = await runIcon({ in: master, outDir: tmp, name: "plain" });
+  it("applies a lossless PNG option to its png output, and writes only the three core files by default", async () => {
     const stored = await runIcon({ in: master, outDir: tmp, name: "stored", compressionLevel: 0 });
 
-    expect((await readFile(stored.png)).length).toBeGreaterThan((await readFile(plain.png)).length);
+    expect(stored.outputs).toEqual([stored.icns, stored.ico, stored.png]);
+    expect((await readFile(stored.png)).length).toBeGreaterThan((await readFile(res.png)).length);
     expect(await sharp(stored.png).metadata()).toMatchObject({ format: "png", width: 1024, height: 1024 });
     // The icon encoder decodes the frames it is handed, so the option never changes the pixels.
-    expect((await readFile(stored.ico)).equals(await readFile(plain.ico))).toBe(true);
+    expect((await readFile(stored.ico)).equals(await readFile(res.ico))).toBe(true);
   });
 
   it("packs every ICNS entry, including the largest retina sizes", async () => {
-    const master = path.join(tmp, "master.png");
-    await writeSquare(master, 1024);
-
-    const res = await runIcon({ in: master, outDir: tmp });
     const types = icnsEntryTypes(await readFile(res.icns));
     // All seven rows of ICNS_ENTRIES, ten codes total. ic14 (512@2x) and ic10
     // (1024) are written last and were dropped before addFromPng was awaited.
@@ -150,10 +150,7 @@ describe("runIcon", () => {
   });
 
   it("emits the sized-PNG set with correct dimensions when pngs=true", async () => {
-    const master = path.join(tmp, "master.png");
-    await writeSquare(master, 1024);
-
-    const res = await runIcon({ in: master, outDir: tmp, name: "app", pngs: true });
+    expect(res.outputs).toEqual([res.icns, res.ico, res.png, ...res.pngSet.map((p) => p.path)]);
     expect(res.pngSet).toHaveLength(8);
     for (const { size, path: p } of res.pngSet) {
       expect(existsSync(p)).toBe(true);
@@ -161,35 +158,35 @@ describe("runIcon", () => {
       expect(m.width).toBe(size);
       expect(m.height).toBe(size);
     }
-    expect(res.outputs).toContain(path.join(tmp, "app.icns"));
+    expect(res.outputs).toContain(path.join(shared, "app.icns"));
   });
 
   it("downsamples a larger-than-1024 master to a 1024 png", async () => {
-    const master = path.join(tmp, "big.png");
-    await writeSquare(master, 2048);
-    const res = await runIcon({ in: master, outDir: tmp });
-    expect(res.sourceWidth).toBe(2048);
-    const m = await sharp(res.png).metadata();
+    const big = path.join(tmp, "big.png");
+    await writeSquare(big, 2048);
+    const out = await runIcon({ in: big, outDir: tmp });
+    expect(out.sourceWidth).toBe(2048);
+    const m = await sharp(out.png).metadata();
     expect(m.width).toBe(1024);
   });
 
   it("rejects a non-square master", async () => {
-    const master = path.join(tmp, "wide.png");
+    const wide = path.join(tmp, "wide.png");
     await sharp({
       create: { width: 1024, height: 512, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } },
     })
       .png()
-      .toFile(master);
-    await expect(runIcon({ in: master, outDir: tmp })).rejects.toMatchObject({
+      .toFile(wide);
+    await expect(runIcon({ in: wide, outDir: tmp })).rejects.toMatchObject({
       errorType: "localOp",
       code: "args.invalid",
     });
   });
 
   it("rejects a master smaller than 1024", async () => {
-    const master = path.join(tmp, "small.png");
-    await writeSquare(master, 512);
-    await expect(runIcon({ in: master, outDir: tmp })).rejects.toMatchObject({
+    const small = path.join(tmp, "small.png");
+    await writeSquare(small, 512);
+    await expect(runIcon({ in: small, outDir: tmp })).rejects.toMatchObject({
       code: "args.invalid",
     });
   });
