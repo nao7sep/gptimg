@@ -199,7 +199,9 @@ async function recoverReleasedOrAbandonedLock(lockPath: string): Promise<boolean
       break;
     }
   }
-  const recoverable = released || (endpoints.length > 0 && !anyAlive);
+  // A claim becomes the lock with its held marker already inside, so an empty
+  // lock is never live: it is a release that stopped before its rmdir.
+  const recoverable = released || entries.length === 0 || (endpoints.length > 0 && !anyAlive);
   if (!recoverable) return false;
 
   let removedObservedEntry = entries.length === 0;
