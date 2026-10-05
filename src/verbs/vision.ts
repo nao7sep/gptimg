@@ -13,7 +13,7 @@ import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
 import { mergeRecipes } from "../recipe/merge.js";
 import { loadRecipeForCall } from "../recipe/load.js";
-import { resolveVisionReasoning } from "../recipe/model-check.js";
+import { resolveVisionDetail, resolveVisionReasoning } from "../recipe/model-check.js";
 import { validateVisionSection } from "../recipe/schemas.js";
 import { writeSidecar } from "../sidecar/write.js";
 import { getProvider } from "../providers/index.js";
@@ -44,7 +44,7 @@ interface PreparedImage {
   path: string;
   data: Uint8Array;
   format: string;
-  detail: VisionDetail;
+  detail: VisionDetail | undefined;
   shrink: {
     applied: boolean;
     originalWidth: number;
@@ -57,7 +57,7 @@ interface PreparedImage {
 async function prepareImage(
   imagePath: string,
   fit: { width: number; height: number },
-  detail: VisionDetail,
+  detail: VisionDetail | undefined,
   logger: Logger,
 ): Promise<PreparedImage> {
   let raw: Buffer;
@@ -123,13 +123,13 @@ export async function visionImpl(
     const network = resolveNetworkForCall(recipe);
     const section = validateVisionSection(recipe.vision);
     const { shrink: configuredShrink, detail: configuredDetail, reasoning: configuredReasoning, ...sectionParams } = section;
-    // The model and its effort are settled, and the effort checked against the model's row,
-    // before the call, so the log and the sidecar name what is sent.
+    // The model, its effort and its detail are settled, and the effort checked against the
+    // model's row, before the call, so the log and the sidecar name what is sent.
     const model = resolveModel(sectionParams.model, defaultModelFor("openai", "vision"));
     const reasoning = resolveVisionReasoning(model, configuredReasoning);
     const params = { ...sectionParams, model, ...(reasoning !== undefined && { reasoning }) };
     const shrink = configuredShrink ?? VISION_DEFAULTS.shrink;
-    const detail = configuredDetail ?? VISION_DEFAULTS.detail;
+    const detail = resolveVisionDetail(model, configuredDetail);
 
     // Resolve + guard the sidecar path before the (paid) provider call so a
     // name collision fails fast without spending, like generate/edit.
@@ -158,7 +158,7 @@ export async function visionImpl(
       images: prepared.map((p) => ({
         data: p.data,
         format: p.format,
-        detail: p.detail,
+        ...(p.detail !== undefined && { detail: p.detail }),
       })),
       params,
       profile: resolved,
@@ -178,7 +178,7 @@ export async function visionImpl(
       request: {
         ...params,
         check,
-        detail,
+        ...(detail !== undefined && { detail }),
         inputs: prepared.map((p) => ({
           name: path.basename(p.path),
           shrink: p.shrink,

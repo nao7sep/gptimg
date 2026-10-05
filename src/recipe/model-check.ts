@@ -4,6 +4,8 @@
 
 import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../ai-models.js";
 import { RecipeError } from "../errors.js";
+import type { VisionDetail } from "../types.js";
+import { VISION_DEFAULTS } from "../verbs/defaults.js";
 
 type ImageSection = "generate" | "edit";
 
@@ -80,14 +82,30 @@ export function checkImageParams(section: ImageSection, params: Readonly<Record<
 }
 
 /**
+ * The moderation a generate call sends: "low", the most permissive value
+ * (ai-model-lineup-20261004), for a supported model; none for an id with no row.
+ */
+export function resolveGenerateModeration(model: string): "low" | undefined {
+  return imageRow(model) ? "low" : undefined;
+}
+
+/**
  * The reasoning effort a vision call sends: the recipe's value, checked against the supported
- * model's list, else that model's own default. An id with no row sends the recipe's value
- * unchecked, or none when the recipe sets none.
+ * model's list, else that model's own default. An id with no row sends none.
  */
 export function resolveVisionReasoning(model: string, chosen: string | undefined): string | undefined {
   const row = visionRow(model);
-  if (!row) return chosen;
+  if (!row) return undefined;
   if (chosen === undefined) return row.defaultThinking;
   checkListed("vision", model, "reasoning", chosen, row.thinking);
   return chosen;
+}
+
+/**
+ * The image detail a vision call sends: the recipe's value, else `auto`, for a supported model.
+ * An id with no row sends none.
+ */
+export function resolveVisionDetail(model: string, chosen: VisionDetail | undefined): VisionDetail | undefined {
+  if (!visionRow(model)) return undefined;
+  return chosen ?? VISION_DEFAULTS.detail;
 }

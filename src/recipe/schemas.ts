@@ -14,6 +14,8 @@ import type {
 
 // A supported model's values are checked against its row (recipe/model-check.ts); here only
 // their types are.
+// Moderation is not exposed (ai-model-lineup-20261004): generate sends "low" for a supported
+// model, so neither section takes it.
 const IMAGE_PARAMS_SHAPE = {
   model: z.string().optional(),
   size: z.string().optional(),
@@ -22,17 +24,12 @@ const IMAGE_PARAMS_SHAPE = {
   output_format: z.string().optional(),
   output_compression: z.number().optional(),
   n: z.number().int().positive().optional(),
+  moderation: z
+    .never({ error: 'moderation is not a recipe field; generate sends moderation "low" for a supported model' })
+    .optional(),
 };
 
-// gptimg always sends moderation "low" (ai-model-lineup-20261004), so a recipe cannot set it.
-const GenerateRecipeSchema = z
-  .object({
-    ...IMAGE_PARAMS_SHAPE,
-    moderation: z
-      .never({ error: 'moderation is not a recipe field; gptimg always sends moderation "low"' })
-      .optional(),
-  })
-  .passthrough();
+const GenerateRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
 
 const EditRecipeSchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
 
@@ -49,7 +46,7 @@ const VisionRecipeSchema = z
     reasoning: z.string().optional(),
     // The effort is sent from `reasoning`, so a passed-through wire field would be overwritten.
     reasoning_effort: z
-      .never({ error: "reasoning_effort is not a recipe field; set reasoning, which gptimg sends as reasoning_effort" })
+      .never({ error: "reasoning_effort is not a recipe field; set reasoning, which gptimg sends as reasoning_effort for a supported model" })
       .optional(),
     systemPrompt: z.string().optional(),
   })

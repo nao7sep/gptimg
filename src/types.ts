@@ -42,7 +42,7 @@ export interface ResolvedProfile {
  * The `images.generate` / `images.edit` parameters a recipe sets; other fields pass through to
  * OpenAI as given. For a supported model (`src/ai-models.ts`), `quality`, `background`,
  * `output_format`, `output_compression` and `size` are checked against its row before any paid
- * call; any other model id is sent unchecked.
+ * call; any other model id is sent unchecked, with nothing added.
  */
 export interface GenerateRecipe {
   model?: string;
@@ -52,7 +52,7 @@ export interface GenerateRecipe {
   output_format?: string;
   output_compression?: number;
   n?: number;
-  /** Not settable: generate always sends moderation "low". */
+  /** Not settable: generate sends moderation "low" for a supported model, none for any other id. */
   moderation?: never;
   [key: string]: unknown;
 }
@@ -66,17 +66,19 @@ export interface EditRecipe {
   output_format?: string;
   output_compression?: number;
   n?: number;
+  /** Not settable: moderation is not exposed. */
+  moderation?: never;
   [key: string]: unknown;
 }
 
 export interface VisionRecipe {
   model?: string;
   shrink?: { width: number; height: number };
-  /** Sent as chosen; `auto` when unset. */
+  /** Sent as chosen, `auto` when unset, for a supported model; any other model id sends none. */
   detail?: VisionDetail;
   /**
-   * Sent as `reasoning_effort`. For a supported model it is checked against the model's list and
-   * defaults to the model's own default; any other model id sends it unchecked, or none.
+   * Sent as `reasoning_effort` for a supported model, checked against the model's list and
+   * defaulting to the model's own default; any other model id sends none.
    */
   reasoning?: string;
   /** Not settable: the effort is set with `reasoning`. */

@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../../src/ai-models.js";
 import { RecipeError } from "../../src/errors.js";
-import { checkImageParams, resolveVisionReasoning } from "../../src/recipe/model-check.js";
+import {
+  checkImageParams,
+  resolveGenerateModeration,
+  resolveVisionDetail,
+  resolveVisionReasoning,
+} from "../../src/recipe/model-check.js";
 
 const imageRows = SUPPORTED_MODELS.filter((row): row is ImageModelRow => "image" in row);
 const visionRows = SUPPORTED_MODELS.filter((row): row is VisionModelRow => "thinking" in row);
@@ -93,6 +98,31 @@ describe("checkImageParams", () => {
   });
 });
 
+describe("resolveGenerateModeration", () => {
+  it("sends low for every supported image row, and none for an id with no row", () => {
+    for (const row of imageRows) expect(resolveGenerateModeration(row.id), row.id).toBe("low");
+    for (const model of ["some-future-image-model", "gpt-image-1.5", "not a model"]) {
+      expect(resolveGenerateModeration(model), model).toBeUndefined();
+    }
+  });
+});
+
+describe("resolveVisionDetail", () => {
+  it("sends a supported row's chosen detail, auto when unset", () => {
+    for (const row of visionRows) {
+      expect(resolveVisionDetail(row.id, undefined), row.id).toBe("auto");
+      expect(resolveVisionDetail(row.id, "low"), row.id).toBe("low");
+    }
+  });
+
+  it("sends no detail for an id with no row, even a chosen one", () => {
+    for (const model of ["some-future-chat-model", "gpt-5.6-luna"]) {
+      expect(resolveVisionDetail(model, undefined), model).toBeUndefined();
+      expect(resolveVisionDetail(model, "low"), model).toBeUndefined();
+    }
+  });
+});
+
 describe("resolveVisionReasoning", () => {
   it("defaults each supported row to its own tier's default", () => {
     expect(Object.fromEntries(visionRows.map((row) => [row.id, resolveVisionReasoning(row.id, undefined)]))).toEqual({
@@ -115,10 +145,10 @@ describe("resolveVisionReasoning", () => {
     refusal(() => resolveVisionReasoning("gpt-6-luna", "minimal"));
   });
 
-  it("passes an unlisted or removed id's effort through unchecked, and invents none", () => {
+  it("sends no effort for an unlisted or removed id, even a chosen one, and never refuses it", () => {
     for (const model of ["some-future-chat-model", "gpt-5.6-sol", "gpt-5.6-luna"]) {
       expect(resolveVisionReasoning(model, undefined), model).toBeUndefined();
-      expect(resolveVisionReasoning(model, "anything"), model).toBe("anything");
+      expect(resolveVisionReasoning(model, "anything"), model).toBeUndefined();
     }
   });
 });

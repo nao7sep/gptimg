@@ -567,7 +567,7 @@ describe("OpenAI provider implementations", () => {
       [{ model: "gpt-5.6-terra", reasoning: "none" }, "none"],
       [{ model: "gpt-6-luna", reasoning: "max" }, "max"],
       [{ model: "gpt-5.6-sol" }, undefined],
-      [{ model: "custom-vision-model", reasoning: "low" }, "low"],
+      [{ model: "custom-vision-model", reasoning: "low" }, undefined],
     ];
     for (const [params, effort] of cases) {
       openaiMock.create.mockClear();
@@ -577,6 +577,51 @@ describe("OpenAI provider implementations", () => {
       expect(request, JSON.stringify(params)).not.toHaveProperty("reasoning");
       expect(request.response_format.json_schema.strict).toBe(true);
     }
+  });
+
+  it("vision sends an id with no row exactly the plain request, the strict schema included", async () => {
+    openaiMock.create.mockResolvedValue({
+      choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
+    });
+    await openaiVision({
+      check: "is it green?",
+      images: [{ data: png, format: "png" }],
+      params: { model: "some-future-chat-model", reasoning: "high" },
+      profile,
+      network,
+    });
+    const request = openaiMock.create.mock.calls[0]?.[0];
+    expect(request).toEqual({
+      model: "some-future-chat-model",
+      messages: [
+        { role: "system", content: expect.any(String) },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "is it green?" },
+            { type: "image_url", image_url: { url: expect.stringMatching(/^data:image\/png;base64,/) } },
+          ],
+        },
+      ],
+      response_format: { type: "json_schema", json_schema: expect.objectContaining({ name: "VisionVerdict", strict: true }) },
+    });
+  });
+
+  it("vision sends a supported model its full parameters", async () => {
+    openaiMock.create.mockResolvedValue({
+      choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
+    });
+    await openaiVision({
+      check: "is it green?",
+      images: [{ data: png, format: "png", detail: "auto" }],
+      params: { model: "gpt-6-luna", reasoning: "none" },
+      profile,
+      network,
+    });
+    const request = openaiMock.create.mock.calls[0]?.[0];
+    expect(request).toMatchObject({ model: "gpt-6-luna", reasoning_effort: "none" });
+    expect(request.messages[1].content[1].image_url.detail).toBe("auto");
+    expect(request.response_format.json_schema.strict).toBe(true);
   });
 
   it("vision honors an already-aborted signal before calling the SDK method", async () => {
