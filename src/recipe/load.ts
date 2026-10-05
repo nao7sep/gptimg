@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { RecipeError } from "../errors.js";
+import { RECIPE_FORMAT_VERSION } from "../format-versions.js";
+import { takeFormatVersion } from "../internal/format-version.js";
 import { defaultRecipePath } from "../internal/paths.js";
 import type { Recipe } from "../types.js";
 import { validateRecipe } from "./schemas.js";
@@ -48,7 +50,13 @@ export async function loadRecipe(
       { cause: err },
     );
   }
-  return validateRecipe(parsed);
+  return validateRecipe(
+    takeFormatVersion(parsed, RECIPE_FORMAT_VERSION, {
+      name: "recipe",
+      path: filePath,
+      ErrorClass: RecipeError,
+    }),
+  );
 }
 
 /**

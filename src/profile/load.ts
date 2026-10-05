@@ -1,7 +1,9 @@
 import { open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { ProfileError } from "../errors.js";
+import { PROFILE_FORMAT_VERSION } from "../format-versions.js";
 import type { Profile } from "../types.js";
+import { takeFormatVersion } from "../internal/format-version.js";
 import { formatZodError } from "../internal/zodError.js";
 import { ProfileSchema } from "./schema.js";
 
@@ -98,7 +100,12 @@ function parseProfile(text: string, filePath: string): Profile {
       `Profile at ${filePath} must be a JSON object`,
     );
   }
-  const result = ProfileSchema.safeParse(parsed);
+  const body = takeFormatVersion(parsed, PROFILE_FORMAT_VERSION, {
+    name: "profile",
+    path: filePath,
+    ErrorClass: ProfileError,
+  });
+  const result = ProfileSchema.safeParse(body);
   if (!result.success) {
     const detail = formatZodError(result.error);
     throw new ProfileError(

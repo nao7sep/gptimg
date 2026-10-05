@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { LocalOpError } from "../errors.js";
+import { SIDECAR_FORMAT_VERSION } from "../format-versions.js";
+import { takeFormatVersion } from "../internal/format-version.js";
 import type { Sidecar } from "../types.js";
 
 export async function readSidecar(stem: string): Promise<Sidecar> {
@@ -14,8 +16,9 @@ export async function readSidecar(stem: string): Promise<Sidecar> {
       { cause: err },
     );
   }
+  let parsed: unknown;
   try {
-    return JSON.parse(text) as Sidecar;
+    parsed = JSON.parse(text);
   } catch (err) {
     throw new LocalOpError(
       "image.decodeFailed",
@@ -23,4 +26,9 @@ export async function readSidecar(stem: string): Promise<Sidecar> {
       { cause: err },
     );
   }
+  return takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, {
+    name: "sidecar",
+    path: sidecarPath,
+    ErrorClass: LocalOpError,
+  }) as Sidecar;
 }

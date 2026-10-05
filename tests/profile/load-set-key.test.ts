@@ -3,6 +3,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProfileError } from "../../src/errors.js";
+import { PROFILE_FORMAT_VERSION } from "../../src/format-versions.js";
 import { loadProfile } from "../../src/profile/load.js";
 import { deobfuscate } from "../../src/profile/obfuscate.js";
 import { clearApiKey, setApiKey } from "../../src/profile/setApiKey.js";
@@ -355,5 +356,68 @@ describe("setApiKey / clearApiKey", () => {
       provider: "openai",
       apiKeyEnv: "OPENAI_API_KEY",
     });
+  });
+});
+
+describe("profile format version", () => {
+  let tmp: string;
+  let file: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-profile-format-"));
+    file = path.join(tmp, "profile.json");
+  });
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("reads a profile with no formatVersion as format 1", async () => {
+    await writeFile(file, JSON.stringify({ provider: "openai", apiKeyEnv: "KEY" }) + "\n");
+
+    await expect(loadProfile(file)).resolves.toEqual({ provider: "openai", apiKeyEnv: "KEY" });
+  });
+
+  it("writes the current format version and reads it back", async () => {
+    await setApiKey(file, "sk-format");
+
+    const written = JSON.parse(await readFile(file, "utf-8")) as Record<string, unknown>;
+    expect(written.formatVersion).toBe(PROFILE_FORMAT_VERSION);
+    const profile = await loadProfile(file);
+    expect(profile).not.toHaveProperty("formatVersion");
+    expect(profile).toEqual({ provider: "openai", apiKey: written.apiKey });
+  });
+
+  it("refuses a profile of a newer format on every path and leaves it byte-identical", async () => {
+    const text =
+      JSON.stringify({ formatVersion: PROFILE_FORMAT_VERSION + 1, provider: "openai", vault: {} }) + "\n";
+    await writeFile(file, text);
+    const before = await stat(file);
+
+    for (const [name, run] of [
+      ["loadProfile", () => loadProfile(file)],
+      ["setApiKey", () => setApiKey(file, "sk-new")],
+      ["clearApiKey", () => clearApiKey(file)],
+    ] as const) {
+      const err = await run().catch((e: unknown) => e);
+      expect(err, name).toBeInstanceOf(ProfileError);
+      expect(err, name).toMatchObject({ code: "profile.newerFormat" });
+      expect((err as Error).message, name).toContain(file);
+    }
+
+    const after = await stat(file);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+    expect(after.mode).toBe(before.mode);
+    expect(await readFile(file, "utf-8")).toBe(text);
+  });
+
+  it("rejects a formatVersion that is not a positive integer", async () => {
+    for (const value of [0, 1.5, "1", null]) {
+      await writeFile(file, JSON.stringify({ formatVersion: value, provider: "openai" }));
+      await expect(loadProfile(file), JSON.stringify(value)).rejects.toMatchObject({
+        code: "profile.invalidFormatVersion",
+      });
+    }
   });
 });

@@ -2,6 +2,7 @@ import { chmod, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { writeFileAtomic } from "../internal/atomic-file.js";
 import { ProfileError } from "../errors.js";
+import { PROFILE_FORMAT_VERSION } from "../format-versions.js";
 import type { Profile } from "../types.js";
 import { loadProfile } from "./load.js";
 import { obfuscate } from "./obfuscate.js";
@@ -20,7 +21,7 @@ async function ensureDir(filePath: string): Promise<void> {
 
 async function writeProfile(filePath: string, profile: Profile): Promise<void> {
   await ensureDir(filePath);
-  const text = JSON.stringify(profile, null, 2) + "\n";
+  const text = JSON.stringify({ formatVersion: PROFILE_FORMAT_VERSION, ...profile }, null, 2) + "\n";
   try {
     // 0o600: the profile may hold secrets (apiKey today, tokens later) and is
     // owner-only by contract. Setting the mode unconditionally keeps the

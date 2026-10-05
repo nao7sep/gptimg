@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RecipeError } from "../../src/errors.js";
+import { RECIPE_FORMAT_VERSION } from "../../src/format-versions.js";
 import { loadRecipe, loadRecipeForCall } from "../../src/recipe/load.js";
 import { defaultRecipePath } from "../../src/internal/paths.js";
 
@@ -112,5 +113,64 @@ describe("loadRecipeForCall", () => {
     await expect(loadRecipeForCall(undefined, tmp)).resolves.toEqual({
       generate: { n: 3 },
     });
+  });
+});
+
+describe("recipe format version", () => {
+  let tmp: string;
+  let file: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-recipe-format-"));
+    file = path.join(tmp, "recipe.json");
+  });
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("reads a recipe with no formatVersion as format 1", async () => {
+    await writeFile(file, JSON.stringify({ generate: { n: 2 } }));
+
+    await expect(loadRecipe(file)).resolves.toEqual({ generate: { n: 2 } });
+  });
+
+  it("reads the current format version and returns the recipe without it", async () => {
+    await writeFile(
+      file,
+      JSON.stringify({ formatVersion: RECIPE_FORMAT_VERSION, generate: { n: 2 } }),
+    );
+
+    await expect(loadRecipe(file)).resolves.toEqual({ generate: { n: 2 } });
+  });
+
+  it("refuses a recipe of a newer format, named or default, and leaves it byte-identical", async () => {
+    const text = JSON.stringify({ formatVersion: RECIPE_FORMAT_VERSION + 1, generate: { n: "many" } });
+    const defaultFile = defaultRecipePath(tmp);
+    await writeFile(file, text);
+    await writeFile(defaultFile, text);
+    const before = await stat(file);
+
+    for (const [name, run, target] of [
+      ["named", () => loadRecipe(file), file],
+      ["default", () => loadRecipeForCall(undefined, tmp), defaultFile],
+    ] as const) {
+      const err = await run().catch((e: unknown) => e);
+      expect(err, name).toBeInstanceOf(RecipeError);
+      expect(err, name).toMatchObject({ code: "recipe.newerFormat" });
+      expect((err as Error).message, name).toContain(target);
+      expect(await readFile(target, "utf-8"), name).toBe(text);
+    }
+    const after = await stat(file);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
+  it("rejects a formatVersion that is not a positive integer", async () => {
+    for (const value of [0, -1, 2.5, "1", true]) {
+      await writeFile(file, JSON.stringify({ formatVersion: value }));
+      await expect(loadRecipe(file), JSON.stringify(value)).rejects.toMatchObject({
+        code: "recipe.invalidFormatVersion",
+      });
+    }
   });
 });
