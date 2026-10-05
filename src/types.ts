@@ -79,6 +79,8 @@ export interface VisionRecipe {
    * defaults to the model's own default; any other model id sends it unchecked, or none.
    */
   reasoning?: string;
+  /** Not settable: the effort is set with `reasoning`. */
+  reasoning_effort?: never;
   systemPrompt?: string;
   [key: string]: unknown;
 }

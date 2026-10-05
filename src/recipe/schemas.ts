@@ -47,6 +47,10 @@ const VisionRecipeSchema = z
     shrink: VisionShrinkSchema.optional(),
     detail: z.enum(VISION_DETAILS).optional(),
     reasoning: z.string().optional(),
+    // The effort is sent from `reasoning`, so a passed-through wire field would be overwritten.
+    reasoning_effort: z
+      .never({ error: "reasoning_effort is not a recipe field; set reasoning, which gptimg sends as reasoning_effort" })
+      .optional(),
     systemPrompt: z.string().optional(),
   })
   .passthrough();

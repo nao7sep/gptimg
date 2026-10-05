@@ -1118,4 +1118,19 @@ describe("AI verb implementations with mocked provider", () => {
     ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("gpt-6-astra takes reasoning") });
     expect(providerCalls.vision).not.toHaveBeenCalled();
   });
+  it("vision refuses a recipe that sets reasoning_effort, which the chosen effort would overwrite", async () => {
+    // A supported model's branch sends `reasoning` as reasoning_effort, so a passed-through
+    // reasoning_effort would be replaced by the model's default without a word.
+    const input = path.join(tmp, "wire-effort.png");
+    await copyFile(fixture("green-disk.png"), input);
+    await expect(
+      sdk.vision({
+        in: input,
+        check: "green?",
+        outDir: path.join(tmp, "wire-effort"),
+        overrides: { vision: { reasoning_effort: "high" } as never },
+      }),
+    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("reasoning_effort") });
+    expect(providerCalls.vision).not.toHaveBeenCalled();
+  });
 });
