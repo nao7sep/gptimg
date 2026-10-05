@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { modelsFor } from "../../src/ai-models.js";
 import { createLogger } from "../../src/log/index.js";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.js";
 import { openaiEdit } from "../../src/providers/openai/edit.js";
@@ -452,7 +453,7 @@ describe("OpenAI provider implementations", () => {
     const call = openaiVision({
       check: "is it green?",
       images: [{ data: png, format: "png", detail: "auto" }],
-      params: { model: "gpt-5.6-luna" },
+      params: { model: "gpt-6-luna" },
       profile,
       network,
     });
@@ -481,14 +482,14 @@ describe("OpenAI provider implementations", () => {
     const result = await openaiVision({
       check: "is it green?",
       images: [{ data: png, format: "png", detail: "high" }],
-      params: { model: "gpt-5.4-mini" },
+      params: { model: "gpt-6-luna" },
       profile,
       network,
     });
 
     const request = openaiMock.create.mock.calls[0]?.[0];
     expect(request).toMatchObject({
-      model: "gpt-5.4-mini",
+      model: "gpt-6-luna",
       response_format: { type: "json_schema" },
     });
     expect(request.messages[1].content[1].image_url.url).toMatch(
@@ -502,30 +503,32 @@ describe("OpenAI provider implementations", () => {
     });
   });
 
-  // Every VISION_DETAILS value reaches the wire for any model, including the
-  // -mini/-nano ids a since-deleted local gate refused detail=original for. That
-  // gate was fiction: the API accepts original on gpt-5.4-mini (verified live), and
-  // rejects only values outside ['low','auto','high','original'] — its call, not
-  // ours. Pinned per value so re-introducing a model-keyed gate fails here.
+  // Every VISION_DETAILS value reaches the wire as given on every supported vision row;
+  // "original" was tested on all four (ai-model-lineup-20261004). Pinned per value and
+  // row so a model-keyed gate on detail fails here.
   it.each(["low", "high", "original", "auto"] as const)(
-    "passes detail=%s through untouched, even on a -mini model",
+    "passes detail=%s through untouched on every supported vision model",
     async (detail) => {
       openaiMock.create.mockResolvedValue({
         choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
       });
 
-      await openaiVision({
-        check: "is it green?",
-        images: [{ data: png, format: "png", detail }],
-        params: { model: "gpt-5.4-mini" },
-        profile,
-        network,
-      });
+      for (const model of modelsFor("openai", "vision").map((row) => row.id)) {
+        openaiMock.create.mockClear();
+        await openaiVision({
+          check: "is it green?",
+          images: [{ data: png, format: "png", detail }],
+          params: { model },
+          profile,
+          network,
+        });
 
-      expect(openaiMock.create).toHaveBeenCalledTimes(1);
-      expect(
-        openaiMock.create.mock.calls[0]?.[0].messages[1].content[1].image_url.detail,
-      ).toBe(detail);
+        expect(openaiMock.create).toHaveBeenCalledTimes(1);
+        expect(
+          openaiMock.create.mock.calls[0]?.[0].messages[1].content[1].image_url.detail,
+          model,
+        ).toBe(detail);
+      }
     },
   );
 

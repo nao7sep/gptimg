@@ -186,8 +186,8 @@ describe("the live SDK", () => {
     expect(sidecar.response.usage, "the provider's usage is kept").toBeDefined();
   });
 
-  // A vision model honours detail=low when a low-detail check bills far fewer prompt tokens than
-  // the full image would (320 against 2621 on gpt-5.6-luna for a 1536x1536 image).
+  // A vision model honours detail=low when a low-detail check of a large photo stays under the
+  // prompt-token bound below, which only a low-detail image fits.
   for (const model of DETAIL_CHECKED_VISION_MODELS) {
     it(`bills ${model} a low-detail image at low-detail cost`, async () => {
       requireKey();

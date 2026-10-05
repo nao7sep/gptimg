@@ -33,11 +33,8 @@ function mimeFromFormat(format: string): string {
 }
 
 /**
- * `detail` is passed through untouched. The model is free text, so this layer
- * cannot know an arbitrary model's capabilities — and it does not need to: the API
- * validates the field and names the legal values in its own 400 ("one of ['low',
- * 'auto', 'high', 'original']"). A local gate here was worse than no gate; it
- * refused detail=original on the -mini models, which accept it.
+ * Each image carries the `detail` the vision verb settled for the model, sent as
+ * given, or none for a model id with no row.
  */
 function imageContentParts(images: VisionProviderArgs["images"], withBytes: boolean) {
   return images.map((img) => ({
