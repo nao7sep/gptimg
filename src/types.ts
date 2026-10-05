@@ -74,11 +74,14 @@ export interface EditRecipe {
 export interface VisionRecipe {
   model?: string;
   shrink?: { width: number; height: number };
-  /** Sent as chosen, `auto` when unset, for a supported model; any other model id sends none. */
+  /**
+   * Sent as chosen; for a supported model `auto` when unset. Any other model id sends it only
+   * when set.
+   */
   detail?: VisionDetail;
   /**
-   * Sent as `reasoning_effort` for a supported model, checked against the model's list and
-   * defaulting to the model's own default; any other model id sends none.
+   * Sent as `reasoning_effort`. For a supported model it is checked against the model's list and
+   * defaults to the model's own default; any other model id sends it unchecked, only when set.
    */
   reasoning?: string;
   /** Not settable: the effort is set with `reasoning`. */

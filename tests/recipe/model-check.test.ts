@@ -115,10 +115,10 @@ describe("resolveVisionDetail", () => {
     }
   });
 
-  it("sends no detail for an id with no row, even a chosen one", () => {
+  it("sends an id with no row the caller's own detail unchanged, and none when unset", () => {
     for (const model of ["some-future-chat-model", "gpt-5.6-luna"]) {
       expect(resolveVisionDetail(model, undefined), model).toBeUndefined();
-      expect(resolveVisionDetail(model, "low"), model).toBeUndefined();
+      expect(resolveVisionDetail(model, "low"), model).toBe("low");
     }
   });
 });
@@ -145,10 +145,10 @@ describe("resolveVisionReasoning", () => {
     refusal(() => resolveVisionReasoning("gpt-6-luna", "minimal"));
   });
 
-  it("sends no effort for an unlisted or removed id, even a chosen one, and never refuses it", () => {
+  it("sends an unlisted or removed id the caller's own effort unchecked, none when unset, and never refuses it", () => {
     for (const model of ["some-future-chat-model", "gpt-5.6-sol", "gpt-5.6-luna"]) {
       expect(resolveVisionReasoning(model, undefined), model).toBeUndefined();
-      expect(resolveVisionReasoning(model, "anything"), model).toBeUndefined();
+      expect(resolveVisionReasoning(model, "anything"), model).toBe("anything");
     }
   });
 });

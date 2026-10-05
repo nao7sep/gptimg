@@ -132,11 +132,11 @@ describe("the request builder", () => {
     expect(buildVisionRequest("some-future-chat-model", { ...vision }, undefined)).toEqual(vision);
   });
 
-  it("sends an unlisted or removed vision id the plain request, with no effort even when one is given", () => {
+  it("sends an unlisted or removed vision id the plain request, plus only the caller's own effort", () => {
     for (const id of ["some-future-chat-model", ...REMOVED_VISION_IDS]) {
       const vision = { model: id, messages: [], response_format: { type: "json_schema" } };
       expect(buildVisionRequest(id, { ...vision }, undefined), id).toEqual(vision);
-      expect(buildVisionRequest(id, { ...vision }, "low"), id).toEqual(vision);
+      expect(buildVisionRequest(id, { ...vision }, "low"), id).toEqual({ ...vision, reasoning_effort: "low" });
     }
   });
 

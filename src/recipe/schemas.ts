@@ -46,7 +46,7 @@ const VisionRecipeSchema = z
     reasoning: z.string().optional(),
     // The effort is sent from `reasoning`, so a passed-through wire field would be overwritten.
     reasoning_effort: z
-      .never({ error: "reasoning_effort is not a recipe field; set reasoning, which gptimg sends as reasoning_effort for a supported model" })
+      .never({ error: "reasoning_effort is not a recipe field; set reasoning, which gptimg sends as reasoning_effort" })
       .optional(),
     systemPrompt: z.string().optional(),
   })

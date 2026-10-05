@@ -1141,23 +1141,45 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("vision sends an id with no row neither effort nor detail, even chosen ones, and records neither", async () => {
+  it("vision adds neither effort nor detail for an id with no row when the recipe sets neither", async () => {
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
     const input = path.join(tmp, "unlisted-vision.png");
     await copyFile(fixture("green-disk.png"), input);
     const outDir = path.join(tmp, "unlisted-vision");
     for (const model of ["some-future-chat-model", "gpt-5.6-luna"]) {
-      for (const chosen of [{}, { reasoning: "high", detail: "low" as const }]) {
-        providerCalls.vision.mockClear();
-        const outName = `unlisted-${model}-${Object.keys(chosen).length}`;
-        const result = await sdk.vision({ in: input, check: "green?", outDir, outName, overrides: { vision: { model, ...chosen } } });
-        const call = providerCalls.vision.mock.calls[0]?.[0];
-        expect(call?.params, outName).toEqual({ model });
-        expect(call?.images[0], outName).not.toHaveProperty("detail");
-        const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
-        expect(sidecar.request, outName).not.toHaveProperty("reasoning");
-        expect(sidecar.request, outName).not.toHaveProperty("detail");
-      }
+      providerCalls.vision.mockClear();
+      const outName = `unlisted-${model}`;
+      const result = await sdk.vision({ in: input, check: "green?", outDir, outName, overrides: { vision: { model } } });
+      const call = providerCalls.vision.mock.calls[0]?.[0];
+      expect(call?.params, outName).toEqual({ model });
+      expect(call?.images[0], outName).not.toHaveProperty("detail");
+      const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
+      expect(sidecar.request, outName).not.toHaveProperty("reasoning");
+      expect(sidecar.request, outName).not.toHaveProperty("detail");
+    }
+  });
+
+  it("vision sends an id with no row the recipe's own effort and detail unchanged, and records both", async () => {
+    providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
+    const input = path.join(tmp, "unlisted-chosen.png");
+    await copyFile(fixture("green-disk.png"), input);
+    const outDir = path.join(tmp, "unlisted-chosen");
+    for (const model of ["some-future-chat-model", "gpt-5.6-luna"]) {
+      providerCalls.vision.mockClear();
+      const outName = `chosen-${model}`;
+      const result = await sdk.vision({
+        in: input,
+        check: "green?",
+        outDir,
+        outName,
+        overrides: { vision: { model, reasoning: "anything", detail: "low" } },
+      });
+      const call = providerCalls.vision.mock.calls[0]?.[0];
+      expect(call?.params, outName).toEqual({ model, reasoning: "anything" });
+      expect(call?.images[0]?.detail, outName).toBe("low");
+      const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
+      expect(sidecar.request.reasoning, outName).toBe("anything");
+      expect(sidecar.request.detail, outName).toBe("low");
     }
   });
 

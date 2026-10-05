@@ -34,7 +34,7 @@ function mimeFromFormat(format: string): string {
 
 /**
  * Each image carries the `detail` the vision verb settled for the model, sent as
- * given, or none for a model id with no row.
+ * given; a model id with no row carries the caller's own value, or none.
  */
 function imageContentParts(images: VisionProviderArgs["images"], withBytes: boolean) {
   return images.map((img) => ({

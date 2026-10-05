@@ -571,7 +571,8 @@ describe("OpenAI provider implementations", () => {
       [{ model: "gpt-5.6-terra", reasoning: "none" }, "none"],
       [{ model: "gpt-6-luna", reasoning: "max" }, "max"],
       [{ model: "gpt-5.6-sol" }, undefined],
-      [{ model: "custom-vision-model", reasoning: "low" }, undefined],
+      [{ model: "custom-vision-model" }, undefined],
+      [{ model: "custom-vision-model", reasoning: "low" }, "low"],
     ];
     for (const [params, effort] of cases) {
       openaiMock.create.mockClear();
@@ -583,14 +584,14 @@ describe("OpenAI provider implementations", () => {
     }
   });
 
-  it("vision sends an id with no row exactly the plain request, the strict schema included", async () => {
+  it("vision sends an id with no row exactly the plain request when the caller sets nothing", async () => {
     openaiMock.create.mockResolvedValue({
       choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
     });
     await openaiVision({
       check: "is it green?",
       images: [{ data: png, format: "png" }],
-      params: { model: "some-future-chat-model", reasoning: "high" },
+      params: { model: "some-future-chat-model" },
       profile,
       network,
     });
@@ -609,6 +610,23 @@ describe("OpenAI provider implementations", () => {
       ],
       response_format: { type: "json_schema", json_schema: expect.objectContaining({ name: "VisionVerdict", strict: true }) },
     });
+  });
+
+  it("vision sends an id with no row the caller's own detail and effort unchanged", async () => {
+    openaiMock.create.mockResolvedValue({
+      choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
+    });
+    await openaiVision({
+      check: "is it green?",
+      images: [{ data: png, format: "png", detail: "low" }],
+      params: { model: "some-future-chat-model", reasoning: "high" },
+      profile,
+      network,
+    });
+    const request = openaiMock.create.mock.calls[0]?.[0];
+    expect(request).toMatchObject({ model: "some-future-chat-model", reasoning_effort: "high" });
+    expect(request).not.toHaveProperty("reasoning");
+    expect(request.messages[1].content[1].image_url.detail).toBe("low");
   });
 
   it("vision sends a supported model its full parameters", async () => {
@@ -951,6 +969,27 @@ describe("OpenAI provider failure records", () => {
     expect(openaiMock.create.mock.calls[0]?.[0].messages[1].content[1].image_url.url).toMatch(
       /^data:image\/png;base64,/,
     );
+  });
+
+  it("vision records an id with no row's caller-set detail and effort in the attempt's request", async () => {
+    openaiMock.create.mockRejectedValueOnce(apiError(400));
+    const logPath = path.join(tmp, "vision-unlisted.log");
+    const logger = await createLogger(logPath, "vision");
+    await expect(
+      openaiVision({
+        check: "is it green?",
+        images: [{ data: png, format: "png", detail: "low" }],
+        params: { model: "some-future-chat-model", reasoning: "high" },
+        profile,
+        network: { ...network, logger },
+      }),
+    ).rejects.toMatchObject({ code: "provider.requestFailed" });
+
+    const { lines } = await records(logPath);
+    expect(lines).toHaveLength(1);
+    const body = lines[0]!.data.request.body;
+    expect(body).toMatchObject({ model: "some-future-chat-model", reasoning_effort: "high" });
+    expect(body.messages[1].content[1]).toEqual({ type: "image_url", image_url: { url: null, detail: "low" } });
   });
 
   it("vision records the request and the response when the answer yields no verdict", async () => {

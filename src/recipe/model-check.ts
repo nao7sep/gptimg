@@ -91,11 +91,12 @@ export function resolveGenerateModeration(model: string): "low" | undefined {
 
 /**
  * The reasoning effort a vision call sends: the recipe's value, checked against the supported
- * model's list, else that model's own default. An id with no row sends none.
+ * model's list, else that model's own default. An id with no row sends the recipe's value
+ * unchecked, or none when the recipe sets none.
  */
 export function resolveVisionReasoning(model: string, chosen: string | undefined): string | undefined {
   const row = visionRow(model);
-  if (!row) return undefined;
+  if (!row) return chosen;
   if (chosen === undefined) return row.defaultThinking;
   checkListed("vision", model, "reasoning", chosen, row.thinking);
   return chosen;
@@ -103,9 +104,9 @@ export function resolveVisionReasoning(model: string, chosen: string | undefined
 
 /**
  * The image detail a vision call sends: the recipe's value, else `auto`, for a supported model.
- * An id with no row sends none.
+ * An id with no row sends the recipe's value, or none when the recipe sets none.
  */
 export function resolveVisionDetail(model: string, chosen: VisionDetail | undefined): VisionDetail | undefined {
-  if (!visionRow(model)) return undefined;
+  if (!visionRow(model)) return chosen;
   return chosen ?? VISION_DEFAULTS.detail;
 }

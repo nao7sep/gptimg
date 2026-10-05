@@ -1,8 +1,8 @@
 // One branch per supported model id, holding exactly what that model needs beyond the plain
 // request of its endpoint (ai-model-routing-conventions). A supported model's moderation,
 // effort and detail are settled before the call (recipe/model-check.ts), so the sidecar
-// records them. An id with no branch gets the plain request, and OpenAI's answer at call time
-// is the verdict on it.
+// records them. An id with no branch gets the plain request plus only what the caller set
+// explicitly, and OpenAI's answer at call time is the verdict on it.
 
 type ImageBranch = (request: Record<string, unknown>) => Record<string, unknown>;
 type VisionBranch = (request: Record<string, unknown>, reasoning: string | undefined) => Record<string, unknown>;
@@ -36,12 +36,16 @@ export function buildImageRequest(model: string, request: Record<string, unknown
   return (IMAGE_REQUEST_BRANCHES[model] ?? plainImage)(request);
 }
 
-/** An id with no branch gets the plain request, with no effort. */
+/**
+ * An id with no branch gets the plain request, plus `reasoning_effort` only when the caller set
+ * a reasoning value, sent unchanged.
+ */
 export function buildVisionRequest(
   model: string,
   request: Record<string, unknown>,
   reasoning: string | undefined,
 ): Record<string, unknown> {
   const branch = VISION_REQUEST_BRANCHES[model];
-  return branch ? branch(request, reasoning) : request;
+  if (branch) return branch(request, reasoning);
+  return reasoning === undefined ? request : { ...request, reasoning_effort: reasoning };
 }
