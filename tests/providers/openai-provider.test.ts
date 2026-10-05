@@ -10,6 +10,7 @@ import { createLogger } from "../../src/log/index.js";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.js";
 import { openaiEdit } from "../../src/providers/openai/edit.js";
 import { openaiGenerate } from "../../src/providers/openai/generate.js";
+import { OPENAI_VISION_SYSTEM_PROMPT } from "../../src/providers/openai/defaults.js";
 import { openaiVision } from "../../src/providers/openai/vision.js";
 import type { ResolvedProfile } from "../../src/types.js";
 
@@ -622,6 +623,27 @@ describe("OpenAI provider implementations", () => {
     expect(request).toMatchObject({ model: "gpt-6-luna", reasoning_effort: "none" });
     expect(request.messages[1].content[1].image_url.detail).toBe("auto");
     expect(request.response_format.json_schema.strict).toBe(true);
+  });
+
+  it("vision sends its built-in prompt beside the strict schema, and a caller's prompt unchanged", async () => {
+    openaiMock.create.mockResolvedValue({
+      choices: [{ message: { content: '{"ok":true,"score":1,"reasons":[]}' } }],
+    });
+    // The schema owns the shape; the prompt states only what the schema cannot.
+    for (const field of ["ok is true only", "score is your confidence", "reasons lists"]) {
+      expect(OPENAI_VISION_SYSTEM_PROMPT).toContain(field);
+    }
+    expect(OPENAI_VISION_SYSTEM_PROMPT).not.toMatch(/json|only with|nothing else/i);
+    for (const [params, expected] of [
+      [{}, OPENAI_VISION_SYSTEM_PROMPT],
+      [{ systemPrompt: "Answer as a print inspector." }, "Answer as a print inspector."],
+    ] as const) {
+      openaiMock.create.mockClear();
+      await openaiVision({ check: "is it green?", images: [{ data: png, format: "png" }], params, profile, network });
+      const request = openaiMock.create.mock.calls[0]?.[0];
+      expect(request.messages[0]).toEqual({ role: "system", content: expected });
+      expect(request).not.toHaveProperty("systemPrompt");
+    }
   });
 
   it("vision honors an already-aborted signal before calling the SDK method", async () => {
