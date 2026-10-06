@@ -15,7 +15,7 @@ import { failedResponseFields } from "../network/retry.js";
 import { ensureOutputDir } from "./output-files.js";
 import { refuseCaseOnlyRename } from "./output-group.js";
 import { imageFileName } from "./output-naming.js";
-import { defaultLogPath, utcTimestampMs } from "./paths.js";
+import { claimDefaultLogPath } from "./paths.js";
 import type { EncodingArgs, LogEntry, LogVerb, PngEncodingArgs } from "../types.js";
 
 /** Stem (basename without extension) of a file path. `foo/bar.png` → `bar`. */
@@ -165,7 +165,7 @@ export async function withVerbLogger<T>(
   // start in the same UTC second never interleave into one file. This is
   // deliberately independent of any second-precision stamp a verb uses for its
   // output names — the log filename is a per-session identity, not an output.
-  const logPath = opts.log ?? defaultLogPath(ctx.logDir, utcTimestampMs());
+  const logPath = opts.log ?? (await claimDefaultLogPath(ctx.logDir));
   const logger = await createLogger(logPath, verbName, { onEvent: opts.onProgress });
   try {
     return await body(logger);

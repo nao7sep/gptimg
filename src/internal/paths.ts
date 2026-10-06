@@ -1,4 +1,5 @@
 import { chmodSync, mkdirSync, statSync } from "node:fs";
+import { mkdir, open } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { customAlphabet } from "nanoid";
@@ -121,10 +122,27 @@ export function defaultModelsDir(profileDir: string): string {
 }
 
 // The default session log file, named per the logging-conventions and stamped
-// with `utcTimestampMs`. A caller's `log` option overrides it. Calls that start
-// in the same millisecond share this file, so callers start calls at least 1 ms apart.
+// with `utcTimestampMs`. A caller's `log` option overrides it.
 export function defaultLogPath(logDir: string, ts: string): string {
   return path.join(logDir, `${ts}.log`);
+}
+
+// Claims this call's default log by creating it exclusively, so a call that starts
+// in a millisecond another call already holds takes the next one and every call
+// keeps its own file, across threads and processes alike. A failure other than
+// "already exists" returns the name unclaimed: logging never fails the verb, and
+// the logger reports the same failure on its first line.
+export async function claimDefaultLogPath(logDir: string, start: Date = new Date()): Promise<string> {
+  await mkdir(logDir, { recursive: true }).catch(() => undefined);
+  for (let t = start.getTime(); ; t++) {
+    const candidate = defaultLogPath(logDir, utcTimestampMs(new Date(t)));
+    try {
+      await (await open(candidate, "wx")).close();
+      return candidate;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") return candidate;
+    }
+  }
 }
 
 /** `yyyymmdd-hhmmss` in UTC — the date-time body of the filename stamp. */
