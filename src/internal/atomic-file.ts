@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { chmod, copyFile, link, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, link, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 
@@ -62,6 +62,22 @@ async function holdsContent(filePath: string, bytes: Uint8Array): Promise<boolea
 }
 
 /**
+ * The permission mode a replacement should carry over from the file it
+ * replaces: none when the caller sets its own `mode`, the target is absent, or
+ * on Windows, whose mode holds only a read-only bit that already blocks the
+ * replace. Node cannot copy extended attributes, so the mode is what a replace
+ * keeps (content-lifecycle-conventions, *Files*).
+ */
+async function replacedMode(filePath: string, requested: number | undefined): Promise<number | undefined> {
+  if (requested !== undefined || process.platform === "win32") return undefined;
+  try {
+    return (await stat(filePath)).mode & 0o7777;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Write `data` to `filePath` atomically: stage it at a temp path beside the
  * target (see `stagingPathFor`), then publish it so a crash mid-write can never
  * leave `filePath` truncated or torn. `overwrite: false` uses an atomic hard
@@ -70,7 +86,8 @@ async function holdsContent(filePath: string, bytes: Uint8Array): Promise<boolea
  *
  * An overwrite whose content is identical to the target's is skipped, so the
  * file and its times stay as they are (content-lifecycle-conventions, *Files*);
- * a requested `mode` is still applied to it.
+ * a requested `mode` is still applied to it. A changed overwrite keeps the
+ * replaced file's permission mode unless the caller requests its own.
  */
 export async function writeFileAtomic(filePath: string, data: string | Buffer | Uint8Array, options?: AtomicWriteOptions): Promise<void> {
   const { overwrite = true, ...writeOptions } = options ?? {};
@@ -83,6 +100,8 @@ export async function writeFileAtomic(filePath: string, data: string | Buffer | 
   try {
     await writeFile(tempPath, bytes, writeOptions);
     if (overwrite) {
+      const mode = await replacedMode(filePath, writeOptions.mode);
+      if (mode !== undefined) await chmod(tempPath, mode);
       await rename(tempPath, filePath);
     } else {
       await publishFileNoClobber(tempPath, filePath);

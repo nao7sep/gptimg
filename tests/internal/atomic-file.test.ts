@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -85,6 +85,27 @@ describe("writeFileAtomic", () => {
     const after = await stat(target);
     expect(after.ino).toBe(before.ino);
     expect(after.mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === "win32")("keeps the replaced file's permission mode when content changes", async () => {
+    const target = path.join(tmp, "shared.png");
+    await writeFileAtomic(target, "first", { encoding: "utf-8" });
+    await chmod(target, 0o640);
+
+    await writeFileAtomic(target, "second", { encoding: "utf-8" });
+
+    expect(await readFile(target, "utf-8")).toBe("second");
+    expect((await stat(target)).mode & 0o777).toBe(0o640);
+  });
+
+  it.skipIf(process.platform === "win32")("applies a requested mode over the replaced file's mode", async () => {
+    const target = path.join(tmp, "profile.json");
+    await writeFileAtomic(target, "first", { encoding: "utf-8" });
+    await chmod(target, 0o644);
+
+    await writeFileAtomic(target, "second", { encoding: "utf-8", mode: 0o600 });
+
+    expect((await stat(target)).mode & 0o777).toBe(0o600);
   });
 
   it("atomically refuses to replace a target when overwrite is false", async () => {
