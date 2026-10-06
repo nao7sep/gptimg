@@ -21,16 +21,16 @@ export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
 }
 
 /**
- * The headers the client sends from the profile: the key as its bearer token, and the
- * organization and project when the profile sets them. Each attempt's log line records them
+ * The headers that identify the caller, as the built client sends them: its key as the bearer
+ * token, and the organization and project it resolved, from the profile or the SDK's own
+ * `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` defaults. Each attempt's log line records them
  * (data-lifecycle-conventions, *Nothing is cut*).
  */
-export function profileHeaders(profile: ResolvedProfile): Record<string, string> {
-  const { organization, project } = profile.redacted;
+export function clientHeaders(client: OpenAI): Record<string, string> {
   return {
-    Authorization: `Bearer ${profile.apiKey}`,
-    ...(organization && { "OpenAI-Organization": organization }),
-    ...(project && { "OpenAI-Project": project }),
+    Authorization: `Bearer ${client.apiKey}`,
+    ...(client.organization && { "OpenAI-Organization": client.organization }),
+    ...(client.project && { "OpenAI-Project": client.project }),
   };
 }
 

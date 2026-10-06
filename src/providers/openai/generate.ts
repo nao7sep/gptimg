@@ -3,7 +3,7 @@ import { ProviderError } from "../../errors.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { GenerateProviderArgs, ProviderImageResult } from "../types.js";
-import { buildOpenAIClient, profileHeaders, recordedResponse, resolveModel } from "./client.js";
+import { buildOpenAIClient, clientHeaders, recordedResponse, resolveModel } from "./client.js";
 import { defaultModelFor } from "../../ai-models.js";
 import { buildImageRequest } from "./request.js";
 
@@ -29,7 +29,7 @@ export async function openaiGenerate(
     prompt: args.prompt,
   });
 
-  const request = { headers: profileHeaders(args.profile), body: params };
+  const request = { headers: clientHeaders(client), body: params };
 
   const { primary, download, logger, signal } = args.network;
 

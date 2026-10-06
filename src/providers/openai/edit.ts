@@ -4,7 +4,7 @@ import { LocalOpError, ProviderError } from "../../errors.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
-import { buildOpenAIClient, profileHeaders, recordedResponse, resolveModel } from "./client.js";
+import { buildOpenAIClient, clientHeaders, recordedResponse, resolveModel } from "./client.js";
 import { defaultModelFor } from "../../ai-models.js";
 import { buildImageRequest } from "./request.js";
 import { imageFileForEditUpload } from "./upload.js";
@@ -41,7 +41,7 @@ export async function openaiEdit(
 
   // The uploads are recorded by file name: those files already hold their bytes.
   const request = {
-    headers: profileHeaders(args.profile),
+    headers: clientHeaders(client),
     body: {
       ...params,
       image: path.basename(args.imagePath),

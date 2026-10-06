@@ -39,6 +39,14 @@ function apiPromise(call: (...args: unknown[]) => unknown) {
 
 vi.mock("openai", () => ({
   default: class OpenAI {
+    readonly apiKey: string;
+    readonly organization: string | null;
+    readonly project: string | null;
+    constructor(opts: { apiKey: string; organization?: string; project?: string }) {
+      this.apiKey = opts.apiKey;
+      this.organization = opts.organization ?? null;
+      this.project = opts.project ?? null;
+    }
     readonly images = {
       generate: apiPromise(openaiMock.generate),
       edit: apiPromise(openaiMock.edit),
