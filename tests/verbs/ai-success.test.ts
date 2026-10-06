@@ -379,6 +379,39 @@ describe("AI verb implementations with mocked provider", () => {
     ).resolves.toMatchObject({ partial: false });
   });
 
+  it("generate --overwrite refuses a group holding a newer-format sidecar before a provider charge", async () => {
+    const outDir = path.join(tmp, "newer-out");
+    await mkdir(outDir);
+    const newer = JSON.stringify({ formatVersion: 2, request: {}, files: [] });
+    await writeFile(path.join(outDir, "same-1.png"), png);
+    await writeFile(path.join(outDir, "same-1.json"), "{}");
+    await writeFile(path.join(outDir, "same-2.png"), png);
+    await writeFile(path.join(outDir, "same-2.json"), newer);
+
+    await expect(
+      sdk.generate({ prompt: "again", outDir, outName: "same", overwrite: true, overrides: { generate: { n: 2 } } }),
+    ).rejects.toMatchObject({ code: "sidecar.newerFormat" });
+    expect(providerCalls.generate).not.toHaveBeenCalled();
+    expect((await readdir(outDir)).sort()).toEqual(["same-1.json", "same-1.png", "same-2.json", "same-2.png"]);
+    expect(await readFile(path.join(outDir, "same-1.json"), "utf-8")).toBe("{}");
+    expect(await readFile(path.join(outDir, "same-2.json"), "utf-8")).toBe(newer);
+  });
+
+  it("vision --overwrite refuses a newer-format sidecar before a provider charge", async () => {
+    const input = path.join(tmp, "vision-newer-input.png");
+    const outDir = path.join(tmp, "vision-newer-out");
+    await copyFile(fixture("green-disk.png"), input);
+    await mkdir(outDir);
+    const newer = JSON.stringify({ formatVersion: 2, request: {}, files: [] });
+    await writeFile(path.join(outDir, "same.json"), newer);
+
+    await expect(
+      sdk.vision({ in: input, check: "must not be charged", outDir, outName: "same", overwrite: true }),
+    ).rejects.toMatchObject({ code: "sidecar.newerFormat" });
+    expect(providerCalls.vision).not.toHaveBeenCalled();
+    expect(await readFile(path.join(outDir, "same.json"), "utf-8")).toBe(newer);
+  });
+
   it("rejects a known-busy lexical stem alias before a second provider charge", async () => {
     let releaseFirst!: () => void;
     const firstHeld = new Promise<void>((resolve) => {

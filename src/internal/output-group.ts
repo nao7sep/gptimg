@@ -7,6 +7,7 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 import { LocalOpError } from "../errors.js";
 import { SUPPORTED_IMAGE_EXTENSIONS } from "../image/formats.js";
+import { refuseNewerSidecar } from "../sidecar/read.js";
 import { indexSuffix } from "./output-naming.js";
 
 /**
@@ -410,7 +411,8 @@ function artifactIdentity(filePath: string, sidecarExt: string): string {
  *   replaced, or cleared when the run does not fill them). An image slot is
  *   extension-independent, so a planned PNG may replace an old JPEG;
  *   sidecars remain their own artifact kind. Group
- *   siblings outside the planned slots are reported as `output.staleSiblings`.
+ *   siblings outside the planned slots are reported as `output.staleSiblings`,
+ *   and an existing sidecar in a newer format as `sidecar.newerFormat`.
  */
 export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: string[], allowOverwrite: boolean): void {
   const plannedResolved = new Set<string>();
@@ -442,6 +444,11 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
         `has ${stale.length} file(s) from a prior run that this run will not replace: ${names}. ` +
         `Delete them or choose a fresh outName.`,
     );
+  }
+  // Replacement and slot cleanup may touch every existing sidecar, so a newer
+  // one refuses the whole group before any member changes.
+  for (const p of existing) {
+    if (artifactIdentity(p, group.sidecarExt).startsWith("sidecar:")) refuseNewerSidecar(p);
   }
 }
 

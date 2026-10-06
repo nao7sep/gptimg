@@ -57,6 +57,17 @@ describe("sidecar read/write", () => {
     expect(await readFile(file, "utf-8")).toBe(text);
   });
 
+  it("refuses to overwrite a sidecar of a newer format and leaves it byte-identical", async () => {
+    const file = `${stem}.json`;
+    const text = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: "new" });
+    await writeFile(file, text);
+
+    await expect(writeSidecar(stem, { request: {}, response: {}, files: [] })).rejects.toMatchObject({
+      code: "sidecar.newerFormat",
+    });
+    expect(await readFile(file, "utf-8")).toBe(text);
+  });
+
   it("preserves an existing sidecar when overwrite is false", async () => {
     const first: Sidecar = { request: { prompt: "winner" }, response: {}, files: [] };
     const second: Sidecar = { request: { prompt: "loser" }, response: {}, files: [] };

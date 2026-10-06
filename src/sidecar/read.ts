@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { LocalOpError } from "../errors.js";
+import { LocalOpError, type GptImgError } from "../errors.js";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.js";
 import { takeFormatVersion } from "../internal/format-version.js";
 import type { Sidecar } from "../types.js";
@@ -32,4 +33,29 @@ export async function readSidecar(stem: string): Promise<Sidecar> {
     ErrorClass: LocalOpError,
     invalidCode: "image.decodeFailed",
   }) as Sidecar;
+}
+
+/**
+ * Refuse to replace an existing sidecar written in a newer format, so this
+ * build never overwrites or removes metadata it cannot read
+ * (store-recovery-conventions). An absent or unreadable file is left to the
+ * caller's own overwrite decision.
+ */
+export function refuseNewerSidecar(sidecarPath: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(sidecarPath, "utf-8"));
+  } catch {
+    return;
+  }
+  try {
+    takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, {
+      name: "sidecar",
+      path: sidecarPath,
+      ErrorClass: LocalOpError,
+      invalidCode: "image.decodeFailed",
+    });
+  } catch (err) {
+    if ((err as GptImgError).code === "sidecar.newerFormat") throw err;
+  }
 }
