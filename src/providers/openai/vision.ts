@@ -3,7 +3,7 @@ import { ProviderError } from "../../errors.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { VisionVerdict } from "../../types.js";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
-import { buildOpenAIClient, profileHeaders, resolveModel } from "./client.js";
+import { buildOpenAIClient, profileHeaders, recordedResponse, resolveModel } from "./client.js";
 import { defaultModelFor } from "../../ai-models.js";
 import { OPENAI_VISION_SYSTEM_PROMPT } from "./defaults.js";
 import { resolveVisionReasoning } from "../../recipe/model-check.js";
@@ -177,15 +177,17 @@ export async function openaiVision(
 
   let response: ChatResponse;
   try {
-    response = (await callWithRetry(
-      { budgetName: "imageVision", budget: primary, signal, logger, request },
-      () =>
-        client.chat.completions.create(params as never, {
-          timeout: primary.timeout,
-          maxRetries: 0,
-          signal,
-        }),
-    )) as never;
+    response = (
+      await callWithRetry(
+        { budgetName: "imageVision", budget: primary, signal, logger, request, response: recordedResponse },
+        () =>
+          client.chat.completions.create(params as never, {
+            timeout: primary.timeout,
+            maxRetries: 0,
+            signal,
+          }).withResponse(),
+      )
+    ).data as never;
   } catch (err) {
     if (isAbortError(err)) throw err;
     throw new ProviderError(

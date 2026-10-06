@@ -4,7 +4,7 @@ import { LocalOpError, ProviderError } from "../../errors.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
-import { buildOpenAIClient, profileHeaders, resolveModel } from "./client.js";
+import { buildOpenAIClient, profileHeaders, recordedResponse, resolveModel } from "./client.js";
 import { defaultModelFor } from "../../ai-models.js";
 import { buildImageRequest } from "./request.js";
 import { imageFileForEditUpload } from "./upload.js";
@@ -53,15 +53,17 @@ export async function openaiEdit(
 
   let response: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
   try {
-    response = (await callWithRetry(
-      { budgetName: "imageGenerate", budget: primary, signal, logger, request },
-      () =>
-        client.images.edit(params as never, {
-          timeout: primary.timeout,
-          maxRetries: 0,
-          signal,
-        }),
-    )) as never;
+    response = (
+      await callWithRetry(
+        { budgetName: "imageGenerate", budget: primary, signal, logger, request, response: recordedResponse },
+        () =>
+          client.images.edit(params as never, {
+            timeout: primary.timeout,
+            maxRetries: 0,
+            signal,
+          }).withResponse(),
+      )
+    ).data as never;
   } catch (err) {
     if (isAbortError(err)) throw err;
     throw new ProviderError(

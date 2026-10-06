@@ -22,15 +22,30 @@ const openaiMock = vi.hoisted(() => ({
   toFile: vi.fn(async (_data: unknown, _name?: unknown, _options?: unknown) => ({ mockFile: true })),
 }));
 
+// The SDK's APIPromise: the parsed body, with `withResponse()` adding the HTTP
+// response and its request id.
+function apiPromise(call: (...args: unknown[]) => unknown) {
+  return (...args: unknown[]) => {
+    const body = Promise.resolve(call(...args));
+    return Object.assign(body, {
+      withResponse: async () => ({
+        data: await body,
+        response: new Response(null, { status: 200, headers: { "x-request-id": "req_test" } }),
+        request_id: "req_test",
+      }),
+    });
+  };
+}
+
 vi.mock("openai", () => ({
   default: class OpenAI {
     readonly images = {
-      generate: openaiMock.generate,
-      edit: openaiMock.edit,
+      generate: apiPromise(openaiMock.generate),
+      edit: apiPromise(openaiMock.edit),
     };
     readonly chat = {
       completions: {
-        create: openaiMock.create,
+        create: apiPromise(openaiMock.create),
       },
     };
   },
@@ -865,6 +880,40 @@ describe("OpenAI provider failure records", () => {
     });
   });
 
+  it("records the successful attempt's request, response, usage and duration before any download", async () => {
+    const { server, url } = await listen((_req, res) => {
+      res.writeHead(403).end("expired");
+    });
+    const usage = { total_tokens: 7, input_tokens: 3, output_tokens: 4 };
+    openaiMock.generate.mockResolvedValue({ created: 1, data: [{ b64_json: pngBase64(png) }, { url }], usage });
+    const { network: net, logPath } = await failingNetwork();
+
+    await openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net }).finally(
+      () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
+    );
+
+    const { text, lines } = await records(logPath);
+    expect(lines.map((line) => line.message)).toEqual(["imageGenerate attempt 1 succeeded", "imageDownload attempt 1 failed"]);
+    expect(lines[0]).toMatchObject({
+      level: "info",
+      stage: "response",
+      data: {
+        budget: "imageGenerate",
+        attempt: 1,
+        durationMs: expect.any(Number),
+        outcome: "succeeded",
+        request: { headers, body: { model: "gpt-image-2", prompt: "p" } },
+        response: {
+          status: 200,
+          headers: { "x-request-id": "req_test" },
+          requestId: "req_test",
+          body: { created: 1, data: [{ b64_json: null }, { url }], usage },
+        },
+      },
+    });
+    expect(text).not.toContain(pngBase64(png).slice(0, 40));
+  });
+
   it("records a failed download attempt with its whole URL, query token included", async () => {
     const { server, url } = await listen((_req, res) => {
       res.writeHead(403).end("expired");
@@ -880,6 +929,7 @@ describe("OpenAI provider failure records", () => {
     expect(result.images[0]).toMatchObject({ data: null });
     const { lines } = await records(logPath);
     expect(lines).toEqual([
+      expect.objectContaining({ message: "imageGenerate attempt 1 succeeded" }),
       expect.objectContaining({
         stage: "response",
         message: "imageDownload attempt 1 failed",
@@ -1013,11 +1063,12 @@ describe("OpenAI provider failure records", () => {
       ).rejects.toMatchObject({ errorType: "provider" });
 
       const { text, lines } = await records(logPath);
-      expect(lines).toHaveLength(1);
-      expect(lines[0]).toMatchObject({ level: "warn", stage: "response", data: { response: answer } });
-      expect(lines[0]!.data.request.headers).toEqual(headers);
-      expect(lines[0]!.data.request.body.messages[1].content[1]).toEqual({ type: "image_url", image_url: { url: null } });
-      expect(lines[0]!.data.error.code).toMatch(/^provider\./);
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toMatchObject({ stage: "response", data: { outcome: "succeeded", response: { body: answer } } });
+      expect(lines[1]).toMatchObject({ level: "warn", stage: "response", data: { response: answer } });
+      expect(lines[1]!.data.request.headers).toEqual(headers);
+      expect(lines[1]!.data.request.body.messages[1].content[1]).toEqual({ type: "image_url", image_url: { url: null } });
+      expect(lines[1]!.data.error.code).toMatch(/^provider\./);
       expect(text).not.toContain("base64");
     }
   });

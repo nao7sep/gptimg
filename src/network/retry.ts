@@ -157,37 +157,45 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export interface CallWithRetryContext {
+export interface CallWithRetryContext<T = unknown> {
   budgetName: NetworkBudgetName;
   budget: NetworkBudget;
   signal?: AbortSignal | undefined;
   logger?: Logger | undefined;
   /**
-   * The request each attempt sends, headers and key included; the log line of
-   * each attempt that does not succeed carries it (data-lifecycle-conventions,
-   * *Records* and *Nothing is cut*).
+   * The request each attempt sends, headers and key included; every attempt's
+   * log line carries it (data-lifecycle-conventions, *Records* and *Nothing is
+   * cut*).
    */
   request?: Record<string, unknown> | undefined;
+  /**
+   * What a successful attempt's log line records as its response. A call
+   * without it, a download whose bytes the caller keeps, logs no line for a
+   * successful attempt.
+   */
+  response?: ((result: T) => unknown) | undefined;
 }
 
 /** What one attempt's log line records about the attempt itself. */
-function attemptFields(ctx: CallWithRetryContext, attempt: number): Record<string, unknown> {
+function attemptFields(ctx: CallWithRetryContext<never>, attempt: number, started: number): Record<string, unknown> {
   return {
     budget: ctx.budgetName,
     attempt,
     maxRetries: ctx.budget.maxRetries,
+    durationMs: Math.round(performance.now() - started),
     ...(ctx.request ? { request: ctx.request } : {}),
   };
 }
 
 /** What one failed attempt's log line records about the attempt and its failure. */
 function failedAttemptFields(
-  ctx: CallWithRetryContext,
+  ctx: CallWithRetryContext<never>,
   attempt: number,
+  started: number,
   err: unknown,
 ): Record<string, unknown> {
   return {
-    ...attemptFields(ctx, attempt),
+    ...attemptFields(ctx, attempt, started),
     status: statusFromError(err),
     error: {
       name: err instanceof Error ? err.name : typeof err,
@@ -203,29 +211,33 @@ function failedAttemptFields(
  * unprocessed ones for paid provider calls. Honors `Retry-After` headers
  * over the configured schedule. Aborts immediately when `signal` fires.
  *
- * Each attempt that does not succeed is its own log line: a retried one as the
- * `retry` line, the last failed one as a `response` line before the failure is
- * rethrown, and a cancelled one as a `cancelled` line.
+ * Each attempt is its own log line: a successful one that records a response
+ * as a `response` line before its result is returned, a retried one as the
+ * `retry` line, the last
+ * failed one as a `response` line before the failure is rethrown, and a
+ * cancelled one as a `cancelled` line.
  *
  * `fn` is responsible for its own per-attempt timeout — the OpenAI SDK accepts
  * `{ timeout, signal }` per request; `fetchWithBudget` builds its own combined
  * AbortSignal. This keeps the retry layer pure.
  */
 export async function callWithRetry<T>(
-  ctx: CallWithRetryContext,
+  ctx: CallWithRetryContext<T>,
   fn: () => Promise<T>,
 ): Promise<T> {
   const { budget, budgetName, signal, logger } = ctx;
   let attempt = 0;
   for (;;) {
     if (signal?.aborted) throw abortReason(signal);
+    const started = performance.now();
+    let result: T;
     try {
-      return await fn();
+      result = await fn();
     } catch (err) {
       if (isAbortError(err) || signal?.aborted) {
         if (logger) {
           await logger.info("cancelled", `${budgetName} attempt ${attempt + 1} cancelled`, {
-            ...attemptFields(ctx, attempt + 1),
+            ...attemptFields(ctx, attempt + 1, started),
             outcome: "cancelled",
           });
         }
@@ -237,7 +249,7 @@ export async function callWithRetry<T>(
           await logger.warn(
             "response",
             `${budgetName} attempt ${attempt + 1} failed`,
-            failedAttemptFields(ctx, attempt + 1, err),
+            failedAttemptFields(ctx, attempt + 1, started, err),
           );
         }
         throw err;
@@ -260,7 +272,7 @@ export async function callWithRetry<T>(
           "retry",
           `retrying ${budgetName} after ${Math.round(waitMs)}ms`,
           {
-            ...failedAttemptFields(ctx, attempt, err),
+            ...failedAttemptFields(ctx, attempt, started, err),
             waitMs: Math.round(waitMs),
             retryAfterHeader: headerWait != null,
             retryAfterCapped,
@@ -268,6 +280,15 @@ export async function callWithRetry<T>(
         );
       }
       await abortableSleep(waitMs, signal);
+      continue;
     }
+    if (logger && ctx.response) {
+      await logger.info("response", `${budgetName} attempt ${attempt + 1} succeeded`, {
+        ...attemptFields(ctx, attempt + 1, started),
+        outcome: "succeeded",
+        response: ctx.response(result),
+      });
+    }
+    return result;
   }
 }

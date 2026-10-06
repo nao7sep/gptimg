@@ -476,6 +476,34 @@ describe("callWithRetry", () => {
     expect(stages).toEqual([...Array(fast.maxRetries).fill("retry"), "response"]);
   });
 
+  it("records a successful attempt that names its response, after a retried one, and returns the result", async () => {
+    const info = vi.fn(async () => {});
+    const logger = { ...fakeLogger(), info } as unknown as Logger;
+    const request = { model: "m" };
+    const fn = vi.fn().mockRejectedValueOnce(http(429)).mockResolvedValueOnce({ body: "ok", bytes: "x" });
+
+    const result = await callWithRetry(
+      { budgetName: "imageGenerate", budget: fast, logger, request, response: (r: { body: string }) => r.body },
+      fn,
+    );
+
+    expect(result).toEqual({ body: "ok", bytes: "x" });
+    expect(info.mock.calls).toEqual([
+      [
+        "response",
+        "imageGenerate attempt 2 succeeded",
+        { budget: "imageGenerate", attempt: 2, maxRetries: fast.maxRetries, durationMs: expect.any(Number), request, outcome: "succeeded", response: "ok" },
+      ],
+    ]);
+  });
+
+  it("logs no success line for a call that records no response", async () => {
+    const info = vi.fn(async () => {});
+    const logger = { ...fakeLogger(), info } as unknown as Logger;
+    await callWithRetry({ budgetName: "imageDownload", budget: fast, logger, request: { url: "u" } }, async () => "bytes");
+    expect(info).not.toHaveBeenCalled();
+  });
+
   it("records a cancelled attempt with its request and the cancelled outcome", async () => {
     const info = vi.fn(async () => {});
     const logger = { ...fakeLogger(), info } as unknown as Logger;
@@ -492,7 +520,7 @@ describe("callWithRetry", () => {
       [
         "cancelled",
         "imageGenerate attempt 1 cancelled",
-        { budget: "imageGenerate", attempt: 1, maxRetries: fast.maxRetries, request, outcome: "cancelled" },
+        { budget: "imageGenerate", attempt: 1, maxRetries: fast.maxRetries, durationMs: expect.any(Number), request, outcome: "cancelled" },
       ],
     ]);
   });
