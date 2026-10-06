@@ -2,6 +2,7 @@ import sharp, { type Sharp } from "sharp";
 import { LocalOpError } from "../errors.js";
 import { writeFileAtomic } from "../internal/atomic-file.js";
 import type { EncodingArgs, PngEncodingArgs, ResampleKernel } from "../types.js";
+import { readCaptureMetadata, withCaptureMetadata, type CaptureMetadata } from "./capture.js";
 
 export interface RawImage {
   data: Uint8Array;
@@ -32,10 +33,14 @@ export async function readImageSize(path: string, verb: string): Promise<{ width
   return { width, height };
 }
 
-/** Where a local op publishes its image, and whether it may replace a file there. */
+/**
+ * Where a local op publishes its image, whether it may replace a file there,
+ * and the one source image it is derived from, whose capture facts it keeps.
+ */
 export interface ImageTarget {
   path: string;
   overwrite?: boolean | undefined;
+  source?: string | undefined;
 }
 
 /**
@@ -66,9 +71,15 @@ async function publishImage(target: ImageTarget, bytes: Buffer, failure: string)
  * caller set (PLAYBOOK, "Leave a library's defaults to the library"). PNG offers only the
  * lossless options, because sharp's `palette`, `quality` and `effort` quantize. With `opaque`
  * the pixels are checked first and a translucent one is refused as `image.notOpaque`, never
- * flattened. `failure` prefixes that refusal's message.
+ * flattened. `failure` prefixes that refusal's message. `capture` is written into the encoded
+ * image last, so it survives the opaque check's re-read.
  */
-export async function encodeImage(pipeline: Sharp, encoding: EncodingArgs, failure: string): Promise<Buffer> {
+export async function encodeImage(
+  pipeline: Sharp,
+  encoding: EncodingArgs,
+  failure: string,
+  capture?: CaptureMetadata,
+): Promise<Buffer> {
   let image = pipeline;
   if (encoding.opaque === true) {
     // The pixels are rendered once to a lossless PNG and re-read, because a pipeline that already
@@ -100,13 +111,15 @@ export async function encodeImage(pipeline: Sharp, encoding: EncodingArgs, failu
       ...(encoding.adaptiveFiltering !== undefined && { adaptiveFiltering: encoding.adaptiveFiltering }),
     });
   }
+  if (capture) withCaptureMetadata(image, capture);
   return image.toBuffer();
 }
 
 /**
- * Builds the sharp pipeline, encodes it (see `encodeImage`) and publishes it at `target`
- * (see `publishImage`). Anything that fails while building or encoding is `image.writeFailed`
- * with `failure` as its message prefix; a refusal the encoding itself raises keeps its code.
+ * Builds the sharp pipeline, encodes it with the capture facts of `target.source` (see
+ * `encodeImage`) and publishes it at `target` (see `publishImage`). Anything that fails while
+ * building or encoding is `image.writeFailed` with `failure` as its message prefix; a refusal
+ * the encoding itself raises keeps its code.
  */
 async function encodeAndPublish(
   target: ImageTarget,
@@ -116,7 +129,8 @@ async function encodeAndPublish(
 ): Promise<void> {
   let bytes: Buffer;
   try {
-    bytes = await encodeImage(build(), encoding, failure);
+    const capture = target.source === undefined ? undefined : await readCaptureMetadata(target.source);
+    bytes = await encodeImage(build(), encoding, failure, capture);
   } catch (err) {
     if (err instanceof LocalOpError) throw err;
     throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });

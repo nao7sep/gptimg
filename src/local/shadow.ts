@@ -199,7 +199,7 @@ export async function runShadow(
   const finalPipe = keepCanvas
     ? sharp(composed).extract({ left: subjX, top: subjY, width: w, height: h })
     : sharp(composed);
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "shadow", args, () => finalPipe);
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "shadow", args, () => finalPipe);
 
   return {
     output: args.out,

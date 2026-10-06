@@ -17,6 +17,7 @@ import sharp from "sharp";
 import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
 import { LocalOpError, throwIfAborted } from "../errors.js";
 import { encodeImage, readImageSize } from "../image/bridge.js";
+import { readCaptureMetadata, type CaptureMetadata } from "../image/capture.js";
 import { writeOutputBytes } from "../internal/output-files.js";
 import type { PngEncodingArgs } from "../types.js";
 
@@ -144,8 +145,10 @@ export async function runIcon(
   // Decode the master once; every entry is a downscale of these bytes. Cache
   // per size so overlapping icns/ico/png-set sizes render only once.
   let master: Buffer;
+  let capture: CaptureMetadata;
   try {
     master = await sharp(args.in).ensureAlpha().png().toBuffer();
+    capture = await readCaptureMetadata(args.in);
   } catch (err) {
     throw new LocalOpError(
       "image.decodeFailed",
@@ -162,6 +165,7 @@ export async function runIcon(
         sharp(master).resize(size, size, { fit: "fill", kernel: "lanczos3" }),
         args,
         "icon",
+        capture,
       );
       cache.set(size, p);
     }

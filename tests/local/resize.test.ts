@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runResize } from "../../src/local/resize.js";
+import { readExifTags } from "../helpers/exif.js";
 import type { ResampleKernel } from "../../src/types.js";
 
 async function writeRawPng(
@@ -91,6 +92,20 @@ describe("runResize", () => {
     const c = pixelAt(out, 25, 25);
     expect(c.a).toBe(255);
     expect(c.r).toBeGreaterThan(180);
+  });
+
+  it("keeps the source photo's capture date in the resized output", async () => {
+    const inPath = path.join(tmp, "photo.jpg");
+    const outPath = path.join(tmp, "out.png");
+    await sharp({ create: { width: 40, height: 20, channels: 3, background: "#336699" } })
+      .withExif({ IFD2: { DateTimeOriginal: "2019:05:06 07:08:09" } })
+      .jpeg()
+      .toFile(inPath);
+
+    await runResize({ in: inPath, out: outPath, toSize: 20 });
+
+    const { exif } = await sharp(outPath).metadata();
+    expect(readExifTags(exif!).exif.get(0x9003)).toBe("2019:05:06 07:08:09");
   });
 
   it("enlarges too (plain resample, any direction)", async () => {

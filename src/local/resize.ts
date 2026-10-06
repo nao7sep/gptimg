@@ -50,7 +50,7 @@ export async function runResize(
 
   const { w, h } = fitLongerSide(meta.width, meta.height, args.toSize);
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "resize", args, () =>
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "resize", args, () =>
     sharp(args.in)
       .ensureAlpha()
       .resize(w, h, { fit: "fill", kernel }),

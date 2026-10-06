@@ -170,7 +170,7 @@ export async function runUpscale(
       rgba[d + 2] = rgbResized[s + 2]!;
       rgba[d + 3] = alphaResized[p]!;
     }
-    await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite }, args);
+    await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite, source: args.in }, args);
   } catch (err) {
     if (err instanceof LocalOpError) throw err;
     throw new LocalOpError(

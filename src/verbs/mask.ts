@@ -128,7 +128,7 @@ export async function maskImpl(
       };
     }
 
-    await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false }, pngEncodingOf(args));
+    await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false, source: args.in }, pngEncodingOf(args));
     await logger.info("write", "wrote mask", { path: outPath });
 
     return {

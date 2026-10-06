@@ -235,7 +235,7 @@ export async function runKeycheck(
       }
     }
     throwIfAborted(signal);
-    await writeRGBA(out, width, height, { path: args.heatmapOut, overwrite: args.overwrite }, args);
+    await writeRGBA(out, width, height, { path: args.heatmapOut, overwrite: args.overwrite, source: args.in }, args);
     heatmapPath = args.heatmapOut;
   }
 
