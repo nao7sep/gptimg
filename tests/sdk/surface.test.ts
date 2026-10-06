@@ -1,8 +1,9 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { GptImg } from "../../src/index.js";
 import type {
   DetectedFormat,
@@ -59,6 +60,19 @@ describe("GptImg SDK surface", () => {
 
     expect(sdk.profileDir).toBe(path.join(tmp, "profile-dir"));
     expect(sdk.logDir).toBe(path.join(tmp, "log-dir"));
+  });
+
+  it("expands environment references in the profile and log directories before using them", () => {
+    vi.stubEnv("GPTIMG_TEST_ROOT", tmp);
+    try {
+      const sdk = new GptImg({ profileDir: "$GPTIMG_TEST_ROOT/profile-dir", logDir: "%GPTIMG_TEST_ROOT%/log-dir" });
+
+      expect(sdk.profileDir).toBe(path.join(tmp, "profile-dir"));
+      expect(sdk.logDir).toBe(path.join(tmp, "log-dir"));
+      expect(existsSync(path.join(tmp, "profile-dir"))).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("exposes the documented helper groups as callable functions", async () => {

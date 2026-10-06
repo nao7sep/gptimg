@@ -5,9 +5,9 @@ import { customAlphabet } from "nanoid";
 import { ProfileError } from "../errors.js";
 
 /**
- * Expand a path value taken from the environment (`GPTIMG_DATA_DIR`,
- * `GPTIMG_MODELS_DIR`), per the storage-path-conventions. An unset reference
- * expands to the empty string, as in a shell.
+ * Expand a path setting (`GPTIMG_DATA_DIR`, `GPTIMG_MODELS_DIR`, the
+ * `profileDir`/`logDir` options), per the storage-path-conventions. An unset
+ * reference expands to the empty string, as in a shell.
  */
 function expandHomeAndEnv(value: string, home: string): string {
   let out = value;
@@ -25,9 +25,9 @@ function expandHomeAndEnv(value: string, home: string): string {
 /**
  * GptImg's storage root, per the storage-path-conventions.
  *
- * The `profileDir`/`logDir` constructor options and `GPTIMG_MODELS_DIR` layer
- * above it: a caller that injects a directory bypasses the root for that
- * subpath.
+ * The `profileDir`/`logDir` constructor options (see `resolveDirOption`) and
+ * `GPTIMG_MODELS_DIR` layer above it: a caller that injects a directory
+ * bypasses the root for that subpath.
  */
 export function defaultProfileDir(): string {
   const home = homedir();
@@ -44,6 +44,23 @@ export function defaultProfileDir(): string {
     return path.isAbsolute(expanded) ? expanded : path.resolve(home, expanded);
   }
   return path.join(home, ".gptimg");
+}
+
+/**
+ * A `profileDir` or `logDir` constructor option as an absolute directory: `~`
+ * and environment references expanded, and a relative value resolved against
+ * the home directory, never the working directory (storage-path-conventions).
+ */
+export function resolveDirOption(value: string, option: "profileDir" | "logDir"): string {
+  const home = homedir();
+  const expanded = expandHomeAndEnv(value, home);
+  if (expanded.length === 0) {
+    throw new ProfileError(
+      "profile.invalidHome",
+      `The ${option} option expands to an empty path: ${JSON.stringify(value)}.`,
+    );
+  }
+  return path.isAbsolute(expanded) ? expanded : path.resolve(home, expanded);
 }
 
 /**

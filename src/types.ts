@@ -998,6 +998,8 @@ export interface ModelVerifyResult {
 }
 
 export interface GptImgOptions {
+  /** The storage root. `~` and `$VAR`/`%VAR%` are expanded; a relative path is under the home directory. */
   profileDir?: string;
+  /** Where default logs go, expanded and anchored like `profileDir`. */
   logDir?: string;
 }

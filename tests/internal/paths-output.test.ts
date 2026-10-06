@@ -2,7 +2,7 @@ import { chmodSync, existsSync, statSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir, tmpdir } from "node:os";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ensureOutputDir, writeOutputBytes } from "../../src/internal/output-files.js";
 import {
   defaultLogDir,
@@ -13,6 +13,7 @@ import {
   defaultRecipePath,
   defaultStem,
   ensureSecureProfileRoot,
+  resolveDirOption,
   utcTimestampMs,
 } from "../../src/internal/paths.js";
 
@@ -103,6 +104,29 @@ describe("defaultProfileDir (GPTIMG_DATA_DIR)", () => {
     process.env.GPTIMG_DATA_DIR = "${GPTIMG_DEFINITELY_UNSET_VAR_42}";
     expect(() => defaultProfileDir()).toThrow();
     expect(() => defaultProfileDir()).toThrowError(/expands to an empty path/);
+  });
+});
+
+describe("resolveDirOption", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("expands ~ and environment references and anchors a relative path at home", () => {
+    vi.stubEnv("GPTIMG_TEST_ROOT", path.join(tmpdir(), "root"));
+    expect(resolveDirOption("~/profiles", "profileDir")).toBe(path.join(homedir(), "profiles"));
+    expect(resolveDirOption("~\\profiles", "profileDir")).toBe(path.join(homedir(), "profiles"));
+    expect(resolveDirOption("$GPTIMG_TEST_ROOT/p", "profileDir")).toBe(path.join(tmpdir(), "root", "p"));
+    expect(resolveDirOption("%GPTIMG_TEST_ROOT%/logs", "logDir")).toBe(path.join(tmpdir(), "root", "logs"));
+    expect(resolveDirOption("profiles", "profileDir")).toBe(path.resolve(homedir(), "profiles"));
+    expect(resolveDirOption(path.join(tmpdir(), "abs"), "logDir")).toBe(path.join(tmpdir(), "abs"));
+  });
+
+  it("refuses an option that expands to an empty path", () => {
+    vi.stubEnv("GPTIMG_TEST_ROOT", undefined);
+    expect(() => resolveDirOption("${GPTIMG_TEST_ROOT}", "logDir")).toThrow(
+      expect.objectContaining({ code: "profile.invalidHome", message: expect.stringContaining("logDir") }),
+    );
   });
 });
 
