@@ -15,6 +15,9 @@ import { captureStderr } from "../helpers/streams.js";
 // failure to stderr once and never fails the install, since the cache and network
 // are fine. A cache hit logs nothing, so we assert on the directory `openLog`
 // creates, not on a written log line.
+//
+// Each suite points GPTIMG_MODELS_DIR into its own temporary root, so an
+// override inherited from the shell never reaches a real model cache.
 
 describe("installModelImpl logging", () => {
   let tmp: string;
@@ -22,8 +25,10 @@ describe("installModelImpl logging", () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-model-"));
+    vi.stubEnv("GPTIMG_MODELS_DIR", path.join(tmp, "models"));
   });
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await rm(tmp, { recursive: true, force: true });
   });
 
@@ -99,8 +104,10 @@ describe("model verb result shapes", () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-model-shape-"));
+    vi.stubEnv("GPTIMG_MODELS_DIR", path.join(tmp, "models"));
   });
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await rm(tmp, { recursive: true, force: true });
   });
 
@@ -155,8 +162,10 @@ describe("model.verify integrity check", () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-verify-"));
+    vi.stubEnv("GPTIMG_MODELS_DIR", path.join(tmp, "models"));
   });
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await rm(tmp, { recursive: true, force: true });
   });
 
