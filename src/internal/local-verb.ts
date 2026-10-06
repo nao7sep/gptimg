@@ -11,6 +11,7 @@ import path from "node:path";
 import { readdirSync } from "node:fs";
 import { LocalOpError } from "../errors.js";
 import { createLogger, safeLogError, type Logger } from "../log/index.js";
+import { failedResponseFields } from "../network/retry.js";
 import { ensureOutputDir } from "./output-files.js";
 import { imageFileName } from "./output-naming.js";
 import { defaultLogPath, utcTimestampMs } from "./paths.js";
@@ -128,6 +129,8 @@ function serializeThrownError(
     message: err.message,
   };
   if (err.stack) serialized.stack = err.stack;
+  const response = failedResponseFields(err);
+  if (response) serialized.response = response;
   if (depth >= 4 || seen.has(err)) return serialized;
   seen.add(err);
   if (err.cause !== undefined) {

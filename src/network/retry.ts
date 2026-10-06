@@ -187,6 +187,24 @@ function attemptFields(ctx: CallWithRetryContext<never>, attempt: number, starte
   };
 }
 
+/**
+ * The provider's own answer that a failed request's error holds, as the SDK
+ * read it: status, headers, request id and JSON body, each only when present.
+ * A failure that got no response, such as a refused connection, has none.
+ */
+export function failedResponseFields(err: unknown): Record<string, unknown> | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const { headers, error, requestID } = err as { headers?: unknown; error?: unknown; requestID?: unknown };
+  if (headers === undefined && error === undefined) return undefined;
+  const status = statusFromError(err);
+  return {
+    ...(status !== null && { status }),
+    ...(headers !== undefined && { headers: headers instanceof Headers ? Object.fromEntries(headers) : headers }),
+    ...(requestID !== undefined && { requestId: requestID }),
+    ...(error !== undefined && { body: error }),
+  };
+}
+
 /** What one failed attempt's log line records about the attempt and its failure. */
 function failedAttemptFields(
   ctx: CallWithRetryContext<never>,
@@ -194,6 +212,7 @@ function failedAttemptFields(
   started: number,
   err: unknown,
 ): Record<string, unknown> {
+  const response = failedResponseFields(err);
   return {
     ...attemptFields(ctx, attempt, started),
     status: statusFromError(err),
@@ -202,6 +221,7 @@ function failedAttemptFields(
       message: err instanceof Error ? err.message : String(err),
       code: networkCode(err),
     },
+    ...(response && { response }),
   };
 }
 

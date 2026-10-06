@@ -938,6 +938,27 @@ describe("OpenAI provider failure records", () => {
     ]);
   });
 
+  it("keeps the provider's own failed response on each failed attempt", async () => {
+    const body = { message: "Invalid size", type: "invalid_request_error", param: "size", code: "invalid_value" };
+    openaiMock.generate.mockRejectedValue(
+      Object.assign(new Error("400 Invalid size"), {
+        status: 400,
+        headers: new Headers({ "x-request-id": "req_123" }),
+        requestID: "req_123",
+        error: body,
+      }),
+    );
+    const { network: net, logPath } = await failingNetwork();
+
+    await expect(openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net })).rejects.toMatchObject({
+      code: "provider.requestFailed",
+    });
+
+    const { lines } = await records(logPath);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.data.response).toEqual({ status: 400, headers: { "x-request-id": "req_123" }, requestId: "req_123", body });
+  });
+
   it("generate keeps the built request when the request never left", async () => {
     const refused = Object.assign(new Error("Connection error."), {
       name: "APIConnectionError",
@@ -958,6 +979,7 @@ describe("OpenAI provider failure records", () => {
         status: null,
         error: { name: "APIConnectionError", code: "ECONNREFUSED" },
       });
+      expect(line.data).not.toHaveProperty("response");
     }
     expect(lines.map((line) => line.data.attempt)).toEqual([1, 2, 3]);
   });

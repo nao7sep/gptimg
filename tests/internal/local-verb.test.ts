@@ -8,7 +8,8 @@ import {
   resolveOutputPath,
   withVerbLogger,
 } from "../../src/internal/local-verb.js";
-import { LocalOpError } from "../../src/errors.js";
+import { APIError } from "openai";
+import { LocalOpError, ProviderError } from "../../src/errors.js";
 
 describe("inferStem", () => {
   it("strips the final extension from a basename", () => {
@@ -215,6 +216,26 @@ describe("withVerbLogger", () => {
       type: "LocalOpError",
       message: "boom",
       stack: expect.stringContaining("LocalOpError: boom"),
+    });
+  });
+
+  it("keeps the provider's own failed response in the logged cause", async () => {
+    const logPath = path.join(tmp, "provider.jsonl");
+    const body = { message: "Invalid size", type: "invalid_request_error", param: "size", code: "invalid_value" };
+    const cause = new APIError(400, body, undefined, new Headers({ "x-request-id": "req_123" }));
+    const err = new ProviderError("provider.requestFailed", "OpenAI images.generate failed", { cause });
+    await expect(
+      withVerbLogger({ logDir: tmp }, "generate", { log: logPath }, async () => {
+        throw err;
+      }),
+    ).rejects.toBe(err);
+    const entry = JSON.parse((await readFile(logPath, "utf-8")).trim());
+    expect(entry.data.error.response).toBeUndefined();
+    expect(entry.data.error.cause.response).toEqual({
+      status: 400,
+      headers: { "x-request-id": "req_123" },
+      requestId: "req_123",
+      body,
     });
   });
 
