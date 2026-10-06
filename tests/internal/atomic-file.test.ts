@@ -62,6 +62,31 @@ describe("writeFileAtomic", () => {
     expect(await readFile(target, "utf-8")).toBe("second");
   });
 
+  it("skips an overwrite whose content is identical, leaving the file itself in place", async () => {
+    const target = path.join(tmp, "same.json");
+    await writeFileAtomic(target, "same", { encoding: "utf-8" });
+    const before = await stat(target);
+
+    await writeFileAtomic(target, Buffer.from("same", "utf-8"));
+
+    const after = await stat(target);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+    expect(await readdir(tmp)).toEqual(["same.json"]);
+  });
+
+  it.skipIf(process.platform === "win32")("still applies a requested mode when identical content is skipped", async () => {
+    const target = path.join(tmp, "secret.json");
+    await writeFileAtomic(target, "{}", { encoding: "utf-8", mode: 0o644 });
+    const before = await stat(target);
+
+    await writeFileAtomic(target, "{}", { encoding: "utf-8", mode: 0o600 });
+
+    const after = await stat(target);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mode & 0o777).toBe(0o600);
+  });
+
   it("atomically refuses to replace a target when overwrite is false", async () => {
     const target = path.join(tmp, "claimed.txt");
     await writeFileAtomic(target, "winner", { encoding: "utf-8" });

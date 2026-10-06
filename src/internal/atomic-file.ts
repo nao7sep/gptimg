@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { copyFile, link, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, link, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 
@@ -52,18 +52,36 @@ export async function cleanupPublishedTemp(tempPath: string, removeTemp: typeof 
   await removeTemp(tempPath).catch(() => undefined);
 }
 
+/** Whether `filePath` already holds exactly `bytes`; an unreadable target does not. */
+async function holdsContent(filePath: string, bytes: Uint8Array): Promise<boolean> {
+  try {
+    return (await readFile(filePath)).equals(bytes);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Write `data` to `filePath` atomically: stage it at a temp path beside the
  * target (see `stagingPathFor`), then publish it so a crash mid-write can never
  * leave `filePath` truncated or torn. `overwrite: false` uses an atomic hard
  * link to reject an existing target without a check/write race. On any failure
  * the temp file is best-effort removed and the target is left untouched.
+ *
+ * An overwrite whose content is identical to the target's is skipped, so the
+ * file and its times stay as they are (content-lifecycle-conventions, *Files*);
+ * a requested `mode` is still applied to it.
  */
 export async function writeFileAtomic(filePath: string, data: string | Buffer | Uint8Array, options?: AtomicWriteOptions): Promise<void> {
+  const { overwrite = true, ...writeOptions } = options ?? {};
+  const bytes = typeof data === "string" ? Buffer.from(data, writeOptions.encoding ?? "utf-8") : data;
+  if (overwrite && (await holdsContent(filePath, bytes))) {
+    if (writeOptions.mode !== undefined) await chmod(filePath, writeOptions.mode);
+    return;
+  }
   const tempPath = stagingPathFor(filePath);
   try {
-    const { overwrite = true, ...writeOptions } = options ?? {};
-    await writeFile(tempPath, data, writeOptions);
+    await writeFile(tempPath, bytes, writeOptions);
     if (overwrite) {
       await rename(tempPath, filePath);
     } else {
