@@ -121,7 +121,8 @@ export function defaultModelsDir(profileDir: string): string {
 }
 
 // The default session log file, named per the logging-conventions and stamped
-// with `utcTimestampMs`. A caller's `log` option overrides it.
+// with `utcTimestampMs`. A caller's `log` option overrides it. Calls that start
+// in the same millisecond share this file, so callers start calls at least 1 ms apart.
 export function defaultLogPath(logDir: string, ts: string): string {
   return path.join(logDir, `${ts}.log`);
 }
