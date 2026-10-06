@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -77,6 +77,36 @@ describe("sidecar read/write", () => {
       code: "output.exists",
     });
     await expect(readSidecar(stem)).resolves.toMatchObject({ request: { prompt: "winner" } });
+  });
+
+  it("reports a current sidecar of the wrong shape with its path and leaves it untouched", async () => {
+    const file = `${stem}.json`;
+    const valid = { request: { chroma: { color: "#00ff00" } }, response: {}, files: [] };
+    const { files: _files, ...noFiles } = valid;
+    const { response: _response, ...noResponse } = valid;
+    for (const body of [noFiles, noResponse, { ...valid, request: "x" }, { ...valid, files: [{ index: 1, name: "a.png" }] }]) {
+      const text = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION, ...body });
+      await writeFile(file, text);
+
+      const err = await readSidecar(stem).catch((e: unknown) => e);
+      expect(err).toMatchObject({ errorType: "localOp", code: "sidecar.malformed" });
+      expect((err as Error).message).toContain(file);
+      expect(await readFile(file, "utf-8")).toBe(text);
+    }
+  });
+
+  it("keeps keys it does not know when reading a current sidecar", async () => {
+    await writeFile(
+      `${stem}.json`,
+      JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION, request: {}, response: null, files: [], note: "kept" }),
+    );
+    await expect(readSidecar(stem)).resolves.toEqual({ request: {}, response: null, files: [], note: "kept" });
+  });
+
+  it("refuses to write a sidecar of the wrong shape and writes nothing", async () => {
+    const bad = { request: {}, response: {} } as unknown as Sidecar;
+    await expect(writeSidecar(stem, bad)).rejects.toMatchObject({ code: "sidecar.malformed" });
+    expect(await readdir(tmp)).toEqual([]);
   });
 
   it("reports invalid sidecar JSON as a local image decode failure", async () => {

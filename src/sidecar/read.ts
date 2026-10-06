@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import { LocalOpError, type GptImgError } from "../errors.js";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.js";
 import { takeFormatVersion } from "../internal/format-version.js";
+import { formatZodError } from "../internal/zodError.js";
 import type { Sidecar } from "../types.js";
+import { SidecarSchema } from "./schema.js";
 
 export async function readSidecar(stem: string): Promise<Sidecar> {
   const sidecarPath = `${stem}.json`;
@@ -27,12 +29,22 @@ export async function readSidecar(stem: string): Promise<Sidecar> {
       { cause: err },
     );
   }
-  return takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, {
+  const body = takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, {
     name: "sidecar",
     path: sidecarPath,
     ErrorClass: LocalOpError,
     invalidCode: "image.decodeFailed",
-  }) as Sidecar;
+  });
+  return validSidecar(body, `Sidecar at ${sidecarPath} is invalid and was left unchanged`);
+}
+
+/** `value` as a sidecar of the current shape, or `sidecar.malformed` prefixed by `failure`. */
+export function validSidecar(value: unknown, failure: string): Sidecar {
+  const result = SidecarSchema.safeParse(value);
+  if (!result.success) {
+    throw new LocalOpError("sidecar.malformed", `${failure}: ${formatZodError(result.error)}`);
+  }
+  return result.data as Sidecar;
 }
 
 /**
