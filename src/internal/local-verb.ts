@@ -13,6 +13,7 @@ import { LocalOpError } from "../errors.js";
 import { createLogger, safeLogError, type Logger } from "../log/index.js";
 import { failedResponseFields } from "../network/retry.js";
 import { ensureOutputDir } from "./output-files.js";
+import { refuseCaseOnlyRename } from "./output-group.js";
 import { imageFileName } from "./output-naming.js";
 import { defaultLogPath, utcTimestampMs } from "./paths.js";
 import type { EncodingArgs, LogEntry, LogVerb, PngEncodingArgs } from "../types.js";
@@ -25,17 +26,18 @@ export function inferStem(filePath: string): string {
 }
 
 /**
- * Refuse to overwrite a single existing file unless explicitly allowed. This
- * is the fail-fast check before a verb does its work; the no-clobber
- * publication in `image/bridge.ts` stays the authority when another writer
- * creates the file in the meantime. The group-scoped variant (`assertOutputGroupAvailable` / `assertStemAvailable`
- * in output-group.ts) is for generate/edit's multi-file artifact groups.
+ * Refuse to overwrite a single existing file unless explicitly allowed, and
+ * refuse even then to replace a file whose name differs only in case
+ * (`refuseCaseOnlyRename`). This is the fail-fast check before a verb does its
+ * work; the no-clobber publication in `image/bridge.ts` stays the authority
+ * when another writer creates the file in the meantime. The group-scoped
+ * variant (`assertOutputGroupAvailable` / `assertStemAvailable` in
+ * output-group.ts) is for generate/edit's multi-file artifact groups.
  */
 export function assertSingleFileAvailable(
   filePath: string,
   allowOverwrite: boolean,
 ): void {
-  if (allowOverwrite) return;
   // Case-insensitive: on macOS/Windows filesystems a name that differs only in
   // case from `filePath` would collide, so scan the directory and compare
   // casefolded rather than a single case-sensitive existsSync.
@@ -50,7 +52,9 @@ export function assertSingleFileAvailable(
     throw err;
   }
   const clash = entries.find((name) => name.toLowerCase() === target);
-  if (clash !== undefined) {
+  if (clash !== undefined && allowOverwrite) {
+    refuseCaseOnlyRename(path.join(dir, clash), filePath);
+  } else if (clash !== undefined) {
     throw new LocalOpError(
       "output.exists",
       `Output exists: ${path.join(dir, clash)}. Set overwrite: true to allow.`,

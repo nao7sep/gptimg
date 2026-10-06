@@ -75,6 +75,13 @@ describe("assertSingleFileAvailable", () => {
       expect((err as Error).message).toContain("Photo.png");
     }
   });
+
+  it("refuses even under overwrite to replace a file whose name differs only in case", async () => {
+    await writeFile(path.join(tmp, "Photo.png"), "x");
+    expect(() => assertSingleFileAvailable(path.join(tmp, "photo.png"), true)).toThrow(
+      expect.objectContaining({ code: "output.caseConflict", message: expect.stringContaining("Photo.png") }),
+    );
+  });
 });
 
 describe("resolveOutputPath", () => {

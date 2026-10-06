@@ -400,6 +400,30 @@ function artifactIdentity(filePath: string, sidecarExt: string): string {
 }
 
 /**
+ * Refuse to replace `existing` with `planned`, the same output slot, when their
+ * names differ only in case: a case-sensitive volume would keep both, and they
+ * collide when copied to a standard macOS or Windows folder
+ * (storage-path-conventions). A slot's image may change format, so only a
+ * same-format extension must match exactly.
+ */
+export function refuseCaseOnlyRename(existing: string, planned: string): void {
+  const existingName = path.basename(existing).normalize("NFC");
+  const plannedName = path.basename(planned).normalize("NFC");
+  const existingExt = path.extname(existingName);
+  const plannedExt = path.extname(plannedName);
+  const sameStem =
+    existingName.slice(0, existingName.length - existingExt.length) ===
+    plannedName.slice(0, plannedName.length - plannedExt.length);
+  const sameFormat = existingExt.toLowerCase() === plannedExt.toLowerCase();
+  if (sameStem && (!sameFormat || existingExt === plannedExt)) return;
+  throw new LocalOpError(
+    "output.caseConflict",
+    `Refusing to replace ${existing} with ${plannedName}: the names differ only in case. ` +
+      `Use the existing name, or remove the file first.`,
+  );
+}
+
+/**
  * Group-scoped output assertion.
  *
  * - Without `allowOverwrite`: any existing group sibling blocks. This is
@@ -412,18 +436,20 @@ function artifactIdentity(filePath: string, sidecarExt: string): string {
  *   extension-independent, so a planned PNG may replace an old JPEG;
  *   sidecars remain their own artifact kind. Group
  *   siblings outside the planned slots are reported as `output.staleSiblings`,
- *   and an existing sidecar in a newer format as `sidecar.newerFormat`.
+ *   an existing sidecar in a newer format as `sidecar.newerFormat`, and an
+ *   existing member whose name differs from its planned one only in case as
+ *   `output.caseConflict`.
  */
 export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: string[], allowOverwrite: boolean): void {
   const plannedResolved = new Set<string>();
-  const plannedArtifacts = new Set<string>();
+  const plannedArtifacts = new Map<string, string>();
   for (const p of plannedFiles) {
     const r = path.resolve(p);
     if (plannedResolved.has(r)) {
       throw new LocalOpError("output.duplicate", `Multiple planned outputs resolve to the same path: ${p}`);
     }
     plannedResolved.add(r);
-    plannedArtifacts.add(artifactIdentity(p, group.sidecarExt));
+    plannedArtifacts.set(artifactIdentity(p, group.sidecarExt), p);
   }
 
   const existing = siblingsOnDisk(group);
@@ -445,15 +471,21 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
         `Delete them or choose a fresh outName.`,
     );
   }
-  // Replacement and slot cleanup may touch every existing sidecar, so a newer
-  // one refuses the whole group before any member changes.
+  // Replacement and slot cleanup may touch every existing member, so a newer
+  // sidecar or a case-only rename refuses the whole group before any changes.
   for (const p of existing) {
-    if (artifactIdentity(p, group.sidecarExt).startsWith("sidecar:")) refuseNewerSidecar(p);
+    const identity = artifactIdentity(p, group.sidecarExt);
+    refuseCaseOnlyRename(p, plannedArtifacts.get(identity)!);
+    if (identity.startsWith("sidecar:")) refuseNewerSidecar(p);
   }
 }
 
 function fileKey(filePath: string): string {
   return path.basename(filePath).normalize("NFC").toLowerCase();
+}
+
+function fileName(filePath: string): string {
+  return path.basename(filePath).normalize("NFC");
 }
 
 /**
@@ -489,9 +521,11 @@ export async function removeUnpublishedSlots(
   publishedFiles: readonly string[],
 ): Promise<void> {
   const owned = new Set(ownedFiles.map((filePath) => artifactIdentity(filePath, group.sidecarExt)));
-  const published = new Set(publishedFiles.map(fileKey));
+  // Exact names: the pre-publication check refused case-only renames, so a
+  // retained file has exactly a published name.
+  const published = new Set(publishedFiles.map(fileName));
   const leftovers = siblingsOnDisk(group).filter(
-    (filePath) => owned.has(artifactIdentity(filePath, group.sidecarExt)) && !published.has(fileKey(filePath)),
+    (filePath) => owned.has(artifactIdentity(filePath, group.sidecarExt)) && !published.has(fileName(filePath)),
   );
   const failures: Error[] = [];
   for (const filePath of leftovers) {

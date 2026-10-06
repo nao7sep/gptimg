@@ -262,6 +262,28 @@ describe("OutputGroup", () => {
       ).toThrow(/prior run/);
     });
 
+    it("refuses under --overwrite to replace a member whose name differs only in case", async () => {
+      await writeFile(path.join(tmp, "Photo.png"), "");
+      await writeFile(path.join(tmp, "Photo.json"), "{}");
+      const group = createOutputGroup(tmp, "photo", "png");
+      const planned = [path.join(tmp, "photo.png"), path.join(tmp, "photo.json")];
+      expect(() => assertOutputGroupAvailable(group, planned, true)).toThrow(
+        expect.objectContaining({ code: "output.caseConflict" }),
+      );
+    });
+
+    it("refuses a same-format extension that differs only in case, and allows another format", async () => {
+      await writeFile(path.join(tmp, "stem.PNG"), "");
+      const group = createOutputGroup(tmp, "stem", "png");
+      const planned = [path.join(tmp, "stem.png"), path.join(tmp, "stem.json")];
+      expect(() => assertOutputGroupAvailable(group, planned, true)).toThrow(
+        expect.objectContaining({ code: "output.caseConflict" }),
+      );
+      expect(() =>
+        assertOutputGroupAvailable(group, [path.join(tmp, "stem.webp"), path.join(tmp, "stem.json")], true),
+      ).not.toThrow();
+    });
+
     it("rejects internal duplicates in the planned set", async () => {
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem-1.png"), path.join(tmp, "stem-1.png")];

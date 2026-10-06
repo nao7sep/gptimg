@@ -397,6 +397,19 @@ describe("AI verb implementations with mocked provider", () => {
     expect(await readFile(path.join(outDir, "same-2.json"), "utf-8")).toBe(newer);
   });
 
+  it("generate --overwrite refuses a case-only rename of the group before a provider charge", async () => {
+    const outDir = path.join(tmp, "case-out");
+    await mkdir(outDir);
+    await writeFile(path.join(outDir, "Photo.png"), png);
+    await writeFile(path.join(outDir, "Photo.json"), "{}");
+
+    await expect(sdk.generate({ prompt: "again", outDir, outName: "photo", overwrite: true })).rejects.toMatchObject({
+      code: "output.caseConflict",
+    });
+    expect(providerCalls.generate).not.toHaveBeenCalled();
+    expect((await readdir(outDir)).sort()).toEqual(["Photo.json", "Photo.png"]);
+  });
+
   it("vision --overwrite refuses a newer-format sidecar before a provider charge", async () => {
     const input = path.join(tmp, "vision-newer-input.png");
     const outDir = path.join(tmp, "vision-newer-out");
