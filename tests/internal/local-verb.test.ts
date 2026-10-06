@@ -267,8 +267,8 @@ describe("withVerbLogger", () => {
       },
     );
     expect(result.startsWith(tmp + path.sep)).toBe(true);
-    // The session log carries the `-fff` millisecond exception so two same-second
-    // concurrent runs never collide on one file: yyyymmdd-hhmmss-fff-utc.log.
-    expect(path.basename(result)).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/);
+    // The session log carries milliseconds and a discriminator so concurrent
+    // calls never share a file: yyyymmdd-hhmmss-fff-utc-<discriminator>.log.
+    expect(path.basename(result)).toMatch(/^\d{8}-\d{6}-\d{3}-utc-[0-9a-z]{6}\.log$/);
   });
 });

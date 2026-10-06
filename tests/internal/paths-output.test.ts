@@ -24,10 +24,16 @@ describe("internal paths", () => {
     expect(defaultRecipePath(profileDir)).toBe(path.join(profileDir, "recipe.json"));
     expect(defaultLogDir(profileDir)).toBe(path.join(profileDir, "logs"));
     expect(defaultOutDir(profileDir)).toBe(path.join(profileDir, "output"));
-    expect(defaultLogPath(path.join(profileDir, "logs"), "20260102-030405-utc")).toBe(
-      path.join(profileDir, "logs", "20260102-030405-utc.log"),
+    expect(defaultLogPath(path.join(profileDir, "logs"), "20260102-030405-067-utc", "a1b2c3")).toBe(
+      path.join(profileDir, "logs", "20260102-030405-067-utc-a1b2c3.log"),
     );
     expect(defaultStem("20260102-030405-067-utc", "a1b2c3")).toBe("20260102-030405-067-utc-a1b2c3-gptimg");
+  });
+
+  it("gives calls started in the same millisecond distinct default log files", () => {
+    const ts = "20260102-030405-067-utc";
+    const logs = new Set(Array.from({ length: 1000 }, () => defaultLogPath("logs", ts)));
+    expect(logs.size).toBe(1000);
   });
 
   it("gives calls started in the same millisecond distinct default stems", () => {
