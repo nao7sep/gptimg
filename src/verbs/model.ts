@@ -27,7 +27,7 @@ export interface ModelInstallOptions extends VerbCallOptions {
   force?: boolean;
   recipe?: string;
   /** Path to log JSONL file. Defaults to a per-session
-   * `yyyymmdd-hhmmss-fff-utc-<discriminator>.log` under the log dir. */
+   * `yyyymmdd-hhmmss-fff-utc.log` under the log dir. */
   log?: string;
 }
 

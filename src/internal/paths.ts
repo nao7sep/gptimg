@@ -120,15 +120,10 @@ export function defaultModelsDir(profileDir: string): string {
   return path.join(profileDir, "models");
 }
 
-/**
- * The default log file of one verb call: `yyyymmdd-hhmmss-fff-utc-<discriminator>.log`,
- * stamped with `utcTimestampMs`. A caller's `log` option overrides it. It departs from the
- * logging-conventions' bare-timestamp name deliberately: an SDK starts a session per call, and
- * calls fanned out in one millisecond would otherwise share a file, so the name carries the
- * same short discriminator as `defaultStem`.
- */
-export function defaultLogPath(logDir: string, ts: string, discriminator: string = nameDiscriminator()): string {
-  return path.join(logDir, `${ts}-${discriminator}.log`);
+// The default session log file, named per the logging-conventions and stamped
+// with `utcTimestampMs`. A caller's `log` option overrides it.
+export function defaultLogPath(logDir: string, ts: string): string {
+  return path.join(logDir, `${ts}.log`);
 }
 
 /** `yyyymmdd-hhmmss` in UTC — the date-time body of the filename stamp. */
@@ -152,7 +147,7 @@ export function utcTimestampMs(now: Date = new Date()): string {
 
 // Lowercase letters and digits, per the timestamp-conventions' filename form.
 // Six characters give about 2.2 billion values per millisecond.
-const nameDiscriminator = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
+const outputDiscriminator = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
 
 /**
  * The default output stem of generate, edit and vision:
@@ -161,6 +156,6 @@ const nameDiscriminator = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz",
  * beside a generate), so the stem carries the millisecond stamp plus a short
  * random discriminator and two calls cannot reserve the same stem.
  */
-export function defaultStem(ts: string = utcTimestampMs(), discriminator: string = nameDiscriminator()): string {
+export function defaultStem(ts: string = utcTimestampMs(), discriminator: string = outputDiscriminator()): string {
   return `${ts}-${discriminator}-gptimg`;
 }
