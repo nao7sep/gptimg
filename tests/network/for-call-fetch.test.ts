@@ -1,6 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecipeError } from "../../src/errors.js";
 import { NETWORK_DEFAULTS, fetchWithBudget, resolveNetworkForCall } from "../../src/network/index.js";
 import { formatZodError } from "../../src/internal/zodError.js";
@@ -16,6 +16,18 @@ function listen(
       resolve({ server, baseURL: `http://127.0.0.1:${address.port}` });
     });
   });
+}
+
+async function withDeadline<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("network fixture did not settle")), 3_000);
+      }),
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 describe("resolveNetworkForCall", () => {
@@ -90,10 +102,13 @@ describe("fetchWithBudget", () => {
   async function listenHoldThenOk(
     holdCount: number,
     okBody = "ok",
-  ): Promise<{ server: http.Server; baseURL: string; calls: () => number }> {
+  ): Promise<{ server: http.Server; baseURL: string; calls: () => number; admitted: Promise<void> }> {
     let calls = 0;
+    let admit!: () => void;
+    const admitted = new Promise<void>((resolve) => { admit = resolve; });
     const { server, baseURL } = await listen((req, res) => {
       calls += 1;
+      admit();
       if (calls <= holdCount) {
         // Hold the request open. When the client aborts, the socket closes;
         // the handler exits without writing — no resources to release.
@@ -103,7 +118,7 @@ describe("fetchWithBudget", () => {
       res.writeHead(200);
       res.end(okBody);
     });
-    return { server, baseURL, calls: () => calls };
+    return { server, baseURL, calls: () => calls, admitted };
   }
 
   afterEach(async () => {
@@ -232,34 +247,51 @@ describe("fetchWithBudget", () => {
     });
   });
 
-  it("uses the budget timeout to abort slow responses", async () => {
-    const { server, baseURL } = await listenHoldThenOk(1);
+  it("uses the budget timeout to abort an admitted slow response", async () => {
+    const { server, baseURL, admitted, calls } = await listenHoldThenOk(1);
     servers.push(server);
-
-    await expect(
-      fetchWithBudget(baseURL, {
-        timeout: 100,
-        maxRetries: 0,
-        retryIntervals: [],
-      }),
-    ).rejects.toMatchObject({
-      name: "TimeoutError",
-    });
+    const timeout = new AbortController();
+    const timeoutSignal = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
+    const operation = fetchWithBudget(baseURL, { timeout: 100, maxRetries: 0, retryIntervals: [] });
+    const rejected = expect(operation).rejects.toMatchObject({ name: "TimeoutError" });
+    void rejected.catch(() => undefined);
+    try {
+      await withDeadline(admitted);
+      expect(calls()).toBe(1);
+      expect(timeoutSignal).toHaveBeenCalledWith(100);
+      timeout.abort(new DOMException("held response timed out", "TimeoutError"));
+      await rejected;
+    } finally {
+      timeout.abort();
+      await operation.catch(() => undefined);
+      timeoutSignal.mockRestore();
+    }
   });
 
-  it("retries per-attempt timeout failures", async () => {
-    const { server, baseURL, calls } = await listenHoldThenOk(1);
+  it("retries per-attempt timeout failures after request admission", async () => {
+    const { server, baseURL, calls, admitted } = await listenHoldThenOk(1);
     servers.push(server);
-
-    await expect(
-      fetchWithBudget(baseURL, {
-        // The held first attempt waits out this whole budget; the second only
-        // needs a loopback reply.
-        timeout: 250,
-        maxRetries: 1,
-        retryIntervals: [],
-      }),
-    ).resolves.toEqual(new Uint8Array(Buffer.from("ok")));
-    expect(calls()).toBe(2);
+    const timeouts: AbortController[] = [];
+    const timeoutSignal = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const timeout = new AbortController();
+      timeouts.push(timeout);
+      return timeout.signal;
+    });
+    const operation = fetchWithBudget(baseURL, { timeout: 250, maxRetries: 1, retryIntervals: [] });
+    // Observe rejection immediately, including a setup failure before admission.
+    void operation.catch(() => undefined);
+    try {
+      await withDeadline(admitted);
+      expect(timeouts).toHaveLength(1);
+      timeouts[0]!.abort(new DOMException("held attempt timed out", "TimeoutError"));
+      await expect(withDeadline(operation)).resolves.toEqual(new Uint8Array(Buffer.from("ok")));
+      expect(calls()).toBe(2);
+      expect(timeouts).toHaveLength(2);
+      expect(timeoutSignal.mock.calls).toEqual([[250], [250]]);
+    } finally {
+      for (const timeout of timeouts) timeout.abort();
+      await operation.catch(() => undefined);
+      timeoutSignal.mockRestore();
+    }
   });
 });

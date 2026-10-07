@@ -156,25 +156,36 @@ describe("callWithRetry", () => {
   });
 
   it("aborts during retry sleep", async () => {
+    vi.useFakeTimers();
     const ctrl = new AbortController();
     const fn = vi.fn().mockRejectedValue(http(503));
-    setTimeout(() => ctrl.abort(new Error("stop sleeping")), 5);
-
-    await expect(
-      callWithRetry(
-        {
-          budgetName: "imageGenerate",
-          budget: { ...fast, retryIntervals: [50] },
-          signal: ctrl.signal,
-        },
-        fn,
-      ),
-    ).rejects.toMatchObject({
+    const operation = callWithRetry(
+      {
+        budgetName: "imageGenerate",
+        budget: { ...fast, retryIntervals: [50] },
+        signal: ctrl.signal,
+      },
+      fn,
+    );
+    const rejected = expect(operation).rejects.toMatchObject({
       name: "AbortError",
       code: "cancelled",
       message: "stop sleeping",
     });
-    expect(fn).toHaveBeenCalledOnce();
+    void rejected.catch(() => undefined);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fn).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(1);
+      ctrl.abort(new Error("stop sleeping"));
+      await rejected;
+      expect(fn).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      ctrl.abort();
+      await operation.catch(() => undefined);
+      vi.useRealTimers();
+    }
   });
 
   it("retries even when retryIntervals is empty (immediate retry)", async () => {
