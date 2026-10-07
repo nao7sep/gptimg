@@ -146,6 +146,7 @@ async function prepareLockClaim(lockPath: string): Promise<PreparedLockClaim> {
     return { claimPath, endpoint, markerName, server };
   } catch (err) {
     if (server) await closeGuardian(server, endpoint);
+    await unlink(path.join(claimPath, markerName)).catch(() => undefined);
     await rmdir(claimPath).catch(() => undefined);
     throw err;
   }
@@ -513,7 +514,7 @@ export function ownedSlotFiles(group: OutputGroup, requested: number, returned: 
  * After an overwrite publishes, clear whatever a prior run left in the slots
  * this run owns but did not fill: an old image format beside its replacement,
  * or the image and sidecar of a slot whose new item failed. The group then
- * holds exactly this run's files.
+ * holds exactly this run's files, unless a newer sidecar now protects a slot.
  */
 export async function removeUnpublishedSlots(
   group: OutputGroup,
@@ -524,11 +525,22 @@ export async function removeUnpublishedSlots(
   // Exact names: the pre-publication check refused case-only renames, so a
   // retained file has exactly a published name.
   const published = new Set(publishedFiles.map(fileName));
-  const leftovers = siblingsOnDisk(group).filter(
+  const siblings = siblingsOnDisk(group);
+  const sidecars = new Map(siblings
+    .filter((filePath) => artifactIdentity(filePath, group.sidecarExt).startsWith("sidecar:"))
+    .map((filePath) => [artifactIdentity(filePath, group.sidecarExt), filePath]));
+  const leftovers = siblings.filter(
     (filePath) => owned.has(artifactIdentity(filePath, group.sidecarExt)) && !published.has(fileName(filePath)),
   );
+  // Keep the governing sidecars until every image cleanup has completed.
+  leftovers.sort((a, b) => Number(artifactIdentity(a, group.sidecarExt).startsWith("sidecar:")) -
+    Number(artifactIdentity(b, group.sidecarExt).startsWith("sidecar:")));
   const failures: Error[] = [];
   for (const filePath of leftovers) {
+    const sidecarIdentity = artifactIdentity(filePath, group.sidecarExt).replace(/^image:/, "sidecar:");
+    const sidecarPath = sidecars.get(sidecarIdentity) ??
+      `${filePath.slice(0, -path.extname(filePath).length)}.${group.sidecarExt}`;
+    refuseNewerSidecar(sidecarPath);
     try {
       await unlink(filePath);
     } catch (err) {

@@ -125,10 +125,14 @@ describe("OutputGroup", () => {
     });
     await started;
 
-    await expect(withOutputGroupLock(createOutputGroup(tmp, "photo", "jpg"), async () => "second")).rejects.toMatchObject({
-      code: "output.busy",
-    });
-    release();
+    try {
+      await expect(withOutputGroupLock(createOutputGroup(tmp, "photo", "jpg"), async () => "second")).rejects.toMatchObject({
+        code: "output.busy",
+      });
+    } finally {
+      release();
+      await first;
+    }
     await expect(first).resolves.toBe("first");
     await expect(withOutputGroupLock(group, async () => "next")).resolves.toBe("next");
   });

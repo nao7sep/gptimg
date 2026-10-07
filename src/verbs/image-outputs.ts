@@ -39,9 +39,10 @@ export interface PublishProviderImagesArgs {
  * the response names, and its overwrite decision covers all of them. With
  * `overwrite`, a slot the run owned but could not fill (an item that failed,
  * or a shorter response) is cleared after publication rather than blocking
- * it, so the group ends up holding exactly this run's files and a partial
- * response still delivers every image it paid for. A run that publishes no
- * image leaves the earlier run's files untouched.
+ * it, so a partial response still delivers every image it paid for. Cleanup
+ * refuses a slot whose sidecar now has a newer format, leaving its remaining
+ * files untouched. A run that publishes no image leaves the earlier run's
+ * files untouched.
  */
 export async function publishProviderImages(
   args: PublishProviderImagesArgs,
