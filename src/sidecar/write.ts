@@ -28,7 +28,7 @@ export async function writeSidecar(
   if (overwrite) refuseNewerSidecar(sidecarPath);
   try {
     await mkdir(path.dirname(sidecarPath), { recursive: true });
-    const text = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION, ...sidecar }, null, 2) + "\n";
+    const text = JSON.stringify({ ...sidecar, formatVersion: SIDECAR_FORMAT_VERSION }, null, 2) + "\n";
     await writeFileAtomic(sidecarPath, text, { encoding: "utf-8", overwrite });
   } catch (err) {
     if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {

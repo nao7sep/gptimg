@@ -45,6 +45,13 @@ describe("sidecar read/write", () => {
     });
   });
 
+  it.each([0, SIDECAR_FORMAT_VERSION + 1])("owns the format marker even when the caller supplies %s", async (formatVersion) => {
+    const sidecar = { request: {}, response: null, files: [], note: "kept", formatVersion };
+    const file = await writeSidecar(stem, sidecar);
+    expect(JSON.parse(await readFile(file, "utf-8"))).toEqual({ ...sidecar, formatVersion: SIDECAR_FORMAT_VERSION });
+    await expect(readSidecar(stem)).resolves.toEqual({ request: {}, response: null, files: [], note: "kept" });
+  });
+
   it("refuses a sidecar of a newer format and leaves it byte-identical", async () => {
     const file = `${stem}.json`;
     const text = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: "new" });
