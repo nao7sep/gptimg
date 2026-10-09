@@ -27,6 +27,11 @@ function defaultStem(input: string): string {
  * "from-sidecar" reads `request.chroma.color` from the generate sidecar beside
  * `in` (the same path `mask` uses); anything else is an explicit hex the schema
  * already shaped. keycheck has no "auto": there is no background left to sample.
+ *
+ * Unlike `mask`, keycheck does not require the sidecar to record `in`'s
+ * SHA-256: its input is a cutout, which never matches the generated image's
+ * hash, so the sidecar beside it is one a caller copied there. A stale one
+ * yields a wrong measurement, never a damaged file.
  */
 async function resolveKey(
   args: KeycheckArgs,
