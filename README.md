@@ -35,9 +35,9 @@ Run it with `npx tsx your-script.ts`.
 
 The key lives inside the profile on purpose: a profile is the unit you manage cost by, so each profile carries the key it spends. Keys are stored obfuscated in a `0600` file, never in plain text. To supply a key from the environment instead, name the variable in the profile's `apiKeyEnv` field; when that variable is set, it overrides the stored key. An `OPENAI_API_KEY` exported for other tools is not read unless a profile names it, so it never spends on a profile's behalf.
 
-Each provider call or image download attempt that fails, retries or is cancelled gets its own JSONL log line holding the request it sent: headers and API key included for a provider call, the whole URL for a download. Only image bytes stay out, since the image files hold them. Keep the log folder as private as the profile.
+Each provider call or image download attempt gets its own JSONL log line holding the request it sent and, when one came back, the response. The API key reads `[REDACTED]` there and in every progress event and error, and a signed download URL's query values are masked the same way; only image bytes stay out otherwise, since the image files hold them. Log files are created readable only by you, since they hold your prompts. Writing the log never holds up a call: lines are written in order in the background, and a call waits at most two seconds at the end for its last lines.
 
-Every long-running verb accepts the same optional call controls. Pass an `AbortSignal` to cancel at the next safe boundary and `onProgress` to receive the structured stage events that also feed the JSONL log:
+Every long-running verb accepts the same optional call controls. Pass an `AbortSignal` to cancel at the next safe boundary and `onProgress` to receive the structured stage events that also feed the JSONL log. AI matting and `upscale` run their model on the calling thread: while a model runs (about half a minute per AI mask, a few seconds per upscale tile), nothing else in the script runs, and a cancellation takes effect when it finishes, before anything is saved:
 
 ```ts
 const controller = new AbortController();

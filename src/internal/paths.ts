@@ -141,7 +141,8 @@ export function defaultLogPath(logDir: string, ts: string, id: string): string {
   return path.join(logDir, `${ts}-${id}.log`);
 }
 
-// Claims this call's default log by creating it exclusively, drawing a new ID in
+// Claims this call's default log by creating it exclusively and owner-only (it
+// records prompts and provider responses), drawing a new ID in
 // the unlikely event the name already exists, so every call keeps its own file.
 // A failure other than "already exists" returns the name unclaimed: logging
 // never fails the verb, and the logger reports the same failure on its first line.
@@ -151,7 +152,7 @@ export async function claimDefaultLogPath(logDir: string, now: Date = new Date()
   for (;;) {
     const candidate = defaultLogPath(logDir, ts, fileNameId());
     try {
-      await (await open(candidate, "wx")).close();
+      await (await open(candidate, "wx", 0o600)).close();
       return candidate;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") return candidate;

@@ -11,6 +11,9 @@ export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
   const opts: Record<string, unknown> = {
     apiKey: profile.apiKey,
     maxRetries: 0,
+    // An SDK prints nothing (sdk-toolkit-conventions); gptimg's own records
+    // carry what the client would warn about.
+    logLevel: "off",
   };
   for (const k of CLIENT_PASSTHROUGH_KEYS) {
     if (k in profile.redacted) {
@@ -23,8 +26,8 @@ export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
 /**
  * The headers that identify the caller, as the built client sends them: its key as the bearer
  * token, and the organization and project it resolved, from the profile or the SDK's own
- * `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` defaults. Each attempt's log line records them
- * (data-lifecycle-conventions, *Nothing is cut*).
+ * `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` defaults. Each attempt's log line records them,
+ * the key masked by the call's logger (data-lifecycle-conventions).
  */
 export function clientHeaders(client: OpenAI): Record<string, string> {
   return {

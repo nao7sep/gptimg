@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { ProviderError } from "../../errors.js";
+import { maskCredentials } from "../../log/mask.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { GenerateProviderArgs, ProviderImageResult } from "../types.js";
@@ -32,6 +33,8 @@ export async function openaiGenerate(
   const request = { headers: clientHeaders(client), body: params };
 
   const { primary, download, logger, signal } = args.network;
+  // Every record of this call, and any echo in an error, masks the key.
+  logger?.addCredential(args.profile.apiKey);
 
   let response: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
   try {
@@ -50,7 +53,7 @@ export async function openaiGenerate(
     if (isAbortError(err)) throw err;
     throw new ProviderError(
       "provider.requestFailed",
-      `OpenAI images.generate failed: ${(err as Error).message}`,
+      `OpenAI images.generate failed: ${maskCredentials((err as Error).message, [args.profile.apiKey])}`,
       { cause: err },
     );
   }

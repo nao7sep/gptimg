@@ -26,6 +26,7 @@ function recordingLogger(events: { stage: string; msg: string }[]): Logger {
     warn: async () => {},
     error: async () => {},
     debug: record,
+    addCredential: () => {},
     close: async () => {},
   };
 }

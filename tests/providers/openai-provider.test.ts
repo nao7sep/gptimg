@@ -7,13 +7,13 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { modelsFor } from "../../src/ai-models.js";
-import { createLogger } from "../../src/log/index.js";
+import { createLogger, type Logger } from "../../src/log/index.js";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.js";
 import { openaiEdit } from "../../src/providers/openai/edit.js";
 import { openaiGenerate } from "../../src/providers/openai/generate.js";
 import { OPENAI_VISION_SYSTEM_PROMPT } from "../../src/providers/openai/defaults.js";
 import { openaiVision } from "../../src/providers/openai/vision.js";
-import type { ResolvedProfile } from "../../src/types.js";
+import type { LogVerb, ResolvedProfile } from "../../src/types.js";
 
 const openaiMock = vi.hoisted(() => ({
   generate: vi.fn(),
@@ -812,20 +812,28 @@ describe("OpenAI provider failure records", () => {
     });
   }
 
+  // The logger queues file writes; closing it waits for them before a test reads the file.
+  let lastLogger: Logger | undefined;
+  async function makeLogger(logPath: string, verb: LogVerb): Promise<Logger> {
+    lastLogger = await createLogger(logPath, verb);
+    return lastLogger;
+  }
+
   async function failingNetwork() {
     const logPath = path.join(tmp, "call.log");
-    const logger = await createLogger(logPath, "generate");
+    const logger = await makeLogger(logPath, "generate");
     return { network: { ...network, logger }, logPath };
   }
 
   async function records(logPath: string): Promise<{ text: string; lines: Array<Record<string, any>> }> {
+    await lastLogger?.close();
     const text = await readFile(logPath, "utf-8");
     return { text, lines: text.trimEnd().split("\n").map((line) => JSON.parse(line)) };
   }
 
-  const headers = { Authorization: "Bearer sk-local" };
+  const headers = { Authorization: "Bearer [REDACTED]" };
 
-  it("generate records every attempt's whole request, headers and key included, and its status", async () => {
+  it("generate records every attempt's whole request, headers with the key masked, and its status", async () => {
     openaiMock.generate.mockRejectedValueOnce(apiError(429)).mockRejectedValueOnce(apiError(400));
     const { network: net, logPath } = await failingNetwork();
 
@@ -882,7 +890,7 @@ describe("OpenAI provider failure records", () => {
     ).rejects.toMatchObject({ code: "provider.requestFailed" });
     const { lines } = await records(logPath);
     expect(lines[0]!.data.request.headers).toEqual({
-      Authorization: "Bearer sk-local",
+      Authorization: "Bearer [REDACTED]",
       "OpenAI-Organization": "org-1",
       "OpenAI-Project": "proj-1",
     });
@@ -922,7 +930,7 @@ describe("OpenAI provider failure records", () => {
     expect(text).not.toContain(pngBase64(png).slice(0, 40));
   });
 
-  it("records a failed download attempt with its whole URL, query token included", async () => {
+  it("records a failed download attempt with its URL, query values masked", async () => {
     const { server, url } = await listen((_req, res) => {
       res.writeHead(403).end("expired");
     });
@@ -935,13 +943,19 @@ describe("OpenAI provider failure records", () => {
     );
 
     expect(result.images[0]).toMatchObject({ data: null });
-    const { lines } = await records(logPath);
+    const { text, lines } = await records(logPath);
+    expect(text).not.toContain("secret-token");
     expect(lines).toEqual([
-      expect.objectContaining({ message: "imageGenerate attempt 1 succeeded" }),
+      expect.objectContaining({
+        message: "imageGenerate attempt 1 succeeded",
+        data: expect.objectContaining({
+          response: expect.objectContaining({ body: { data: [{ url: `${url}?se=[REDACTED]&sig=[REDACTED]` }] } }),
+        }),
+      }),
       expect.objectContaining({
         stage: "response",
         message: "imageDownload attempt 1 failed",
-        data: expect.objectContaining({ request: { url: signedUrl }, status: 403 }),
+        data: expect.objectContaining({ request: { url: `${url}?se=[REDACTED]&sig=[REDACTED]` }, status: 403 }),
       }),
     ]);
   });
@@ -1054,7 +1068,7 @@ describe("OpenAI provider failure records", () => {
   it("vision records an id with no row's caller-set detail and effort in the attempt's request", async () => {
     openaiMock.create.mockRejectedValueOnce(apiError(400));
     const logPath = path.join(tmp, "vision-unlisted.log");
-    const logger = await createLogger(logPath, "vision");
+    const logger = await makeLogger(logPath, "vision");
     await expect(
       openaiVision({
         check: "is it green?",
@@ -1081,7 +1095,7 @@ describe("OpenAI provider failure records", () => {
     for (const [i, answer] of answers.entries()) {
       openaiMock.create.mockResolvedValueOnce(answer);
       const logPath = path.join(tmp, `vision-${i}.log`);
-      const logger = await createLogger(logPath, "vision");
+      const logger = await makeLogger(logPath, "vision");
       await expect(
         openaiVision({
           check: "is it green?",

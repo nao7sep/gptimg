@@ -1,7 +1,8 @@
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendLog,
@@ -12,6 +13,7 @@ import {
   safeLogError,
   type Logger,
 } from "../../src/log/index.js";
+import { GptImg } from "../../src/index.js";
 import type { LogEntry, LogHandle } from "../../src/types.js";
 import { captureStderr } from "../helpers/streams.js";
 
@@ -253,4 +255,34 @@ describe("logging fallback when the file can't be written", () => {
     expect(seen.filter((e) => e.message === "log file unavailable")).toHaveLength(1);
     expect(chunks.join("")).toBe("");
   });
+
+  it.skipIf(process.platform === "win32")(
+    "never lets a stalled log file hold a verb, even a cancelled one",
+    async () => {
+      // A named pipe nobody reads: every append to it blocks until a reader opens it.
+      const fifo = path.join(tmp, "stalled.log");
+      execFileSync("mkfifo", [fifo]);
+      const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+      const seen: LogEntry[] = [];
+      try {
+        const started = Date.now();
+        await sdk.backplate({ size: 16, from: "#ffffff", to: "#000000", outDir: tmp, outName: "plate", log: fifo }, { onProgress: (e) => seen.push(e) });
+        const ctrl = new AbortController();
+        ctrl.abort();
+        await expect(
+          sdk.backplate({ size: 16, from: "#ffffff", to: "#000000", outDir: tmp, outName: "plate-2", log: fifo }, { signal: ctrl.signal }),
+        ).rejects.toMatchObject({ name: "AbortError" });
+        // Each call waits at most the bounded close for its pending lines.
+        expect(Date.now() - started).toBeLessThan(6_000);
+        expect(seen.length).toBeGreaterThan(0);
+      } finally {
+        // Release the blocked writes so no thread stays parked on the pipe.
+        const reader = createReadStream(fifo);
+        reader.on("data", () => undefined);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        reader.destroy();
+      }
+    },
+    10_000,
+  );
 });

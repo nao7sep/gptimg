@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { ProviderError } from "../../errors.js";
+import { maskCredentials } from "../../log/mask.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { VisionVerdict } from "../../types.js";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
@@ -174,6 +175,8 @@ export async function openaiVision(
   const request = { headers: clientHeaders(client), body: buildRequest(false) };
 
   const { primary, logger, signal } = args.network;
+  // Every record of this call, and any echo in an error, masks the key.
+  logger?.addCredential(args.profile.apiKey);
 
   let response: ChatResponse;
   try {
@@ -192,7 +195,7 @@ export async function openaiVision(
     if (isAbortError(err)) throw err;
     throw new ProviderError(
       "provider.requestFailed",
-      `OpenAI chat.completions.create failed: ${(err as Error).message}`,
+      `OpenAI chat.completions.create failed: ${maskCredentials((err as Error).message, [args.profile.apiKey])}`,
       { cause: err },
     );
   }

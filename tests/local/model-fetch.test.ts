@@ -173,6 +173,7 @@ describe("ensureModel", () => {
       warn: async () => {},
       error: async () => {},
       debug: async () => {},
+      addCredential: () => {},
       close: async () => {},
     };
     // Spy stderr for the duration of the download; the SDK must not touch it.
@@ -510,6 +511,7 @@ describe("ensureModel", () => {
       warn: async () => {},
       error: async () => {},
       debug: async () => {},
+      addCredential: () => {},
       close: async () => {},
     };
     try {
@@ -545,6 +547,7 @@ describe("ensureModel", () => {
       debug: async (_stage, _msg, data) => {
         if (Number(data?.received ?? 0) > 0) ctrl.abort(new Error("stop"));
       },
+      addCredential: () => {},
       close: async () => {},
     };
     const entry: ModelEntry = {

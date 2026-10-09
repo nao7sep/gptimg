@@ -2,6 +2,7 @@ import type { Logger } from "../log/index.js";
 import type { NetworkBudget } from "./defaults.js";
 import { combineSignals, HttpStatusError } from "./http.js";
 import { callWithRetry } from "./retry.js";
+import { urlQueryValues } from "../log/mask.js";
 
 async function fetchOnce(
   url: string,
@@ -31,6 +32,9 @@ export async function fetchWithBudget(
   budget: NetworkBudget,
   opts: { signal?: AbortSignal | undefined; logger?: Logger | undefined } = {},
 ): Promise<Uint8Array> {
+  // A signed image URL carries its credential in the query; every record of
+  // the call masks those values, including echoes in an error body.
+  for (const value of urlQueryValues(url)) opts.logger?.addCredential(value);
   return callWithRetry(
     {
       budgetName: "imageDownload",

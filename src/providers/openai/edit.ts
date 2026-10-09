@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import path from "node:path";
 import { LocalOpError, ProviderError } from "../../errors.js";
+import { maskCredentials } from "../../log/mask.js";
 import { fetchWithBudget } from "../../network/fetch.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { EditProviderArgs, ProviderImageResult } from "../types.js";
@@ -50,6 +51,8 @@ export async function openaiEdit(
   };
 
   const { primary, download, logger, signal } = args.network;
+  // Every record of this call, and any echo in an error, masks the key.
+  logger?.addCredential(args.profile.apiKey);
 
   let response: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
   try {
@@ -68,7 +71,7 @@ export async function openaiEdit(
     if (isAbortError(err)) throw err;
     throw new ProviderError(
       "provider.requestFailed",
-      `OpenAI images.edit failed: ${(err as Error).message}`,
+      `OpenAI images.edit failed: ${maskCredentials((err as Error).message, [args.profile.apiKey])}`,
       { cause: err },
     );
   }

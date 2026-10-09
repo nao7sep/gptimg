@@ -1,6 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { LogEntry, LogHandle, LogLevel, LogStage, LogVerb } from "../types.js";
+import { maskCredentials } from "./mask.js";
 
 /**
  * `debug` logging is a developer-only firehose: it is written to the session log
@@ -16,9 +17,39 @@ export function debugEnabled(): boolean {
   return v === "1" || v === "true";
 }
 
-/** Serialize one envelope to a single JSON Lines record (one object, newline-terminated). */
-function serialize(entry: LogEntry): string {
-  return JSON.stringify(entry) + "\n";
+// Credentials registered for a handle (`Logger.addCredential`). Every record is
+// masked against them before any sink receives it, so a key echoed anywhere in a
+// request, response or error chain never reaches the file or `onProgress`.
+const credentialsByHandle = new WeakMap<LogHandle, Set<string>>();
+
+// Each handle's file writes, chained so lines land in order. Logging is a
+// diagnostic sink: a verb never waits for it, so a slow or stalled log disk cannot
+// delay a result, a paid image's publication or a cancellation
+// (logging-conventions). `closeLog` waits a bounded time for the chain.
+const pendingWrites = new WeakMap<LogHandle, Promise<void>>();
+
+// Long enough for an ordinary disk to finish a verb's last lines; short enough
+// that a stalled one costs the caller little.
+const CLOSE_WAIT_MS = 2_000;
+
+/**
+ * Serialize one envelope to a single JSON Lines record (one object,
+ * newline-terminated), with the handle's credentials masked. Credentials are
+ * matched in their JSON-escaped form, as they appear in the line.
+ */
+function serialize(handle: LogHandle, entry: LogEntry): string {
+  const line = JSON.stringify(entry);
+  const credentials = credentialsByHandle.get(handle);
+  if (!credentials || credentials.size === 0) return line + "\n";
+  return maskCredentials(line, [...credentials].map((c) => JSON.stringify(c).slice(1, -1))) + "\n";
+}
+
+function enqueueWrite(handle: LogHandle, line: string, onEvent?: (entry: LogEntry) => void): Promise<void> {
+  const next = (pendingWrites.get(handle) ?? Promise.resolve())
+    .then(() => appendFile(handle.path, line, { encoding: "utf-8", mode: 0o600 }))
+    .catch((err: unknown) => announceLogFailure(handle, err, onEvent));
+  pendingWrites.set(handle, next);
+  return next;
 }
 
 // Handles for which a file-logging failure has already been surfaced. The notice
@@ -94,6 +125,16 @@ export async function appendLog(
     stage: entry.stage,
   };
   if (entry.data) final.data = entry.data;
+  let line: string;
+  try {
+    line = serialize(handle, final);
+  } catch (err) {
+    // Unserializable data (a cycle, a BigInt) loses this line, never the verb.
+    announceLogFailure(handle, err, onEvent);
+    return;
+  }
+  // The progress sink receives the masked copy, never the live objects.
+  const event = credentialsByHandle.get(handle)?.size ? (JSON.parse(line) as LogEntry) : final;
 
   // Fan out to the live progress sink (a caller's `onProgress` handler) before the
   // file write, so a watcher sees the event immediately. Everything but `error`
@@ -103,7 +144,7 @@ export async function appendLog(
   // throwing sink must never break logging.
   if (onEvent && final.level !== "error") {
     try {
-      onEvent(final);
+      onEvent(event);
     } catch {
       // ignore — progress is advisory
     }
@@ -113,29 +154,52 @@ export async function appendLog(
   // has already been forwarded to the live stream above.
   if (final.level === "debug" && !debugEnabled()) return;
 
-  try {
-    await appendFile(handle.path, serialize(final), "utf-8");
-  } catch (err) {
-    // Logging must never crash the operation it observes. Surface the failure
-    // once (through the sink) and keep running; we keep attempting the file on
-    // later lines so a transient failure (e.g. a disk that frees up mid-session)
-    // self-heals.
-    announceLogFailure(handle, err, onEvent);
-  }
+  // Logging must never crash the operation it observes: a failed write is
+  // surfaced once (through the sink), and later lines keep trying the file so a
+  // transient failure self-heals. The returned promise settles when this line is
+  // written or has failed; the verb logger does not wait for it.
+  await enqueueWrite(handle, line, onEvent);
 }
 
-export async function closeLog(_handle: LogHandle): Promise<void> {
-  // No persistent file descriptor in this implementation; nothing to release.
-  // Each appendFile opens, appends, and closes, so every line is already on disk
-  // — the flush-immediately policy holds without an explicit flush step.
+/** Mask `credential` in every later record of this handle. */
+export function addLogCredential(handle: LogHandle, credential: string): void {
+  if (credential.length === 0) return;
+  const credentials = credentialsByHandle.get(handle) ?? new Set<string>();
+  credentials.add(credential);
+  credentialsByHandle.set(handle, credentials);
 }
 
+/**
+ * Wait for the handle's pending writes, at most `CLOSE_WAIT_MS`, so a caller
+ * that reads the log after a verb returns finds its lines, while a stalled log
+ * disk cannot hold the verb. Each write opens, appends and closes the file, so
+ * there is no descriptor to release.
+ */
+export async function closeLog(handle: LogHandle): Promise<void> {
+  const pending = pendingWrites.get(handle);
+  if (!pending) return;
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, CLOSE_WAIT_MS);
+    timer.unref();
+  });
+  await Promise.race([pending, timeout]);
+  clearTimeout(timer);
+}
+
+/**
+ * A verb's logger. Each record reaches `onEvent` at once and is queued for the
+ * file in order; the returned promises settle without waiting for the disk, and
+ * `close` waits a bounded time for the queue.
+ */
 export interface Logger {
   readonly handle: LogHandle;
   info(stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void>;
   warn(stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void>;
   error(stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void>;
   debug(stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void>;
+  /** Mask `credential` (an API key) in every later record, file and `onEvent` alike. */
+  addCredential(credential: string): void;
   close(): Promise<void>;
 }
 
@@ -146,12 +210,17 @@ export async function createLogger(
 ): Promise<Logger> {
   const onEvent = opts.onEvent;
   const handle = await openLog(filePath, verb, onEvent);
+  const record = (level: LogLevel, stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void> => {
+    void appendLog(handle, { level, stage, message, data }, onEvent);
+    return Promise.resolve();
+  };
   return {
     handle,
-    info: (stage, message, data) => appendLog(handle, { level: "info", stage, message, data }, onEvent),
-    warn: (stage, message, data) => appendLog(handle, { level: "warn", stage, message, data }, onEvent),
-    error: (stage, message, data) => appendLog(handle, { level: "error", stage, message, data }, onEvent),
-    debug: (stage, message, data) => appendLog(handle, { level: "debug", stage, message, data }, onEvent),
+    info: (stage, message, data) => record("info", stage, message, data),
+    warn: (stage, message, data) => record("warn", stage, message, data),
+    error: (stage, message, data) => record("error", stage, message, data),
+    debug: (stage, message, data) => record("debug", stage, message, data),
+    addCredential: (credential) => addLogCredential(handle, credential),
     close: () => closeLog(handle),
   };
 }
