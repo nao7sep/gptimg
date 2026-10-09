@@ -9,7 +9,7 @@ Each verb does one observable operation; composing them into finished assets —
 - Node.js **22.12+** and npm. GptImg is consumed directly from its TypeScript source — there is no build step; run your scripts with [`tsx`](https://github.com/privatenumber/tsx) (`npx tsx your-script.ts`).
 - An **OpenAI API key** for the provider-backed verbs (`generate`, `edit`, `vision`), billed to your key. The local image ops need no key; AI matting and upscaling need the one-time model downloads described below, then run offline.
 - For AI matting (`mask({ method: "ai" })`) and `upscale`: a one-time **ONNX model download** (BiRefNet ~0.5 GB, Swin2SR ~53 MB) and the RAM to run them (~1–1.5 GB / ~4.4 GB peak) — run these one at a time. Models are accepted third-party ONNX re-exports from the `onnx-community` organization on Hugging Face (the model authors do not publish ONNX builds), fetched on first use or explicitly via the `model` API, commit-pinned and SHA-256-verified, and cached under `~/.gptimg`. The model API can also re-verify cached files on demand.
-- Cross-platform (Node). Icon packing emits macOS `.icns` and Windows `.ico`.
+- macOS is the primary execution platform. Windows runs the same Node code on a best-effort basis; the full live suite is qualified on macOS. Icon packing emits macOS `.icns` and Windows `.ico`.
 
 ## Getting started
 
@@ -27,15 +27,24 @@ import { GptImg } from "gptimg";
 const img = new GptImg();
 await img.profile.setApiKey("sk-..."); // one-time, into the default profile
 
-const gen = await img.generate({ prompt: "a single centered pink frosted donut", outName: "donut" });
-const verdict = await img.vision({ in: gen.files[0].path, check: "one donut, centered and fully visible" });
+const gen = await img.generate({
+  prompt: "a single centered pink frosted donut",
+  outDir: "./output",
+  outName: "donut",
+});
+const verdict = await img.vision({
+  in: gen.files[0].path,
+  check: "one donut, centered and fully visible",
+  outDir: "./output",
+});
+console.log(gen.files, verdict);
 ```
 
 Run it with `npx tsx your-script.ts`.
 
-The key lives inside the profile on purpose: a profile is the unit you manage cost by, so each profile carries the key it spends. Keys are stored obfuscated in a `0600` file, never in plain text. To supply a key from the environment instead, name the variable in the profile's `apiKeyEnv` field; when that variable is set, it overrides the stored key. An `OPENAI_API_KEY` exported for other tools is not read unless a profile names it, so it never spends on a profile's behalf.
+The key lives inside the profile on purpose: a profile is the unit you manage cost by, so each profile carries the key it spends. Keys are stored obfuscated in a file created with owner-only permissions on POSIX systems. Obfuscation is reversible, not encryption; treat the profile as a secret. To supply a key from the environment instead, name the variable in the profile's `apiKeyEnv` field; when that variable is set, it overrides the stored key. An `OPENAI_API_KEY` exported for other tools is not read unless a profile names it, so it never spends on a profile's behalf.
 
-Each provider call or image download attempt gets its own JSONL log line holding the request it sent and, when one came back, the response. The API key reads `[REDACTED]` there and in every progress event and error, and a signed download URL's query values are masked the same way; only image bytes stay out otherwise, since the image files hold them. Log files are created readable only by you, since they hold your prompts. Writing the log never holds up a call: lines are written in order in the background, and a call waits at most two seconds at the end for its last lines.
+Each provider call or image download attempt gets its own JSONL log line holding the request it sent and, when one came back, the response. The API key reads `[REDACTED]` there and in every progress event and error, and a signed download URL's query values are masked the same way; only image bytes stay out otherwise, since the image files hold them. Log files are created readable only by you, since they hold your prompts. Log lines are written in order in the background, and a call waits at most two seconds at the end for its last lines. Log creation still needs access to the log directory; a stalled directory can delay startup. Abrupt process exit may lose pending diagnostic lines.
 
 Every long-running verb accepts the same optional call controls. Pass an `AbortSignal` to cancel at the next safe boundary and `onProgress` to receive the structured stage events that also feed the JSONL log. AI matting and `upscale` run their model on the calling thread: while a model runs (about half a minute per AI mask, a few seconds per upscale tile), nothing else in the script runs, and a cancellation takes effect when it finishes, before anything is saved:
 
@@ -55,6 +64,16 @@ The AI verbs default to the models listed in `src/ai-models.ts`. A recipe that n
 
 The package entry point exports the argument, result, error, model, progress, profile, image-helper, and logger types used by its public surface. Source, those types, focused examples, and tests are the API reference; there is no parallel hand-maintained API inventory.
 
+## Files and operations
+
+Pass an explicit `outDir` for generated images and vision reports so your script controls where its results land. Relative input and output operands are relative to the script's working directory. Keep a paid image and its JSON sidecar together: `mask` with `key: "from-sidecar"` checks that the sidecar describes that image, including after both files are renamed.
+
+Existing output is protected unless you request `overwrite`. Overwriting an output group can remove stale numbered siblings belonging to that group. Images and sidecars publish separately, so an interrupted replacement can leave a new image beside an older sidecar; a mismatching sidecar is refused by `mask`. Concurrent paid calls in one process reserve overlapping output names before spending. Separate processes do not share that reservation: give concurrent scripts distinct names or directories, especially when overwriting.
+
+The profile, optional hand-written recipe, logs and downloaded models normally live under `~/.gptimg`. Set `GPTIMG_DATA_DIR` before constructing `GptImg` to use another root; it selects a location and does not move existing files. Do not delete the whole root as a cache: it can also contain your profile, recipe and output from scripts that omit `outDir`. GptImg does not back up these files or prune its logs. Logs contain prompts and responses even after credentials are masked; inspect them before sharing.
+
+Use the result's returned paths and typed errors to determine whether a call succeeded; diagnostic logs are best effort. Cancellation of a paid request does not establish that the provider did not bill it. For local AI work, `model.list()` reports cached models, `model.verify()` checks their hashes, and `model.install("birefnet", { force: true })` explicitly replaces that cached model after a failed verification. Installing a missing or replacement model requires its download again. `GPTIMG_MODELS_DIR` can put that large cache on another disk without relocating the profile.
+
 ## Third-party models
 
 GptImg does not distribute model files in its npm package. The following models are downloaded separately on first use, from immutable revisions whose size and SHA-256 digest are enforced by the model registry:
@@ -72,4 +91,7 @@ GptImg does not distribute model files in its npm package. The following models 
 
 ## Contact
 
-Yoshinao Inoguchi — yoshinao@inoguchi.com — <https://inoguchi.com>
+- **Name:** Yoshinao Inoguchi
+- **GitHub:** [@nao7sep](https://github.com/nao7sep)
+- **Email:** [yoshinao@inoguchi.com](mailto:yoshinao@inoguchi.com)
+- **Website:** [inoguchi.com](https://inoguchi.com)

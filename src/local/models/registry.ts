@@ -2,8 +2,9 @@
  * Model registry. One entry per AI artifact GptImg can lazily fetch.
  *
  * Each entry pins:
- *   name      — cache filename. Bump the suffix when changing models so old
- *               and new can coexist for rollback.
+ *   name      — cache filename. Bump the suffix when changing models, and
+ *               retire the superseded file after the replacement is verified
+ *               and no active session uses it.
  *   url       — single source of truth, fetched on first use. Prefer
  *               commit-pinned HuggingFace URLs (`/resolve/<commit-sha>/...`)
  *               over `/resolve/main/...`.
