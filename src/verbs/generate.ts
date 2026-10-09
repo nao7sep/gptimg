@@ -2,7 +2,7 @@ import { defaultModelFor } from "../ai-models.js";
 import { resolveModel } from "../providers/openai/client.js";
 import { ensureOutputDir } from "../internal/output-files.js";
 import {
-  acquireOutputGroupLock,
+  reserveOutputGroup,
   assertStemAvailable,
   createOutputGroup,
 } from "../internal/output-group.js";
@@ -81,9 +81,9 @@ export async function generateImpl(
     await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem();
     const overwrite = args.overwrite ?? false;
-    // Reserve before the paid provider edge. A known-live contender therefore
-    // fails without charging, while a crashed/released reservation is recovered.
-    await using _outputLock = await acquireOutputGroupLock(createOutputGroup(outDir, stem, "json"));
+    // Reserve before the paid provider edge, so a live overlapping run in this
+    // process fails without charging.
+    using _outputReservation = await reserveOutputGroup(createOutputGroup(outDir, stem, "json"));
     // Sidecars identify the group independently of the eventual image format.
     assertStemAvailable(outDir, stem, n, overwrite);
 

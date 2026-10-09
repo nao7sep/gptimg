@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
 import { ensureOutputDir } from "../internal/output-files.js";
-import { acquireOutputGroupLock, assertOutputGroupAvailable, createOutputGroup } from "../internal/output-group.js";
+import { reserveOutputGroup, assertOutputGroupAvailable, createOutputGroup } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
 import { singleLine } from "../internal/textCleanup.js";
 import type { Logger } from "../log/index.js";
@@ -138,7 +138,7 @@ export async function visionImpl(
     const stem = args.outName ?? defaultStem();
     const stemPath = path.join(outDir, stem);
     const outputGroup = createOutputGroup(outDir, stem, "json");
-    await using _outputLock = await acquireOutputGroupLock(outputGroup);
+    using _outputReservation = await reserveOutputGroup(outputGroup);
     assertOutputGroupAvailable(outputGroup, [`${stemPath}.json`], args.overwrite ?? false);
 
     const inputs = Array.isArray(args.in) ? args.in : [args.in];

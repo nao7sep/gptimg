@@ -455,7 +455,6 @@ describe("AI verb implementations with mocked provider", () => {
     await expect(first).resolves.toMatchObject({ partial: false });
     const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
     expect(sidecar.request.prompt).toBe("first contender");
-    expect((await readdir(outDir)).some((name) => name.endsWith(".lock"))).toBe(false);
   });
 
   it("rejects an orphan image before a provider charge", async () => {
@@ -506,6 +505,75 @@ describe("AI verb implementations with mocked provider", () => {
     await expect(first).resolves.toMatchObject({ partial: false });
     const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
     expect(sidecar.request.prompt).toBe("real path");
+  });
+
+  it("rejects a numbered sibling of a live group before a second charge while a disjoint stem proceeds", async () => {
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let providerEntered!: () => void;
+    const firstAtProvider = new Promise<void>((resolve) => {
+      providerEntered = resolve;
+    });
+    const two = {
+      raw: { data: [{ b64_json: "x" }, { b64_json: "x" }] },
+      images: [{ data: png }, { data: png }],
+    };
+    providerCalls.generate.mockImplementationOnce(async () => {
+      providerEntered();
+      await firstHeld;
+      return two;
+    });
+    providerCalls.generate.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
+    const outDir = path.join(tmp, "slot-overlap-out");
+    const first = sdk.generate({ prompt: "two images", outDir, outName: "foo", overrides: { generate: { n: 2 } } });
+    await firstAtProvider;
+
+    await expect(sdk.generate({ prompt: "overlapping slot", outDir, outName: "foo-1" })).rejects.toMatchObject({
+      code: "output.busy",
+    });
+    await expect(sdk.vision({ in: fixture("green-disk.png"), check: "overlapping", outDir, outName: "FOO" })).rejects.toMatchObject({
+      code: "output.busy",
+    });
+    expect(providerCalls.vision).not.toHaveBeenCalled();
+    await expect(sdk.generate({ prompt: "disjoint", outDir, outName: "bar" })).resolves.toMatchObject({ partial: false });
+    expect(providerCalls.generate).toHaveBeenCalledTimes(2);
+
+    releaseFirst();
+    await expect(first).resolves.toMatchObject({ partial: false });
+    expect((await readdir(outDir)).sort()).toEqual(["bar.json", "bar.png", "foo-1.json", "foo-1.png", "foo-2.json", "foo-2.png"]);
+  });
+
+  it("releases a reservation after a provider failure, a publication failure and cancellation", async () => {
+    const outDir = path.join(tmp, "release-out");
+    const one = { raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] };
+
+    providerCalls.generate.mockRejectedValueOnce(new Error("provider down"));
+    await expect(sdk.generate({ prompt: "fails", outDir, outName: "same" })).rejects.toThrow("provider down");
+
+    const jpeg = new Uint8Array(await sharp(png).jpeg().toBuffer());
+    providerCalls.generate.mockResolvedValueOnce({
+      raw: { data: [{ b64_json: "x" }, { b64_json: "x" }] },
+      images: [{ data: png }, { data: jpeg }],
+    });
+    await expect(
+      sdk.generate({ prompt: "mixed formats", outDir, outName: "same", overrides: { generate: { n: 2 } } }),
+    ).rejects.toMatchObject({ code: "output.mixedExtensions" });
+
+    const ctrl = new AbortController();
+    providerCalls.generate.mockImplementationOnce(
+      (args: { network: { signal?: AbortSignal } }) =>
+        new Promise((_, reject) => {
+          args.network.signal?.addEventListener("abort", () => reject(new Error("cancelled at provider")));
+          ctrl.abort();
+        }),
+    );
+    await expect(sdk.generate({ prompt: "cancelled", outDir, outName: "same" }, { signal: ctrl.signal })).rejects.toThrow();
+
+    providerCalls.generate.mockResolvedValueOnce(one);
+    await expect(sdk.generate({ prompt: "after", outDir, outName: "same" })).resolves.toMatchObject({ partial: false });
+    expect(providerCalls.generate).toHaveBeenCalledTimes(4);
   });
 
   it("generate refuses --overwrite when stale indexed siblings from a prior n exist", async () => {

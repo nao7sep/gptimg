@@ -1,19 +1,16 @@
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  acquireOutputGroupLock,
   assertOutputGroupAvailable,
   assertStemAvailable,
   createOutputGroup,
   plannedSidecarPaths,
-  outputGroupLockPathFor,
+  reserveOutputGroup,
   settleOutputPublications,
   sidecarPathFor,
   siblingsOnDisk,
-  withOutputGroupLock,
 } from "../../src/internal/output-group.js";
 
 describe("OutputGroup", () => {
@@ -108,86 +105,60 @@ describe("OutputGroup", () => {
     expect(siblingsOnDisk(group).map((p) => path.basename(p))).toEqual(["a.b.png"]);
   });
 
-  it("serializes concurrent publication for the same case-folded stem", async () => {
-    const group = createOutputGroup(tmp, "Photo", "png");
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
+  it("refuses an overlapping reservation for the same case-folded stem until it is released", async () => {
+    const first = await reserveOutputGroup(createOutputGroup(tmp, "Photo", "png"));
+    await expect(reserveOutputGroup(createOutputGroup(tmp, "photo", "jpg"))).rejects.toMatchObject({
+      code: "output.busy",
     });
-    let entered!: () => void;
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const first = withOutputGroupLock(group, async () => {
-      entered();
-      await held;
-      return "first";
-    });
-    await started;
-
-    try {
-      await expect(withOutputGroupLock(createOutputGroup(tmp, "photo", "jpg"), async () => "second")).rejects.toMatchObject({
-        code: "output.busy",
-      });
-    } finally {
-      release();
-      await first;
-    }
-    await expect(first).resolves.toBe("first");
-    await expect(withOutputGroupLock(group, async () => "next")).resolves.toBe("next");
+    first.release();
+    const next = await reserveOutputGroup(createOutputGroup(tmp, "photo", "jpg"));
+    next.release();
   });
 
-  it("serializes aliases of the same physical output directory", async () => {
+  it("refuses a stem that is a numbered slot of a live group, in either order", async () => {
+    const group = await reserveOutputGroup(createOutputGroup(tmp, "foo", "json"));
+    await expect(reserveOutputGroup(createOutputGroup(tmp, "foo-1", "json"))).rejects.toMatchObject({ code: "output.busy" });
+    await expect(reserveOutputGroup(createOutputGroup(tmp, "FOO-02", "json"))).rejects.toMatchObject({ code: "output.busy" });
+    group.release();
+
+    const slot = await reserveOutputGroup(createOutputGroup(tmp, "foo-1", "json"));
+    await expect(reserveOutputGroup(createOutputGroup(tmp, "foo", "json"))).rejects.toMatchObject({ code: "output.busy" });
+    slot.release();
+  });
+
+  it("lets disjoint stems reserve concurrently", async () => {
+    const held = await Promise.all(
+      ["foo", "foo-", "foo-1a", "foobar", "foo-1-2", "bar"].map((stem) =>
+        reserveOutputGroup(createOutputGroup(tmp, stem, "json")),
+      ),
+    );
+    for (const reservation of held) reservation.release();
+  });
+
+  it("refuses the same stem through lexical and symlink aliases of one directory", async () => {
     const realDir = path.join(tmp, "real");
     const aliasDir = path.join(tmp, "alias");
     await mkdir(realDir);
     await symlink(realDir, aliasDir, process.platform === "win32" ? "junction" : "dir");
-    const realGroup = createOutputGroup(realDir, "same", "png");
-    const aliasGroup = createOutputGroup(aliasDir, "same", "jpg");
-
-    expect(await outputGroupLockPathFor(realGroup)).toBe(await outputGroupLockPathFor(aliasGroup));
-    const first = await acquireOutputGroupLock(realGroup);
+    const first = await reserveOutputGroup(createOutputGroup(realDir, "same", "png"));
     try {
-      await expect(withOutputGroupLock(aliasGroup, async () => "second")).rejects.toMatchObject({
+      await expect(reserveOutputGroup(createOutputGroup(aliasDir, "same", "jpg"))).rejects.toMatchObject({
         code: "output.busy",
       });
+      await expect(reserveOutputGroup(createOutputGroup(tmp, "real/../real/same", "jpg"))).rejects.toMatchObject({
+        code: "output.busy",
+      });
+      // The same stem in the parent directory is a different group.
+      (await reserveOutputGroup(createOutputGroup(tmp, "same", "jpg"))).release();
     } finally {
-      await first.release();
+      first.release();
     }
   });
 
-  it("recovers an abandoned lock without relying on a reusable process id", async () => {
-    const group = createOutputGroup(tmp, "crashed", "png");
-    const lockPath = await outputGroupLockPathFor(group);
-    await mkdir(lockPath);
-    // The marker records a socket directory where no guardian listens.
-    await writeFile(path.join(lockPath, "held-aaaaaaaaaaaaaaaaaaaaa"), tmp);
-
-    await expect(withOutputGroupLock(group, async () => "recovered")).resolves.toBe("recovered");
-    expect(existsSync(lockPath)).toBe(false);
-  });
-
-  it("keeps a lock whose marker names no socket directory, as unreadable", async () => {
-    const group = createOutputGroup(tmp, "unrecorded", "png");
-    const lockPath = await outputGroupLockPathFor(group);
-    await mkdir(lockPath);
-    await writeFile(path.join(lockPath, "held-ccccccccccccccccccccc"), "");
-
-    await expect(acquireOutputGroupLock(group)).rejects.toMatchObject({ code: "output.busy" });
-    expect(existsSync(path.join(lockPath, "held-ccccccccccccccccccccc"))).toBe(true);
-  });
-
-  it("recovers a released lock even when cleanup failed", async () => {
-    const group = createOutputGroup(tmp, "released", "png");
-    const lockPath = await outputGroupLockPathFor(group);
-    await mkdir(lockPath);
-    await writeFile(path.join(lockPath, "held-bbbbbbbbbbbbbbbbbbbbb"), "");
-    await writeFile(path.join(lockPath, "released-bbbbbbbbbbbbbbbbbbbbb"), "");
-
-    await expect(withOutputGroupLock(group, async () => "recovered")).resolves.toBe(
-      "recovered",
-    );
-    expect(existsSync(lockPath)).toBe(false);
+  it("writes nothing to the output directory to reserve it", async () => {
+    const reservation = await reserveOutputGroup(createOutputGroup(tmp, "quiet", "json"));
+    expect(await readdir(tmp)).toEqual([]);
+    reservation.release();
   });
 
   it("waits for every publisher and reports failures in plan order", async () => {

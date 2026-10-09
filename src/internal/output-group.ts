@@ -1,10 +1,6 @@
 import { readdirSync } from "node:fs";
-import { mkdir, readdir, readFile, realpath, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
-import { createConnection, createServer, type Server } from "node:net";
-import { tmpdir } from "node:os";
+import { realpath, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { nanoid } from "nanoid";
 import { LocalOpError } from "../errors.js";
 import { SUPPORTED_IMAGE_EXTENSIONS } from "../image/formats.js";
 import { refuseNewerSidecar } from "../sidecar/read.js";
@@ -39,7 +35,7 @@ function normalizedOutputGroup(group: OutputGroup): OutputGroup {
   // Append a marker before resolving so even unusual stems such as `.` and an
   // empty string retain the same filename semantics as `<stem>.<extension>`.
   // path.join mirrors the publication path, while path.resolve collapses `.`
-  // and `..` aliases before any lock or sibling decision is made.
+  // and `..` aliases before any reservation or sibling decision is made.
   const target = path.resolve(path.join(group.dir, `${group.stem}${TARGET_MARKER}`));
   const markedName = path.basename(target);
   return {
@@ -49,281 +45,68 @@ function normalizedOutputGroup(group: OutputGroup): OutputGroup {
   };
 }
 
-export async function outputGroupLockPathFor(group: OutputGroup): Promise<string> {
+/** Whether `name` is a slot of the group `stem`: the stem itself or `<stem>-<digits>`. */
+function isGroupSlot(name: string, stem: string): boolean {
+  return name === stem || (name.startsWith(`${stem}-`) && /^\d+$/.test(name.slice(stem.length + 1)));
+}
+
+interface LiveReservation {
+  directory: string;
+  stem: string;
+}
+
+/**
+ * Output reservations of paid runs still in flight in this process. Callers
+ * are scripts in one process, so an in-process registry is the whole
+ * coordination: separate processes using the same explicit name at once are
+ * not detected, and create-if-absent publication still refuses to clobber
+ * without `overwrite`.
+ */
+const liveReservations = new Set<LiveReservation>();
+
+export interface OutputReservation extends Disposable {
+  release(): void;
+}
+
+/**
+ * Reserve every slot a paid run can write or clear, before its provider call.
+ * Two runs conflict when either stem is a slot of the other's group (the same
+ * stem, or `foo` against `foo-1`), because each run's availability check and
+ * overwrite cleanup cover its whole group: an overlapping run would make the
+ * other fail or lose files after its charge. Directories are keyed by real
+ * path and device/inode, so `.`, `..` and symlink aliases meet; stems by
+ * case-folded NFC, as on standard macOS and Windows volumes.
+ */
+export async function reserveOutputGroup(group: OutputGroup): Promise<OutputReservation> {
   const normalized = normalizedOutputGroup(group);
-  const canonicalDir = await realpath(normalized.dir);
-  const directory = await stat(canonicalDir);
-  const identity = `${canonicalDir}\0${directory.dev}:${directory.ino}\0${normalized.stem.normalize("NFC").toLowerCase()}`;
-  const digest = createHash("sha256").update(identity).digest("hex").slice(0, 16);
-  return path.join(canonicalDir, `.gptimg-output-${digest}.lock`);
-}
-
-const HELD_MARKER = /^held-([A-Za-z0-9_-]{21})$/;
-const GUARDIAN_PROBE_TIMEOUT_MS = 1_000;
-
-/** The guardian endpoint for one claim; Windows names a pipe, so `socketDir` matters only elsewhere. */
-export function guardianEndpointFor(lockPath: string, token: string, socketDir: string): string {
-  const digest = createHash("sha256").update(`${lockPath}\0${token}`).digest("hex").slice(0, 24);
-  if (process.platform === "win32") return `\\\\.\\pipe\\gptimg-output-${digest}`;
-  return path.join(socketDir, `gi-${digest}.sock`);
-}
-
-/**
- * Where a new claim's guardian socket lives: this process's temp directory,
- * or `/tmp` when that would make the socket path too long to bind. The held
- * marker records the choice, because a contender's TMPDIR may differ.
- */
-function guardianSocketDirFor(lockPath: string, token: string): string {
-  const preferred = tmpdir();
-  return Buffer.byteLength(guardianEndpointFor(lockPath, token, preferred)) <= 90 ? preferred : "/tmp";
-}
-
-async function startGuardian(endpoint: string): Promise<Server> {
-  const server = createServer((socket) => socket.destroy());
-  server.unref();
-  await new Promise<void>((resolve, reject) => {
-    const onError = (err: Error): void => {
-      server.off("listening", onListening);
-      reject(err);
-    };
-    const onListening = (): void => {
-      server.off("error", onError);
-      resolve();
-    };
-    server.once("error", onError);
-    server.once("listening", onListening);
-    server.listen(endpoint);
-  });
-  // A later server error must never escape to stderr from the SDK. Losing the
-  // endpoint makes the reservation recoverable, while the current call still
-  // retains create-if-absent publication as its final no-clobber boundary.
-  server.on("error", () => undefined);
-  return server;
-}
-
-async function closeGuardian(server: Server, endpoint: string): Promise<void> {
-  await new Promise<void>((resolve) => server.close(() => resolve())).catch(() => undefined);
-  if (process.platform !== "win32") await unlink(endpoint).catch(() => undefined);
-}
-
-async function guardianIsAlive(endpoint: string): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    const socket = createConnection(endpoint);
-    let settled = false;
-    const finish = (alive: boolean): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      socket.destroy();
-      resolve(alive);
-    };
-    const timeout = setTimeout(() => finish(true), GUARDIAN_PROBE_TIMEOUT_MS);
-    socket.once("connect", () => finish(true));
-    socket.once("error", (err: NodeJS.ErrnoException) => {
-      finish(!["ECONNREFUSED", "ENOENT", "ENXIO"].includes(err.code ?? ""));
-    });
-  });
-}
-
-interface PreparedLockClaim {
-  claimPath: string;
-  endpoint: string;
-  markerName: string;
-  server: Server;
-}
-
-async function prepareLockClaim(lockPath: string): Promise<PreparedLockClaim> {
-  const token = nanoid();
-  const markerName = `held-${token}`;
-  const claimPath = `${lockPath}.claim-${token}`;
-  const socketDir = guardianSocketDirFor(lockPath, token);
-  const endpoint = guardianEndpointFor(lockPath, token, socketDir);
-  await mkdir(claimPath);
-  let server: Server | undefined;
+  let directory: string;
   try {
-    server = await startGuardian(endpoint);
-    await writeFile(path.join(claimPath, markerName), socketDir, { flag: "wx" });
-    return { claimPath, endpoint, markerName, server };
-  } catch (err) {
-    if (server) await closeGuardian(server, endpoint);
-    await unlink(path.join(claimPath, markerName)).catch(() => undefined);
-    await rmdir(claimPath).catch(() => undefined);
-    throw err;
-  }
-}
-
-async function discardLockClaim(claim: PreparedLockClaim): Promise<void> {
-  await closeGuardian(claim.server, claim.endpoint);
-  await unlink(path.join(claim.claimPath, claim.markerName)).catch(() => undefined);
-  await rmdir(claim.claimPath).catch(() => undefined);
-}
-
-async function recoverReleasedOrAbandonedLock(lockPath: string): Promise<boolean> {
-  let initialIdentity: { dev: number; ino: number; birthtimeMs: number };
-  try {
-    const initial = await stat(lockPath);
-    initialIdentity = {
-      dev: initial.dev,
-      ino: initial.ino,
-      birthtimeMs: initial.birthtimeMs,
-    };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return true;
-    return false;
-  }
-  let entries: string[];
-  try {
-    entries = await readdir(lockPath);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return true;
-    return false;
-  }
-
-  const released = entries.some((name) => name.startsWith("released-"));
-  const held = entries.find((name) => HELD_MARKER.test(name));
-  const token = held ? HELD_MARKER.exec(held)?.[1] : undefined;
-  let endpoints: string[] = [];
-  if (held && token) {
-    let socketDir: string;
-    try {
-      socketDir = await readFile(path.join(lockPath, held), "utf-8");
-    } catch (err) {
-      return (err as NodeJS.ErrnoException).code === "ENOENT";
-    }
-    // A marker naming no absolute socket directory is unreadable: with no
-    // endpoint to probe, the lock stays held unless it was released.
-    if (path.isAbsolute(socketDir)) endpoints = [guardianEndpointFor(lockPath, token, socketDir)];
-  }
-  let anyAlive = false;
-  for (const endpoint of endpoints) {
-    if (await guardianIsAlive(endpoint)) {
-      anyAlive = true;
-      break;
-    }
-  }
-  // A claim becomes the lock with its held marker already inside, so an empty
-  // lock is never live: it is a release that stopped before its rmdir.
-  const recoverable = released || entries.length === 0 || (endpoints.length > 0 && !anyAlive);
-  if (!recoverable) return false;
-
-  let removedObservedEntry = entries.length === 0;
-  for (const name of entries) {
-    try {
-      await unlink(path.join(lockPath, name));
-      removedObservedEntry = true;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") return false;
-    }
-  }
-  if (process.platform !== "win32") {
-    for (const endpoint of endpoints) await unlink(endpoint).catch(() => undefined);
-  }
-  // Only the contender that removed an observed marker may remove the
-  // directory. This avoids an ABA race where a second stale-lock contender
-  // deletes a newly acquired lock after the first one recovered the old lock.
-  if (!removedObservedEntry) return true;
-  try {
-    const current = await stat(lockPath);
-    if (current.dev !== initialIdentity.dev || current.ino !== initialIdentity.ino || current.birthtimeMs !== initialIdentity.birthtimeMs) {
-      return true;
-    }
-    await rmdir(lockPath);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT" && code !== "ENOTEMPTY" && code !== "EEXIST") {
-      return false;
-    }
-  }
-  return true;
-}
-
-export interface OutputGroupLock extends AsyncDisposable {
-  release(): Promise<void>;
-}
-
-/**
- * Reserve one output stem across processes. A fully initialized claim becomes
- * visible through one directory rename, so no empty live lock can be mistaken
- * for an abandoned initialization. Its guardian endpoint is owned by the OS:
- * it survives a process pause, closes on a crash, and cannot be confused by PID
- * reuse. Release first marks ownership as released, so failed cleanup remains
- * recoverable.
- */
-export async function acquireOutputGroupLock(group: OutputGroup): Promise<OutputGroupLock> {
-  let lockPath: string;
-  try {
-    lockPath = await outputGroupLockPathFor(group);
+    const canonicalDir = await realpath(normalized.dir);
+    const identity = await stat(canonicalDir);
+    directory = `${canonicalDir}\0${identity.dev}:${identity.ino}`;
   } catch (err) {
     throw new LocalOpError(
-      "output.lockFailed",
-      `Failed to resolve output reservation ${JSON.stringify(group.stem)}: ${(err as Error).message}`,
+      "output.reserveFailed",
+      `Failed to resolve output directory ${normalized.dir}: ${(err as Error).message}`,
       { cause: err },
     );
   }
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    let claim: PreparedLockClaim;
-    try {
-      claim = await prepareLockClaim(lockPath);
-    } catch (err) {
+  const stem = normalized.stem.normalize("NFC").toLowerCase();
+  // Check and claim in one synchronous step, after the last await.
+  for (const live of liveReservations) {
+    if (live.directory === directory && (isGroupSlot(stem, live.stem) || isGroupSlot(live.stem, stem))) {
       throw new LocalOpError(
-        "output.lockFailed",
-        `Failed to prepare output reservation ${JSON.stringify(group.stem)}: ${(err as Error).message}`,
-        { cause: err },
+        "output.busy",
+        `Another operation in this process is writing output ${JSON.stringify(normalized.stem)} or its numbered siblings. Try again when it finishes.`,
       );
     }
-
-    try {
-      await rename(claim.claimPath, lockPath);
-    } catch (err) {
-      await discardLockClaim(claim);
-      let lockExists = false;
-      try {
-        lockExists = (await stat(lockPath)).isDirectory();
-      } catch (statErr) {
-        if ((statErr as NodeJS.ErrnoException).code !== "ENOENT") throw statErr;
-      }
-      if (!lockExists) {
-        throw new LocalOpError(
-          "output.lockFailed",
-          `Failed to reserve output stem ${JSON.stringify(group.stem)}: ${(err as Error).message}`,
-          { cause: err },
-        );
-      }
-      if (await recoverReleasedOrAbandonedLock(lockPath)) continue;
-      throw new LocalOpError("output.busy", `Another operation is publishing output stem ${JSON.stringify(group.stem)}. Try again.`, {
-        cause: err,
-      });
-    }
-
-    const ownerPath = path.join(lockPath, claim.markerName);
-    let didRelease = false;
-    const release = async (): Promise<void> => {
-      if (didRelease) return;
-      didRelease = true;
-      const releasedPath = path.join(lockPath, `released-${claim.markerName.slice("held-".length)}`);
-      try {
-        await rename(ownerPath, releasedPath);
-      } catch {
-        await writeFile(releasedPath, "", { flag: "wx" }).catch(() => undefined);
-      }
-      await closeGuardian(claim.server, claim.endpoint);
-      await unlink(ownerPath).catch(() => undefined);
-      await unlink(releasedPath).catch(() => undefined);
-      await rmdir(lockPath).catch(() => undefined);
-    };
-    return { release, [Symbol.asyncDispose]: release };
   }
-  throw new LocalOpError("output.busy", `Output stem ${JSON.stringify(group.stem)} changed ownership while being recovered. Try again.`);
-}
-
-/** Serialize work for one output stem and always release its reservation. */
-export async function withOutputGroupLock<T>(group: OutputGroup, body: () => Promise<T>): Promise<T> {
-  const lock = await acquireOutputGroupLock(group);
-  try {
-    return await body();
-  } finally {
-    await lock.release();
-  }
+  const reservation: LiveReservation = { directory, stem };
+  liveReservations.add(reservation);
+  const release = (): void => {
+    liveReservations.delete(reservation);
+  };
+  return { release, [Symbol.dispose]: release };
 }
 
 /** Start every publisher, wait for all of them, then report failures in plan order. */

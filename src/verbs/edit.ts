@@ -5,7 +5,7 @@ import path from "node:path";
 import { LocalOpError } from "../errors.js";
 import { ensureOutputDir } from "../internal/output-files.js";
 import {
-  acquireOutputGroupLock,
+  reserveOutputGroup,
   assertStemAvailable,
   createOutputGroup,
 } from "../internal/output-group.js";
@@ -92,7 +92,7 @@ export async function editImpl(
     await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem();
     const overwrite = args.overwrite ?? false;
-    await using _outputLock = await acquireOutputGroupLock(createOutputGroup(outDir, stem, "json"));
+    using _outputReservation = await reserveOutputGroup(createOutputGroup(outDir, stem, "json"));
     // Fail before the paid provider call when this stem already conflicts.
     assertStemAvailable(outDir, stem, n, overwrite);
 
