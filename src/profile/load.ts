@@ -55,7 +55,8 @@ async function readProfileFile(
     if (e.code === "ENOENT") {
       throw new ProfileError(
         "profile.notFound",
-        `Profile not found at ${filePath}`,
+        `Profile not found at ${filePath}. Store a key with profile.setApiKey(), or write ` +
+          `{"provider": "openai", "apiKeyEnv": "<variable>"} there to read the key from that environment variable.`,
         { cause: err },
       );
     }

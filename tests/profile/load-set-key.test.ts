@@ -73,10 +73,10 @@ describe("loadProfile", () => {
     }
   });
 
-  it("reports missing profiles as profile.notFound", async () => {
-    await expect(loadProfile(path.join(tmp, "missing.json"))).rejects.toMatchObject({
-      code: "profile.notFound",
-    });
+  it("reports missing profiles as profile.notFound, saying how to provide a key", async () => {
+    const missing = loadProfile(path.join(tmp, "missing.json"));
+    await expect(missing).rejects.toMatchObject({ code: "profile.notFound" });
+    await expect(missing).rejects.toThrow(/setApiKey\(\).*"apiKeyEnv"/);
   });
 });
 

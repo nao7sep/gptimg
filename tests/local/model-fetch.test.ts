@@ -187,6 +187,8 @@ describe("ensureModel", () => {
     }
     expect(stderrSpy).not.toHaveBeenCalled();
     expect(events.every((e) => e.stage === "download")).toBe(true);
+    // The one-time download is announced before any request, then progresses.
+    expect(events[0]!.msg).toBe("prog.bin is not on disk yet; downloading it once");
     expect(events.some((e) => e.msg.startsWith("downloading prog.bin"))).toBe(true);
     expect(events.some((e) => e.msg.startsWith("downloaded prog.bin"))).toBe(true);
   });

@@ -458,6 +458,13 @@ export async function ensureModel(
     return finalPath;
   }
   const replaceExisting = initialCache.present;
+  // Announce the one-time download and its size before any request, so a
+  // caller watching progress learns why the first AI mask or upscale waits.
+  await logger?.info("download", `${entry.name} is not on disk yet; downloading it once`, {
+    name: entry.name,
+    bytes: entry.byteSize ?? null,
+    cacheDir,
+  });
 
   await mkdir(path.join(cacheDir, TEMP_DIR), { recursive: true });
   let partialPath: string;
