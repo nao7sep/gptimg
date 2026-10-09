@@ -36,6 +36,13 @@ describe("mergeRecipes", () => {
     expect(out.vision?.shrink).toEqual({ width: 1024, height: 512 });
   });
 
+  it("replaces a list whole instead of joining it", () => {
+    const base: Recipe = { network: { imageGenerate: { retryIntervals: [2, 3], timeout: 60 } } };
+    const patch: Partial<Recipe> = { network: { imageGenerate: { retryIntervals: [1] } } };
+    expect(mergeRecipes(base, patch).network).toEqual({ imageGenerate: { retryIntervals: [1], timeout: 60 } });
+    expect(base.network).toEqual({ imageGenerate: { retryIntervals: [2, 3], timeout: 60 } });
+  });
+
   it("ignores null/undefined patches", () => {
     const base: Recipe = { generate: { n: 1 } };
     const out = mergeRecipes(
