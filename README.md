@@ -33,7 +33,7 @@ const verdict = await img.vision({ in: gen.files[0].path, check: "one donut, cen
 
 Run it with `npx tsx your-script.ts`.
 
-The key lives inside the profile on purpose: a profile is the unit you manage cost by, so each profile carries the key it spends. Keys are stored obfuscated in a `0600` file, never in plain text, and an environment variable named for the provider overrides the stored key.
+The key lives inside the profile on purpose: a profile is the unit you manage cost by, so each profile carries the key it spends. Keys are stored obfuscated in a `0600` file, never in plain text. To supply a key from the environment instead, name the variable in the profile's `apiKeyEnv` field; when that variable is set, it overrides the stored key. An `OPENAI_API_KEY` exported for other tools is not read unless a profile names it, so it never spends on a profile's behalf.
 
 Each provider call or image download attempt that fails, retries or is cancelled gets its own JSONL log line holding the request it sent: headers and API key included for a provider call, the whole URL for a download. Only image bytes stay out, since the image files hold them. Keep the log folder as private as the profile.
 
