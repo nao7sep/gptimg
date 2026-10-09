@@ -1,4 +1,4 @@
-import { LocalOpError } from "../errors.js";
+import { LocalOpError, throwIfAborted } from "../errors.js";
 import { writeMaskPNG } from "../image/bridge.js";
 import {
   assertSingleFileAvailable,
@@ -128,6 +128,7 @@ export async function maskImpl(
       };
     }
 
+    throwIfAborted(signal);
     await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false, source: args.in }, pngEncodingOf(args));
     await logger.info("write", "wrote mask", { path: outPath });
 

@@ -14,7 +14,7 @@
 
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
-import { LocalOpError } from "../../errors.js";
+import { LocalOpError, throwIfAborted } from "../../errors.js";
 import { resizeSingleChannel } from "../../image/bridge.js";
 import type { Logger } from "../../log/index.js";
 import type { NetworkBudget } from "../../network/defaults.js";
@@ -73,7 +73,12 @@ export async function runBirefnet(
   } = {},
 ): Promise<BirefnetOutput> {
   const modelPath = await ensureModel(BIREFNET, cacheDir, opts);
+  // Session creation and inference block the thread and cannot be interrupted
+  // (onnxruntime-node runs them synchronously), so cancellation is honored at
+  // the boundaries around them.
+  throwIfAborted(opts.signal);
   const session = await loadSession(modelPath);
+  throwIfAborted(opts.signal);
 
   const size = BIREFNET.inputSize;
   const rgb = await resizeRGB(rgba, width, height, size, size);

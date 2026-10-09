@@ -13,7 +13,7 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, throwIfAborted } from "../errors.js";
+import { AbortError, LocalOpError, throwIfAborted } from "../errors.js";
 import { fitLongerSide } from "../image/aspect.js";
 import { loadRawRGBA, readImageSize, resizeSingleChannel, writeRGBA } from "../image/bridge.js";
 import type { Logger } from "../log/index.js";
@@ -170,9 +170,10 @@ export async function runUpscale(
       rgba[d + 2] = rgbResized[s + 2]!;
       rgba[d + 3] = alphaResized[p]!;
     }
+    throwIfAborted(signal);
     await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite, source: args.in }, args);
   } catch (err) {
-    if (err instanceof LocalOpError) throw err;
+    if (err instanceof LocalOpError || err instanceof AbortError) throw err;
     throw new LocalOpError(
       "image.writeFailed",
       `upscale: failed to resample/write ${args.out}: ${(err as Error).message}`,
