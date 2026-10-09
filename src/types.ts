@@ -276,7 +276,11 @@ export type MaskStats = ChromaMaskStats | AiMaskStats;
 export interface MaskArgs extends PngEncodingArgs {
   in: string;
   method?: MaskMethod;
-  /** "auto" | "from-sidecar" | "#rrggbb" — chroma-method only. */
+  /**
+   * "auto" | "from-sidecar" | "#rrggbb" — chroma-method only. "from-sidecar"
+   * reads the generate sidecar beside `in` and refuses one that does not record
+   * `in`'s SHA-256 (`sidecar.imageMismatch`).
+   */
   key?: string;
   preserveInterior?: boolean;
   borderSample?: number;

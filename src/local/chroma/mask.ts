@@ -195,7 +195,7 @@ export async function chromaMask(
         "from-sidecar requires an input file path; pass it via chromaMaskFromFile().",
       );
     }
-    hex = normalizeHex(await loadKeyFromSidecar(sourcePath), "sidecar key");
+    hex = normalizeHex(await loadKeyFromSidecar(sourcePath, { verifyImage: true }), "sidecar key");
     source = "sidecar";
   } else {
     hex = normalizeHex(keyArg, "key");
