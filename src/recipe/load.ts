@@ -7,7 +7,7 @@ import type { Recipe } from "../types.js";
 import { validateRecipe } from "./schemas.js";
 
 /**
- * Load and validate a recipe from `filePath`.
+ * Load and validate a whole recipe from `filePath`: the public `recipe.load`.
  *
  * A caller that names a recipe file owns its existence: by default a missing
  * file is a usage error (`recipe.notFound`). Pass `required: false` for the
@@ -20,7 +20,15 @@ export async function loadRecipe(
   filePath: string,
   opts: { required?: boolean } = {},
 ): Promise<Recipe> {
-  const required = opts.required ?? true;
+  return validateRecipe(await readRecipe(filePath, opts.required ?? true));
+}
+
+/**
+ * Read a recipe file's body without checking its sections. Verbs check only
+ * the sections they use, where they use them, so a broken `vision` section
+ * stops `vision` but not `mask` or `upscale` (store-recovery-conventions).
+ */
+async function readRecipe(filePath: string, required: boolean): Promise<Recipe> {
   let text: string;
   try {
     text = await readFile(filePath, "utf-8");
@@ -50,14 +58,12 @@ export async function loadRecipe(
       { cause: err },
     );
   }
-  return validateRecipe(
-    takeFormatVersion(parsed, RECIPE_FORMAT_VERSION, {
-      name: "recipe",
-      path: filePath,
-      ErrorClass: RecipeError,
-      invalidCode: "recipe.validationFailed",
-    }),
-  );
+  return takeFormatVersion(parsed, RECIPE_FORMAT_VERSION, {
+    name: "recipe",
+    path: filePath,
+    ErrorClass: RecipeError,
+    invalidCode: "recipe.validationFailed",
+  }) as Recipe;
 }
 
 /**
@@ -70,7 +76,7 @@ export async function loadRecipeForCall(
   profileDir: string,
 ): Promise<Recipe> {
   if (recipeArg !== undefined) {
-    return loadRecipe(recipeArg, { required: true });
+    return readRecipe(recipeArg, true);
   }
-  return loadRecipe(defaultRecipePath(profileDir), { required: false });
+  return readRecipe(defaultRecipePath(profileDir), false);
 }

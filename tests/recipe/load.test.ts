@@ -6,6 +6,7 @@ import { RecipeError } from "../../src/errors.js";
 import { RECIPE_FORMAT_VERSION } from "../../src/format-versions.js";
 import { loadRecipe, loadRecipeForCall } from "../../src/recipe/load.js";
 import { defaultRecipePath } from "../../src/internal/paths.js";
+import { validateChromaSection, validateVisionSection } from "../../src/recipe/schemas.js";
 
 describe("loadRecipe", () => {
   let tmp: string;
@@ -143,6 +144,18 @@ describe("recipe format version", () => {
       await writeFile(file, text);
       await expect(loadRecipe(file), text).rejects.toMatchObject({ code: "recipe.validationFailed" });
     }
+  });
+
+  it("leaves section checks to the verbs that use them, while recipe.load checks the whole file", async () => {
+    await writeFile(
+      defaultRecipePath(tmp),
+      JSON.stringify({ formatVersion: RECIPE_FORMAT_VERSION, vision: { detail: "bogus" }, chroma: { color: "#00ff00" } }),
+    );
+
+    const forCall = await loadRecipeForCall(undefined, tmp);
+    expect(validateChromaSection(forCall.chroma)).toEqual({ color: "#00ff00" });
+    expect(() => validateVisionSection(forCall.vision)).toThrow(RecipeError);
+    await expect(loadRecipe(defaultRecipePath(tmp))).rejects.toMatchObject({ code: "recipe.validationFailed" });
   });
 
   it("reads the current format version and returns the recipe without it", async () => {
