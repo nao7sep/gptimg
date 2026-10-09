@@ -14,7 +14,7 @@ import {
   defaultStem,
   ensureSecureProfileRoot,
   resolveDirOption,
-  utcTimestampMs,
+  utcTimestamp,
 } from "../../src/internal/paths.js";
 
 describe("internal paths", () => {
@@ -25,28 +25,22 @@ describe("internal paths", () => {
     expect(defaultRecipePath(profileDir)).toBe(path.join(profileDir, "recipe.json"));
     expect(defaultLogDir(profileDir)).toBe(path.join(profileDir, "logs"));
     expect(defaultOutDir(profileDir)).toBe(path.join(profileDir, "output"));
-    expect(defaultLogPath(path.join(profileDir, "logs"), "20260102-030405-utc")).toBe(
-      path.join(profileDir, "logs", "20260102-030405-utc.log"),
+    expect(defaultLogPath(path.join(profileDir, "logs"), "20260102-030405-utc", "a1b2c3")).toBe(
+      path.join(profileDir, "logs", "20260102-030405-utc-a1b2c3.log"),
     );
-    expect(defaultStem("20260102-030405-067-utc", "a1b2c3")).toBe("20260102-030405-067-utc-a1b2c3-gptimg");
+    expect(defaultStem("20260102-030405-utc", "a1b2c3")).toBe("20260102-030405-utc-a1b2c3-gptimg");
   });
 
-  it("gives calls started in the same millisecond distinct default stems", () => {
-    const ts = "20260102-030405-067-utc";
+  it("gives calls started in the same second distinct default stems", () => {
+    const ts = "20260102-030405-utc";
     const stems = new Set(Array.from({ length: 1000 }, () => defaultStem(ts)));
     expect(stems.size).toBe(1000);
-    for (const stem of stems) expect(stem).toMatch(/^20260102-030405-067-utc-[0-9a-z]{6}-gptimg$/);
-    expect(defaultStem()).toMatch(/^\d{8}-\d{6}-\d{3}-utc-[0-9a-z]{6}-gptimg$/);
+    for (const stem of stems) expect(stem).toMatch(/^20260102-030405-utc-[0-9a-z]{6}-gptimg$/);
+    expect(defaultStem()).toMatch(/^\d{8}-\d{6}-utc-[0-9a-z]{6}-gptimg$/);
   });
 
-  it("formats millisecond UTC timestamps with the -fff exception, zero-padded", () => {
-    expect(utcTimestampMs(new Date("2026-01-02T03:04:05.067Z"))).toBe(
-      "20260102-030405-067-utc",
-    );
-    // A whole-second instant still carries an explicit 000 millisecond part.
-    expect(utcTimestampMs(new Date("2026-01-02T03:04:05Z"))).toBe(
-      "20260102-030405-000-utc",
-    );
+  it("formats second-precision UTC filename stamps, zero-padded", () => {
+    expect(utcTimestamp(new Date("2026-01-02T03:04:05.967Z"))).toBe("20260102-030405-utc");
   });
 });
 

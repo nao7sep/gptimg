@@ -263,7 +263,7 @@ describe("withVerbLogger", () => {
     });
   });
 
-  it("derives a default millisecond-stamped session log path when logArg is undefined", async () => {
+  it("derives a default second-stamped session log path with an ID when logArg is undefined", async () => {
     const result = await withVerbLogger(
       { logDir: tmp },
       "combine",
@@ -274,8 +274,8 @@ describe("withVerbLogger", () => {
       },
     );
     expect(result.startsWith(tmp + path.sep)).toBe(true);
-    // The session log carries the `-fff` millisecond exception so two same-second
-    // concurrent runs never collide on one file: yyyymmdd-hhmmss-fff-utc.log.
-    expect(path.basename(result)).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/);
+    // Concurrent runs share the log directory, so the name carries an ID:
+    // yyyymmdd-hhmmss-utc-<id>.log.
+    expect(path.basename(result)).toMatch(/^\d{8}-\d{6}-utc-[0-9a-z]{6}\.log$/);
   });
 });

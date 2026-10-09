@@ -121,21 +121,35 @@ export function defaultModelsDir(profileDir: string): string {
   return path.join(profileDir, "models");
 }
 
-// The default session log file, named per the logging-conventions and stamped
-// with `utcTimestampMs`. A caller's `log` option overrides it.
-export function defaultLogPath(logDir: string, ts: string): string {
-  return path.join(logDir, `${ts}.log`);
+// Lowercase letters and digits, per the timestamp-conventions' filename form.
+// Six characters give about 2.2 billion values per second.
+const fileNameId = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
+
+/** `yyyymmdd-hhmmss-utc`, the second-precision filename stamp of the timestamp-conventions. */
+export function utcTimestamp(now: Date = new Date()): string {
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return (
+    `${now.getUTCFullYear()}${p(now.getUTCMonth() + 1)}${p(now.getUTCDate())}` +
+    `-${p(now.getUTCHours())}${p(now.getUTCMinutes())}${p(now.getUTCSeconds())}-utc`
+  );
 }
 
-// Claims this call's default log by creating it exclusively, so a call that starts
-// in a millisecond another call already holds takes the next one and every call
-// keeps its own file, across threads and processes alike. A failure other than
-// "already exists" returns the name unclaimed: logging never fails the verb, and
-// the logger reports the same failure on its first line.
-export async function claimDefaultLogPath(logDir: string, start: Date = new Date()): Promise<string> {
+// The default session log file: `yyyymmdd-hhmmss-utc-<id>.log`. Calls into the
+// SDK run concurrently and share one log directory, so the stamp carries an ID
+// (logging-conventions). A caller's `log` option overrides it.
+export function defaultLogPath(logDir: string, ts: string, id: string): string {
+  return path.join(logDir, `${ts}-${id}.log`);
+}
+
+// Claims this call's default log by creating it exclusively, drawing a new ID in
+// the unlikely event the name already exists, so every call keeps its own file.
+// A failure other than "already exists" returns the name unclaimed: logging
+// never fails the verb, and the logger reports the same failure on its first line.
+export async function claimDefaultLogPath(logDir: string, now: Date = new Date()): Promise<string> {
   await mkdir(logDir, { recursive: true }).catch(() => undefined);
-  for (let t = start.getTime(); ; t++) {
-    const candidate = defaultLogPath(logDir, utcTimestampMs(new Date(t)));
+  const ts = utcTimestamp(now);
+  for (;;) {
+    const candidate = defaultLogPath(logDir, ts, fileNameId());
     try {
       await (await open(candidate, "wx")).close();
       return candidate;
@@ -145,36 +159,12 @@ export async function claimDefaultLogPath(logDir: string, start: Date = new Date
   }
 }
 
-/** `yyyymmdd-hhmmss` in UTC — the date-time body of the filename stamp. */
-function utcBody(now: Date): string {
-  const p = (n: number): string => String(n).padStart(2, "0");
-  return (
-    `${now.getUTCFullYear()}${p(now.getUTCMonth() + 1)}${p(now.getUTCDate())}` +
-    `-${p(now.getUTCHours())}${p(now.getUTCMinutes())}${p(now.getUTCSeconds())}`
-  );
-}
-
-/**
- * `yyyymmdd-hhmmss-fff-utc`, the machine-paced filename stamp of the
- * timestamp-conventions. It names the session log and starts the default
- * output stem (`defaultStem`).
- */
-export function utcTimestampMs(now: Date = new Date()): string {
-  const ms = String(now.getUTCMilliseconds()).padStart(3, "0");
-  return `${utcBody(now)}-${ms}-utc`;
-}
-
-// Lowercase letters and digits, per the timestamp-conventions' filename form.
-// Six characters give about 2.2 billion values per millisecond.
-const outputDiscriminator = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
-
 /**
  * The default output stem of generate, edit and vision:
- * `yyyymmdd-hhmmss-fff-utc-<discriminator>-gptimg`. Concurrent calls without
- * an `outName` are expected (a script fanning out prompts, a vision check
- * beside a generate), so the stem carries the millisecond stamp plus a short
- * random discriminator and two calls cannot reserve the same stem.
+ * `yyyymmdd-hhmmss-utc-<id>-gptimg`. Concurrent calls without an `outName`
+ * are expected (a script fanning out prompts, a vision check beside a
+ * generate), so the stem carries a short random ID beside the second stamp.
  */
-export function defaultStem(ts: string = utcTimestampMs(), discriminator: string = outputDiscriminator()): string {
-  return `${ts}-${discriminator}-gptimg`;
+export function defaultStem(ts: string = utcTimestamp(), id: string = fileNameId()): string {
+  return `${ts}-${id}-gptimg`;
 }
