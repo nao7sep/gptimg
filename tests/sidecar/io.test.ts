@@ -36,8 +36,15 @@ describe("sidecar read/write", () => {
     await expect(readSidecar(stem)).resolves.toEqual(sidecar);
   });
 
-  it("treats a sidecar with no formatVersion as unreadable", async () => {
-    await writeFile(`${stem}.json`, JSON.stringify({ request: { prompt: "old" }, response: {}, files: [] }));
+  it("reads a v0.1.0 sidecar, which has no formatVersion, as version 1", async () => {
+    const old = { request: { prompt: "old" }, response: {}, files: [{ index: 1, name: "a.png", sha256: "ab", format: "png" }] };
+    await writeFile(`${stem}.json`, JSON.stringify(old));
+
+    await expect(readSidecar(stem)).resolves.toEqual(old);
+  });
+
+  it("treats a sidecar whose formatVersion is not a positive integer as unreadable", async () => {
+    await writeFile(`${stem}.json`, JSON.stringify({ formatVersion: 1.5, request: {}, response: {}, files: [] }));
 
     await expect(readSidecar(stem)).rejects.toMatchObject({
       errorType: "localOp",

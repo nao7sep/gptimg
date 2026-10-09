@@ -377,8 +377,21 @@ describe("profile format version", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("treats a profile with no formatVersion as unreadable", async () => {
-    const text = JSON.stringify({ provider: "openai", apiKeyEnv: "KEY" }) + "\n";
+  it("reads a v0.1.0 profile, which has no formatVersion, and marks it only when it is next saved", async () => {
+    const text = JSON.stringify({ provider: "openai", apiKeyEnv: "KEY", organization: "org-1" }) + "\n";
+    await writeFile(file, text);
+    if (process.platform !== "win32") await chmod(file, 0o600);
+
+    await expect(loadProfile(file)).resolves.toEqual({ provider: "openai", apiKeyEnv: "KEY", organization: "org-1" });
+    expect(await readFile(file, "utf-8")).toBe(text);
+
+    await setApiKey(file, "sk-new");
+    const written = JSON.parse(await readFile(file, "utf-8")) as Record<string, unknown>;
+    expect(written).toMatchObject({ formatVersion: PROFILE_FORMAT_VERSION, apiKeyEnv: "KEY", organization: "org-1" });
+  });
+
+  it("treats a profile whose formatVersion is not a positive integer as unreadable", async () => {
+    const text = JSON.stringify({ formatVersion: "1", provider: "openai" }) + "\n";
     await writeFile(file, text);
 
     await expect(loadProfile(file)).rejects.toMatchObject({ code: "profile.validationFailed" });

@@ -130,8 +130,16 @@ describe("recipe format version", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("treats a recipe with no formatVersion, or one that is not an object, as unreadable", async () => {
-    for (const text of [JSON.stringify({ generate: { n: 2 } }), "{}", "null", "[]"]) {
+  it("reads a v0.1.0 recipe, which has no formatVersion, as version 1 without rewriting it", async () => {
+    for (const text of [JSON.stringify({ generate: { n: 2 } }), "{}"]) {
+      await writeFile(file, text);
+      await expect(loadRecipe(file), text).resolves.toEqual(JSON.parse(text));
+      expect(await readFile(file, "utf-8")).toBe(text);
+    }
+  });
+
+  it("treats a recipe that is not an object, or whose formatVersion is not a positive integer, as unreadable", async () => {
+    for (const text of ["null", "[]", JSON.stringify({ formatVersion: 0 }), JSON.stringify({ formatVersion: "1" }), JSON.stringify({ formatVersion: null })]) {
       await writeFile(file, text);
       await expect(loadRecipe(file), text).rejects.toMatchObject({ code: "recipe.validationFailed" });
     }
