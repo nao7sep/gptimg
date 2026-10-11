@@ -58,13 +58,24 @@ interface ExifEntry {
   values: string[];
 }
 
-/** Read one TIFF IFD's entries as strings; only the types capture tags use. */
-function readIfd(tiff: Buffer, offset: number, le: boolean): Map<number, ExifEntry> {
+function requireRange(tiff: Buffer, offset: number, length: number): void {
+  if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 || offset > tiff.length - length) {
+    throw new RangeError("EXIF byte range is outside the TIFF block");
+  }
+}
+
+/** Validate a TIFF IFD, decoding only capture tags and their governing pointers. */
+function readIfd(tiff: Buffer, offset: number, le: boolean, ifd: string): Map<number, ExifEntry> {
   const u16 = (o: number): number => (le ? tiff.readUInt16LE(o) : tiff.readUInt16BE(o));
   const u32 = (o: number): number => (le ? tiff.readUInt32LE(o) : tiff.readUInt32BE(o));
   const sizes: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 10: 8 };
   const entries = new Map<number, ExifEntry>();
+  if (offset < 8) throw new RangeError("EXIF IFD overlaps the TIFF header");
+  requireRange(tiff, offset, 2);
   const count = u16(offset);
+  // The entry table includes the trailing next-IFD offset, even though capture
+  // facts do not use the thumbnail IFD it can point to.
+  requireRange(tiff, offset, 2 + count * 12 + 4);
   for (let i = 0; i < count; i++) {
     const at = offset + 2 + i * 12;
     const tag = u16(at);
@@ -72,7 +83,15 @@ function readIfd(tiff: Buffer, offset: number, le: boolean): Map<number, ExifEnt
     const n = u32(at + 4);
     const size = sizes[type];
     if (size === undefined) continue;
-    const start = size * n <= 4 ? at + 8 : u32(at + 8);
+    const length = size * n;
+    const start = length <= 4 ? at + 8 : u32(at + 8);
+    // Bounds precede every conversion or count-driven allocation; typed
+    // Buffer reads alone are too late after Array.from has allocated its array.
+    requireRange(tiff, start, length);
+    const captureTag = EXIF_CAPTURE_TAGS[ifd]![tag] !== undefined;
+    const pointerTag = ifd === "IFD0" && (tag === EXIF_IFD_POINTER || tag === GPS_IFD_POINTER);
+    const altitudeRef = ifd === "IFD3" && tag === GPS_ALTITUDE_REF;
+    if (!captureTag && !pointerTag && !altitudeRef) continue;
     let values: string[];
     if (type === 2) {
       values = [tiff.toString("utf-8", start, start + n).replace(/\0+$/, "")];
@@ -100,13 +119,17 @@ export function captureExif(exif: Buffer): CaptureMetadata["exif"] {
   const tiff = exif.subarray(0, 6).toString("latin1") === "Exif\0\0" ? exif.subarray(6) : exif;
   let ifds: Record<string, Map<number, ExifEntry>>;
   try {
-    const le = tiff.toString("latin1", 0, 2) === "II";
-    const ifd0 = readIfd(tiff, le ? tiff.readUInt32LE(4) : tiff.readUInt32BE(4), le);
-    const pointer = (tag: number): Map<number, ExifEntry> => {
+    requireRange(tiff, 0, 8);
+    const byteOrder = tiff.toString("latin1", 0, 2);
+    if (byteOrder !== "II" && byteOrder !== "MM") return undefined;
+    const le = byteOrder === "II";
+    if ((le ? tiff.readUInt16LE(2) : tiff.readUInt16BE(2)) !== 42) return undefined;
+    const ifd0 = readIfd(tiff, le ? tiff.readUInt32LE(4) : tiff.readUInt32BE(4), le, "IFD0");
+    const pointer = (tag: number, ifd: string): Map<number, ExifEntry> => {
       const at = ifd0.get(tag)?.values[0];
-      return at === undefined ? new Map() : readIfd(tiff, Number(at), le);
+      return at === undefined ? new Map() : readIfd(tiff, Number(at), le, ifd);
     };
-    ifds = { IFD0: ifd0, IFD2: pointer(EXIF_IFD_POINTER), IFD3: pointer(GPS_IFD_POINTER) };
+    ifds = { IFD0: ifd0, IFD2: pointer(EXIF_IFD_POINTER, "IFD2"), IFD3: pointer(GPS_IFD_POINTER, "IFD3") };
   } catch {
     return undefined;
   }

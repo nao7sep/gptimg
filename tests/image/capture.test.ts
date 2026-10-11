@@ -2,9 +2,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writeImageFile, writeMaskPNG, writeRGBA } from "../../src/image/bridge.js";
-import { captureExif, captureXmp } from "../../src/image/capture.js";
+import { captureExif, captureXmp, readCaptureMetadata } from "../../src/image/capture.js";
 import { readExifTags } from "../helpers/exif.js";
 
 const XMP =
@@ -27,7 +27,101 @@ async function photo(): Promise<Buffer> {
     .toBuffer();
 }
 
+interface TiffEntry {
+  tag: number;
+  type: number;
+  count: number;
+  value: number | string;
+}
+
+function tiff(entries: TiffEntry[], littleEndian = true): Buffer {
+  const bytes = Buffer.alloc(8 + 2 + entries.length * 12 + 4);
+  const u16 = (value: number, at: number): void => { littleEndian ? bytes.writeUInt16LE(value, at) : bytes.writeUInt16BE(value, at); };
+  const u32 = (value: number, at: number): void => { littleEndian ? bytes.writeUInt32LE(value, at) : bytes.writeUInt32BE(value, at); };
+  bytes.write(littleEndian ? "II" : "MM", 0, "latin1");
+  u16(42, 2);
+  u32(8, 4);
+  u16(entries.length, 8);
+  entries.forEach((entry, index) => {
+    const at = 10 + index * 12;
+    u16(entry.tag, at);
+    u16(entry.type, at + 2);
+    u32(entry.count, at + 4);
+    if (typeof entry.value === "string") bytes.write(entry.value, at + 8, 4, "latin1");
+    else u32(entry.value, at + 8);
+  });
+  return bytes;
+}
+
+const MODEL: TiffEntry = { tag: 0x0110, type: 2, count: 3, value: "M1\0" };
+
+/** Refuse an unsafe allocation in the regression itself, before it can OOM. */
+async function observeLargeArrays(body: () => void | Promise<void>): Promise<number[]> {
+  const attempted: number[] = [];
+  const from = Array.from;
+  const spy = vi.spyOn(Array, "from").mockImplementation((...args) => {
+    const length = (args[0] as { length?: number }).length;
+    if (length !== undefined && length > 1_000_000) {
+      attempted.push(length);
+      throw new RangeError("Unsafe EXIF array request intercepted by test");
+    }
+    return Reflect.apply(from, Array, args);
+  });
+  try { await body(); } finally { spy.mockRestore(); }
+  return attempted;
+}
+
+async function jpegWithExif(exif: Buffer): Promise<Buffer> {
+  const jpeg = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#336699" } }).jpeg().toBuffer();
+  const payload = Buffer.concat([Buffer.from("Exif\0\0", "latin1"), exif]);
+  const marker = Buffer.alloc(4);
+  marker.writeUInt16BE(0xffe1);
+  marker.writeUInt16BE(payload.length + 2, 2);
+  return Buffer.concat([jpeg.subarray(0, 2), marker, payload, jpeg.subarray(2)]);
+}
+
 describe("captureExif", () => {
+  it.each([true, false])("reads a valid TIFF header in either byte order (little endian: %s)", (littleEndian) => {
+    expect(captureExif(tiff([MODEL], littleEndian))).toEqual({ IFD0: { Model: "M1 ()" }, IFD2: { ColorSpace: "1 ()" } });
+  });
+
+  it.each([3, 4, 5, 10])("rejects an impossible type %s count before allocating from it", async (type) => {
+    const malformed = tiff([{ tag: 0x010f, type, count: 1_000_000_000, value: 8 }]);
+    const attempted = await observeLargeArrays(() => { expect(captureExif(malformed)).toBeUndefined(); });
+    expect(attempted).toEqual([]);
+  });
+
+  it("does not decode array values for metadata outside the capture contract", () => {
+    const metadata = Buffer.concat([tiff([MODEL, { tag: 0x0131, type: 3, count: 4, value: 38 }]), Buffer.alloc(8)]);
+    const spy = vi.spyOn(Array, "from");
+    try {
+      expect(captureExif(metadata)).toEqual({ IFD0: { Model: "M1 ()" }, IFD2: { ColorSpace: "1 ()" } });
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.each([1, 2, 3, 4, 5, 10])("rejects an out-of-range supported type %s payload, including unretained tags", (type) => {
+    const malformed = tiff([MODEL, { tag: 0x0131, type, count: 20, value: 37 }]);
+    expect(captureExif(malformed)).toBeUndefined();
+  });
+
+  it.each(["byte order", "magic", "short header", "short entry table", "missing next IFD offset", "outside IFD offset", "outside payload offset"])(
+    "holds no metadata for an invalid %s",
+    (invalid) => {
+      let malformed = tiff([MODEL], invalid !== "byte order");
+      if (invalid === "byte order") malformed.write("XX", 0, "latin1");
+      if (invalid === "magic") malformed.writeUInt16LE(43, 2);
+      if (invalid === "short header") malformed = malformed.subarray(0, 7);
+      if (invalid === "short entry table") malformed.writeUInt16LE(2, 8);
+      if (invalid === "missing next IFD offset") malformed = malformed.subarray(0, malformed.length - 4);
+      if (invalid === "outside IFD offset") malformed.writeUInt32LE(0xffffffff, 4);
+      if (invalid === "outside payload offset") malformed = tiff([MODEL, { tag: 0x010f, type: 2, count: 5, value: 0xffffffff }]);
+      expect(captureExif(malformed)).toBeUndefined();
+    },
+  );
+
   it("keeps the capture tags and nothing that describes the source file", async () => {
     const { exif } = await sharp(await photo()).metadata();
     expect(captureExif(exif!)).toEqual({
@@ -119,5 +213,22 @@ describe("derived images keep their source's capture facts", () => {
     const meta = await sharp(out).metadata();
     expect(meta.exif).toBeUndefined();
     expect(meta.xmp).toBeUndefined();
+  });
+
+  it("rejects malformed EXIF reached through a real image read and still writes its pixels", async () => {
+    const malformed = tiff([{ tag: 0x010f, type: 3, count: 1_000_000_000, value: 8 }]);
+    await writeFile(source, await jpegWithExif(malformed));
+    const meta = await sharp(source).metadata();
+    expect(meta.exif?.subarray(6)).toEqual(malformed);
+    const out = path.join(tmp, "malformed-capture.png");
+    const attempted = await observeLargeArrays(async () => {
+      expect(await readCaptureMetadata(source)).toEqual({});
+      await writeImageFile({ path: out, source }, "resize", { format: "png" }, () => sharp(source).resize(4, 4));
+    });
+    expect(attempted).toEqual([]);
+    const written = await sharp(out).metadata();
+    expect(written.width).toBe(4);
+    expect(written.height).toBe(4);
+    expect(written.exif).toBeUndefined();
   });
 });
