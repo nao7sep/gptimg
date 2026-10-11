@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { statSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -81,6 +82,47 @@ describe("assertSingleFileAvailable", () => {
     expect(() => assertSingleFileAvailable(path.join(tmp, "photo.png"), true)).toThrow(
       expect.objectContaining({ code: "output.caseConflict", message: expect.stringContaining("Photo.png") }),
     );
+  });
+
+  it.each([
+    ["cafe\u0301", "caf\u00e9"],
+    ["caf\u00e9", "cafe\u0301"],
+  ])("detects equivalent Unicode filenames and retains the case rule (%s against %s)", async (existing, planned) => {
+    await writeFile(path.join(tmp, `${existing}.png`), "old image");
+    const target = path.join(tmp, `${planned}.png`);
+    expect(() => assertSingleFileAvailable(target, false)).toThrow(
+      expect.objectContaining({ code: "output.exists" }),
+    );
+    const requestedSpelling = statSync(target, { throwIfNoEntry: false });
+    const actualFile = statSync(path.join(tmp, `${existing}.png`));
+    if (requestedSpelling?.ino === actualFile.ino && requestedSpelling.dev === actualFile.dev) {
+      expect(() => assertSingleFileAvailable(target, true)).not.toThrow();
+    } else {
+      expect(() => assertSingleFileAvailable(target, true)).toThrow(
+        expect.objectContaining({ code: "output.normalizationConflict" }),
+      );
+    }
+    expect(() => assertSingleFileAvailable(path.join(tmp, `${planned.toUpperCase()}.png`), true)).toThrow(
+      expect.objectContaining({ code: "output.caseConflict" }),
+    );
+  });
+
+  it("checks every distinct equivalent entry before overwrite, including hard links", async () => {
+    const existing = path.join(tmp, "cafe\u0301.png");
+    const planned = path.join(tmp, "caf\u00e9.png");
+    await writeFile(existing, "old image");
+    if (statSync(planned, { throwIfNoEntry: false }) === undefined) {
+      await link(existing, planned);
+      for (const target of [existing, planned]) {
+        expect(() => assertSingleFileAvailable(target, true)).toThrow(
+          expect.objectContaining({ code: "output.normalizationConflict" }),
+        );
+      }
+      expect(await readdir(tmp)).toHaveLength(2);
+    } else {
+      expect(() => assertSingleFileAvailable(planned, true)).not.toThrow();
+      expect(await readdir(tmp)).toHaveLength(1);
+    }
   });
 });
 

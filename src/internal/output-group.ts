@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { realpath, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
@@ -160,18 +160,18 @@ export function siblingsOnDisk(group: OutputGroup): string[] {
       cause: err,
     });
   }
-  const stem = escapeRegex(group.stem);
+  const stem = escapeRegex(group.stem.normalize("NFC"));
   const sx = escapeRegex(group.sidecarExt);
   const imageExts = [...new Set([...SUPPORTED_IMAGE_EXTENSIONS, group.ext])]
     .filter((ext) => ext !== group.sidecarExt)
     .map(escapeRegex)
     .join("|");
-  // Case-insensitive: on macOS/Windows a `photo`-stem output collides with a
-  // `Photo`-stem group, so it must be detected as a sibling regardless of case.
+  // NFC and case-insensitive: canonical Unicode spellings and case variants
+  // collide on standard macOS/Windows volumes. Keep discovered names for I/O.
   const imagePattern = new RegExp(`^${stem}(?:-\\d+)?\\.(?:${imageExts})$`, "i");
   const sidecarPattern = new RegExp(`^${stem}(?:-\\d+)?\\.${sx}$`, "i");
   return entries
-    .filter((name) => imagePattern.test(name) || sidecarPattern.test(name))
+    .filter((name) => imagePattern.test(name.normalize("NFC")) || sidecarPattern.test(name.normalize("NFC")))
     .map((name) => path.join(group.dir, name))
     .sort();
 }
@@ -187,19 +187,54 @@ function artifactIdentity(filePath: string, sidecarExt: string): string {
  * Refuse to replace `existing` with `planned`, the same output slot, when their
  * names differ only in case: a case-sensitive volume would keep both, and they
  * collide when copied to a standard macOS or Windows folder
- * (storage-path-conventions). A slot's image may change format, so only a
- * same-format extension must match exactly.
+ * (storage-path-conventions). Canonically equivalent Unicode spellings may
+ * replace one another only when they identify the same directory entry.
+ * A slot's image may change format, so only a same-format extension must
+ * match exactly.
  */
-export function refuseCaseOnlyRename(existing: string, planned: string): void {
-  const existingName = path.basename(existing).normalize("NFC");
-  const plannedName = path.basename(planned).normalize("NFC");
+export function refuseCaseOnlyRename(existing: string, planned: string, directoryEntries: readonly string[]): void {
+  const actualName = path.basename(existing);
+  const requestedName = path.basename(planned);
+  const existingName = actualName.normalize("NFC");
+  const plannedName = requestedName.normalize("NFC");
   const existingExt = path.extname(existingName);
   const plannedExt = path.extname(plannedName);
   const sameStem =
     existingName.slice(0, existingName.length - existingExt.length) ===
     plannedName.slice(0, plannedName.length - plannedExt.length);
   const sameFormat = existingExt.toLowerCase() === plannedExt.toLowerCase();
-  if (sameStem && (!sameFormat || existingExt === plannedExt)) return;
+  if (sameStem && (!sameFormat || existingExt === plannedExt)) {
+    const actualStem = actualName.slice(0, -path.extname(actualName).length);
+    const requestedStem = requestedName.slice(0, -path.extname(requestedName).length);
+    if (actualStem === requestedStem) return;
+    // A normalization-insensitive filesystem can expose two spellings of one
+    // entry. Elsewhere a spelling change would create a portable-name clash.
+    // Compare in the existing format so an image may still change format.
+    const requestedExistingFormat = `${requestedStem}${path.extname(actualName)}`;
+    const distinctEntry = directoryEntries.includes(requestedExistingFormat);
+    // Two separate hard links also become distinct files after replacement.
+    if (!distinctEntry) {
+      const requestedPath = path.join(path.dirname(planned), requestedExistingFormat);
+      try {
+        // Replacement acts on directory entries, including dangling symlinks,
+        // rather than on the targets a symlink names.
+        const actual = lstatSync(existing);
+        const requested = lstatSync(requestedPath, { throwIfNoEntry: false });
+        if (requested?.dev === actual.dev && requested.ino === actual.ino) return;
+      } catch (err) {
+        throw new LocalOpError(
+          "output.scanFailed",
+          `Failed to inspect output filenames ${existing} and ${requestedPath}: ${(err as Error).message}`,
+          { cause: err },
+        );
+      }
+    }
+    throw new LocalOpError(
+      "output.normalizationConflict",
+      `Refusing to replace ${existing} with ${requestedName}: the Unicode spellings would create separate files. ` +
+        `Use the existing name, or remove the file first.`,
+    );
+  }
   throw new LocalOpError(
     "output.caseConflict",
     `Refusing to replace ${existing} with ${plannedName}: the names differ only in case. ` +
@@ -222,7 +257,8 @@ export function refuseCaseOnlyRename(existing: string, planned: string): void {
  *   siblings outside the planned slots are reported as `output.staleSiblings`,
  *   an existing sidecar in a newer format as `sidecar.newerFormat`, and an
  *   existing member whose name differs from its planned one only in case as
- *   `output.caseConflict`.
+ *   `output.caseConflict`. A Unicode spelling change that would create a
+ *   distinct file is refused as `output.normalizationConflict`.
  */
 export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: string[], allowOverwrite: boolean): void {
   const plannedResolved = new Set<string>();
@@ -256,10 +292,11 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
     );
   }
   // Replacement and slot cleanup may touch every existing member, so a newer
-  // sidecar or a case-only rename refuses the whole group before any changes.
+  // sidecar or a conflicting name refuses the whole group before any changes.
+  const existingNames = existing.map((p) => path.basename(p));
   for (const p of existing) {
     const identity = artifactIdentity(p, group.sidecarExt);
-    refuseCaseOnlyRename(p, plannedArtifacts.get(identity)!);
+    refuseCaseOnlyRename(p, plannedArtifacts.get(identity)!, existingNames);
     if (identity.startsWith("sidecar:")) refuseNewerSidecar(p);
   }
 }

@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { lstatSync, statSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import {
   assertStemAvailable,
   createOutputGroup,
   plannedSidecarPaths,
+  refuseCaseOnlyRename,
   reserveOutputGroup,
   settleOutputPublications,
   sidecarPathFor,
@@ -96,6 +98,101 @@ describe("OutputGroup", () => {
         .map((p) => path.basename(p))
         .sort(),
     ).toEqual(["PHOTO-1.png", "Photo.json", "photo.png"]);
+  });
+
+  it.each([
+    ["cafe\u0301", "caf\u00e9"],
+    ["caf\u00e9", "cafe\u0301"],
+  ])("compares normalized siblings but returns their actual paths (%s against %s)", async (existing, planned) => {
+    const names = [`${existing}.png`, `${existing}.json`, `${existing}-01.webp`, `${existing}-01.json`];
+    for (const name of [...names, `${existing}-mask.png`, `${existing}X.png`]) {
+      await writeFile(path.join(tmp, name), "");
+    }
+    // Directory discovery is the I/O authority, including a filesystem's own
+    // normalization of the names supplied to writeFile.
+    const discovered = (await readdir(tmp)).filter((name) => names.some((expected) =>
+      expected.normalize("NFC") === name.normalize("NFC"),
+    ));
+    const group = createOutputGroup(tmp, planned, "png");
+    expect(siblingsOnDisk(group)).toEqual(discovered.map((name) => path.join(tmp, name)).sort());
+    expect(() => assertStemAvailable(tmp, planned, 1, false)).toThrow(
+      expect.objectContaining({ code: "output.exists" }),
+    );
+    expect(() => assertStemAvailable(tmp, planned, 1, true)).toThrow(
+      expect.objectContaining({ code: "output.staleSiblings" }),
+    );
+  });
+
+  it.each([
+    ["cafe\u0301", "caf\u00e9"],
+    ["caf\u00e9", "cafe\u0301"],
+  ])("admits equivalent Unicode spellings only for the same numbered entries (%s against %s)", async (existing, planned) => {
+    for (const index of [1, 2]) {
+      await writeFile(path.join(tmp, `${existing}-${index}.jpg`), "old image");
+      await writeFile(path.join(tmp, `${existing}-${index}.json`), "{}");
+    }
+    const group = createOutputGroup(tmp, planned, "png");
+    const files = [1, 2].flatMap((index) => [path.join(tmp, `${planned}-${index}.png`), path.join(tmp, `${planned}-${index}.json`)]);
+    const requestedSpelling = statSync(path.join(tmp, `${planned}-1.jpg`), { throwIfNoEntry: false });
+    const actualFile = statSync(path.join(tmp, `${existing}-1.jpg`));
+    if (requestedSpelling?.ino === actualFile.ino && requestedSpelling.dev === actualFile.dev) {
+      expect(() => assertOutputGroupAvailable(group, files, true)).not.toThrow();
+    } else {
+      expect(() => assertOutputGroupAvailable(group, files, true)).toThrow(
+        expect.objectContaining({ code: "output.normalizationConflict" }),
+      );
+    }
+    const caseChangedGroup = createOutputGroup(tmp, planned.toUpperCase(), "png");
+    const caseChangedFiles = files.map((file) => path.join(tmp, path.basename(file).toUpperCase()));
+    expect(() => assertOutputGroupAvailable(caseChangedGroup, caseChangedFiles, true)).toThrow(
+      expect.objectContaining({ code: "output.caseConflict" }),
+    );
+  });
+
+  it("refuses two distinct canonically equivalent entries, even if they are hard links", async () => {
+    const existing = path.join(tmp, "cafe\u0301.png");
+    const planned = path.join(tmp, "caf\u00e9.png");
+    await writeFile(existing, "old image");
+    const group = createOutputGroup(tmp, "caf\u00e9", "png");
+    if (statSync(planned, { throwIfNoEntry: false }) === undefined) {
+      await link(existing, planned);
+      expect(() => assertOutputGroupAvailable(group, [planned], true)).toThrow(
+        expect.objectContaining({ code: "output.normalizationConflict" }),
+      );
+      expect(await readdir(tmp)).toHaveLength(2);
+    } else {
+      // This volume treats the two spellings as one actual directory entry.
+      expect(() => assertOutputGroupAvailable(group, [planned], true)).not.toThrow();
+      expect(await readdir(tmp)).toHaveLength(1);
+    }
+  });
+
+  it("compares dangling symlink entries without following their missing target", async () => {
+    const existing = path.join(tmp, "cafe\u0301.png");
+    const planned = path.join(tmp, "caf\u00e9.png");
+    const missing = path.join(tmp, "missing.png");
+    await symlink(missing, existing);
+    const group = createOutputGroup(tmp, "caf\u00e9", "png");
+    if (lstatSync(planned, { throwIfNoEntry: false }) === undefined) {
+      // Two entries stay distinct even when both symlinks name one target.
+      await symlink(missing, planned);
+      expect(() => assertOutputGroupAvailable(group, [planned], true)).toThrow(
+        expect.objectContaining({ code: "output.normalizationConflict" }),
+      );
+      expect(await readdir(tmp)).toHaveLength(2);
+    } else {
+      expect(() => assertOutputGroupAvailable(group, [planned], true)).not.toThrow();
+      expect(await readdir(tmp)).toHaveLength(1);
+    }
+  });
+
+  it("classifies a metadata inspection failure and preserves its filesystem cause", () => {
+    const existing = path.join(tmp, "cafe\u0301.png");
+    const planned = path.join(tmp, "caf\u00e9.png");
+    // The directory snapshot can precede another writer removing the entry.
+    expect(() => refuseCaseOnlyRename(existing, planned, [path.basename(existing)])).toThrow(
+      expect.objectContaining({ code: "output.scanFailed", cause: expect.objectContaining({ code: "ENOENT" }) }),
+    );
   });
 
   it("escapes regex metacharacters in stem", async () => {

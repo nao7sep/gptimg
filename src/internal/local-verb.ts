@@ -28,8 +28,9 @@ export function inferStem(filePath: string): string {
 /**
  * Refuse to overwrite a single existing file unless explicitly allowed, and
  * refuse even then to replace a file whose name differs only in case
- * (`refuseCaseOnlyRename`). This is the fail-fast check before a verb does its
- * work; the no-clobber publication in `image/bridge.ts` stays the authority
+ * (`refuseCaseOnlyRename`). A Unicode spelling change must identify the same
+ * directory entry. This is the fail-fast check before a verb does its work;
+ * the no-clobber publication in `image/bridge.ts` stays the authority
  * when another writer creates the file in the meantime. The group-scoped
  * variant (`assertOutputGroupAvailable` / `assertStemAvailable` in
  * output-group.ts) is for generate/edit's multi-file artifact groups.
@@ -38,11 +39,10 @@ export function assertSingleFileAvailable(
   filePath: string,
   allowOverwrite: boolean,
 ): void {
-  // Case-insensitive: on macOS/Windows filesystems a name that differs only in
-  // case from `filePath` would collide, so scan the directory and compare
-  // casefolded rather than a single case-sensitive existsSync.
+  // Compare case-folded NFC: case variants and canonical Unicode spellings
+  // collide on standard macOS/Windows volumes. Keep discovered names for I/O.
   const dir = path.dirname(filePath);
-  const target = path.basename(filePath).toLowerCase();
+  const target = path.basename(filePath).normalize("NFC").toLowerCase();
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -51,13 +51,13 @@ export function assertSingleFileAvailable(
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
     throw err;
   }
-  const clash = entries.find((name) => name.toLowerCase() === target);
-  if (clash !== undefined && allowOverwrite) {
-    refuseCaseOnlyRename(path.join(dir, clash), filePath);
-  } else if (clash !== undefined) {
+  const clashes = entries.filter((name) => name.normalize("NFC").toLowerCase() === target);
+  if (allowOverwrite) {
+    for (const clash of clashes) refuseCaseOnlyRename(path.join(dir, clash), filePath, entries);
+  } else if (clashes.length > 0) {
     throw new LocalOpError(
       "output.exists",
-      `Output exists: ${path.join(dir, clash)}. Set overwrite: true to allow.`,
+      `Output exists: ${path.join(dir, clashes[0]!)}. Set overwrite: true to allow.`,
     );
   }
 }
