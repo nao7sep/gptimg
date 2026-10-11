@@ -2,7 +2,9 @@ import { createReadStream, existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendLog,
@@ -16,6 +18,8 @@ import {
 import { GptImg } from "../../src/index.js";
 import type { LogEntry, LogHandle } from "../../src/types.js";
 import { captureStderr } from "../helpers/streams.js";
+
+const execFileAsync = promisify(execFile);
 
 describe("log helpers", () => {
   let tmp: string;
@@ -86,7 +90,9 @@ describe("log helpers", () => {
     const logger = await createLogger(file, "upscale", {
       onEvent: (e) => seen.push({ level: e.level, stage: e.stage, message: e.message }),
     });
-    await logger.info("infer", "tile 1/2");
+    const info = logger.info("infer", "tile 1/2");
+    expect(seen).toEqual([{ level: "info", stage: "infer", message: "tile 1/2" }]);
+    await info;
     await logger.warn("retry", "retrying");
     await logger.error("error", "boom");
     await logger.close();
@@ -112,6 +118,25 @@ describe("log helpers", () => {
     await logger.close();
     const lines = (await readFile(file, "utf-8")).trimEnd().split("\n");
     expect(lines).toHaveLength(1);
+  });
+
+  it.each([
+    ["async-progress", "a rejected async progress sink leaves public peers successful"],
+    ["thenable-progress", "a rejecting thenable progress sink is observed and contained"],
+    ["async-notice", "a rejected async log-unavailable notice leaves public peers successful"],
+    ["pending-progress", "an unresolved progress sink never delays public operation settlement"],
+  ])("%s: %s without process-global failures", async (scenario) => {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      "--import", "tsx", fileURLToPath(new URL("../helpers/progress-process.ts", import.meta.url)), scenario, tmp,
+    ], {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      // Exercise Node's default rejection policy rather than inheriting a
+      // caller's NODE_OPTIONS that might suppress unhandled rejections.
+      env: { ...process.env, NODE_OPTIONS: "" },
+    });
+    expect(stderr).toBe("");
+    expect(JSON.parse(stdout)).toMatchObject({ outputs: 2, events: scenario === "async-notice" ? 3 : 2 });
+    if (scenario === "pending-progress") expect(JSON.parse(stdout).pendingAtFinish).toBe(true);
   });
 
   it("safeLogError preserves the original path when logging fails", async () => {

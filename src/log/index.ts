@@ -46,6 +46,20 @@ function serialize(handle: LogHandle, entry: LogEntry): string {
   ) + "\n";
 }
 
+/** Dispatch advisory progress immediately, containing sync and async sink failures. */
+function dispatchEvent(onEvent: ((entry: LogEntry) => void) | undefined, entry: LogEntry): void {
+  if (!onEvent) return;
+  try {
+    // Callers may return a promise despite the compatible void callback type.
+    // Observe its rejection without making callback settlement a logging wait.
+    void Promise.resolve(onEvent(entry)).catch(() => {
+      // A failing progress observer must never disrupt an operation or its peers.
+    });
+  } catch {
+    // The same best-effort boundary owns synchronous callback failures.
+  }
+}
+
 function enqueueWrite(handle: LogHandle, line: string, onEvent?: (entry: LogEntry) => void): Promise<void> {
   const next = (pendingWrites.get(handle) ?? Promise.resolve())
     .then(() => appendFile(handle.path, line, { encoding: "utf-8", mode: 0o600 }))
@@ -83,11 +97,7 @@ function announceLogFailure(handle: LogHandle, err: unknown, onEvent?: (entry: L
     stage: "log",
     data: { path: handle.path, error: err instanceof Error ? err.message : String(err) },
   };
-  try {
-    onEvent(notice);
-  } catch {
-    // a throwing sink must never break the operation the logger only observes
-  }
+  dispatchEvent(onEvent, notice);
 }
 
 export async function openLog(
@@ -145,13 +155,7 @@ export async function appendLog(
   // thrown error, not the stream. `debug` stage events (e.g. download ticks) ARE
   // forwarded live; the debug gate below governs only on-disk persistence. A
   // throwing sink must never break logging.
-  if (onEvent && final.level !== "error") {
-    try {
-      onEvent(event);
-    } catch {
-      // ignore — progress is advisory
-    }
-  }
+  if (final.level !== "error") dispatchEvent(onEvent, event);
 
   // The developer-only firehose reaches the file only when debug is enabled; it
   // has already been forwarded to the live stream above.
