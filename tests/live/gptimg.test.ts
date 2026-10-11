@@ -131,7 +131,7 @@ describe("the live SDK", () => {
   // Every supported image model, through both verbs, so each row's branch is proven against
   // the real API rather than only the default.
   for (const model of IMAGE_MODELS) {
-    it(`generates an image with ${model} through the real OpenAI API`, async () => {
+    it(`generates and edits an image with ${model} through the real OpenAI API`, async () => {
       requireKey();
       const { img, home } = await freshSdk(`generate-${model}`);
       const result = await img.generate({
@@ -146,22 +146,20 @@ describe("the live SDK", () => {
       expect((await sharp(file!.path).metadata()).format).toBe(file!.format);
       const centre = await centreColour(file!.path, 0.2);
       expect(centre.r, "the centre is red").toBeGreaterThan(centre.g + 80);
-    });
 
-    it(`edits an image with ${model} through the real OpenAI API`, async () => {
-      requireKey();
-      const { img, home } = await freshSdk(`edit-${model}`);
-      const result = await img.edit({
-        in: await copyInto(home, DISC),
-        prompt: "Recolour the red disc pure blue. Keep its size and position and keep the green background unchanged.",
+      const edited = await img.edit({
+        in: file!.path,
+        prompt: "Recolour the red circle pure blue. Keep its size and position and keep the white background unchanged.",
         outDir: home,
+        outName: "edited",
         overrides: { edit: { ...CHEAPEST_IMAGE, model } },
       });
-      expect(result.files).toHaveLength(1);
-      const [file] = result.files;
-      expect(await sentRequest(file!.sidecarPath)).toMatchObject({ ...CHEAPEST_IMAGE, model });
-      const centre = await centreColour(file!.path, 0.2);
-      expect(centre.b, "the disc is now blue").toBeGreaterThan(centre.r + 80);
+      expect(edited.partial).toBe(false);
+      expect(edited.files).toHaveLength(1);
+      const [editedFile] = edited.files;
+      expect(await sentRequest(editedFile!.sidecarPath)).toMatchObject({ ...CHEAPEST_IMAGE, model });
+      const editedCentre = await centreColour(editedFile!.path, 0.2);
+      expect(editedCentre.b, "the circle is now blue").toBeGreaterThan(editedCentre.r + 80);
     });
   }
 
