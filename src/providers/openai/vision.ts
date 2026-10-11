@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { ProviderError } from "../../errors.js";
-import { maskCredentials } from "../../log/mask.js";
+import { maskDiagnosticCopy } from "../../log/mask.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
 import type { VisionVerdict } from "../../types.js";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.js";
@@ -193,10 +193,11 @@ export async function openaiVision(
     ).data as never;
   } catch (err) {
     if (isAbortError(err)) throw err;
+    const cause = maskDiagnosticCopy(err, [args.profile.apiKey]);
     throw new ProviderError(
       "provider.requestFailed",
-      `OpenAI chat.completions.create failed: ${maskCredentials((err as Error).message, [args.profile.apiKey])}`,
-      { cause: err },
+      `OpenAI chat.completions.create failed: ${(cause as Error).message}`,
+      { cause },
     );
   }
 
@@ -206,16 +207,17 @@ export async function openaiVision(
   try {
     verdict = verdictFrom(response);
   } catch (err) {
+    const diagnosticError = maskDiagnosticCopy(err, [args.profile.apiKey]);
     await logger?.warn("response", "vision response yielded no verdict", {
       request,
       response,
       error: {
-        name: (err as Error).name,
-        code: (err as { code?: unknown }).code ?? null,
-        message: (err as Error).message,
+        name: (diagnosticError as Error).name,
+        code: (diagnosticError as { code?: unknown }).code ?? null,
+        message: (diagnosticError as Error).message,
       },
     });
-    throw err;
+    throw diagnosticError;
   }
   return { raw: response, verdict };
 }

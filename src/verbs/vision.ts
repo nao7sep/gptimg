@@ -8,6 +8,7 @@ import { reserveOutputGroup, assertOutputGroupAvailable, createOutputGroup } fro
 import { withVerbLogger } from "../internal/local-verb.js";
 import { singleLine } from "../internal/textCleanup.js";
 import type { Logger } from "../log/index.js";
+import { maskDiagnosticCopy } from "../log/mask.js";
 import { resolveNetworkForCall } from "../network/index.js";
 import { loadProfile } from "../profile/load.js";
 import { resolveProfile } from "../profile/resolve.js";
@@ -173,7 +174,7 @@ export async function visionImpl(
       score: providerResult.verdict.score,
     });
 
-    const sidecar: Sidecar = {
+    const sidecar: Sidecar = maskDiagnosticCopy({
       request: {
         ...params,
         check,
@@ -188,7 +189,7 @@ export async function visionImpl(
         raw: providerResult.raw,
       },
       files: [],
-    };
+    }, [resolved.apiKey]);
     const sidecarPath = await writeSidecar(stemPath, sidecar, {
       overwrite: args.overwrite ?? false,
     });

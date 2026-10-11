@@ -16,15 +16,58 @@ export function maskCredentials(text: string, credentials: Iterable<string>): st
   return out;
 }
 
-/** The raw (still encoded) query values of `url`, as they appear in text that echoes it. */
+/**
+ * Copy JSON and errors for a diagnostic sink, keeping prototypes, own fields
+ * (including nonenumerable stack/cause), and graph identity. Headers need a
+ * real instance so SDK callers can still inspect response metadata, as do
+ * native DOMException causes with diagnostic getters backed by hidden slots. Own
+ * accessors, including V8's lazy Error.stack, become their snapshot values.
+ */
+export function maskDiagnosticCopy<T>(value: T, credentials: Iterable<string>): T {
+  const values = [...credentials];
+  const copies = new Map<object, object>();
+  const copy = (current: unknown): unknown => {
+    if (typeof current === "string") return maskCredentials(current, values);
+    if (current === null || typeof current !== "object") return current;
+    const previous = copies.get(current);
+    if (previous) return previous;
+    if (current instanceof Headers) {
+      const headers = new Headers();
+      copies.set(current, headers);
+      for (const [name, content] of current) headers.append(name, maskCredentials(content, values));
+      return headers;
+    }
+    // A real Error retains its native identity, without invoking an SDK or
+    // caller-defined constructor. Its original descriptors replace this stack.
+    const out = current instanceof DOMException
+      ? new DOMException(maskCredentials(current.message, values), current.name)
+      : current instanceof Error ? new Error() : Array.isArray(current) ? [] : Object.create(Object.getPrototypeOf(current));
+    if (current instanceof Error) delete out.stack;
+    Object.setPrototypeOf(out, Object.getPrototypeOf(current));
+    copies.set(current, out);
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key)!;
+      const masked = "value" in descriptor
+        ? { ...descriptor, value: copy(descriptor.value) }
+        : { enumerable: descriptor.enumerable, configurable: descriptor.configurable, value: copy(Reflect.get(current, key)), writable: false };
+      Object.defineProperty(out, key, masked);
+    }
+    return out;
+  };
+  return copy(value) as T;
+}
+
+/** Raw and standard decoded query values, covering URL and server echoes. */
 export function urlQueryValues(url: string): string[] {
   const query = url.split("#", 1)[0]!.split("?").slice(1).join("?");
   if (query.length === 0) return [];
-  return query.split("&").flatMap((pair) => {
+  return [...new Set(query.split("&").flatMap((pair) => {
     const eq = pair.indexOf("=");
     const value = eq < 0 ? "" : pair.slice(eq + 1);
-    return value.length > 0 ? [value] : [];
-  });
+    // URLSearchParams handles '+' as a space and tolerates malformed escapes.
+    const decoded = new URLSearchParams(pair).values().next().value ?? "";
+    return value.length > 0 ? [value, decoded] : [];
+  }))];
 }
 
 /**

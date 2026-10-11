@@ -121,6 +121,7 @@ export async function generateImpl(
       overwrite,
       providerResult,
       requestRecord,
+      credentials: [resolved.apiKey],
       logger,
     });
 

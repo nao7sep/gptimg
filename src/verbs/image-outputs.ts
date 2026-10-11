@@ -13,6 +13,7 @@ import {
   sidecarPathFor,
 } from "../internal/output-group.js";
 import type { Logger } from "../log/index.js";
+import { maskDiagnosticCopy } from "../log/mask.js";
 import type { ProviderImageResult } from "../providers/types.js";
 import { nullBase64InResponse } from "../sidecar/nullBase64.js";
 import { writeSidecar } from "../sidecar/write.js";
@@ -28,6 +29,8 @@ export interface PublishProviderImagesArgs {
   providerResult: ProviderImageResult;
   /** What each per-image sidecar records as the request. */
   requestRecord: Record<string, unknown>;
+  /** Known credentials, applied only to sidecar snapshots. */
+  credentials?: readonly string[];
   logger: Logger;
 }
 
@@ -98,7 +101,10 @@ export async function publishProviderImages(
 
   const group = createOutputGroup(outDir, stem, plan.groupExtension);
   const owned = ownedSlotFiles(group, n, items.length);
-  const redactedResponse = nullBase64InResponse(providerResult.raw);
+  const snapshot = maskDiagnosticCopy({
+    request: requestRecord,
+    response: nullBase64InResponse(providerResult.raw),
+  }, args.credentials ?? []);
   const files: OutputFile[] = [];
 
   assertOutputGroupAvailable(group, owned, overwrite);
@@ -113,8 +119,8 @@ export async function publishProviderImages(
           // self-describing.
           const itemSidecarPath = sidecarPathFor(group, item.index, suffixCount);
           const itemSidecar: Sidecar = {
-            request: requestRecord,
-            response: redactedResponse,
+            request: snapshot.request,
+            response: snapshot.response,
             files: [
               {
                 index: item.index,

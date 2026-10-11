@@ -135,6 +135,7 @@ export async function editImpl(
       overwrite,
       providerResult,
       requestRecord,
+      credentials: [resolved.apiKey],
       logger,
     });
 
