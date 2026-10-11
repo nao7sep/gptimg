@@ -20,7 +20,7 @@ import type { Logger } from "../../log/index.js";
 import type { NetworkBudget } from "../../network/defaults.js";
 import { ensureModel } from "./fetch.js";
 import { BIREFNET } from "./registry.js";
-import { loadSession } from "./session.js";
+import { loadSession, runSession } from "./session.js";
 import { logitsToAlpha, normalizeImageNet } from "./birefnet-tensor.js";
 
 async function resizeRGB(
@@ -93,7 +93,7 @@ export async function runBirefnet(
   }
   await opts.logger?.info("infer", "running BiRefNet inference", { width, height });
   throwIfAborted(opts.signal);
-  const outputs = await session.run({ [inputName]: tensor });
+  const outputs = await runSession(session, { [inputName]: tensor });
   await opts.logger?.info("infer", "BiRefNet inference complete");
   throwIfAborted(opts.signal);
   const outputName = session.outputNames[session.outputNames.length - 1]!;

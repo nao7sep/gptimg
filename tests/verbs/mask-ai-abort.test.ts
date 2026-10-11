@@ -17,7 +17,8 @@ vi.mock("../../src/local/models/fetch.js", async (importOriginal) => ({
   ensureModel: vi.fn(async () => "/nonexistent/birefnet.onnx"),
 }));
 
-vi.mock("../../src/local/models/session.js", () => ({
+vi.mock("../../src/local/models/session.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/local/models/session.js")>()),
   loadSession: model.loadSession,
 }));
 

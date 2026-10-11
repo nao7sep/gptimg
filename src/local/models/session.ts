@@ -1,15 +1,16 @@
 /**
- * Shared ONNX Runtime session creation for all local models (BiRefNet today,
- * the upscaler next). Owns the runtime tuning knobs and caches one session per
+ * Shared ONNX Runtime session creation and execution for local models.
+ * Owns the runtime tuning knobs and caches one session per
  * model path so multiple models coexist without evicting each other.
  *
  * Model-specific tensor pre/post-processing lives in each model's own module;
- * only the session lifecycle is shared here.
+ * only the native session lifecycle and failure boundary are shared here.
  */
 
 import os from "node:os";
 import * as ort from "onnxruntime-node";
-import { LocalOpError } from "../../errors.js";
+import { GptImgError, LocalOpError } from "../../errors.js";
+import { isAbortError } from "../../network/retry.js";
 
 const ONNX_THREADS_ENV = "GPTIMG_ONNX_INTRA_OP_THREADS";
 const ONNX_EP_ENV = "GPTIMG_ONNX_EP";
@@ -73,6 +74,27 @@ export function loadSession(modelPath: string): Promise<ort.InferenceSession> {
     if (sessions.get(modelPath) === created) sessions.delete(modelPath);
   });
   return created;
+}
+
+/**
+ * Await actual native settlement and classify run failures for every model.
+ * A per-call failure does not invalidate the shared session. Already typed
+ * failures and cancellation retain their identity for the caller's owner.
+ */
+export async function runSession(
+  session: ort.InferenceSession,
+  feeds: ort.InferenceSession.FeedsType,
+): Promise<ort.InferenceSession.ReturnType> {
+  try {
+    return await session.run(feeds);
+  } catch (err) {
+    if (err instanceof GptImgError || isAbortError(err)) throw err;
+    throw new LocalOpError(
+      "model.runFailed",
+      `ONNX inference failed: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
 }
 
 async function createSession(modelPath: string): Promise<ort.InferenceSession> {

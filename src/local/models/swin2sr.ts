@@ -30,7 +30,7 @@ import type { Logger } from "../../log/index.js";
 import type { NetworkBudget } from "../../network/defaults.js";
 import { ensureModel } from "./fetch.js";
 import { SWIN2SR_X4 } from "./registry.js";
-import { loadSession } from "./session.js";
+import { loadSession, runSession } from "./session.js";
 import { packNchw01, unpackChwToU8 } from "./swin2sr-tensor.js";
 import {
   SWIN2SR_DEFAULT_TILE,
@@ -139,7 +139,7 @@ function makeOnnxRun(
   outputName: string,
 ): PaddedModelRun {
   return async (rgb, pw, ph) => {
-    const outputs = await session.run({
+    const outputs = await runSession(session, {
       [inputName]: new ort.Tensor("float32", packNchw01(rgb, pw, ph), [1, 3, ph, pw]),
     });
     const tensor = outputs[outputName];

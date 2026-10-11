@@ -17,7 +17,10 @@ vi.mock("../../src/local/models/fetch.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/local/models/fetch.js")>()),
   ensureModel: model.ensureModel,
 }));
-vi.mock("../../src/local/models/session.js", () => ({ loadSession: model.loadSession }));
+vi.mock("../../src/local/models/session.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/local/models/session.js")>()),
+  loadSession: model.loadSession,
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
