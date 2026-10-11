@@ -122,17 +122,14 @@ describe("resolveOutputPath", () => {
     expect(out).toBe(`${absStem}.png`);
   });
 
-  it("uses the provided fallback directory when no input is given (e.g. backplate), never the cwd", async () => {
-    const fallbackDir = path.join(tmp, "profile-output");
-    const out = await resolveOutputPath(
-      {},
-      { fallbackDir, stem: "backplate-1024", ext: "png" },
-    );
-    expect(out).toBe(path.join(fallbackDir, "backplate-1024.png"));
-    expect(out.startsWith(process.cwd())).toBe(false);
+  it("accepts an absolute output stem without an input or outDir", async () => {
+    const stem = path.join(tmp, "chosen", "backplate");
+    const out = await resolveOutputPath({ outName: stem }, { stem: "default", ext: "png" });
+    expect(out).toBe(`${stem}.png`);
+    await writeFile(out, "x");
   });
 
-  it("throws when a verb supplies neither an input file nor a fallback directory", async () => {
+  it("throws when a verb supplies neither an input file nor a chosen destination", async () => {
     await expect(
       resolveOutputPath({}, { stem: "x", ext: "png" }),
     ).rejects.toBeInstanceOf(LocalOpError);

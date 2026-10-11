@@ -9,7 +9,6 @@ import { BACKPLATE_DEFAULTS, runBackplate } from "../local/backplate.js";
 import type { BackplateArgs, BackplateResult } from "../types.js";
 import type { VerbCallOptions } from "./options.js";
 import { validateBackplateArgs } from "./schemas.js";
-import { defaultOutDir } from "../internal/paths.js";
 
 export interface BackplateContext {
   profileDir: string;
@@ -34,7 +33,6 @@ export async function backplateImpl(
     // result fields after the call.
     const size = args.size ?? BACKPLATE_DEFAULTS.size;
     const outPath = await resolveOutputPath(args, {
-      fallbackDir: defaultOutDir(ctx.profileDir),
       stem: defaultStem(size),
       ext: args.format ?? "png",
     });

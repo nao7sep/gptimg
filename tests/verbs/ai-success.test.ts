@@ -74,6 +74,62 @@ describe("AI verb implementations with mocked provider", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
+  it("requires a destination before generation and leaves legacy output untouched", async () => {
+    const legacy = path.join(tmp, "output");
+    await mkdir(legacy);
+    await writeFile(path.join(legacy, "kept.txt"), "keep");
+    for (const args of [{ prompt: "image" }, { prompt: "image", outDir: "" }]) {
+      await expect(sdk.generate(args as never)).rejects.toMatchObject({ code: "args.invalid", message: expect.stringContaining("outDir") });
+    }
+    expect(providerCalls.generate).not.toHaveBeenCalled();
+    expect(await readFile(path.join(legacy, "kept.txt"), "utf8")).toBe("keep");
+    expect(existsSync(path.join(tmp, "logs"))).toBe(false);
+  });
+
+  it("backplate needs a chosen destination but preserves absolute output stems", async () => {
+    await expect(sdk.backplate({ from: "#000000", to: "#ffffff" })).rejects.toMatchObject({ code: "args.invalid", message: expect.stringContaining("outDir") });
+    expect(existsSync(path.join(tmp, "logs"))).toBe(false);
+    const stem = path.join(tmp, "chosen", "plate");
+    const result = await sdk.backplate({ from: "#000000", to: "#ffffff", size: 16, outName: stem });
+    expect(result.output).toBe(`${stem}.png`);
+    expect(existsSync(result.output)).toBe(true);
+    expect(existsSync(path.join(tmp, "output"))).toBe(false);
+  });
+
+  it("edit and multi-image vision default beside the supplied first input", async () => {
+    const sourceDir = path.join(tmp, "sources");
+    const otherDir = path.join(tmp, "other");
+    await mkdir(sourceDir);
+    await mkdir(otherDir);
+    const input = path.join(sourceDir, "input.png");
+    const other = path.join(otherDir, "other.png");
+    await writeFile(input, png);
+    await writeFile(other, png);
+    providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }] });
+    providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
+    const edit = await sdk.edit({ in: input, prompt: "blue", outName: "edited" });
+    expect(edit.files[0]!.path).toBe(path.join(sourceDir, "edited.png"));
+    const vision = await sdk.vision({ in: [input, other], check: "green", outName: "verdict" });
+    expect(vision.sidecarPath).toBe(path.join(sourceDir, "verdict.json"));
+    expect(await readFile(input)).toEqual(Buffer.from(png));
+    expect(existsSync(path.join(tmp, "output"))).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("edit and vision keep sibling outputs beside the input symlink", async () => {
+    const original = path.join(tmp, "original.png");
+    const links = path.join(tmp, "links");
+    await writeFile(original, png);
+    await mkdir(links);
+    const input = path.join(links, "alias.png");
+    await symlink(original, input);
+    providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }] });
+    providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
+    const edit = await sdk.edit({ in: input, prompt: "blue", outName: "edited" });
+    const vision = await sdk.vision({ in: input, check: "green", outName: "verdict" });
+    expect(edit.files[0]!.path).toBe(path.join(links, "edited.png"));
+    expect(vision.sidecarPath).toBe(path.join(links, "verdict.json"));
+  });
+
   it("generate uses the stored profile key, writes outputs, sidecar, and logs", async () => {
     const stdoutWrite = process.stdout.write;
     const stderrWrite = process.stderr.write;
@@ -783,7 +839,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(existsSync(path.join(outDir, "same-2.png"))).toBe(false);
   });
 
-  it("generate uses the default output directory and n>1 file names", async () => {
+  it("generate uses the chosen output directory and n>1 file names", async () => {
     providerCalls.generate.mockResolvedValue({
       raw: {
         data: [
@@ -796,6 +852,7 @@ describe("AI verb implementations with mocked provider", () => {
 
     const result = await sdk.generate({
       prompt: "two images",
+      outDir: path.join(tmp, "output"),
       outName: "two",
       overrides: { generate: { n: 2 } },
     });

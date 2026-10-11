@@ -28,7 +28,6 @@ import type {
 import type { VerbCallOptions } from "./options.js";
 import { validateVisionArgs } from "./schemas.js";
 import {
-  defaultOutDir,
   defaultProfilePath,
   defaultStem,
 } from "../internal/paths.js";
@@ -133,7 +132,7 @@ export async function visionImpl(
 
     // Resolve + guard the sidecar path before the (paid) provider call so a
     // name collision fails fast without spending, like generate/edit.
-    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
+    const outDir = args.outDir ?? path.dirname(Array.isArray(args.in) ? args.in[0]! : args.in);
     await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem();
     const stemPath = path.join(outDir, stem);

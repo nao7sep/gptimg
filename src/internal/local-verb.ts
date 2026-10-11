@@ -70,14 +70,8 @@ export function assertSingleFileAvailable(
  *   1. `args.outDir`, when the caller named one;
  *   2. otherwise `dirname(inputForDir)` for a verb that has an input file — the
  *      source file is a legitimate explicit base;
- *   3. otherwise `fallbackDir`, the home-anchored output directory a no-input
- *      verb (e.g. `backplate`) supplies as `defaultOutDir(profileDir)`.
- *
- * The working directory is never a base: a path the app writes is anchored to
- * the home directory or to the source file, never to how the process was
- * launched (storage-path-conventions). A verb that provides neither an input
- * file nor a fallback directory is a programmer error and throws, rather than
- * silently writing under the cwd.
+ * A no-input verb requires a caller-selected destination. An absolute outName
+ * already supplies that destination; no app-root or implicit cwd fallback exists.
  *
  * `outName` is a STEM, not a filename: the verb owns its extension, which is
  * appended here via the same primitive `generate` uses (`imageFileName`).
@@ -90,26 +84,20 @@ export async function resolveOutputPath(
   args: { outDir?: string | undefined; outName?: string | undefined },
   defaults: {
     inputForDir?: string | undefined;
-    fallbackDir?: string | undefined;
     stem: string;
     ext: string;
   },
 ): Promise<string> {
-  const outDir =
-    args.outDir ??
-    (defaults.inputForDir !== undefined
-      ? path.dirname(defaults.inputForDir)
-      : defaults.fallbackDir);
-  if (outDir === undefined) {
-    throw new LocalOpError(
-      "output.noBaseDir",
-      "No output directory: a verb with no input file must supply a fallback directory.",
-    );
-  }
-  await ensureOutputDir(outDir);
   const stem = args.outName ?? defaults.stem;
   const fileName = imageFileName(stem, 1, 1, defaults.ext);
-  return path.isAbsolute(fileName) ? fileName : path.join(outDir, fileName);
+  const outDir = args.outDir ??
+    (defaults.inputForDir !== undefined ? path.dirname(defaults.inputForDir) : undefined);
+  if (!path.isAbsolute(fileName) && outDir === undefined) {
+    throw new LocalOpError("output.noBaseDir", "Set outDir to choose an output directory.");
+  }
+  const output = path.isAbsolute(fileName) ? fileName : path.join(outDir!, fileName);
+  await ensureOutputDir(path.dirname(output));
+  return output;
 }
 
 export interface VerbLoggerOptions {

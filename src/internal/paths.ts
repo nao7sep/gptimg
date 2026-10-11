@@ -97,10 +97,6 @@ export function defaultLogDir(profileDir: string): string {
   return path.join(profileDir, "logs");
 }
 
-export function defaultOutDir(profileDir: string): string {
-  return path.join(profileDir, "output");
-}
-
 /**
  * Where lazily fetched model files live. Default `<profileDir>/models`.
  * Override with `GPTIMG_MODELS_DIR`.

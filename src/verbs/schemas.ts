@@ -127,6 +127,7 @@ const ENCODING_FIELDS = {
 
 const GenerateArgsSchema = z.object({
   prompt: nonBlankText("prompt"),
+  outDir: z.string({ error: "outDir is required; choose an output directory" }).min(1, "outDir is required; choose an output directory"),
   overwrite: z.boolean().optional(),
 });
 
@@ -265,6 +266,8 @@ const GridArgsSchema = z.object({
 
 const BackplateArgsSchema = z.object({
   ...ENCODING_FIELDS,
+  outDir: requiredPath("outDir").optional(),
+  outName: z.string().optional(),
   from: hexColor("from"),
   to: hexColor("to"),
   size: positiveInt("must be a positive integer").optional(),
@@ -273,6 +276,9 @@ const BackplateArgsSchema = z.object({
   angle: z.number().optional(),
   shape: oneOf(BACKPLATE_SHAPES, "shape").optional(),
   overwrite: z.boolean().optional(),
+}).refine((args) => args.outDir !== undefined || (args.outName !== undefined && path.isAbsolute(args.outName)), {
+  path: ["outDir"],
+  message: "choose an output directory, or use an absolute outName",
 });
 
 const LayerArgsSchema = z.object({

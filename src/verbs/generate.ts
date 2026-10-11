@@ -21,7 +21,6 @@ import type { VerbCallOptions } from "./options.js";
 import { publishProviderImages } from "./image-outputs.js";
 import { validateGenerateArgs } from "./schemas.js";
 import {
-  defaultOutDir,
   defaultProfilePath,
   defaultStem,
 } from "../internal/paths.js";
@@ -77,7 +76,7 @@ export async function generateImpl(
 
     const n = typeof section.n === "number" && section.n > 0 ? section.n : 1;
 
-    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
+    const outDir = args.outDir;
     await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem();
     const overwrite = args.overwrite ?? false;

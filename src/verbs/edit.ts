@@ -24,7 +24,6 @@ import type { VerbCallOptions } from "./options.js";
 import { publishProviderImages } from "./image-outputs.js";
 import { validateEditArgs } from "./schemas.js";
 import {
-  defaultOutDir,
   defaultProfilePath,
   defaultStem,
 } from "../internal/paths.js";
@@ -88,7 +87,7 @@ export async function editImpl(
     await assertReadableImage(args.in, "input");
     if (args.mask) await assertReadableImage(args.mask, "mask");
 
-    const outDir = args.outDir ?? defaultOutDir(ctx.profileDir);
+    const outDir = args.outDir ?? path.dirname(args.in);
     await ensureOutputDir(outDir);
     const stem = args.outName ?? defaultStem();
     const overwrite = args.overwrite ?? false;

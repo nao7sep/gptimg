@@ -7,7 +7,6 @@ import { ensureOutputDir, writeOutputBytes } from "../../src/internal/output-fil
 import {
   defaultLogDir,
   defaultLogPath,
-  defaultOutDir,
   defaultProfileDir,
   defaultProfilePath,
   defaultRecipePath,
@@ -24,7 +23,6 @@ describe("internal paths", () => {
     expect(defaultProfilePath(profileDir)).toBe(path.join(profileDir, "profile.json"));
     expect(defaultRecipePath(profileDir)).toBe(path.join(profileDir, "recipe.json"));
     expect(defaultLogDir(profileDir)).toBe(path.join(profileDir, "logs"));
-    expect(defaultOutDir(profileDir)).toBe(path.join(profileDir, "output"));
     expect(defaultLogPath(path.join(profileDir, "logs"), "20260102-030405-utc", "a1b2c3")).toBe(
       path.join(profileDir, "logs", "20260102-030405-utc-a1b2c3.log"),
     );

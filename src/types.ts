@@ -197,7 +197,8 @@ export interface OutputFile {
 
 export interface GenerateArgs {
   prompt: string;
-  outDir?: string;
+  /** Destination for generated images; required because there is no source folder. */
+  outDir: string;
   outName?: string;
   profile?: string;
   recipe?: string;
@@ -213,8 +214,10 @@ export interface GenerateResult {
   partial: boolean;
 }
 
-export interface EditArgs extends GenerateArgs {
+export interface EditArgs extends Omit<GenerateArgs, "outDir"> {
   in: string;
+  /** Defaults beside the input, preserving its supplied path (including symlinks). */
+  outDir?: string;
   mask?: string;
 }
 
@@ -228,6 +231,7 @@ export interface VisionArgs {
   log?: string;
   /** Typed recipe overrides merged over the loaded recipe (caller-supplied, last wins). */
   overrides?: Partial<Recipe>;
+  /** Defaults beside the first input image. */
   outDir?: string;
   outName?: string;
   /** Overwrite an existing sidecar at the resolved stem. Default false. */
@@ -394,6 +398,7 @@ export interface BackplateArgs extends EncodingArgs {
   angle?: number;
   /** Corner shape. Default "rect". */
   shape?: BackplateShape;
+  /** Required unless outName is an absolute output stem. */
   outDir?: string;
   outName?: string;
   log?: string;

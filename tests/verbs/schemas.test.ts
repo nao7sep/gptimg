@@ -42,8 +42,8 @@ function badArgs(fn: () => unknown, msg?: string): void {
 
 describe("verb argument validation (single source of truth)", () => {
   it("generate / edit / vision: required fields", () => {
-    expect(validateGenerateArgs({ prompt: "a cat" }).prompt).toBe("a cat");
-    badArgs(() => validateGenerateArgs({ prompt: "" }), "prompt");
+    expect(validateGenerateArgs({ outDir: "output", prompt: "a cat" }).prompt).toBe("a cat");
+    badArgs(() => validateGenerateArgs({ outDir: "output", prompt: "" }), "prompt");
     badArgs(() => validateEditArgs({ prompt: "x", in: "" }), "in");
     expect(validateEditArgs({ prompt: "x", in: "a.png" }).in).toBe("a.png");
     badArgs(() => validateVisionArgs({ in: "a.png", check: "" }), "check");
@@ -51,13 +51,13 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateVisionArgs({ in: "", check: "ok" }));
     badArgs(() => validateVisionArgs({ in: ["a.png", ""], check: "ok" }));
     expect(validateVisionArgs({ in: ["a.png", "b.png"], check: "ok" })).toBeTruthy();
-    badArgs(() => validateGenerateArgs({ prompt: " \n\t " }), "blank");
+    badArgs(() => validateGenerateArgs({ outDir: "output", prompt: " \n\t " }), "blank");
     badArgs(() => validateEditArgs({ prompt: "\t", in: "a.png" }), "blank");
     badArgs(() => validateVisionArgs({ in: "a.png", check: "  " }), "blank");
   });
 
   it("rejects truthy strings for optional boolean controls", () => {
-    badArgs(() => validateGenerateArgs({ prompt: "x", overwrite: "false" } as never));
+    badArgs(() => validateGenerateArgs({ outDir: "output", prompt: "x", overwrite: "false" } as never));
     badArgs(() => validateMaskArgs({ in: "a.png", dryRun: "false" } as never));
     badArgs(() => validateTrimArgs({ in: "a.png", square: "false" } as never));
     badArgs(() => validateShadowArgs({ in: "a.png", keepCanvas: "false" } as never));
@@ -156,7 +156,7 @@ describe("verb argument validation (single source of truth)", () => {
   it("trim / backplate: numeric ranges and enums", () => {
     expect(validateTrimArgs({ in: "a.png", margin: 0.5 })).toBeTruthy();
     badArgs(() => validateTrimArgs({ in: "a.png", margin: 2 }), "[0..1]");
-    expect(validateBackplateArgs({ from: "#000000", to: "#ffffff" })).toBeTruthy();
+    expect(validateBackplateArgs({ from: "#000000", to: "#ffffff", outDir: "output" })).toBeTruthy();
     badArgs(() => validateBackplateArgs({ from: "nope", to: "#ffffff" }), "hex");
     badArgs(() => validateBackplateArgs({ to: "#ffffff" } as never), "from"); // from is required
     badArgs(() => validateBackplateArgs({ from: "#000000", to: "#ffffff", angle: Infinity })); // non-finite rejected by z.number()
@@ -218,7 +218,7 @@ describe("verb argument validation (single source of truth)", () => {
       ["trim", validateTrimArgs as never, { in: "a.png" }],
       ["shadow", validateShadowArgs as never, { in: "a.png" }],
       ["layer", validateLayerArgs as never, { base: "b.png", top: "t.png" }],
-      ["backplate", validateBackplateArgs as never, { from: "#000000", to: "#ffffff" }],
+      ["backplate", validateBackplateArgs as never, { from: "#000000", to: "#ffffff", outDir: "output" }],
       ["grid", validateGridArgs as never, { inputs: ["a.png"] }],
       ["upscale", validateUpscaleArgs as never, { in: "a.png" }],
       ["despeckle", validateDespeckleArgs as never, { in: "a.png" }],
