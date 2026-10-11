@@ -125,6 +125,23 @@ describe("the model table", () => {
 });
 
 describe("the request builder", () => {
+  it.each(Object.getOwnPropertyNames(Object.prototype))(
+    "sends the unlisted prototype name %s as the plain image request",
+    (id) => {
+      const request = { model: id, prompt: "p", quality: "low", output_format: "png" };
+      expect(buildImageRequest(id, request)).toEqual(request);
+    },
+  );
+
+  it.each(Object.getOwnPropertyNames(Object.prototype))(
+    "sends the unlisted prototype name %s as plain vision, preserving explicit effort",
+    (id) => {
+      const request = { model: id, messages: [], response_format: { type: "json_schema" } };
+      expect(buildVisionRequest(id, request, undefined)).toEqual(request);
+      expect(buildVisionRequest(id, request, "low")).toEqual({ ...request, reasoning_effort: "low" });
+    },
+  );
+
   it("sends an id with no row as the plain request, unchanged", () => {
     const request = { model: "some-future-image-model", prompt: "p", quality: "low" };
     expect(buildImageRequest("some-future-image-model", { ...request })).toEqual(request);

@@ -281,10 +281,12 @@ export async function callWithRetry<T>(
       );
       // Retry-After is untrusted external input. It may ask for a useful short
       // delay, but it cannot expand the caller's explicit time budget into an
-      // hours- or days-long wait. The per-attempt timeout is the cap.
-      const retryAfterCapped = headerWait != null && headerWait > budget.timeout;
+      // hours- or days-long wait. Model routing caps it at thirty seconds, or
+      // the caller's shorter per-attempt timeout.
+      const retryAfterCap = Math.min(budget.timeout, 30_000);
+      const retryAfterCapped = headerWait != null && headerWait > retryAfterCap;
       const waitMs = headerWait != null
-        ? Math.min(headerWait, budget.timeout)
+        ? Math.min(headerWait, retryAfterCap)
         : scheduledWait;
       attempt += 1;
       if (logger) {

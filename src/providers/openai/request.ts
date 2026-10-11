@@ -33,7 +33,8 @@ export const VISION_REQUEST_BRANCHES: Readonly<Record<string, VisionBranch>> = {
 };
 
 export function buildImageRequest(model: string, request: Record<string, unknown>): Record<string, unknown> {
-  return (IMAGE_REQUEST_BRANCHES[model] ?? plainImage)(request);
+  const branch = Object.hasOwn(IMAGE_REQUEST_BRANCHES, model) ? IMAGE_REQUEST_BRANCHES[model] : undefined;
+  return (branch ?? plainImage)(request);
 }
 
 /**
@@ -45,7 +46,7 @@ export function buildVisionRequest(
   request: Record<string, unknown>,
   reasoning: string | undefined,
 ): Record<string, unknown> {
-  const branch = VISION_REQUEST_BRANCHES[model];
+  const branch = Object.hasOwn(VISION_REQUEST_BRANCHES, model) ? VISION_REQUEST_BRANCHES[model] : undefined;
   if (branch) return branch(request, reasoning);
   return reasoning === undefined ? request : { ...request, reasoning_effort: reasoning };
 }

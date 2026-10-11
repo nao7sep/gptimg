@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AbortError } from "../../src/errors.js";
 import { callWithRetry, isAbortError } from "../../src/network/retry.js";
-import type { NetworkBudget } from "../../src/network/defaults.js";
+import { NETWORK_DEFAULTS, type NetworkBudget } from "../../src/network/defaults.js";
 import type { Logger } from "../../src/log/index.js";
 
 const fast: NetworkBudget = {
@@ -261,6 +261,65 @@ describe("callWithRetry", () => {
         retryAfterCapped: true,
       });
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each<Record<string, string>>([
+    { "retry-after": "300" },
+    { "retry-after-ms": "300000" },
+  ])("caps provider-directed retry waits at thirty seconds (%j)", async (headers) => {
+    vi.useFakeTimers();
+    const ctrl = new AbortController();
+    const logger = fakeLogger();
+    const fn = vi.fn().mockRejectedValueOnce(http(429, headers)).mockResolvedValueOnce("ok");
+    const operation = callWithRetry(
+      { budgetName: "imageGenerate", budget: NETWORK_DEFAULTS.imageGenerate, signal: ctrl.signal, logger },
+      fn,
+    );
+    // Keep rejection owned even when a failed assertion cancels the pending sleep.
+    const settled = operation.then((result) => ({ result }), (error: unknown) => ({ error }));
+    try {
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(fn).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fn).toHaveBeenCalledTimes(2);
+      await expect(operation).resolves.toBe("ok");
+      expect(logger.warn.mock.calls[0]?.[2]).toMatchObject({
+        waitMs: 30_000,
+        retryAfterHeader: true,
+        retryAfterCapped: true,
+      });
+    } finally {
+      ctrl.abort();
+      await settled;
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports an uncapped header wait accurately when it is below both caps", async () => {
+    vi.useFakeTimers();
+    const ctrl = new AbortController();
+    const logger = fakeLogger();
+    const fn = vi.fn().mockRejectedValueOnce(http(429, { "retry-after-ms": "20" })).mockResolvedValueOnce("ok");
+    const operation = callWithRetry(
+      { budgetName: "imageGenerate", budget: { ...fast, timeout: 25 }, signal: ctrl.signal, logger },
+      fn,
+    );
+    const settled = operation.then((result) => ({ result }), (error: unknown) => ({ error }));
+    try {
+      await vi.advanceTimersByTimeAsync(19);
+      expect(fn).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(operation).resolves.toBe("ok");
+      expect(logger.warn.mock.calls[0]?.[2]).toMatchObject({
+        waitMs: 20,
+        retryAfterHeader: true,
+        retryAfterCapped: false,
+      });
+    } finally {
+      ctrl.abort();
+      await settled;
       vi.useRealTimers();
     }
   });
