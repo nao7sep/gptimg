@@ -53,6 +53,19 @@ describe("log helpers", () => {
     });
   });
 
+  it("masks short query credentials without corrupting JSON values, keys or escapes", async () => {
+    const seen: LogEntry[] = [];
+    const logger = await createLogger(file, "generate", { onEvent: (event) => seen.push(event) });
+    for (const credential of ["1", "true", "null", "secret\\\"value"]) logger.addCredential(credential);
+    const data = { attempt: 1, enabled: true, absent: null, trueKey: "unchanged", nested: ["secret\\\"value", "https://example.test/?x=1&flag=true&empty=null"] };
+    await logger.warn("retry", "retry", data);
+    await logger.close();
+    const entry = JSON.parse((await readFile(file, "utf8")).trim()) as LogEntry;
+    expect(entry.data).toEqual({ attempt: 1, enabled: true, absent: null, trueKey: "unchanged", nested: ["[REDACTED]", "https://example.test/?x=[REDACTED]&flag=[REDACTED]&empty=[REDACTED]"] });
+    expect(seen).toEqual([entry]);
+    expect(data.nested[0]).toBe("secret\\\"value");
+  });
+
   it("createLogger writes info, warn, and error entries", async () => {
     const logger = await createLogger(file, "vision");
     await logger.info("resolve", "resolved");

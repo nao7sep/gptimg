@@ -15,7 +15,7 @@ const SIG = "TOKEN-FAKE-xyz";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PNG_B64 = (await readFile(path.resolve(HERE, "..", "fixtures", "green-disk.png"))).toString("base64");
 
-type Mode = "echo401" | "success" | "signedUrl" | "hang";
+type Mode = "echo401" | "success" | "signedUrl" | "shortQuery" | "hang";
 
 describe("credential masking across every sink", () => {
   let tmp: string;
@@ -37,15 +37,16 @@ describe("credential masking across every sink", () => {
         } else if (mode === "success") {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ created: 1, data: [{ b64_json: PNG_B64 }] }));
-        } else if (mode === "signedUrl") {
+        } else if (mode === "signedUrl" || mode === "shortQuery") {
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ created: 1, data: [{ url: `http://127.0.0.1:${port}/img.png?sig=${SIG}` }] }));
+          res.end(JSON.stringify({ created: 1, data: [{ url: `http://127.0.0.1:${port}/img.png?sig=${SIG}&v=1&flag=true` }] }));
         }
         // "hang": never answer; the caller cancels.
         return;
       }
       if (req.url?.startsWith("/img.png")) {
-        res.writeHead(403).end(`denied ${req.url}`);
+        if (mode === "shortQuery") res.writeHead(200, { "content-type": "image/png" }).end(Buffer.from(PNG_B64, "base64"));
+        else res.writeHead(403).end(`denied ${req.url}`);
         return;
       }
       res.writeHead(404).end();
@@ -121,6 +122,20 @@ describe("credential masking across every sink", () => {
     const text = await logs();
     expect(text).not.toContain(SIG);
     expect(text).toContain("sig=[REDACTED]");
+  });
+
+  it("publishes a downloaded image when short query credentials overlap numeric log values", async () => {
+    const { events, thrown } = await run("shortQuery");
+    expect(thrown).toBe("");
+    expect(await readFile(path.join(tmp, "out", "shortQuery.png"))).toEqual(Buffer.from(PNG_B64, "base64"));
+    const text = await logs();
+    const entries = text.trim().split("\n").map((line) => JSON.parse(line) as LogEntry);
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.some((entry) => entry.data?.itemCount === 1)).toBe(true);
+    expect(JSON.parse(events)).toEqual(expect.any(Array));
+    expect(text).not.toContain(SIG);
+    expect(events).not.toContain(SIG);
+    expect(text).toContain("v=[REDACTED]&flag=[REDACTED]");
   });
 
   it("masks the key in the records of a cancelled call", async () => {

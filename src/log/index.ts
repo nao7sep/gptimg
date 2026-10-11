@@ -33,15 +33,17 @@ const pendingWrites = new WeakMap<LogHandle, Promise<void>>();
 const CLOSE_WAIT_MS = 2_000;
 
 /**
- * Serialize one envelope to a single JSON Lines record (one object,
- * newline-terminated), with the handle's credentials masked. Credentials are
- * matched in their JSON-escaped form, as they appear in the line.
+ * Mask string values before serialization. Replacing substrings in serialized
+ * JSON can corrupt numbers, booleans or escape syntax when a URL query value
+ * happens to contain the same text. Field names and non-string values stay intact.
  */
 function serialize(handle: LogHandle, entry: LogEntry): string {
-  const line = JSON.stringify(entry);
   const credentials = credentialsByHandle.get(handle);
-  if (!credentials || credentials.size === 0) return line + "\n";
-  return maskCredentials(line, [...credentials].map((c) => JSON.stringify(c).slice(1, -1))) + "\n";
+  return JSON.stringify(entry, (_key, value: unknown) =>
+    typeof value === "string" && credentials?.size
+      ? maskCredentials(value, credentials)
+      : value,
+  ) + "\n";
 }
 
 function enqueueWrite(handle: LogHandle, line: string, onEvent?: (entry: LogEntry) => void): Promise<void> {
@@ -126,15 +128,16 @@ export async function appendLog(
   };
   if (entry.data) final.data = entry.data;
   let line: string;
+  let event: LogEntry;
   try {
     line = serialize(handle, final);
+    // Every sink gets the same masked diagnostic copy.
+    event = JSON.parse(line) as LogEntry;
   } catch (err) {
     // Unserializable data (a cycle, a BigInt) loses this line, never the verb.
     announceLogFailure(handle, err, onEvent);
     return;
   }
-  // The progress sink receives the masked copy, never the live objects.
-  const event = credentialsByHandle.get(handle)?.size ? (JSON.parse(line) as LogEntry) : final;
 
   // Fan out to the live progress sink (a caller's `onProgress` handler) before the
   // file write, so a watcher sees the event immediately. Everything but `error`

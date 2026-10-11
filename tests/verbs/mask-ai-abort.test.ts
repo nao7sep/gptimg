@@ -80,6 +80,21 @@ describe("mask (ai) cancellation around inference", () => {
     expect((await readdir(tmp)).filter((name) => name.startsWith("cut"))).toEqual([]);
   });
 
+  it.each([
+    ["running BiRefNet inference", false],
+    ["BiRefNet inference complete", true],
+    ["mask complete", true],
+  ] as const)("honors cancellation at %s, including dry runs", async (message, dryRun) => {
+    const ctrl = new AbortController();
+    model.loadSession.mockResolvedValue(fakeSession());
+    await expect(sdk.mask(
+      { in: INPUT, method: "ai", outDir: tmp, outName: "cut", dryRun },
+      { signal: ctrl.signal, onProgress: (event) => { if (event.message === message) ctrl.abort(); } },
+    )).rejects.toMatchObject({ name: "AbortError" });
+    expect(model.run).toHaveBeenCalledTimes(message === "running BiRefNet inference" ? 0 : 1);
+    expect((await readdir(tmp)).filter((name) => name.startsWith("cut"))).toEqual([]);
+  });
+
   it("still publishes when not cancelled", async () => {
     model.loadSession.mockResolvedValue(fakeSession());
 

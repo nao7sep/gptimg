@@ -92,8 +92,10 @@ export async function runBirefnet(
     );
   }
   await opts.logger?.info("infer", "running BiRefNet inference", { width, height });
+  throwIfAborted(opts.signal);
   const outputs = await session.run({ [inputName]: tensor });
   await opts.logger?.info("infer", "BiRefNet inference complete");
+  throwIfAborted(opts.signal);
   const outputName = session.outputNames[session.outputNames.length - 1]!;
   const output = outputs[outputName];
   if (!output) {
@@ -105,5 +107,6 @@ export async function runBirefnet(
 
   const { alpha: alphaAtModel, width: outW, height: outH } = tensorToAlpha(output);
   const alpha = await resizeSingleChannel(alphaAtModel, outW, outH, width, height);
+  throwIfAborted(opts.signal);
   return { alpha, width, height };
 }

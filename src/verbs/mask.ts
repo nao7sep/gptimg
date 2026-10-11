@@ -119,6 +119,7 @@ export async function maskImpl(
 
     await logger.info("stats", "mask complete", { stats });
 
+    throwIfAborted(signal);
     if (args.dryRun || outPath === undefined) {
       return {
         input: args.in,
@@ -128,7 +129,6 @@ export async function maskImpl(
       };
     }
 
-    throwIfAborted(signal);
     await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false, source: args.in }, pngEncodingOf(args));
     await logger.info("write", "wrote mask", { path: outPath });
 
