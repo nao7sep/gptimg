@@ -84,6 +84,8 @@ export async function runGrid(
     } catch {
       skipped.push(input);
     }
+    // Decode failures are tolerated; cancellation after either outcome is not.
+    throwIfAborted(signal);
   }
 
   const placed = tiles.length;

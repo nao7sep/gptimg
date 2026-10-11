@@ -15,13 +15,6 @@ export default defineConfig({
       exclude: [
         "src/index.ts", // public barrel: re-exports only
         "src/types.ts", // type declarations only, no runtime code
-        // The local ONNX model layer is integration-only: exercising it pulls
-        // ~0.5 GB of model weights, so it is left to opt-in integration runs and
-        // excluded here to keep the report a map of unit-testable gaps rather
-        // than a permanent red block that buries the real ones.
-        "src/local/models/**",
-        "src/local/ai-mask.ts",
-        "src/local/upscale.ts",
         "**/*.d.ts",
       ],
     },

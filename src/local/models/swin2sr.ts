@@ -265,7 +265,9 @@ export async function runSwin2srX4(
   const tile = opts.tile ?? SWIN2SR_DEFAULT_TILE;
 
   const modelPath = await ensureModel(SWIN2SR_X4, cacheDir, opts);
+  throwIfAborted(signal);
   const session = await loadSession(modelPath);
+  throwIfAborted(signal);
   const inputName = session.inputNames[0];
   const outputName = session.outputNames[0];
   if (!inputName || !outputName) {
