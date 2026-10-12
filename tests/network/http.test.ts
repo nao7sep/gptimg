@@ -20,17 +20,26 @@ describe("HttpStatusError", () => {
     expect((err as { status?: unknown }).status).toBe(503);
   });
 
-  it("includes a truncated body in the message", () => {
-    const body = "x".repeat(500);
-    const err = new HttpStatusError(500, new Headers(), body);
-    expect(err.message.startsWith("HTTP 500: ")).toBe(true);
-    // 200-char cap on the body slice.
-    expect(err.message.length).toBe("HTTP 500: ".length + 200);
+  it("ends a cut body excerpt in one marker", () => {
+    const err = new HttpStatusError(500, new Headers(), "x".repeat(500));
+    expect(err.message).toBe(`HTTP 500: ${"x".repeat(200)}...`);
   });
 
-  it("omits the colon/body when the body is empty", () => {
-    const err = new HttpStatusError(404, new Headers(), "");
-    expect(err.message).toBe("HTTP 404");
+  it("shows a body that fits whole, on one line, with no marker", () => {
+    const err = new HttpStatusError(502, new Headers(), "  bad\n  gateway  \n");
+    expect(err.message).toBe("HTTP 502: bad gateway");
+    const exact = new HttpStatusError(500, new Headers(), `${"x".repeat(200)}   \n`);
+    expect(exact.message).toBe(`HTTP 500: ${"x".repeat(200)}`);
+  });
+
+  it("never splits a character at the cut", () => {
+    const err = new HttpStatusError(500, new Headers(), "\u{1F600}".repeat(300));
+    expect(err.message).toBe(`HTTP 500: ${"\u{1F600}".repeat(200)}...`);
+  });
+
+  it("omits the colon/body when the body is empty or blank", () => {
+    expect(new HttpStatusError(404, new Headers(), "").message).toBe("HTTP 404");
+    expect(new HttpStatusError(404, new Headers(), " \n ").message).toBe("HTTP 404");
   });
 });
 
