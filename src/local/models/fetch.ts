@@ -21,6 +21,9 @@
  *     removes any staged file whose owning process is gone.
  *   - Each retry attempt downloads to a fresh staged file, so a half-written
  *     file from a failed attempt never poisons the next one.
+ *   - Once the current file is on disk, files of the model's earlier pins
+ *     (`entry.supersedes`) are deleted from the cache root, so a pin change
+ *     does not leave the replaced model behind.
  *   - Download progress is reported through the logger (and thus the caller's
  *     onProgress sink) — never written to a stream directly, so the SDK stays
  *     stream-silent.
@@ -42,7 +45,7 @@ import type { Logger } from "../../log/index.js";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.js";
 import { combineSignals, HttpStatusError } from "../../network/http.js";
 import { callWithRetry, isAbortError } from "../../network/retry.js";
-import type { ModelEntry } from "./registry.js";
+import { MODELS, type ModelEntry } from "./registry.js";
 
 export async function fileSha256(
   filePath: string,
@@ -418,16 +421,68 @@ export async function sweepAbandonedStaging(cacheDir: string): Promise<void> {
   }
 }
 
+interface EnsureModelOptions {
+  signal?: AbortSignal | undefined;
+  budget?: NetworkBudget;
+  logger?: Logger;
+  /** Re-download and replace even if the file is already cached. */
+  force?: boolean;
+}
+
 export async function ensureModel(
   entry: ModelEntry,
   cacheDir: string,
-  opts: {
-    signal?: AbortSignal | undefined;
-    budget?: NetworkBudget;
-    logger?: Logger;
-    /** Re-download and replace even if the file is already cached. */
-    force?: boolean;
-  } = {},
+  opts: EnsureModelOptions = {},
+): Promise<string> {
+  const finalPath = await acquireModel(entry, cacheDir, opts);
+  await retireSupersededModels(entry, cacheDir, opts.logger);
+  return finalPath;
+}
+
+/**
+ * Delete the files of `entry`'s earlier pins (data-lifecycle-conventions:
+ * derived data is deleted when replaced). Runs only after the current file is
+ * published or found usable, so the replacement is verified first. A session
+ * this process loaded can only hold a current pin, since pins are compiled in;
+ * another process still running an older GptImg keeps its open file on POSIX,
+ * while Windows refuses to delete an open file, which is skipped and retried
+ * on the next acquisition. Best effort: a refused deletion never fails the call
+ * that needed the current model. A plain name is required so a registry entry
+ * can never reach outside the cache root, and a name any current pin uses is
+ * never deleted.
+ */
+async function retireSupersededModels(
+  entry: ModelEntry,
+  cacheDir: string,
+  logger: Logger | undefined,
+): Promise<void> {
+  const currentNames = new Set([entry.name, ...Object.values(MODELS).map((model) => model.name)]);
+  for (const name of entry.supersedes ?? []) {
+    if (currentNames.has(name) || path.basename(name) !== name || name === "." || name === "..") continue;
+    const filePath = path.join(cacheDir, name);
+    try {
+      await unlink(filePath);
+      await logger?.info("download", `deleted ${name}, replaced by ${entry.name}`, {
+        name,
+        replacedBy: entry.name,
+        path: filePath,
+      });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") continue;
+      await logger?.warn("download", `could not delete ${name}, replaced by ${entry.name}`, {
+        name,
+        path: filePath,
+        error: (err as Error).message,
+      });
+    }
+  }
+}
+
+async function acquireModel(
+  entry: ModelEntry,
+  cacheDir: string,
+  opts: EnsureModelOptions,
 ): Promise<string> {
   const { signal, logger } = opts;
   const force = opts.force ?? false;

@@ -2,9 +2,10 @@
  * Model registry. One entry per AI artifact GptImg can lazily fetch.
  *
  * Each entry pins:
- *   name      — cache filename. Bump the suffix when changing models, and
- *               retire the superseded file after the replacement is verified
- *               and no active session uses it.
+ *   name      — cache filename. Bump the suffix when changing models.
+ *   supersedes — cache filenames of this model's earlier pins. When a pin
+ *               changes, add the old `name` here: acquiring the new file
+ *               deletes the old one once the new one is verified on disk.
  *   url       — single source of truth, fetched on first use. Prefer
  *               commit-pinned HuggingFace URLs (`/resolve/<commit-sha>/...`)
  *               over `/resolve/main/...`.
@@ -38,6 +39,8 @@ export interface ModelEntry {
   name: string;
   url: string;
   inputSize: number;
+  /** Filenames of this model's earlier pins, deleted once this pin is on disk. */
+  supersedes?: readonly string[];
   /** Exact artifact bytes. Shipped pinned assets always set this. */
   byteSize?: number;
   /**
@@ -56,8 +59,8 @@ export interface ModelEntry {
  * this commit is sha256
  * 3654c741eb80bd926ada8fed1713b506ccf8d30eb1f6487e87eb9f234f33df09
  * (489,666,272 bytes) — verified byte-identical to the version this build was
- * validated against. To adopt a new revision, bump `name` and repin `url` to
- * the new commit.
+ * validated against. To adopt a new revision, bump `name`, repin `url` to the
+ * new commit and list the old name in `supersedes`.
  *
  * This is the model we have verified, not necessarily the best one available.
  * Newer BiRefNet exports (or other matting models entirely) may give better
@@ -85,8 +88,9 @@ export const BIREFNET: ModelEntry = {
  * at this commit is sha256
  * 987d88b356554161cbb8f67b7a8f4162cad6dc147839c344e3d5142140f25d6f
  * (53,827,735 bytes) — verified here against the version the upscaler was
- * built and seam-tested against. To adopt a new revision, bump `name` and
- * repin `url` to the new commit, then re-validate output quality.
+ * built and seam-tested against. To adopt a new revision, bump `name`, repin
+ * `url` to the new commit and list the old name in `supersedes`, then
+ * re-validate output quality.
  *
  * `inputSize` is 0: the graph has dynamic spatial dims. It only requires H and
  * W to be multiples of window_size (8); the upscale wrapper reflect-pads to /8

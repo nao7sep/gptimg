@@ -14,7 +14,7 @@ import {
   modelWholeTimeoutMs,
   stagingPathFor,
 } from "../../src/local/models/fetch.js";
-import type { ModelEntry } from "../../src/local/models/registry.js";
+import { MODELS, type ModelEntry } from "../../src/local/models/registry.js";
 import type { Logger } from "../../src/log/index.js";
 
 function listen(handler: http.RequestListener): Promise<{
@@ -606,6 +606,113 @@ describe("ensureModel", () => {
       expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
     } finally {
       await closeServer(server);
+    }
+  });
+});
+
+describe("superseded model retirement", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-model-retire-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("deletes an earlier pin once the new one is downloaded and verified, and nothing else", async () => {
+    const body = Buffer.from([3, 1, 4, 1, 5]);
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200);
+      res.end(body);
+    });
+    try {
+      await writeFile(path.join(tmp, "model-v1.onnx"), "old");
+      await writeFile(path.join(tmp, "other-model-v1.onnx"), "unrelated");
+      const events: string[] = [];
+      const logger = {
+        info: async (_stage: string, message: string) => void events.push(message),
+        warn: async (_stage: string, message: string) => void events.push(message),
+      } as unknown as Logger;
+      const entry: ModelEntry = {
+        name: "model-v2.onnx",
+        supersedes: ["model-v1.onnx"],
+        url: baseURL,
+        inputSize: 0,
+        byteSize: body.length,
+        sha256: createHash("sha256").update(body).digest("hex"),
+      };
+      await ensureModel(entry, tmp, { logger });
+      expect((await readdir(tmp)).sort()).toEqual(["model-v2.onnx", "other-model-v1.onnx", "temp"]);
+      expect(events).toContain("deleted model-v1.onnx, replaced by model-v2.onnx");
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("deletes an earlier pin when the current one is already cached", async () => {
+    await writeFile(path.join(tmp, "model-v1.onnx"), "old");
+    await writeFile(path.join(tmp, "model-v2.onnx"), Buffer.from([1, 2]));
+    const entry: ModelEntry = {
+      name: "model-v2.onnx",
+      supersedes: ["model-v1.onnx", "model-v0.onnx"],
+      url: "https://example.invalid/model",
+      inputSize: 0,
+      byteSize: 2,
+    };
+    await ensureModel(entry, tmp);
+    expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(false);
+    expect(existsSync(path.join(tmp, "model-v2.onnx"))).toBe(true);
+  });
+
+  it("keeps the earlier pin when the new one fails verification", async () => {
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(200);
+      res.end(Buffer.from([9, 9]));
+    });
+    try {
+      await writeFile(path.join(tmp, "model-v1.onnx"), "old");
+      const entry: ModelEntry = {
+        name: "model-v2.onnx",
+        supersedes: ["model-v1.onnx"],
+        url: baseURL,
+        inputSize: 0,
+        sha256: "0".repeat(64),
+      };
+      await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.checksumMismatch" });
+      expect(await readFile(path.join(tmp, "model-v1.onnx"), "utf8")).toBe("old");
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("never deletes outside the cache root or a current pin's file", async () => {
+    const cacheDir = path.join(tmp, "models");
+    await mkdir(cacheDir);
+    await writeFile(path.join(tmp, "outside.onnx"), "keep");
+    await writeFile(path.join(cacheDir, MODELS.swin2sr.name), "keep");
+    await writeFile(path.join(cacheDir, "model-v2.onnx"), Buffer.from([1]));
+    const entry: ModelEntry = {
+      name: "model-v2.onnx",
+      supersedes: ["../outside.onnx", MODELS.swin2sr.name, "model-v2.onnx", ".."],
+      url: "https://example.invalid/model",
+      inputSize: 0,
+      byteSize: 1,
+    };
+    await ensureModel(entry, cacheDir);
+    expect(existsSync(path.join(tmp, "outside.onnx"))).toBe(true);
+    expect(existsSync(path.join(cacheDir, MODELS.swin2sr.name))).toBe(true);
+    expect(existsSync(path.join(cacheDir, "model-v2.onnx"))).toBe(true);
+  });
+
+  it("lists only plain earlier filenames in the shipped registry", () => {
+    const current = new Set(Object.values(MODELS).map((model) => model.name));
+    for (const model of Object.values(MODELS) as ModelEntry[]) {
+      for (const name of model.supersedes ?? []) {
+        expect(path.basename(name), name).toBe(name);
+        expect(current.has(name), name).toBe(false);
+      }
     }
   });
 });
