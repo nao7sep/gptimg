@@ -1,5 +1,3 @@
-import { truncate } from "../internal/textCleanup.js";
-
 /**
  * Low-level HTTP attempt primitives shared by the in-memory fetch path
  * (network/fetch.ts) and the streamed model download (local/models/fetch.ts).
@@ -7,23 +5,19 @@ import { truncate } from "../internal/textCleanup.js";
  * classify, and a way to bound a single attempt with a timeout.
  */
 
-const BODY_EXCERPT_GRAPHEMES = 200;
-
 /**
  * Thrown on a non-2xx response. Carries `status` and `headers` so the retry
  * layer can decide retryability and honor `Retry-After`.
  *
- * The message carries a one-line excerpt of the body. A longer body ends in
- * "..." so a reader never mistakes the excerpt for the whole response; three
- * periods rather than U+2026 because this text reaches callers' terminals, whose
- * console encoding is not guaranteed (localization-conventions, *Ellipsis*).
+ * The message carries the complete response body: an error GptImg logs or hands
+ * to its caller keeps the provider's whole explanation, and only a caller's own
+ * display may shorten it (text-cleanup-conventions, rule 4).
  */
 export class HttpStatusError extends Error {
   readonly status: number;
   readonly headers: Headers;
   constructor(status: number, headers: Headers, body: string) {
-    const excerpt = truncate(body, BODY_EXCERPT_GRAPHEMES);
-    super(`HTTP ${status}${excerpt.text ? `: ${excerpt.text}${excerpt.truncated ? "..." : ""}` : ""}`);
+    super(`HTTP ${status}${body ? `: ${body}` : ""}`);
     this.name = "HttpStatusError";
     this.status = status;
     this.headers = headers;

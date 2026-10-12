@@ -197,7 +197,11 @@ async function downloadAttempt(
     }
     if (!response) throw new LocalOpError("model.downloadFailed", `No response downloading ${url}.`);
     if (!response.ok || !response.body) {
-      throw new HttpStatusError(response.status, response.headers, "");
+      // Keep the server's complete error body (text-cleanup-conventions, rule
+      // 4); a body that cannot be read still leaves the status to classify.
+      const body = response.ok ? "" : await response.text().catch(() => "");
+      if (parentSignal?.aborted) throw errorFromSignal(parentSignal);
+      throw new HttpStatusError(response.status, response.headers, body);
     }
 
     const total = advertisedLength(response.headers);

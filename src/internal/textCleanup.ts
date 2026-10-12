@@ -1,11 +1,10 @@
 /**
  * Whitespace cleanup for free-text inputs, per the text-cleanup-conventions.
- * GptImg carries all three of its patterns:
+ * GptImg carries two of its patterns:
  *   - `singleLine` — for scalar instruction fields (the vision `check`).
  *   - `multiline`  — for body fields whose line structure matters (the
  *     generate/edit `prompt`).
- *   - `truncate`   — multiline-truncation, for the bounded excerpt of an HTTP
- *     error body carried in an error message.
+ * `multiline-truncation` is omitted: GptImg has no preview or snippet surface.
  * Filename stems and keys never pass through these helpers.
  */
 
@@ -77,38 +76,4 @@ export function multiline(
     prevBlank = blank;
   }
   return out.join("\n");
-}
-
-/**
- * The first `n` graphemes of `text` on one line: every whitespace run, newlines
- * included, becomes one ASCII space, and the ends are dropped. The budget is a
- * minimum, so a cut never splits an emoji or combining sequence. `truncated` is
- * true only when a visible grapheme lies past the cut. No marker is added; the
- * caller appends its own when `truncated` is true.
- */
-export function truncate(text: string, n: number): { text: string; truncated: boolean } {
-  if (n <= 0) return { text: "", truncated: false };
-  const out: string[] = [];
-  let pendingSpace = false;
-  let budgetMet = false;
-  let truncated = false;
-  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)) {
-    const isWhitespace = segment.trim() === "";
-    if (!budgetMet) {
-      if (isWhitespace) {
-        if (out.length > 0) pendingSpace = true;
-        continue;
-      }
-      if (pendingSpace) {
-        out.push(" ");
-        pendingSpace = false;
-      }
-      out.push(segment);
-      if (out.length >= n) budgetMet = true;
-    } else if (!isWhitespace) {
-      truncated = true;
-      break;
-    }
-  }
-  return { text: out.join(""), truncated };
 }

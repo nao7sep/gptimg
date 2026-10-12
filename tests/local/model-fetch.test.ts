@@ -353,6 +353,23 @@ describe("ensureModel", () => {
     }
   });
 
+  it("keeps the server's complete error body on a failed download", async () => {
+    const detail = `Entry not found: ${"x".repeat(2000)}\nrevision 534d3c8`;
+    const { server, baseURL } = await listen((_req, res) => {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end(detail);
+    });
+    try {
+      const entry: ModelEntry = { name: "missing-body.bin", url: baseURL, inputSize: 0 };
+      const err = await ensureModel(entry, tmp).catch((e: unknown) => e as Error & { cause?: Error });
+      expect(err).toMatchObject({ code: "model.downloadFailed" });
+      expect(err.message).toContain(`HTTP 404: ${detail}`);
+      expect(err.cause?.message).toBe(`HTTP 404: ${detail}`);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it("rejects a sha256 mismatch and does not publish", async () => {
     const body = Buffer.from(new Uint8Array([9, 8, 7, 6]));
     const { server, baseURL } = await listen((_req, res) => {

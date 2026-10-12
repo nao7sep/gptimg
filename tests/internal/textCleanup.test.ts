@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { multiline, singleLine, truncate } from "../../src/internal/textCleanup.js";
+import { multiline, singleLine } from "../../src/internal/textCleanup.js";
 
 // gptimg uses two of the three text-cleanup patterns: multiline() with defaults
 // for the generate/edit prompt, and singleLine() with defaults for the vision
@@ -85,29 +85,5 @@ describe("multiline (generate/edit prompt)", () => {
 
   it("keeps trailing line whitespace when trimLineEnds is off (markdown)", () => {
     expect(multiline("a  \nb  ", { trimLineEnds: false })).toBe("a  \nb  ");
-  });
-});
-
-describe("truncate (HTTP error body excerpt)", () => {
-  it("stops at a minimum grapheme count, on one line", () => {
-    expect(truncate("one two three", 5)).toEqual({ text: "one t", truncated: true });
-    expect(truncate("a\nb\nc", 1)).toEqual({ text: "a", truncated: true });
-    expect(truncate("  hello  ", 3)).toEqual({ text: "hel", truncated: true });
-  });
-
-  it("reports no cut for a whitespace-only tail or a short value", () => {
-    expect(truncate("hello   ", 5)).toEqual({ text: "hello", truncated: false });
-    expect(truncate("hello", 10)).toEqual({ text: "hello", truncated: false });
-    expect(truncate("   ", 5)).toEqual({ text: "", truncated: false });
-    expect(truncate("hello", 0)).toEqual({ text: "", truncated: false });
-  });
-
-  it("never splits a grapheme", () => {
-    expect(truncate("\u{1F600}x", 1)).toEqual({ text: "\u{1F600}", truncated: true });
-    expect(truncate("\u{1F468}\u200D\u{1F469}\u200D\u{1F467}x", 1)).toEqual({
-      text: "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}",
-      truncated: true,
-    });
-    expect(truncate("e\u0301llo", 2)).toEqual({ text: "e\u0301l", truncated: true });
   });
 });
