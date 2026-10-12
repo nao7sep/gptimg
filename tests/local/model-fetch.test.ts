@@ -361,7 +361,10 @@ describe("ensureModel", () => {
     });
     try {
       const entry: ModelEntry = { name: "missing-body.bin", url: baseURL, inputSize: 0 };
-      const err = await ensureModel(entry, tmp).catch((e: unknown) => e as Error & { cause?: Error });
+      const err = (await ensureModel(entry, tmp).then(
+        () => expect.fail("the download should fail"),
+        (e: unknown) => e,
+      )) as Error & { cause?: Error };
       expect(err).toMatchObject({ code: "model.downloadFailed" });
       expect(err.message).toContain(`HTTP 404: ${detail}`);
       expect(err.cause?.message).toBe(`HTTP 404: ${detail}`);
