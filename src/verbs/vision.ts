@@ -3,6 +3,7 @@ import { resolveModel } from "../providers/openai/client.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
+import { hash } from "../image/hash.js";
 import { ensureOutputDir } from "../internal/output-files.js";
 import { reserveOutputGroup, assertOutputGroupAvailable, createOutputGroup } from "../internal/output-group.js";
 import { withVerbLogger } from "../internal/local-verb.js";
@@ -42,6 +43,8 @@ export interface VisionContext {
 
 interface PreparedImage {
   path: string;
+  /** SHA-256 of the input file as read, before any shrink. */
+  sha256: string;
   data: Uint8Array;
   format: string;
   detail: VisionDetail | undefined;
@@ -84,6 +87,7 @@ async function prepareImage(
   const fmt = await detectFormat(shrink.buffer);
   return {
     path: imagePath,
+    sha256: hash(raw),
     data: new Uint8Array(shrink.buffer),
     format: fmt.format,
     detail,
@@ -181,6 +185,7 @@ export async function visionImpl(
         ...(detail !== undefined && { detail }),
         inputs: prepared.map((p) => ({
           name: path.basename(p.path),
+          sha256: p.sha256,
           shrink: p.shrink,
         })),
       },

@@ -348,11 +348,13 @@ describe("AI verb implementations with mocked provider", () => {
     const sidecar = JSON.parse(
       await readFile(result.files[0]!.sidecarPath, "utf-8"),
     ) as {
-      request: { input: string; mask: string };
+      request: { input: string; inputSha256: string; mask: string; maskSha256: string };
       response: { data: Array<{ b64_json: string | null }> };
     };
     expect(sidecar.request.input).toBe("input.png");
+    expect(sidecar.request.inputSha256).toBe(createHash("sha256").update(await readFile(input)).digest("hex"));
     expect(sidecar.request.mask).toBe("mask.png");
+    expect(sidecar.request.maskSha256).toBe(createHash("sha256").update(await readFile(mask)).digest("hex"));
     expect(sidecar.response.data[0]?.b64_json).toBeNull();
     expect(lines(await readFile(result.logPath, "utf-8"))).toEqual(
       expect.arrayContaining([
@@ -1013,7 +1015,7 @@ describe("AI verb implementations with mocked provider", () => {
     const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as {
       request: {
         detail?: string;
-        inputs: Array<{ name: string; shrink: { applied: boolean; outputWidth: number } }>;
+        inputs: Array<{ name: string; sha256: string; shrink: { applied: boolean; outputWidth: number } }>;
       };
       response: { verdict: { ok: boolean } };
     };
@@ -1022,6 +1024,12 @@ describe("AI verb implementations with mocked provider", () => {
       "first.png",
       "second.png",
     ]);
+    // The original files' digests, not the shrunken copies sent to the model.
+    for (const [i, file] of ["first.png", "second.png"].entries()) {
+      expect(sidecar.request.inputs[i]?.sha256).toBe(
+        createHash("sha256").update(await readFile(path.join(tmp, file))).digest("hex"),
+      );
+    }
     expect(sidecar.request.inputs[0]?.shrink).toMatchObject({
       applied: true,
       outputWidth: 64,

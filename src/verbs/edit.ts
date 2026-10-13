@@ -1,8 +1,9 @@
 import { defaultModelFor } from "../ai-models.js";
 import { resolveModel } from "../providers/openai/client.js";
-import { access } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { LocalOpError } from "../errors.js";
+import { hash } from "../image/hash.js";
 import { ensureOutputDir } from "../internal/output-files.js";
 import {
   reserveOutputGroup,
@@ -33,9 +34,14 @@ export interface EditContext {
   logDir: string;
 }
 
-async function assertReadableImage(filePath: string, label: string): Promise<void> {
+/**
+ * Read an input image before the paid call, failing early when it is
+ * unreadable, and return its SHA-256 so the sidecar identifies the exact
+ * source after a rename or overwrite, as it identifies each output.
+ */
+async function readImageSha256(filePath: string, label: string): Promise<string> {
   try {
-    await access(filePath);
+    return hash(await readFile(filePath));
   } catch (err) {
     throw new LocalOpError(
       "image.readFailed",
@@ -84,8 +90,8 @@ export async function editImpl(
         ? (params.n as number)
         : 1;
 
-    await assertReadableImage(args.in, "input");
-    if (args.mask) await assertReadableImage(args.mask, "mask");
+    const inputSha256 = await readImageSha256(args.in, "input");
+    const maskSha256 = args.mask ? await readImageSha256(args.mask, "mask") : null;
 
     const outDir = args.outDir ?? path.dirname(args.in);
     await ensureOutputDir(outDir);
@@ -125,7 +131,9 @@ export async function editImpl(
       ...params,
       prompt,
       input: path.basename(args.in),
+      inputSha256,
       mask: args.mask ? path.basename(args.mask) : null,
+      maskSha256,
       n,
     };
     const { files, partial } = await publishProviderImages({

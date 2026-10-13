@@ -8,6 +8,7 @@
 // replace a model only when a new pin names a new file. Each test runs on a
 // throwaway profile whose profile.json names OPENAI_API_KEY and stores no key.
 
+import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,6 +65,36 @@ async function copyInto(home: string, source: string): Promise<string> {
 /** The request a sidecar records, which proves what reached the provider. */
 async function sentRequest(sidecarPath: string): Promise<Record<string, unknown>> {
   return (JSON.parse(await readFile(sidecarPath, "utf8")) as { request: Record<string, unknown> }).request;
+}
+
+interface ImageSidecar {
+  formatVersion: number;
+  request: Record<string, unknown>;
+  response: { created?: unknown; usage?: unknown; data?: Array<{ b64_json?: unknown }> };
+  files: Array<{ index: number; name: string; sha256: string; format: string }>;
+}
+
+/**
+ * A sidecar is the image's whole record: the settings and prompt that were sent, the
+ * provider's reply with its time and usage but without the image bytes the file holds,
+ * and the file it describes by name, digest and format. It never holds the key.
+ */
+async function expectCompleteImageSidecar(
+  file: { path: string; sidecarPath: string; sha256: string; format: string },
+  request: Record<string, unknown>,
+): Promise<ImageSidecar> {
+  const text = await readFile(file.sidecarPath, "utf8");
+  expect(text).not.toContain(process.env.OPENAI_API_KEY!.trim());
+  const sidecar = JSON.parse(text) as ImageSidecar;
+  expect(sidecar.formatVersion).toBe(1);
+  expect(sidecar.request).toMatchObject({ n: 1, ...request });
+  expect(typeof sidecar.request.prompt, "the prompt is recorded").toBe("string");
+  expect(typeof sidecar.response.created, "the provider's creation time is kept").toBe("number");
+  expect(sidecar.response.usage, "the provider's usage is kept").toBeDefined();
+  expect(sidecar.response.data?.length).toBeGreaterThan(0);
+  for (const item of sidecar.response.data ?? []) expect(item.b64_json ?? null, "image bytes are left to the file").toBeNull();
+  expect(sidecar.files).toEqual([{ index: 1, name: basename(file.path), sha256: file.sha256, format: file.format }]);
+  return sidecar;
 }
 
 /** Mean RGB over the centred square covering `fraction` of each side. */
@@ -142,7 +173,7 @@ describe("the live SDK", () => {
       expect(result.partial).toBe(false);
       expect(result.files).toHaveLength(1);
       const [file] = result.files;
-      expect(await sentRequest(file!.sidecarPath)).toMatchObject({ ...CHEAPEST_IMAGE, model, moderation: "low" });
+      await expectCompleteImageSidecar(file!, { ...CHEAPEST_IMAGE, model, moderation: "low" });
       expect((await sharp(file!.path).metadata()).format).toBe(file!.format);
       const centre = await centreColour(file!.path, 0.2);
       expect(centre.r, "the centre is red").toBeGreaterThan(centre.g + 80);
@@ -157,31 +188,38 @@ describe("the live SDK", () => {
       expect(edited.partial).toBe(false);
       expect(edited.files).toHaveLength(1);
       const [editedFile] = edited.files;
-      expect(await sentRequest(editedFile!.sidecarPath)).toMatchObject({ ...CHEAPEST_IMAGE, model });
+      // The edit's record names its source by file and digest, so it stays traceable.
+      await expectCompleteImageSidecar(editedFile!, {
+        ...CHEAPEST_IMAGE,
+        model,
+        input: basename(file!.path),
+        inputSha256: file!.sha256,
+        mask: null,
+        maskSha256: null,
+      });
       const editedCentre = await centreColour(editedFile!.path, 0.2);
       expect(editedCentre.b, "the circle is now blue").toBeGreaterThan(editedCentre.r + 80);
     });
   }
 
-  it("writes the provider's WebP as a .webp whose sidecar names the default model and the file", async () => {
+  it("writes the provider's WebP as a .webp whose sidecar names the default model, the file and the key colour mask reads", async () => {
     requireKey();
     const { img, home } = await freshSdk("generate-webp");
     const result = await img.generate({
       prompt: "A single flat solid red circle centred on a plain white background.",
       outDir: home,
-      overrides: { generate: { ...CHEAPEST_IMAGE, output_format: "webp" } },
+      overrides: { generate: { ...CHEAPEST_IMAGE, output_format: "webp" }, chroma: { color: "#00ff00" } },
     });
     const [file] = result.files;
     expect(file!.path.endsWith(".webp")).toBe(true);
     expect((await sharp(file!.path).metadata()).format).toBe("webp");
-    const sidecar = JSON.parse(await readFile(file!.sidecarPath, "utf8")) as {
-      request: Record<string, unknown>;
-      response: { usage?: unknown };
-      files: Array<{ format: string; sha256: string }>;
-    };
-    expect(sidecar.request).toMatchObject({ model: "gpt-image-2.5-flare", output_format: "webp" });
-    expect(sidecar.files[0]).toMatchObject({ format: "webp", sha256: file!.sha256 });
-    expect(sidecar.response.usage, "the provider's usage is kept").toBeDefined();
+    await expectCompleteImageSidecar(file!, {
+      model: "gpt-image-2.5-flare",
+      output_format: "webp",
+      chroma: { color: "#00ff00" },
+    });
+    const keyed = await img.mask({ in: file!.path, method: "chroma", key: "from-sidecar", dryRun: true });
+    expect(keyed.stats).toMatchObject({ key: "#00ff00", keySource: "sidecar" });
   });
 
   // A vision model honours detail=low when a low-detail check of a large photo stays under the
@@ -240,7 +278,32 @@ describe("the live SDK", () => {
       overrides: { vision: CHEAPEST_VISION },
     });
     expect(holds.ok, holds.reasons.join(" ")).toBe(true);
-    expect(await sentRequest(holds.sidecarPath)).toMatchObject({ ...CHEAPEST_VISION, model: "gpt-6-luna" });
+    // The verdict's record: what was asked of which image, and the answer with its time and usage.
+    const text = await readFile(holds.sidecarPath, "utf8");
+    expect(text).not.toContain(process.env.OPENAI_API_KEY!.trim());
+    const sidecar = JSON.parse(text) as {
+      formatVersion: number;
+      request: Record<string, unknown>;
+      response: { verdict: unknown; raw: { created?: unknown; model?: unknown; usage?: unknown } };
+      files: unknown[];
+    };
+    expect(sidecar.formatVersion).toBe(1);
+    expect(sidecar.request).toMatchObject({
+      ...CHEAPEST_VISION,
+      model: "gpt-6-luna",
+      check: "A cat is visible in the image.",
+      inputs: [{ name: basename(photo), sha256: createHash("sha256").update(await readFile(photo)).digest("hex") }],
+    });
+    expect((sidecar.request.inputs as Array<{ shrink?: unknown }>)[0]?.shrink).toMatchObject({
+      applied: expect.any(Boolean),
+      outputWidth: expect.any(Number),
+      outputHeight: expect.any(Number),
+    });
+    expect(sidecar.response.verdict).toEqual({ ok: holds.ok, score: holds.score, reasons: holds.reasons });
+    expect(typeof sidecar.response.raw.created, "the provider's creation time is kept").toBe("number");
+    expect(typeof sidecar.response.raw.model).toBe("string");
+    expect(sidecar.response.raw.usage, "the provider's usage is kept").toBeDefined();
+    expect(sidecar.files).toEqual([]);
     const fails = await img.vision({
       in: photo,
       check: "A dog is visible in the image.",
