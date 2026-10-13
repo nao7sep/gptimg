@@ -123,6 +123,25 @@ describe("chromaMask: from-sidecar must describe the input image", () => {
     expect(res.stats.key).toBe("#00ff00");
   });
 
+  it("refuses a matching sidecar that records no chroma key", async () => {
+    const input = path.join(tmp, "edited.png");
+    await copyFile(fixture("green-disk.png"), input);
+    const sha256 = createHash("sha256").update(await readFile(input)).digest("hex");
+    await writeFile(
+      path.join(tmp, "edited.json"),
+      JSON.stringify({
+        formatVersion: 1,
+        request: { prompt: "an edit with no chroma key" },
+        response: {},
+        files: [{ index: 1, name: "edited.png", sha256, format: "png" }],
+      }) + "\n",
+    );
+
+    const refused = chromaMaskFromFile({ in: input, key: "from-sidecar" });
+    await expect(refused).rejects.toMatchObject({ code: "sidecar.malformed" });
+    await expect(refused).rejects.toThrow("request.chroma.color");
+  });
+
   it("does not read a mismatched sidecar for explicit or auto keys", async () => {
     const input = path.join(tmp, "shot.png");
     await copyFile(fixture("donut.png"), input);

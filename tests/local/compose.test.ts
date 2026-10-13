@@ -135,6 +135,41 @@ describe("runCompose", () => {
     expect(composed[3]).toBe(255);
   });
 
+  it("flattens over a background image of the same size", async () => {
+    const W = 2;
+    const H = 1;
+    const fg = new Uint8Array([200, 0, 0, 255, 200, 0, 0, 255]);
+    const bg = new Uint8Array([0, 0, 200, 255, 0, 100, 0, 255]);
+    const mask = new Uint8Array([255, 0]);
+    const inPath = path.join(tmp, "in.png");
+    const bgPath = path.join(tmp, "bg.png");
+    const maskPath = path.join(tmp, "mask.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, W, H, fg);
+    await writeRawPng(bgPath, W, H, bg);
+    await writeRawMaskPng(maskPath, W, H, mask);
+
+    const res = await runCompose({ in: inPath, mask: maskPath, out: outPath, over: { kind: "image", path: bgPath } });
+    expect(res.over).toBe("image");
+    // Kept pixel shows the foreground, removed pixel the background, both opaque.
+    expect(Array.from(await readRGBA(outPath))).toEqual([200, 0, 0, 255, 0, 100, 0, 255]);
+  });
+
+  it("rejects a background image whose size does not match the input", async () => {
+    const inPath = path.join(tmp, "in.png");
+    const bgPath = path.join(tmp, "bg.png");
+    const maskPath = path.join(tmp, "mask.png");
+    const outPath = path.join(tmp, "out.png");
+    await writeRawPng(inPath, 2, 2, new Uint8Array(16).fill(255));
+    await writeRawPng(bgPath, 3, 2, new Uint8Array(24).fill(255));
+    await writeRawMaskPng(maskPath, 2, 2, new Uint8Array(4).fill(255));
+
+    await expect(
+      runCompose({ in: inPath, mask: maskPath, out: outPath, over: { kind: "image", path: bgPath } }),
+    ).rejects.toMatchObject({ code: "image.sizeMismatch" });
+    await expect(readRGBA(outPath)).rejects.toThrow();
+  });
+
   it("rejects a mask whose size does not match the input", async () => {
     const inPath = path.join(tmp, "in.png");
     const maskPath = path.join(tmp, "mask.png");
@@ -184,7 +219,7 @@ describe("runCompose — removeBleed dispatch (chromatic vs achromatic)", () => 
     const outPath = path.join(tmp, "out.png");
     await writeRawPng(inPath, W, H, rgba);
     await writeRawMaskPng(maskPath, W, H, mask);
-    await runCompose({ in: inPath, mask: maskPath, out: outPath, removeBleed });
+    await runCompose({ in: inPath, mask: maskPath, out: outPath, removeBleed, overwrite: true });
     return readRGBA(outPath);
   }
 
@@ -241,5 +276,56 @@ describe("runCompose — removeBleed dispatch (chromatic vs achromatic)", () => 
     near(out[4]!, 180, 2, "opaque r untouched");
     near(out[5]!, 60, 2, "opaque g untouched");
     near(out[6]!, 60, 2, "opaque b untouched");
+  });
+
+  it("chromatic PRIMARY keys on red and blue clamp their own channel", async () => {
+    const red = await buildAndCompose([[220, 60, 80, 255]], "#ff0000");
+    near(red[0]!, 80, 3, "red key: r clamped to ~max(g,b)");
+    near(red[1]!, 60, 2, "red key: g untouched");
+    near(red[2]!, 80, 2, "red key: b untouched");
+
+    const blue = await buildAndCompose([[70, 50, 220, 255]], "#0000ff");
+    near(blue[0]!, 70, 2, "blue key: r untouched");
+    near(blue[1]!, 50, 2, "blue key: g untouched");
+    near(blue[2]!, 70, 3, "blue key: b clamped to ~max(r,g)");
+  });
+
+  it("chromatic SECONDARY keys on cyan and yellow lower the two channels their key lifts", async () => {
+    const cyan = await buildAndCompose([[40, 200, 200, 255]], "#00ffff");
+    near(cyan[0]!, 40, 2, "cyan key: r (suppressed) unchanged");
+    near(cyan[1]!, 40, 3, "cyan key: g reduced to ~r");
+    near(cyan[2]!, 40, 3, "cyan key: b reduced to ~r");
+
+    const yellow = await buildAndCompose([[200, 200, 40, 255]], "#ffff00");
+    near(yellow[0]!, 40, 3, "yellow key: r reduced to ~b");
+    near(yellow[1]!, 40, 3, "yellow key: g reduced to ~b");
+    near(yellow[2]!, 40, 2, "yellow key: b (suppressed) unchanged");
+  });
+
+  it("chromatic SECONDARY key leaves a pixel whose suppressed channel already leads", async () => {
+    const out = await buildAndCompose([[60, 180, 90, 255]], "#ff00ff");
+    near(out[0]!, 60, 2, "r unchanged");
+    near(out[1]!, 180, 2, "g unchanged");
+    near(out[2]!, 90, 2, "b unchanged");
+  });
+
+  it("achromatic key clamps recovered colour into range and leaves near-transparent pixels as captured", async () => {
+    // Over black, a half-covered white edge inverts to 2.0 (clamped to white)
+    // and a half-covered black edge over white inverts below zero (clamped to
+    // black). Alpha 10/255 is under the recovery floor and passes through.
+    const overBlack = await buildAndCompose(
+      [
+        [255, 255, 255, 128],
+        [90, 120, 150, 10],
+      ],
+      "#000000",
+    );
+    expect(Array.from(overBlack.slice(0, 3))).toEqual([255, 255, 255]);
+    near(overBlack[4]!, 90, 2, "near-transparent r as captured");
+    near(overBlack[5]!, 120, 2, "near-transparent g as captured");
+    near(overBlack[6]!, 150, 2, "near-transparent b as captured");
+
+    const overWhite = await buildAndCompose([[0, 0, 0, 128]], "#ffffff");
+    expect(Array.from(overWhite.slice(0, 3))).toEqual([0, 0, 0]);
   });
 });

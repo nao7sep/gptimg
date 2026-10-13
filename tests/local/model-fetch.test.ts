@@ -504,6 +504,89 @@ describe("ensureModel", () => {
     }
   });
 
+  it("refuses an advertised size beyond the exact expected size without reading the body", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response("x".repeat(8), { status: 200, headers: { "content-length": "8" } }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const entry: ModelEntry = {
+      name: "oversized.bin",
+      url: "https://example.com/model.bin",
+      inputSize: 0,
+      byteSize: 4,
+    };
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.sizeExceeded" });
+    expect(existsSync(path.join(tmp, entry.name))).toBe(false);
+    expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
+  });
+
+  it.each(["12abc", "99999999999999999999"])("refuses a malformed Content-Length of %j", async (length) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("body", { status: 200, headers: { "content-length": length } })),
+    );
+    const entry: ModelEntry = {
+      name: "bad-length.bin",
+      url: "https://example.com/model.bin",
+      inputSize: 0,
+    };
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.invalidSize" });
+    expect(existsSync(path.join(tmp, entry.name))).toBe(false);
+  });
+
+  it("refuses a redirect without a Location header", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 302 })));
+    const entry: ModelEntry = {
+      name: "no-location.bin",
+      url: "https://example.com/model.bin",
+      inputSize: 0,
+    };
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.redirectFailed" });
+  });
+
+  it("stops after ten redirects", async () => {
+    let hops = 0;
+    const fetcher = vi.fn(async () => {
+      hops += 1;
+      return new Response(null, { status: 307, headers: { location: `/hop-${hops}` } });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const entry: ModelEntry = {
+      name: "redirect-loop.bin",
+      url: "https://example.com/model.bin",
+      inputSize: 0,
+    };
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
+      code: "model.redirectFailed",
+      message: expect.stringContaining("Too many redirects"),
+    });
+    expect(fetcher).toHaveBeenCalledTimes(11);
+  });
+
+  it.each([0, -1, 1.5])("refuses an entry whose expected byte size is %j", async (byteSize) => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const entry: ModelEntry = {
+      name: "bad-size.bin",
+      url: "https://example.com/model.bin",
+      inputSize: 0,
+      byteSize,
+    };
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.invalidSize" });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([-1, 0.5])("refuses a retry count of %j", async (maxRetries) => {
+    const entry: ModelEntry = {
+      name: "bad-retries.bin",
+      url: "https://example.com/model.bin",
+      inputSize: 0,
+    };
+    await expect(
+      ensureModel(entry, tmp, { budget: { timeout: 1_000, maxRetries, retryIntervals: [] } }),
+    ).rejects.toMatchObject({ code: "model.invalidBudget" });
+  });
+
   it("rejects a disabled model timeout", async () => {
     const entry: ModelEntry = {
       name: "no-timeout.bin",
@@ -705,6 +788,31 @@ describe("superseded model retirement", () => {
     } finally {
       await closeServer(server);
     }
+  });
+
+  it("logs and keeps going when an earlier pin cannot be deleted", async () => {
+    // A directory under the old name makes unlink fail with a non-ENOENT code
+    // on every platform, standing in for Windows refusing an open file.
+    await mkdir(path.join(tmp, "model-v1.onnx"));
+    await writeFile(path.join(tmp, "model-v0.onnx"), "old");
+    await writeFile(path.join(tmp, "model-v2.onnx"), Buffer.from([1, 2]));
+    const warnings: string[] = [];
+    const logger = {
+      info: async () => undefined,
+      warn: async (_stage: string, message: string) => void warnings.push(message),
+    } as unknown as Logger;
+    const entry: ModelEntry = {
+      name: "model-v2.onnx",
+      supersedes: ["model-v1.onnx", "model-v0.onnx"],
+      url: "https://example.invalid/model",
+      inputSize: 0,
+      byteSize: 2,
+    };
+
+    await expect(ensureModel(entry, tmp, { logger })).resolves.toBe(path.join(tmp, "model-v2.onnx"));
+    expect(warnings).toEqual(["could not delete model-v1.onnx, replaced by model-v2.onnx"]);
+    expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(true);
+    expect(existsSync(path.join(tmp, "model-v0.onnx"))).toBe(false);
   });
 
   it("never deletes outside the cache root or a current pin's file", async () => {
