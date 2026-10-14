@@ -449,7 +449,8 @@ export async function ensureModel(
  * published or found usable, so the replacement is verified first. A session
  * this process loaded can only hold a current pin, since pins are compiled in;
  * another process still running an older GptImg keeps its open file on POSIX,
- * while Windows refuses to delete an open file, which is skipped and retried
+ * while Windows refuses to delete a file another process holds without delete
+ * sharing (a model ONNX Runtime has mapped), which is skipped and retried
  * on the next acquisition. Best effort: a refused deletion never fails the call
  * that needed the current model. A plain name is required so a registry entry
  * can never reach outside the cache root, and a name any current pin uses is

@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -813,6 +813,33 @@ describe("superseded model retirement", () => {
     expect(warnings).toEqual(["could not delete model-v1.onnx, replaced by model-v2.onnx"]);
     expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(true);
     expect(existsSync(path.join(tmp, "model-v0.onnx"))).toBe(false);
+
+    // Once the obstacle is gone, the next acquisition finishes the deletion.
+    await rm(path.join(tmp, "model-v1.onnx"), { recursive: true });
+    await writeFile(path.join(tmp, "model-v1.onnx"), "old");
+    await ensureModel(entry, tmp, { logger });
+    expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(false);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it.skipIf(process.platform === "win32")("deletes an earlier pin another process holds open on POSIX, which keeps the open file readable", async () => {
+    await writeFile(path.join(tmp, "model-v1.onnx"), "old");
+    await writeFile(path.join(tmp, "model-v2.onnx"), Buffer.from([1, 2]));
+    const entry: ModelEntry = {
+      name: "model-v2.onnx",
+      supersedes: ["model-v1.onnx"],
+      url: "https://example.invalid/model",
+      inputSize: 0,
+      byteSize: 2,
+    };
+    const held = await open(path.join(tmp, "model-v1.onnx"), "r");
+    try {
+      await ensureModel(entry, tmp);
+      expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(false);
+      expect(await held.readFile("utf8")).toBe("old");
+    } finally {
+      await held.close();
+    }
   });
 
   it("never deletes outside the cache root or a current pin's file", async () => {

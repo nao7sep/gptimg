@@ -9,7 +9,9 @@ import { ProfileSchema } from "./schema.js";
 
 // POSIX-only. Windows reports a synthesized mode whose lower bits do not
 // reflect access control, so this check would produce false positives there.
-const ENFORCE_FILE_MODE = process.platform !== "win32";
+function enforcesFileMode(): boolean {
+  return process.platform !== "win32";
+}
 
 /**
  * Options for `loadProfile`.
@@ -119,7 +121,7 @@ function parseProfile(text: string, filePath: string): Profile {
 }
 
 function assertSecureMode(filePath: string, mode: number, profile: Profile): void {
-  if (!ENFORCE_FILE_MODE) return;
+  if (!enforcesFileMode()) return;
   if (typeof profile.apiKey !== "string" || profile.apiKey.length === 0) return;
   if ((mode & 0o077) === 0) return;
   const octal = (mode & 0o777).toString(8).padStart(3, "0");
@@ -137,7 +139,7 @@ export async function loadProfile(
   const enforceMode = opts.enforceMode ?? true;
   const { text, mode } = await readProfileFile(
     filePath,
-    enforceMode && ENFORCE_FILE_MODE,
+    enforceMode && enforcesFileMode(),
   );
   const profile = parseProfile(text, filePath);
   if (enforceMode) assertSecureMode(filePath, mode, profile);

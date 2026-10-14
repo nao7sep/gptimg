@@ -4,6 +4,7 @@ import path from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ensureOutputDir, writeOutputBytes } from "../../src/internal/output-files.js";
+import { useReportedPlatform } from "../helpers/platform.js";
 import {
   defaultLogDir,
   defaultLogPath,
@@ -117,6 +118,7 @@ describe("resolveDirOption", () => {
 });
 
 describe("ensureSecureProfileRoot", () => {
+  const reportPlatform = useReportedPlatform();
   let tmp: string;
 
   beforeEach(async () => {
@@ -142,6 +144,16 @@ describe("ensureSecureProfileRoot", () => {
 
     ensureSecureProfileRoot(root);
     expect(statSync(root).mode & 0o777).toBe(0o700);
+  });
+
+  it.skipIf(process.platform === "win32")("leaves an existing root's mode alone on Windows, whose mode bits do not hold access control", () => {
+    const root = path.join(tmp, "windows-root");
+    ensureSecureProfileRoot(root);
+    chmodSync(root, 0o755);
+
+    reportPlatform("win32");
+    ensureSecureProfileRoot(root);
+    expect(statSync(root).mode & 0o777).toBe(0o755);
   });
 });
 

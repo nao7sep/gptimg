@@ -3,6 +3,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanupPublishedTemp, publishFileNoClobber, stagingPathFor, writeFileAtomic } from "../../src/internal/atomic-file.js";
+import { useReportedPlatform } from "../helpers/platform.js";
 
 describe("stagingPathFor", () => {
   it("names the staged file <stem>-<random>.tmp, in the target's own directory", () => {
@@ -25,6 +26,7 @@ describe("stagingPathFor", () => {
 });
 
 describe("writeFileAtomic", () => {
+  const reportPlatform = useReportedPlatform();
   let tmp: string;
 
   beforeEach(async () => {
@@ -96,6 +98,20 @@ describe("writeFileAtomic", () => {
 
     expect(await readFile(target, "utf-8")).toBe("second");
     expect((await stat(target)).mode & 0o777).toBe(0o640);
+  });
+
+  it.skipIf(process.platform === "win32")("does not carry the replaced file's mode on Windows, whose mode holds only a read-only bit", async () => {
+    const fresh = path.join(tmp, "fresh.png");
+    await writeFileAtomic(fresh, "fresh", { encoding: "utf-8" });
+    const target = path.join(tmp, "shared.png");
+    await writeFileAtomic(target, "first", { encoding: "utf-8" });
+    await chmod(target, 0o640);
+
+    reportPlatform("win32");
+    await writeFileAtomic(target, "second", { encoding: "utf-8" });
+
+    expect(await readFile(target, "utf-8")).toBe("second");
+    expect((await stat(target)).mode & 0o777).toBe((await stat(fresh)).mode & 0o777);
   });
 
   it.skipIf(process.platform === "win32")("applies a requested mode over the replaced file's mode", async () => {

@@ -7,6 +7,7 @@ import { PROFILE_FORMAT_VERSION } from "../../src/format-versions.js";
 import { loadProfile } from "../../src/profile/load.js";
 import { deobfuscate } from "../../src/profile/obfuscate.js";
 import { clearApiKey, setApiKey } from "../../src/profile/setApiKey.js";
+import { useReportedPlatform } from "../helpers/platform.js";
 
 const POSIX = process.platform !== "win32";
 const describePosix = POSIX ? describe : describe.skip;
@@ -81,6 +82,7 @@ describe("loadProfile", () => {
 });
 
 describePosix("loadProfile insecure-mode halt (POSIX)", () => {
+  const reportPlatform = useReportedPlatform();
   let tmp: string;
 
   beforeEach(async () => {
@@ -103,6 +105,18 @@ describePosix("loadProfile insecure-mode halt (POSIX)", () => {
       code: "profile.insecureMode",
       errorType: "profile",
     });
+  });
+
+  it("accepts a loose-mode apiKey profile on Windows, whose mode bits do not hold access control", async () => {
+    const file = path.join(tmp, "windows-loose.json");
+    await writeFile(
+      file,
+      JSON.stringify({ formatVersion: 1, provider: "openai", apiKey: "sk-windows" }) + "\n",
+    );
+    await chmod(file, 0o644);
+
+    reportPlatform("win32");
+    await expect(loadProfile(file)).resolves.toMatchObject({ apiKey: "sk-windows" });
   });
 
   it("accepts apiKey-bearing profiles at mode 0o600", async () => {
