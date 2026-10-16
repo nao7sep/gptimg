@@ -54,11 +54,49 @@ export interface ShadowRunResult {
 }
 
 /**
+ * Max over each window of `2r + 1` samples centred on every position of a 1-D
+ * line read at `offset + i * stride`, with samples beyond the line counted as 0
+ * (alpha is never negative, so that equals clamping the window). Van Herk /
+ * Gil-Werman: block-wise prefix and suffix maxima make the cost independent
+ * of `r`, which has no upper bound. `g` and `h` are scratch arrays of length
+ * at least `n + 2r`.
+ */
+function slidingMaxLine(
+  src: Uint8Array,
+  dst: Uint8Array,
+  offset: number,
+  stride: number,
+  n: number,
+  r: number,
+  g: Uint8Array,
+  h: Uint8Array,
+): void {
+  const k = 2 * r + 1;
+  const len = n + 2 * r;
+  const at = (i: number): number => {
+    const x = i - r;
+    return x >= 0 && x < n ? src[offset + x * stride]! : 0;
+  };
+  for (let i = 0; i < len; i++) {
+    const v = at(i);
+    g[i] = i % k === 0 ? v : Math.max(g[i - 1]!, v);
+  }
+  for (let i = len - 1; i >= 0; i--) {
+    const v = at(i);
+    h[i] = i === len - 1 || (i + 1) % k === 0 ? v : Math.max(h[i + 1]!, v);
+  }
+  for (let x = 0; x < n; x++) {
+    dst[offset + x * stride] = Math.max(h[x]!, g[x + 2 * r]!);
+  }
+}
+
+/**
  * Square (Chebyshev) dilation of a single-channel buffer by `r` pixels, as two
  * separable max passes. sharp has no morphology primitive; this gives an exact,
- * predictable spread distance.
+ * predictable spread distance in time linear in the pixel count. Exported for
+ * testing.
  */
-function dilateAlpha(
+export function dilateAlpha(
   src: Uint8Array,
   width: number,
   height: number,
@@ -66,36 +104,18 @@ function dilateAlpha(
   signal?: AbortSignal,
 ): Uint8Array {
   if (r <= 0) return src;
+  const scratch = Math.max(width, height) + 2 * r;
+  const g = new Uint8Array(scratch);
+  const h = new Uint8Array(scratch);
   const horiz = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) {
     throwIfAborted(signal);
-    const row = y * width;
-    for (let x = 0; x < width; x++) {
-      const x0 = Math.max(0, x - r);
-      const x1 = Math.min(width - 1, x + r);
-      let m = 0;
-      for (let xi = x0; xi <= x1; xi++) {
-        const v = src[row + xi]!;
-        if (v > m) m = v;
-        if (m === 255) break;
-      }
-      horiz[row + x] = m;
-    }
+    slidingMaxLine(src, horiz, y * width, 1, width, r, g, h);
   }
   const out = new Uint8Array(width * height);
   for (let x = 0; x < width; x++) {
     throwIfAborted(signal);
-    for (let y = 0; y < height; y++) {
-      const y0 = Math.max(0, y - r);
-      const y1 = Math.min(height - 1, y + r);
-      let m = 0;
-      for (let yi = y0; yi <= y1; yi++) {
-        const v = horiz[yi * width + x]!;
-        if (v > m) m = v;
-        if (m === 255) break;
-      }
-      out[y * width + x] = m;
-    }
+    slidingMaxLine(horiz, out, x, width, height, r, g, h);
   }
   return out;
 }
