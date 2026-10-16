@@ -533,7 +533,11 @@ export interface UpscaleArgs extends EncodingArgs {
   toSize?: number;
   /** Resampling kernel for the resize after the model's ×4. Default "lanczos3". */
   kernel?: ResampleKernel;
-  /** Max model-input edge per pass — the memory knob. Default 256. */
+  /**
+   * Max model-input edge per pass — the memory knob. Default 256 (about 3 GB
+   * peak); memory grows with the tile's area, so 512 needs about four times as
+   * much. A tile too large for the machine fails as `memory.exhausted`.
+   */
   tile?: number;
   recipe?: string;
   outDir?: string;

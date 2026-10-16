@@ -8,8 +8,9 @@
  *   1. Input H and W must be multiples of window_size (8). We reflect-pad each
  *      fed tile up to the next /8 on the right/bottom, run, then crop the 4×
  *      padding back off.
- *   2. Memory grows ~quadratically with input area (a 256² input peaks ~4.4 GB
- *      on CPU). So we tile: the image is processed in overlapping regions whose
+ *   2. Memory grows with the fed area, about 44 KB per pixel on top of the
+ *      session (a 256² input peaks near 3 GB on CPU, 512² near 11.5 GB). So we
+ *      tile: the image is processed in overlapping regions whose
  *      fed size is ~`tile` (constraint 1's /8 reflect-padding can push the
  *      actual model input a few px higher), and the overlap context is cropped
  *      off on merge so the result is seam-free. An overlap of 32 px keeps the

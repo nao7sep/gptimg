@@ -147,7 +147,9 @@ export async function runUpscale(
   const { w: finalW, h: finalH } = fitLongerSide(width, height, toSize);
 
   try {
-    const rgbResized = await sharp(Buffer.from(up.rgb), {
+    // A view, not Buffer.from(up.rgb): copying would hold the ×4 canvas twice.
+    const canvas = Buffer.from(up.rgb.buffer, up.rgb.byteOffset, up.rgb.byteLength);
+    const rgbResized = await sharp(canvas, {
       raw: { width: up.width, height: up.height, channels: 3 },
     })
       .resize(finalW, finalH, { fit: "fill", kernel })
