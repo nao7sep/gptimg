@@ -149,8 +149,10 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateCombineArgs({ op: "nope" as never, inputs: ["a.png"] }), "op must be one of");
     badArgs(() => validateCombineArgs({ op: "union", inputs: ["a.png"] }), "expects exactly 2");
     badArgs(() => validateCombineArgs({ op: "invert", inputs: ["a.png", "b.png"] }), "expects exactly 1");
-    badArgs(() => validateCombineArgs({ op: "feather", inputs: ["a.png"], radius: -1 }), "[0..1024]");
-    badArgs(() => validateCombineArgs({ op: "feather", inputs: ["a.png"], radius: 1e9 }), "[0..1024]");
+    badArgs(() => validateCombineArgs({ op: "feather", inputs: ["a.png"], radius: -1 }), ">= 0");
+    badArgs(() => validateCombineArgs({ op: "feather", inputs: ["a.png"], radius: Infinity })); // non-finite rejected by z.number()
+    // No upper bound: a large feather is slow and cancellable, not refused.
+    expect(validateCombineArgs({ op: "feather", inputs: ["a.png"], radius: 1e9 })).toBeTruthy();
   });
 
   it("trim / backplate: numeric ranges and enums", () => {
@@ -175,21 +177,24 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateShadowArgs({ in: "a.png", opacity: Infinity })); // non-finite rejected by z.number()
     badArgs(() => validateShadowArgs({ in: "a.png", opacity: NaN })); // NaN rejected by z.number()
     badArgs(() => validateShadowArgs({ in: "a.png", spread: 1.5 }), "integer");
-    badArgs(() => validateShadowArgs({ in: "a.png", spread: 100000 }), "[0..1024]");
+    badArgs(() => validateShadowArgs({ in: "a.png", spread: -1 }), ">= 0");
     badArgs(() => validateShadowArgs({ in: "a.png", offset: { x: 1.5, y: 0 } }), "offset must be integers");
-    badArgs(() => validateShadowArgs({ in: "a.png", offset: { x: 99999, y: 0 } }), "within");
+    // No upper bounds: a canvas too large for the machine fails as memory.exhausted.
+    expect(validateShadowArgs({ in: "a.png", spread: 100000, offset: { x: 99999, y: -99999 } })).toBeTruthy();
     badArgs(() => validateShadowArgs({ in: "a.png", blur: 0.2 }), "0 or between");
     expect(validateShadowArgs({ in: "a.png", blur: 0 })).toBeTruthy();
   });
 
   it("upscale / resize: size ranges, kernel enum, tile minimum", () => {
     expect(validateUpscaleArgs({ in: "a.png", kernel: "lanczos3" })).toBeTruthy();
-    badArgs(() => validateUpscaleArgs({ in: "a.png", toSize: 0 }), "[1..8192]");
+    badArgs(() => validateUpscaleArgs({ in: "a.png", toSize: 0 }), ">= 1");
+    expect(validateUpscaleArgs({ in: "a.png", toSize: 20000, tile: 4096 })).toBeTruthy();
     badArgs(() => validateUpscaleArgs({ in: "a.png", kernel: "bogus" as never }), "kernel must be one of");
     badArgs(() => validateUpscaleArgs({ in: "a.png", tile: 50 }), ">=");
     expect(validateResizeArgs({ in: "a.png", toSize: 512 })).toBeTruthy();
     badArgs(() => validateResizeArgs({ in: "a.png" } as never)); // toSize is required
-    badArgs(() => validateResizeArgs({ in: "a.png", toSize: 0 }), "[1..16384]");
+    badArgs(() => validateResizeArgs({ in: "a.png", toSize: 0 }), ">= 1");
+    expect(validateResizeArgs({ in: "a.png", toSize: 40000 })).toBeTruthy();
     badArgs(() => validateResizeArgs({ in: "a.png", toSize: 99, kernel: "bogus" as never }), "kernel must be one of");
   });
 

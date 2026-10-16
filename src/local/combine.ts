@@ -48,15 +48,20 @@ async function loadSameSize(paths: string[]): Promise<{
   };
 }
 
-function boxBlurInPlace(
+async function boxBlurInPlace(
   buf: Uint8Array,
   width: number,
   height: number,
   passes: number,
-): void {
+  signal: AbortSignal | undefined,
+): Promise<void> {
   if (passes <= 0) return;
   const tmp = new Uint8Array(buf.length);
   for (let pass = 0; pass < passes; pass++) {
+    // The radius has no upper bound, so a long feather yields between passes
+    // and stops at the next one once cancelled.
+    if (pass > 0) await new Promise((resolve) => setImmediate(resolve));
+    throwIfAborted(signal);
     for (let y = 0; y < height; y++) {
       const row = y * width;
       for (let x = 0; x < width; x++) {
@@ -145,7 +150,7 @@ export async function runCombine(
     width = loaded.width;
     height = loaded.height;
     out = new Uint8Array(loaded.buffers[0]!);
-    boxBlurInPlace(out, width, height, Math.floor(radius));
+    await boxBlurInPlace(out, width, height, Math.floor(radius), signal);
   }
 
   throwIfAborted(signal);

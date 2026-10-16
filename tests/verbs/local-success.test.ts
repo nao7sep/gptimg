@@ -153,6 +153,18 @@ describe("local verbs success path (via GptImg SDK)", () => {
     expect(meta.hasAlpha).toBe(true);
   });
 
+  it("shadow: a canvas too large for the machine fails as memory.exhausted, writes nothing and logs the code", async () => {
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, 16, 16, diskish(16, 16));
+
+    const failed = sdk.shadow({ in: input, outName: "huge", spread: 2 ** 30, log: path.join(tmp, "huge.log") });
+    await expect(failed).rejects.toMatchObject({ code: "memory.exhausted", errorType: "localOp" });
+    await expect(failed).rejects.toThrow(/^shadow ran out of memory .*Use smaller images or output sizes/);
+    expect(existsSync(path.join(tmp, "huge.png"))).toBe(false);
+    const lines = (await readFile(path.join(tmp, "huge.log"), "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines.at(-1)).toMatchObject({ level: "error", data: { code: "memory.exhausted" } });
+  });
+
   it("combine: unions two masks into the named output", async () => {
     const a = path.join(tmp, "a.png");
     const b = path.join(tmp, "b.png");

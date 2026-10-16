@@ -333,21 +333,6 @@ describe("runLayer", () => {
     ).rejects.toMatchObject({ code: "args.invalid" });
   });
 
-  it("rejects a --scale whose resolved top exceeds the OOM ceiling", async () => {
-    const basePath = path.join(tmp, "base.png");
-    await writeRawPng(basePath, 100, 100, makeSolid(100, 100, 0, 0, 0));
-    const topPath = path.join(tmp, "top.png");
-    await writeRawPng(topPath, 10, 10, makeSolid(10, 10, 255, 0, 0));
-    await expect(
-      runLayer({
-        base: basePath,
-        top: topPath,
-        out: path.join(tmp, "out.png"),
-        scale: 200, // round(200 * 100) = 20000 > 16384 cap
-      }),
-    ).rejects.toMatchObject({ code: "args.invalid" });
-  });
-
   it("--gravity northeast anchors the top to the top-right of the base", async () => {
     const basePath = path.join(tmp, "base.png");
     await writeRawPng(basePath, 32, 32, makeSolid(32, 32, 0, 0, 0));

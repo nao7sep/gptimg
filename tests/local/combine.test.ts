@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -85,6 +86,19 @@ describe("runCombine", () => {
     const transition = got[3]!;
     expect(transition).toBeGreaterThan(0);
     expect(transition).toBeLessThan(255);
+  });
+
+  it("stops a long feather between passes once cancelled and writes nothing", async () => {
+    const a = path.join(tmp, "a.png");
+    const out = path.join(tmp, "out.png");
+    await writeMaskPng(a, 7, 1, [0, 0, 0, 255, 255, 255, 255]);
+    const controller = new AbortController();
+    setImmediate(() => controller.abort());
+
+    await expect(
+      runCombine({ op: "feather", inputs: [a], out, radius: 1e9 }, { signal: controller.signal }),
+    ).rejects.toMatchObject({ errorType: "abort" });
+    expect(existsSync(out)).toBe(false);
   });
 
   // Op/arity rejections now live in verbs/schemas.ts (validateCombineArgs) and

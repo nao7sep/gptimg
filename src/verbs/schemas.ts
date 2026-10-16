@@ -63,16 +63,9 @@ import type {
 // sharp's accepted gaussian blur sigma range; `0` means "no blur".
 const SHADOW_MIN_BLUR = 0.3;
 const SHADOW_MAX_BLUR = 1000;
-// Upper bounds so spread/offset padding can't balloon the canvas into an OOM.
-const SHADOW_MAX_SPREAD = 1024;
-const SHADOW_MAX_OFFSET = 10000;
-// upscale runs the ×4 model + holds a 4× intermediate, so it is far more
-// memory-heavy per output pixel than resize's single resample.
-const UPSCALE_MAX_TO_SIZE = 8192;
-const RESIZE_MAX_TO_SIZE = 16384;
-// `combine feather` runs `radius` full-image 3×3 box-blur passes (cost is linear
-// in radius), so cap it; 1024 passes already far exceeds any real mask feather.
-const COMBINE_MAX_RADIUS = 1024;
+// Sizes, spreads, offsets and feather radii have no upper bound
+// (volume-handling-conventions): a value too large for the machine fails as
+// `memory.exhausted` at the verb boundary instead of being refused by a number.
 
 // ----- shared field fragments -----
 
@@ -177,7 +170,7 @@ const CombineArgsSchema = z.object({
   inputs: z.array(z.string().min(1)),
   radius: z
     .number()
-    .refine((v) => v >= 0 && v <= COMBINE_MAX_RADIUS, `must be in [0..${COMBINE_MAX_RADIUS}]`)
+    .refine((v) => v >= 0, "must be >= 0")
     .optional(),
   overwrite: z.boolean().optional(),
 });
@@ -307,18 +300,14 @@ const ShadowArgsSchema = z.object({
   offset: z
     .object({ x: z.number(), y: z.number() })
     .refine((o) => Number.isInteger(o.x) && Number.isInteger(o.y), "offset must be integers")
-    .refine(
-      (o) => Math.abs(o.x) <= SHADOW_MAX_OFFSET && Math.abs(o.y) <= SHADOW_MAX_OFFSET,
-      `offset components must be within ±${SHADOW_MAX_OFFSET}`,
-    )
     .optional(),
   color: hexColor("color").optional(),
   opacity: z.number().refine((v) => v > 0 && v <= 1, "must be in (0..1]").optional(),
   spread: z
     .number()
     .refine(
-      (v) => Number.isInteger(v) && v >= 0 && v <= SHADOW_MAX_SPREAD,
-      `must be an integer in [0..${SHADOW_MAX_SPREAD}]`,
+      (v) => Number.isInteger(v) && v >= 0,
+      "must be an integer >= 0",
     )
     .optional(),
   keepCanvas: z.boolean().optional(),
@@ -331,8 +320,8 @@ const UpscaleArgsSchema = z.object({
   toSize: z
     .number()
     .refine(
-      (v) => Number.isInteger(v) && v >= 1 && v <= UPSCALE_MAX_TO_SIZE,
-      `must be an integer in [1..${UPSCALE_MAX_TO_SIZE}]`,
+      (v) => Number.isInteger(v) && v >= 1,
+      "must be an integer >= 1",
     )
     .optional(),
   kernel: oneOf(RESAMPLE_KERNELS, "kernel").optional(),
@@ -352,8 +341,8 @@ const ResizeArgsSchema = z.object({
   toSize: z
     .number()
     .refine(
-      (v) => Number.isInteger(v) && v >= 1 && v <= RESIZE_MAX_TO_SIZE,
-      `must be an integer in [1..${RESIZE_MAX_TO_SIZE}]`,
+      (v) => Number.isInteger(v) && v >= 1,
+      "must be an integer >= 1",
     ),
   kernel: oneOf(RESAMPLE_KERNELS, "kernel").optional(),
   overwrite: z.boolean().optional(),

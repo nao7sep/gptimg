@@ -14,6 +14,7 @@ import { createLogger, safeLogError, type Logger } from "../log/index.js";
 import { failedResponseFields } from "../network/retry.js";
 import { ensureOutputDir } from "./output-files.js";
 import { refuseCaseOnlyRename } from "./output-group.js";
+import { containOutOfMemory } from "./out-of-memory.js";
 import { imageFileName } from "./output-naming.js";
 import { claimDefaultLogPath } from "./paths.js";
 import type { EncodingArgs, LogEntry, LogVerb, PngEncodingArgs } from "../types.js";
@@ -156,7 +157,8 @@ export async function withVerbLogger<T>(
   const logger = await createLogger(logPath, verbName, { onEvent: opts.onProgress });
   try {
     return await body(logger);
-  } catch (err) {
+  } catch (thrown) {
+    const err = containOutOfMemory(verbName, thrown);
     await safeLogError(logger, err instanceof Error ? err.message : String(err), {
       code: (err as { code?: string }).code ?? null,
       error: serializeThrownError(err),

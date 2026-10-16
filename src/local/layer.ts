@@ -27,14 +27,6 @@ export const LAYER_DEFAULTS = {
 } as const;
 
 /**
- * Largest top-image side we will materialize from a `scale`. Removing the old
- * "top must fit the base" check also removed the implicit upper bound on
- * `scale`, so an unbounded `scale` could balloon a small input into an OOM.
- * Mirrors RESIZE_MAX_TO_SIZE — the ceiling on a single allocated side.
- */
-const LAYER_MAX_TOP = 16384;
-
-/**
  * Top-left pixel where a `topW × topH` overlay anchors on a `baseW × baseH`
  * canvas for a compass gravity. Replaces sharp's own gravity placement so the
  * gravity and explicit-offset paths share one clip step below. When the top is
@@ -116,12 +108,6 @@ export async function runLayer(
       throw new LocalOpError(
         "args.invalid",
         `layer: scale ${args.scale} on base ${baseMeta.width}x${baseMeta.height} resolves to < 1 px.`,
-      );
-    }
-    if (targetLonger > LAYER_MAX_TOP) {
-      throw new LocalOpError(
-        "args.invalid",
-        `layer: scale ${args.scale} on base ${baseMeta.width}x${baseMeta.height} resolves to ${targetLonger}px, over the ${LAYER_MAX_TOP}px cap.`,
       );
     }
     const aspect = topMeta.width / topMeta.height;
