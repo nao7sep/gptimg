@@ -13,7 +13,7 @@ export const SWIN2SR_WINDOW = 8;
 /** Context overlap (source px) kept around each tile and cropped off on merge. */
 export const SWIN2SR_OVERLAP = 32;
 
-/** Default max fed model-input edge per pass — the memory knob (near 3 GB peak at 256). */
+/** Default max fed model-input edge per pass — the memory knob (near 3 GB over repeated passes at 256). */
 export const SWIN2SR_DEFAULT_TILE = 256;
 
 /** Smallest usable tile: must leave an interior region of at least one window. */

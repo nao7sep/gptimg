@@ -8,15 +8,15 @@
  *   1. Input H and W must be multiples of window_size (8). We reflect-pad each
  *      fed tile up to the next /8 on the right/bottom, run, then crop the 4×
  *      padding back off.
- *   2. Memory grows with the fed area, about 44 KB per pixel on top of the
- *      session (a 256² input peaks near 3 GB on CPU, 512² near 11.5 GB). So we
- *      tile: the image is processed in overlapping regions whose
- *      fed size is ~`tile` (constraint 1's /8 reflect-padding can push the
- *      actual model input a few px higher), and the overlap context is cropped
- *      off on merge so the result is seam-free. An overlap of 32 px keeps the
- *      worst-
- *      case (hard high-frequency edges) within ~6/255 of a single-pass result
- *      and is visually identical on real content.
+ *   2. Memory grows with the fed area: on CPU a 256² input peaks near 1.7 GB
+ *      on its first pass and settles near 3 GB over repeated passes, and a
+ *      512² input peaks near 6.3 GB on its first. So we tile: the image is
+ *      processed in overlapping regions whose fed size is ~`tile`
+ *      (constraint 1's /8 reflect-padding can push the actual model input a
+ *      few px higher), and the overlap context is cropped off on merge. With
+ *      a 32 px overlap, a 400² photo upscaled in nine passes differs from one
+ *      pass by 0.03/255 on average and at most 14/255 at a few seam pixels,
+ *      which is visually identical.
  *
  * I/O contract (transformers Swin2SRImageProcessor): input `pixel_values` is
  * NCHW RGB rescaled to [0,1] with no mean subtraction; output `reconstruction`
