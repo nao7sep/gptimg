@@ -7,16 +7,18 @@
 // modelsDir, and follow the SDK's rule: install explicitly what is missing, and
 // replace a model only when a new pin names a new file. Each test runs on a
 // throwaway profile that names OPENAI_API_KEY and stores no key; the key reaches
-// the SDK only through the environment map passed to loadProfile.
+// the SDK only through the environment map passed to loadProfile. A failed test
+// keeps its folder (profile, outputs, sidecars, log) for diagnosis until the next
+// live run starts; a passed test's folder is removed.
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from "vitest";
 
 import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../../src/ai-models.ts";
 import { GptImg, loadProfile } from "../../src/index.ts";
@@ -51,11 +53,14 @@ const VISION_ROWS = SUPPORTED_MODELS.filter((row): row is VisionModelRow => "thi
 const DETAIL_CHECKED_VISION_MODELS = ["gpt-6-luna", "gpt-6.1-sol"] as const;
 
 const homes: string[] = [];
+const keptHomes = new Set<string>();
 
 /** A GptImg on a throwaway profile that resolves its key from OPENAI_API_KEY only. */
 async function freshSdk(label: string): Promise<{ img: GptImg; home: string }> {
   const home = await mkdtemp(join(CACHE, `${label}-`));
   homes.push(home);
+  // Inside a test, a failure keeps this folder; the install step in beforeAll has no test.
+  if (expect.getState().currentTestName !== undefined) onTestFailed(() => void keptHomes.add(home));
   const profilePath = join(home, "profile.json");
   await writeFile(profilePath, `${JSON.stringify({ formatVersion: 2, provider: "openai", apiKeyEnv: "OPENAI_API_KEY", modelsDir: MODELS, logDir: home })}\n`);
   return { img: new GptImg({ profile: await loadProfile(profilePath, { env: process.env }), app: { name: "gptimgsdk-live", version: "1" } }), home };
@@ -144,13 +149,19 @@ async function maskValue(file: string, x: number, y: number): Promise<number> {
 }
 
 beforeAll(async () => {
+  // Folders an earlier run kept for its failures; the models stay.
+  await mkdir(CACHE, { recursive: true });
+  for (const entry of await readdir(CACHE)) {
+    if (entry !== "models") await rm(join(CACHE, entry), { recursive: true, force: true });
+  }
   await mkdir(MODELS, { recursive: true });
   const { img } = await freshSdk("install");
   await img.model.installAll();
 });
 
 afterAll(async () => {
-  await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })));
+  await Promise.all(homes.filter((home) => !keptHomes.has(home)).map((home) => rm(home, { recursive: true, force: true })));
+  if (keptHomes.size > 0) process.stderr.write(`Kept for diagnosis: ${[...keptHomes].join(", ")}\n`);
 });
 
 describe("the live SDK", () => {
