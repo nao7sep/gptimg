@@ -1,22 +1,10 @@
 import { configDefaults, defineConfig } from "vitest/config";
 
+// The app root's own tests. The SDK's suite runs in its package
+// (npm test -w gptimgsdk), so packages/ is excluded here.
 export default defineConfig({
   test: {
-    // The live lane spends money and downloads models; only npm run test:full
-    // runs it, through vitest.live.config.ts.
-    exclude: [...configDefaults.exclude, "tests/live/**"],
-    coverage: {
-      // V8's native coverage — the installed provider, no instrumentation step.
-      // `include` lists every source file so the report flags logic no test
-      // reaches, not just a score for the code that is reached.
-      provider: "v8",
-      reporter: ["text", "html", "lcov"],
-      include: ["src/**/*.ts"],
-      exclude: [
-        "src/index.ts", // public barrel: re-exports only
-        "src/types.ts", // type declarations only, no runtime code
-        "**/*.d.ts",
-      ],
-    },
+    include: ["tests/**/*.test.ts"],
+    exclude: [...configDefaults.exclude, "packages/**"],
   },
 });

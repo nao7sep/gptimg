@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertReleaseTag, expectedReleaseTag } from "../scripts/check-release-tag.js";
+import { assertReleaseTag, expectedReleaseTag } from "../scripts/check-release-tag.ts";
 
 describe("release tag gate", () => {
   it("derives the expected tag from the package version", () => {

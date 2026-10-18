@@ -1,14 +1,13 @@
 name: Release
 
-# GptImg ships as source (consumed directly via `tsx`) — there is no OS binary.
-# Per the app-release-conventions' source-only case, the release still follows
-# test -> pack -> DRAFT: the test gate runs, then `npm pack` produces the exact
-# tarball a consumer receives (respecting the package.json "files" allowlist), and
-# that tarball is attached to a draft release so it can be inspected before
-# publishing. Nothing is published automatically.
+# GptImg is the GUI app that carries GptImgSdk (packages/gptimgsdk). Until the
+# app exists there is no artifact to build: a tag runs the test gate on every
+# supported OS and checks that the tag matches the version. The SDK is never
+# packed or published on its own; it is consumed from source and released
+# inside the app (sdk-conventions, Packaging).
 #
-#   - push a tag `v*` -> test, pack, attach the tarball to a draft for that tag.
-#   - manual dispatch -> test + pack only (no release), a smoke check.
+#   - push a tag `v*` -> test on Ubuntu and Windows, then verify the tag.
+#   - manual dispatch -> test only, a smoke check.
 
 on:
   push:
@@ -35,50 +34,17 @@ jobs:
       - run: npm install --global npm@12.2.0
       - run: npm ci
       - run: npm test
-      - run: npm run check:package
 
-  release:
+  tag:
     needs: test
-    permissions:
-      contents: write
-    # The npm tarball is platform-agnostic, so it is packed once after both
-    # supported test legs pass.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
-          cache: npm
-      - run: npm install --global npm@12.2.0
-      - run: npm ci
-
-      - name: Verify tag matches package version
-        if: github.ref_type == 'tag'
+      - name: Verify tag matches the app version
         env:
           GPTIMG_RELEASE_TAG: ${{ github.ref_name }}
         run: npm run check:release-tag -- "$GPTIMG_RELEASE_TAG"
-
-      # Pack the exact distributable a consumer receives (into the working dir).
-      - name: Pack the distributable
-        run: npm pack
-
-      - name: Attach to draft release
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          draft: true
-          # NOT a pre-release. "Pre-release" versus "release" is a subjective
-          # label that buys no real latitude — it reads as an excuse rather than a
-          # fact — so a 0.x version number carries that signal on its own. The draft
-          # flag is what actually protects the release: nothing goes public until it
-          # is inspected and published by hand.
-          prerelease: false
-          fail_on_unmatched_files: true
-          # Body renders from the pushed tag (${{ github.ref_name }}); source-only,
-          # so no unsigned-binary note applies.
-          body: |
-            **GptImg ${{ github.ref_name }}**
-
-            TypeScript SDK for AI image generation — no binary, consumed directly from source. See the README to get started.
-          files: "*.tgz"

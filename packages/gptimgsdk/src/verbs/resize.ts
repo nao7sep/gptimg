@@ -1,0 +1,79 @@
+import {
+  assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
+  inferStem,
+  resolveOutputPath,
+  withVerbLogger,
+} from "../internal/local-verb.ts";
+import { runResize } from "../local/resize.ts";
+import type { ResizeArgs, ResizeResult } from "../types.ts";
+import type { VerbCallOptions } from "./options.ts";
+import { validateResizeArgs } from "./schemas.ts";
+
+export interface ResizeContext {
+  profileDir: string;
+  logDir: string;
+}
+
+function defaultStem(input: string): string {
+  return `${inferStem(input)}-resize`;
+}
+
+export async function resizeImpl(
+  ctx: ResizeContext,
+  args: ResizeArgs,
+  opts: VerbCallOptions = {},
+): Promise<ResizeResult> {
+  validateResizeArgs(args);
+  const signal = opts.signal;
+
+  return withVerbLogger(ctx, "resize", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+    const outPath = await resolveOutputPath(args, {
+      inputForDir: args.in,
+      stem: defaultStem(args.in),
+      ext: args.format ?? "png",
+    });
+    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+
+    await logger.info("resolve", "resize start", {
+      input: args.in,
+      out: outPath,
+      toSize: args.toSize,
+      kernel: args.kernel ?? null,
+      ...encodingLogFields(args),
+    });
+
+    const result = await runResize(
+      {
+        in: args.in,
+        out: outPath,
+        overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
+        toSize: args.toSize,
+        kernel: args.kernel,
+      },
+      { signal },
+    );
+
+    await logger.info("write", "wrote resized image", {
+      path: result.output,
+      sourceWidth: result.sourceWidth,
+      sourceHeight: result.sourceHeight,
+      width: result.width,
+      height: result.height,
+    });
+
+    return {
+      input: args.in,
+      output: result.output,
+      sourceWidth: result.sourceWidth,
+      sourceHeight: result.sourceHeight,
+      width: result.width,
+      height: result.height,
+      toSize: result.toSize,
+      kernel: result.kernel,
+      logPath: logger.handle.path,
+    };
+  });
+}

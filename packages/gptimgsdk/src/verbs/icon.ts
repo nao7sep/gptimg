@@ -1,0 +1,69 @@
+import path from "node:path";
+import {
+  assertSingleFileAvailable,
+  pngEncodingLogFields,
+  pngEncodingOf,
+  withVerbLogger,
+} from "../internal/local-verb.ts";
+import { ensureOutputDir } from "../internal/output-files.ts";
+import { ICON_DEFAULTS, planIconOutputs, runIcon } from "../local/icon.ts";
+import type { IconArgs, IconResult } from "../types.ts";
+import type { VerbCallOptions } from "./options.ts";
+import { validateIconArgs } from "./schemas.ts";
+
+export interface IconContext {
+  profileDir: string;
+  logDir: string;
+}
+
+export async function iconImpl(
+  ctx: IconContext,
+  args: IconArgs,
+  opts: VerbCallOptions = {},
+): Promise<IconResult> {
+  validateIconArgs(args);
+  const signal = opts.signal;
+
+  return withVerbLogger(ctx, "icon", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+    const outDir = args.outDir ?? path.dirname(args.in);
+    await ensureOutputDir(outDir);
+    const name = args.name ?? ICON_DEFAULTS.name;
+    const pngs = args.pngs ?? ICON_DEFAULTS.pngs;
+
+    const plan = planIconOutputs(outDir, name, pngs);
+    for (const filePath of plan.all) {
+      assertSingleFileAvailable(filePath, args.overwrite ?? false);
+    }
+
+    await logger.info("resolve", "icon start", {
+      in: args.in,
+      outDir,
+      name,
+      pngs,
+      ...pngEncodingLogFields(args),
+    });
+
+    const result = await runIcon(
+      { in: args.in, outDir, name, pngs, overwrite: args.overwrite ?? false, ...pngEncodingOf(args) },
+      { signal },
+    );
+
+    await logger.info("write", "wrote icon artifacts", {
+      outputs: result.outputs,
+      sourceWidth: result.sourceWidth,
+      sourceHeight: result.sourceHeight,
+    });
+
+    return {
+      input: args.in,
+      outputs: result.outputs,
+      icns: result.icns,
+      ico: result.ico,
+      png: result.png,
+      pngs: result.pngSet.map((p) => p.path),
+      width: result.sourceWidth,
+      height: result.sourceHeight,
+      logPath: logger.handle.path,
+    };
+  });
+}

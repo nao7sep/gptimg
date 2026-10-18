@@ -1,0 +1,153 @@
+import path from "node:path";
+import { LocalOpError, toAbortError } from "../errors.ts";
+import { withVerbLogger } from "../internal/local-verb.ts";
+import { defaultModelsDir } from "../internal/paths.ts";
+import { ensureModel, fileSha256, inspectCachedModel } from "../local/models/fetch.ts";
+import { MODELS, type ModelKey } from "../local/models/registry.ts";
+import { resolveNetworkForCall } from "../network/index.ts";
+import { loadRecipeForCall } from "../recipe/load.ts";
+import type {
+  InstalledModel,
+  ModelInstallResult,
+  ModelIntegrity,
+  ModelListResult,
+  ModelVerifyEntry,
+  ModelVerifyResult,
+} from "../types.ts";
+import type { VerbCallOptions } from "./options.ts";
+import { validateModelKey } from "./schemas.ts";
+
+interface ModelContext {
+  profileDir: string;
+  logDir: string;
+}
+
+export interface ModelInstallOptions extends VerbCallOptions {
+  /** Re-download and replace even if the model is already cached. */
+  force?: boolean;
+  recipe?: string;
+  /** Path to log JSONL file. Defaults to a per-session
+   * `yyyymmdd-hhmmss-utc-<id>.log` under the log dir. */
+  log?: string;
+}
+
+export interface ModelVerifyOptions
+  extends Pick<VerbCallOptions, "signal" | "onProgress"> {
+  /** Path to log JSONL file. Defaults to a per-session log under the log dir. */
+  log?: string;
+}
+
+export async function installModelImpl(
+  ctx: ModelContext,
+  key: ModelKey,
+  opts: ModelInstallOptions = {},
+): Promise<InstalledModel> {
+  validateModelKey(key);
+  if (opts.force !== undefined && typeof opts.force !== "boolean") {
+    throw new LocalOpError("args.invalid", "model install: force must be a boolean.");
+  }
+  const entry = MODELS[key];
+  const budget = resolveNetworkForCall(
+    await loadRecipeForCall(opts.recipe, ctx.profileDir),
+  ).modelDownload;
+  const cacheDir = defaultModelsDir(ctx.profileDir);
+  return withVerbLogger(ctx, "model", { log: opts.log, onProgress: opts.onProgress }, async (logger) => {
+    const installedPath = await ensureModel(entry, cacheDir, {
+      force: opts.force,
+      budget,
+      signal: opts.signal,
+      logger,
+    });
+    return { key, name: entry.name, path: installedPath, forced: opts.force ?? false };
+  });
+}
+
+export async function installAllModelsImpl(
+  ctx: ModelContext,
+  opts: ModelInstallOptions = {},
+): Promise<ModelInstallResult> {
+  const installed: InstalledModel[] = [];
+  for (const key of Object.keys(MODELS) as ModelKey[]) {
+    installed.push(await installModelImpl(ctx, key, opts));
+  }
+  return { installed };
+}
+
+export function listModelsImpl(ctx: ModelContext): ModelListResult {
+  const cacheDir = defaultModelsDir(ctx.profileDir);
+  const models = (Object.keys(MODELS) as ModelKey[]).map((key) => {
+    const entry = MODELS[key];
+    const filePath = path.join(cacheDir, entry.name);
+    const cache = inspectCachedModel(filePath, entry.byteSize);
+    return {
+      key,
+      name: entry.name,
+      path: filePath,
+      cached: cache.usable,
+      sizeBytes: cache.sizeBytes,
+    };
+  });
+  return { models };
+}
+
+/**
+ * Re-hash every cached model against its pinned sha256 — the integrity check the
+ * install-time verification cannot give on later runs. A cache hit returns the
+ * file without re-hashing (fetch.ts), so a model corrupted or swapped after
+ * download is otherwise used unverified; this is the explicit, on-demand check
+ * for that. Kept separate from `list` (a cheap presence check): hashing a ~0.5 GB
+ * model is slow, so it runs only when asked, never on every load.
+ */
+export async function verifyModelsImpl(
+  ctx: ModelContext,
+  opts: ModelVerifyOptions = {},
+): Promise<ModelVerifyResult> {
+  const cacheDir = defaultModelsDir(ctx.profileDir);
+  return withVerbLogger(ctx, "model", { log: opts.log, onProgress: opts.onProgress }, async (logger) => {
+    const models: ModelVerifyEntry[] = [];
+    for (const key of Object.keys(MODELS) as ModelKey[]) {
+      if (opts.signal?.aborted) throw toAbortError(opts.signal.reason);
+      const entry = MODELS[key];
+      const filePath = path.join(cacheDir, entry.name);
+      let integrity: ModelIntegrity;
+      let actualSha256: string | undefined;
+      try {
+        const cache = inspectCachedModel(filePath, entry.byteSize);
+        if (!cache.present) {
+          integrity = "missing";
+        } else if (!entry.sha256) {
+          integrity = "unverifiable";
+        } else {
+          await logger.info("resolve", "verifying cached model", {
+            key,
+            name: entry.name,
+            sizeBytes: cache.sizeBytes ?? null,
+          });
+          actualSha256 = await fileSha256(filePath, opts.signal);
+          integrity = actualSha256 === entry.sha256 ? "ok" : "mismatch";
+        }
+      } catch (err) {
+        if (opts.signal?.aborted) throw toAbortError(opts.signal.reason);
+        throw new LocalOpError(
+          "model.verifyFailed",
+          `Failed to verify cached model ${entry.name}: ${(err as Error).message}`,
+          { cause: err },
+        );
+      }
+      models.push({
+        key,
+        name: entry.name,
+        path: filePath,
+        integrity,
+        expectedSha256: entry.sha256,
+        actualSha256,
+      });
+      await logger.info("response", "model verification result", {
+        key,
+        name: entry.name,
+        integrity,
+      });
+    }
+    return { models, logPath: logger.handle.path };
+  });
+}

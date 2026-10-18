@@ -1,0 +1,85 @@
+import {
+  assertSingleFileAvailable,
+  encodingLogFields,
+  encodingOf,
+  resolveOutputPath,
+  withVerbLogger,
+} from "../internal/local-verb.ts";
+import { runGrid } from "../local/grid.ts";
+import type { GridArgs, GridResult } from "../types.ts";
+import type { VerbCallOptions } from "./options.ts";
+import { validateGridArgs } from "./schemas.ts";
+
+export interface GridContext {
+  profileDir: string;
+  logDir: string;
+}
+
+export async function gridImpl(
+  ctx: GridContext,
+  args: GridArgs,
+  opts: VerbCallOptions = {},
+): Promise<GridResult> {
+  validateGridArgs(args);
+  const signal = opts.signal;
+
+  return withVerbLogger(ctx, "grid", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+    // The sheet lands beside its first input by default — the inputs are the
+    // natural base directory for a comparison of them. The schema guarantees at
+    // least one input.
+    const outPath = await resolveOutputPath(args, {
+      inputForDir: args.inputs[0]!,
+      stem: "grid",
+      ext: args.format ?? "png",
+    });
+    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+
+    await logger.info("resolve", "grid start", {
+      out: outPath,
+      inputs: args.inputs.length,
+      cols: args.cols ?? null,
+      cell: args.cell ?? null,
+      gap: args.gap ?? null,
+      background: args.background ?? null,
+      ...encodingLogFields(args),
+    });
+
+    const result = await runGrid(
+      {
+        inputs: args.inputs,
+        out: outPath,
+        overwrite: args.overwrite ?? false,
+        ...encodingOf(args),
+        cols: args.cols,
+        cell: args.cell,
+        gap: args.gap,
+        background: args.background,
+      },
+      { signal },
+    );
+
+    await logger.info("write", "wrote grid sheet", {
+      path: result.output,
+      placed: result.placed,
+      skipped: result.skipped,
+      cols: result.cols,
+      rows: result.rows,
+      width: result.width,
+      height: result.height,
+    });
+
+    return {
+      output: result.output,
+      count: result.count,
+      placed: result.placed,
+      skipped: result.skipped,
+      cols: result.cols,
+      rows: result.rows,
+      cell: result.cell,
+      gap: result.gap,
+      width: result.width,
+      height: result.height,
+      logPath: logger.handle.path,
+    };
+  });
+}
