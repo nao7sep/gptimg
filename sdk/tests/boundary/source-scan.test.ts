@@ -123,6 +123,27 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+/** The modules a value import of `entry` loads, following relative imports and skipping type-only ones. */
+function runtimeImports(entry: string, seen = new Set<string>()): { files: Set<string>; packages: Set<string> } {
+  const packages = new Set<string>();
+  const visit = (file: string): void => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const ast = parse(readFileSync(file, "utf8"), { sourceType: "module", plugins: ["typescript"] });
+    for (const node of ast.program.body as unknown as Node[]) {
+      const isModuleLink = node.type === "ImportDeclaration" || node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration";
+      const source = isModuleLink ? (node.source as { value?: string } | null)?.value : undefined;
+      if (typeof source !== "string") continue;
+      const kind = (node as { importKind?: string; exportKind?: string }).importKind ?? (node as { exportKind?: string }).exportKind;
+      if (kind === "type") continue;
+      if (source.startsWith(".")) visit(path.join(path.dirname(file), source));
+      else packages.add(source);
+    }
+  };
+  visit(entry);
+  return { files: seen, packages };
+}
+
 describe("the package boundary", () => {
   it("holds in every source file", () => {
     const files = sourceFiles(SRC);
@@ -166,6 +187,14 @@ describe("the package boundary", () => {
       "error code not in ERROR_CODES: made.up",
       "refusal code not in REFUSAL_CODES: output.invented",
     ]);
+  });
+
+  it("keeps the gptimgsdk/types entry free of every package and Node builtin, so a renderer can load it", () => {
+    const { files, packages } = runtimeImports(path.join(SRC, "types.ts"));
+    expect([...packages]).toEqual([]);
+    expect(files.size).toBeGreaterThan(1);
+    // The same walk over the full entry finds its native and network dependencies, so it can fail.
+    expect([...runtimeImports(path.join(SRC, "index.ts")).packages]).toEqual(expect.arrayContaining(["sharp", "onnxruntime-node", "openai"]));
   });
 
   it("allows the home folder only in the resource-default module", () => {

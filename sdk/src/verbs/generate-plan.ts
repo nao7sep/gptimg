@@ -5,8 +5,8 @@ import { imageFileName } from "../internal/output-naming.ts";
 /**
  * A provider image after its bytes have been format-detected. `format` is null
  * when the item yielded no usable image — the provider returned no data, or the
- * bytes would not decode — so the slot contributes only to `partial` and is
- * dropped from the outputs.
+ * bytes would not decode — so the slot is dropped from the outputs and the
+ * caller reports it as an item failure.
  */
 export interface DetectedImage {
   format: DetectedFormat | null;
@@ -32,8 +32,6 @@ export interface GenerateOutputPlan {
   images: PlannedImage[];
   /** The single extension the artifact group uses; "png" when nothing succeeded. */
   groupExtension: string;
-  /** True when at least one returned item failed to become an output. */
-  partial: boolean;
 }
 
 /**
@@ -51,13 +49,9 @@ export function planGenerateOutputs(
   // width must cover whichever is larger so indices never outrun their padding.
   const suffixCount = Math.max(n, detected.length);
   const images: PlannedImage[] = [];
-  let partial = false;
 
   detected.forEach((item, i) => {
-    if (!item.format) {
-      partial = true;
-      return;
-    }
+    if (!item.format) return;
     const index = i + 1;
     images.push({
       index,
@@ -77,5 +71,5 @@ export function planGenerateOutputs(
   }
 
   const groupExtension = images[0]?.format.extension ?? "png";
-  return { suffixCount, images, groupExtension, partial };
+  return { suffixCount, images, groupExtension };
 }

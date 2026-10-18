@@ -376,6 +376,17 @@ describe("callWithRetry", () => {
     }
   });
 
+  it("retries the real OpenAI connection errors, which keep the generic name Error", async () => {
+    const { APIConnectionError, APIConnectionTimeoutError } = await import("openai");
+    for (const make of [() => new APIConnectionError({ message: "dropped" }), () => new APIConnectionTimeoutError()]) {
+      const error = make();
+      expect(error.name).toBe("Error");
+      const fn = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce("ok");
+      await expect(callWithRetry({ budgetName: "imageDownload", budget: fast }, fn)).resolves.toBe("ok");
+      expect(fn).toHaveBeenCalledTimes(2);
+    }
+  });
+
   it("does NOT retry an unknown network code", async () => {
     const fn = vi.fn().mockRejectedValue(netCode("ESOMETHINGELSE"));
     await expect(

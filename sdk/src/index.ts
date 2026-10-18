@@ -11,6 +11,19 @@ export type { ModelKey } from "./local/models/registry.ts";
 export { loadProfile, validateProfile } from "./profile/load.ts";
 export type { EnvironmentMap, LoadProfileOptions } from "./profile/load.ts";
 export { readSidecar } from "./sidecar/read.ts";
+export { validatePolicy } from "./policy/schemas.ts";
+export { SUPPORTED_IMAGE_EXTENSIONS } from "./image/formats.ts";
+export { MODEL_LINEUP, SUPPORTED_MODELS, defaultModelFor, modelsFor } from "./ai-models.ts";
+export type {
+  AiKind,
+  AiProvider,
+  ImageCapabilities,
+  ImageModelRow,
+  ImageSizeRule,
+  ModelRow,
+  SupportedModel,
+  VisionModelRow,
+} from "./ai-models.ts";
 export {
   ERROR_CODES,
   ERROR_EFFECTS,
@@ -74,6 +87,7 @@ export type {
   GptImgOptions,
   GridArgs,
   GridResult,
+  GridSkip,
   IconArgs,
   IconResult,
   InstalledModel,
@@ -86,12 +100,10 @@ export type {
   LayerResult,
   LoadedProfile,
   LogEntry,
-  LogHandle,
   LogLevel,
   LogStage,
   LogVerb,
   MaskArgs,
-  MaskPolicy,
   MaskResult,
   MaskStats,
   ModelInstallResult,
@@ -105,7 +117,6 @@ export type {
   OutputFile,
   PngEncodingArgs,
   Policy,
-  PolicyVerb,
   Profile,
   ProgressUpdate,
   ResizeArgs,

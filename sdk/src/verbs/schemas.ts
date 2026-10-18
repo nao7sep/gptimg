@@ -58,6 +58,7 @@ import type {
   ShadowArgs,
   TrimArgs,
   UpscaleArgs,
+  VerifyArgs,
   VisionArgs,
 } from "../types.ts";
 
@@ -119,24 +120,45 @@ const ENCODING_FIELDS = {
   opaque: z.boolean().optional(),
 };
 
+// Where an output lands; `outName` is checked as a stem where it is resolved.
+const OUTPUT_FIELDS = {
+  outDir: requiredPath("outDir").optional(),
+  outName: z.string().optional(),
+  overwrite: z.boolean().optional(),
+};
+
+// A per-call policy; its sections are checked by `validatePolicy` where the call merges it.
+const policyField = z.record(z.string(), z.unknown()).optional();
+const modelsDirField = requiredPath("modelsDir").optional();
+
+// The verbs with no input folder to default to need a destination: a folder, or an absolute stem.
+const DESTINATION_REQUIRED = {
+  check: (args: { outDir?: string | undefined; outName?: string | undefined }) =>
+    args.outDir !== undefined || (args.outName !== undefined && path.isAbsolute(args.outName)),
+  message: { path: ["outDir"], message: "choose an output directory, or use an absolute outName" },
+};
+
 // ----- schemas -----
 
 const GenerateArgsSchema = z.object({
+  ...OUTPUT_FIELDS,
   prompt: nonBlankText("prompt"),
-  outDir: z.string({ error: "outDir is required; choose an output directory" }).min(1, "outDir is required; choose an output directory"),
-  overwrite: z.boolean().optional(),
-});
+  policy: policyField,
+}).refine(DESTINATION_REQUIRED.check, DESTINATION_REQUIRED.message);
 
 const EditArgsSchema = z.object({
+  ...OUTPUT_FIELDS,
   prompt: nonBlankText("prompt"),
   in: requiredPath("in"),
-  overwrite: z.boolean().optional(),
+  mask: requiredPath("mask").optional(),
+  policy: policyField,
 });
 
 const VisionArgsSchema = z.object({
   in: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
   check: nonBlankText("check"),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
+  policy: policyField,
 });
 
 const MaskArgsSchema = z.object({
@@ -153,17 +175,19 @@ const MaskArgsSchema = z.object({
   borderSample: positiveInt("must be a positive integer").optional(),
   saturationRatio: z.number().refine((v) => v > 0 && v <= 1, "must be in (0..1]").optional(),
   preserveInterior: z.boolean().optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
+  modelsDir: modelsDirField,
+  policy: policyField,
 });
 
 const ComposeArgsSchema = z.object({
   ...ENCODING_FIELDS,
   in: requiredPath("in"),
   mask: requiredPath("mask"),
-  // `over` ("transparent" | #hex | <path>) is resolved against the filesystem
-  // at runtime, so it is not bounded here.
   removeBleed: hexColor("removeBleed").optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
+  // "transparent" | #hex | <path>, resolved against the filesystem at runtime.
+  over: z.string().min(1).optional(),
 });
 
 const CombineArgsSchema = z.object({
@@ -174,7 +198,7 @@ const CombineArgsSchema = z.object({
     .number()
     .refine((v) => v >= 0, "must be >= 0")
     .optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
 });
 
 const TrimArgsSchema = z.object({
@@ -182,7 +206,7 @@ const TrimArgsSchema = z.object({
   in: requiredPath("in"),
   margin: z.number().refine((v) => v >= 0 && v <= 1, "must be in [0..1]").optional(),
   square: z.boolean().optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
 });
 
 const DespeckleArgsSchema = z.object({
@@ -198,7 +222,7 @@ const DespeckleArgsSchema = z.object({
     .optional(),
   connectivity: z.number().refine((v) => v === 4 || v === 8, "must be 4 or 8").optional(),
   keep: oneOf(DESPECKLE_KEEP, "keep").optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
 });
 
 const KeycheckArgsSchema = z.object({
@@ -224,7 +248,7 @@ const KeycheckArgsSchema = z.object({
     .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
     .optional(),
   heatmap: z.boolean().optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
 });
 
 const FramecheckArgsSchema = z.object({
@@ -252,7 +276,7 @@ const GridArgsSchema = z.object({
     .number()
     .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
     .optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
   background: z
     .string()
     .refine((v) => v === "transparent" || HEX_RE.test(v), "must be 'transparent' or a #rrggbb hex color")
@@ -261,8 +285,7 @@ const GridArgsSchema = z.object({
 
 const BackplateArgsSchema = z.object({
   ...ENCODING_FIELDS,
-  outDir: requiredPath("outDir").optional(),
-  outName: z.string().optional(),
+  ...OUTPUT_FIELDS,
   from: hexColor("from"),
   to: hexColor("to"),
   size: positiveInt("must be a positive integer").optional(),
@@ -270,11 +293,7 @@ const BackplateArgsSchema = z.object({
   radius: z.number().refine((v) => v >= 0 && v <= 0.5, "must be in [0..0.5]").optional(),
   angle: z.number().optional(),
   shape: oneOf(BACKPLATE_SHAPES, "shape").optional(),
-  overwrite: z.boolean().optional(),
-}).refine((args) => args.outDir !== undefined || (args.outName !== undefined && path.isAbsolute(args.outName)), {
-  path: ["outDir"],
-  message: "choose an output directory, or use an absolute outName",
-});
+}).refine(DESTINATION_REQUIRED.check, DESTINATION_REQUIRED.message);
 
 const LayerArgsSchema = z.object({
   ...ENCODING_FIELDS,
@@ -286,7 +305,7 @@ const LayerArgsSchema = z.object({
     .object({ x: z.number(), y: z.number() })
     .refine((o) => Number.isInteger(o.x) && Number.isInteger(o.y), "topOffset must be integers")
     .optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
 });
 
 const ShadowArgsSchema = z.object({
@@ -313,7 +332,7 @@ const ShadowArgsSchema = z.object({
     )
     .optional(),
   keepCanvas: z.boolean().optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
 });
 
 const UpscaleArgsSchema = z.object({
@@ -334,7 +353,9 @@ const UpscaleArgsSchema = z.object({
       `must be an integer >= ${SWIN2SR_MIN_TILE}`,
     )
     .optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
+  modelsDir: modelsDirField,
+  policy: policyField,
 });
 
 const ResizeArgsSchema = z.object({
@@ -347,14 +368,18 @@ const ResizeArgsSchema = z.object({
       "must be an integer >= 1",
     ),
   kernel: oneOf(RESAMPLE_KERNELS, "kernel").optional(),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
 });
 
 const EncodeArgsSchema = z.object({
   in: requiredPath("in"),
   ...ENCODING_FIELDS,
   format: oneOf(ENCODE_FORMATS, "format"),
-  overwrite: z.boolean().optional(),
+  ...OUTPUT_FIELDS,
+});
+
+const VerifyArgsSchema = z.object({
+  in: requiredPath("in"),
 });
 
 const IconArgsSchema = z.object({
@@ -368,13 +393,14 @@ const IconArgsSchema = z.object({
     )
     .optional(),
   pngs: z.boolean().optional(),
+  outDir: requiredPath("outDir").optional(),
   overwrite: z.boolean().optional(),
 });
 
 // ----- runner + public validators -----
 
-// Arguments earlier versions took, refused rather than silently ignored, so a
-// caller still passing one learns where its value now goes.
+// Arguments earlier versions took: refused like any unknown argument, with a
+// hint at where the value now goes.
 const RETIRED_ARGS: Record<string, string> = {
   recipe: "recipe files are retired; pass policy per call, per instance or in a profile",
   overrides: "overrides is now policy",
@@ -384,21 +410,23 @@ const RETIRED_ARGS: Record<string, string> = {
 };
 
 // Every argument that names a file or folder; each must be absolute.
-const PATH_FIELDS = ["in", "mask", "outDir", "base", "top", "modelsDir"] as const;
+const PATH_FIELDS = ["in", "mask", "outDir", "base", "top", "modelsDir", "inputs"] as const;
 
-function check<T>(schema: z.ZodType, args: T, verb: string): T {
+function check<T>(schema: z.ZodObject, args: T, verb: string): T {
   if (typeof args !== "object" || args === null) {
     throw new GptImgError("args.invalid", `${verb}: args must be an object.`, {
       details: { field: "args", constraint: "object" },
     });
   }
   const given = args as Record<string, unknown>;
-  for (const [key, why] of Object.entries(RETIRED_ARGS)) {
-    if (given[key] !== undefined) {
-      throw new GptImgError("args.invalid", `${verb}: ${key} is not accepted; ${why}.`, {
-        details: { field: key, constraint: "retired" },
-      });
-    }
+  // An unknown argument is refused rather than silently ignored, so a misspelt
+  // or misplaced option never runs the verb with its default instead.
+  const unknown = Object.keys(given).find((key) => given[key] !== undefined && !Object.hasOwn(schema.shape, key));
+  if (unknown !== undefined) {
+    const hint = RETIRED_ARGS[unknown] ?? `${verb} takes ${Object.keys(schema.shape).join(", ")}`;
+    throw new GptImgError("args.invalid", `${verb}: ${unknown} is not accepted; ${hint}.`, {
+      details: { field: unknown, constraint: Object.hasOwn(RETIRED_ARGS, unknown) ? "retired" : "known argument" },
+    });
   }
   const r = schema.safeParse(args);
   if (!r.success) {
@@ -408,15 +436,14 @@ function check<T>(schema: z.ZodType, args: T, verb: string): T {
   for (const field of PATH_FIELDS) {
     const value = given[field];
     if (value === undefined) continue;
-    if (Array.isArray(value)) value.forEach((v, i) => assertAbsolutePath(v, `${verb}: ${field}[${i}]`));
-    else assertAbsolutePath(value, `${verb}: ${field}`);
+    if (Array.isArray(value)) value.forEach((v, i) => assertAbsolutePath(v, `${field}[${i}]`, verb));
+    else assertAbsolutePath(value, field, verb);
   }
-  if (Array.isArray(given.inputs)) given.inputs.forEach((v, i) => assertAbsolutePath(v, `${verb}: inputs[${i}]`));
   return args;
 }
 
 /** The format-dependent rules of the encoder options, for a verb that takes all of them. */
-function checkEncoding<T extends EncodingArgs>(schema: z.ZodType, args: T, verb: string): T {
+function checkEncoding<T extends EncodingArgs>(schema: z.ZodObject, args: T, verb: string): T {
   check(schema, args, verb);
   const format = args.format ?? "png";
   if (format === "png" && (args.quality !== undefined || args.lossless !== undefined || args.smartSubsample !== undefined)) {
@@ -446,9 +473,9 @@ function checkEncoding<T extends EncodingArgs>(schema: z.ZodType, args: T, verb:
 const NON_PNG_ENCODING_KEYS = ["format", "quality", "lossless", "smartSubsample", "opaque"] as const;
 
 /** The same for a verb whose format is fixed to PNG: only the lossless PNG options are accepted. */
-function checkPngEncoding<T extends PngEncodingArgs>(schema: z.ZodType, args: T, verb: string): T {
-  check(schema, args, verb);
-  const given = args as Record<string, unknown>;
+function checkPngEncoding<T extends PngEncodingArgs>(schema: z.ZodObject, args: T, verb: string): T {
+  // Before the unknown-argument check, so a webp option on a png-only verb gets its reason.
+  const given = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
   const refused = NON_PNG_ENCODING_KEYS.find((key) => given[key] !== undefined);
   if (refused !== undefined) {
     throw new GptImgError(
@@ -457,7 +484,7 @@ function checkPngEncoding<T extends PngEncodingArgs>(schema: z.ZodType, args: T,
       { details: { field: refused, constraint: "png options only" } },
     );
   }
-  return args;
+  return check(schema, args, verb);
 }
 
 export function validateGenerateArgs(args: GenerateArgs): GenerateArgs {
@@ -536,6 +563,10 @@ export function validateResizeArgs(args: ResizeArgs): ResizeArgs {
 
 export function validateEncodeArgs(args: EncodeArgs): EncodeArgs {
   return checkEncoding(EncodeArgsSchema, args, "encode");
+}
+
+export function validateVerifyArgs(args: VerifyArgs): VerifyArgs {
+  return check(VerifyArgsSchema, args, "verify");
 }
 
 export function validateIconArgs(args: IconArgs): IconArgs {

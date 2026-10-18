@@ -1,56 +1,21 @@
-import {
-  NETWORK_BUDGET_NAMES,
-  NETWORK_DEFAULTS,
-  type NetworkBudget,
-  type NetworkConfig,
-} from "./defaults.ts";
+import { NETWORK_BUDGET_NAMES, NETWORK_DEFAULTS, type NetworkConfig } from "./defaults.ts";
 import type { NetworkPartial } from "./schema.ts";
 
-function pickBudget(input: unknown): Partial<NetworkBudget> {
-  if (!input || typeof input !== "object") return {};
-  const p = input as Record<string, unknown>;
-  const out: Partial<NetworkBudget> = {};
-  if (typeof p.timeout === "number" && Number.isFinite(p.timeout) && p.timeout > 0) {
-    out.timeout = p.timeout;
-  }
-  if (
-    typeof p.maxRetries === "number" &&
-    Number.isFinite(p.maxRetries) &&
-    p.maxRetries >= 0
-  ) {
-    out.maxRetries = p.maxRetries;
-  }
-  if (
-    Array.isArray(p.retryIntervals) &&
-    p.retryIntervals.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0)
-  ) {
-    out.retryIntervals = [...(p.retryIntervals as number[])];
-  }
-  return out;
-}
-
-function mergeBudget(
-  recipe: Partial<NetworkBudget>,
-  defaults: NetworkBudget,
-): NetworkBudget {
-  return {
-    timeout: recipe.timeout ?? defaults.timeout,
-    maxRetries: recipe.maxRetries ?? defaults.maxRetries,
-    retryIntervals: recipe.retryIntervals ?? defaults.retryIntervals,
-  };
-}
-
 /**
- * Resolve the final network config by layering code defaults with recipe.network.
- * The recipe value of each leaf wins when present (no array merging).
+ * The network config for a call: each budget's fields from the validated
+ * `policy.network` where set, the code defaults elsewhere. A list replaces the
+ * default list whole.
  */
-export function resolveNetworkConfig(
-  recipeNetwork: NetworkPartial | undefined,
-): NetworkConfig {
+export function resolveNetworkConfig(network: NetworkPartial | undefined): NetworkConfig {
   const out = {} as NetworkConfig;
   for (const name of NETWORK_BUDGET_NAMES) {
-    const recipeBudget = recipeNetwork ? pickBudget(recipeNetwork[name]) : {};
-    out[name] = mergeBudget(recipeBudget, NETWORK_DEFAULTS[name]);
+    const set = network?.[name];
+    const defaults = NETWORK_DEFAULTS[name];
+    out[name] = {
+      timeout: set?.timeout ?? defaults.timeout,
+      maxRetries: set?.maxRetries ?? defaults.maxRetries,
+      retryIntervals: set?.retryIntervals ? [...set.retryIntervals] : defaults.retryIntervals,
+    };
   }
   return out;
 }

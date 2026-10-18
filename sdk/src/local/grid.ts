@@ -5,8 +5,8 @@
  * padding), so mixed aspect ratios sit centred in equal cells.
  *
  * An input that cannot be read is skipped and reported, never fatal — a review
- * sheet is still useful when one tile is missing. If *no* input is readable the
- * sheet would be empty, which is a caller error, so that throws.
+ * sheet is still useful when one tile is missing. If *no* input is readable
+ * there is no sheet, so the first input's own error is thrown.
  *
  * Label-free by design: text is a typography concern, not a tiling one, and
  * baking it in would couple this primitive to fonts. Callers that want captions
@@ -18,9 +18,8 @@ import { GptImgError, throwIfAborted } from "../errors.ts";
 import { inputImageError, writeImageFile } from "../image/bridge.ts";
 import type { Logger } from "../log/index.ts";
 import { parseHex } from "../color.ts";
-import type { EncodingArgs, GridResult } from "../types.ts";
+import type { EncodingArgs, GridSkip } from "../types.ts";
 
-type GridSkip = GridResult["skipped"][number];
 
 export const GRID_DEFAULTS = {
   cell: 256,
@@ -76,6 +75,7 @@ export async function runGrid(
   // case we tolerate: record it and carry on.
   const tiles: Buffer[] = [];
   const skipped: GridSkip[] = [];
+  let firstFailure: GptImgError | undefined;
   let read = 0;
   for (const input of args.inputs) {
     throwIfAborted(signal);
@@ -87,21 +87,18 @@ export async function runGrid(
       tiles.push(tile);
     } catch (err) {
       const reason = inputImageError(err, "grid: failed to read", input) as GptImgError;
-      skipped.push({ input, code: reason.code, message: reason.message });
+      firstFailure ??= reason;
+      skipped.push({ input, code: reason.code, effect: "none", message: reason.message });
     }
     read += 1;
-    opts.logger?.progress("infer", read, args.inputs.length, "inputs");
+    opts.logger?.progress("read", read, args.inputs.length, "inputs");
     // Decode failures are tolerated; cancellation after either outcome is not.
     throwIfAborted(signal);
   }
 
   const placed = tiles.length;
-  if (placed === 0) {
-    throw new GptImgError(
-      "image.noContent",
-      `grid: none of the ${args.inputs.length} input(s) could be read.`,
-    );
-  }
+  // With nothing to place there is no sheet: the first input's own error says why.
+  if (placed === 0 && firstFailure !== undefined) throw firstFailure;
 
   const cols = args.cols ?? Math.ceil(Math.sqrt(placed));
   const rows = Math.ceil(placed / cols);

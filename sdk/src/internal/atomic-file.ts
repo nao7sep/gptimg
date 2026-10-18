@@ -4,12 +4,8 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 
 export interface AtomicWriteOptions {
-  /** Text encoding, applied only when `data` is a string. */
-  encoding?: BufferEncoding;
-  /** POSIX file mode to create the file with (e.g. 0o600 for a secrets file). */
-  mode?: number;
-  /** Replace an existing target. Defaults to true for backwards compatibility. */
-  overwrite?: boolean;
+  /** Replace an existing target; without it an existing target fails EEXIST. */
+  overwrite: boolean;
 }
 
 /**
@@ -63,13 +59,12 @@ async function holdsContent(filePath: string, bytes: Uint8Array): Promise<boolea
 
 /**
  * The permission mode a replacement should carry over from the file it
- * replaces: none when the caller sets its own `mode`, the target is absent, or
- * on Windows, whose mode holds only a read-only bit that already blocks the
+ * replaces: none when the target is absent, or on Windows, whose mode holds only a read-only bit that already blocks the
  * replace. Node cannot copy extended attributes, so the mode is what a replace
  * keeps (content-lifecycle-conventions, *Files*).
  */
-async function replacedMode(filePath: string, requested: number | undefined): Promise<number | undefined> {
-  if (requested !== undefined || process.platform === "win32") return undefined;
+async function replacedMode(filePath: string): Promise<number | undefined> {
+  if (process.platform === "win32") return undefined;
   try {
     return (await stat(filePath)).mode & 0o7777;
   } catch {
@@ -85,27 +80,23 @@ async function replacedMode(filePath: string, requested: number | undefined): Pr
  * the temp file is best-effort removed and the target is left untouched.
  *
  * An overwrite whose content is identical to the target's is skipped, so the
- * file and its times stay as they are (content-lifecycle-conventions, *Files*);
- * a requested `mode` is still applied to it. A changed overwrite keeps the
- * replaced file's permission mode unless the caller requests its own.
+ * file and its times stay as they are (content-lifecycle-conventions, *Files*).
+ * A changed overwrite keeps the replaced file's permission mode. A string is
+ * written as UTF-8.
  *
  * Storage waits are unbounded by design (sdk-conventions, *Waits are bounded
  * where a stall is realistic*): gptimgsdk's storage is local, and Node cannot
  * cancel a filesystem call already running, so a timer would only stop waiting
  * while the call kept its thread and its write might still land.
  */
-export async function writeFileAtomic(filePath: string, data: string | Buffer | Uint8Array, options?: AtomicWriteOptions): Promise<void> {
-  const { overwrite = true, ...writeOptions } = options ?? {};
-  const bytes = typeof data === "string" ? Buffer.from(data, writeOptions.encoding ?? "utf-8") : data;
-  if (overwrite && (await holdsContent(filePath, bytes))) {
-    if (writeOptions.mode !== undefined) await chmod(filePath, writeOptions.mode);
-    return;
-  }
+export async function writeFileAtomic(filePath: string, data: string | Buffer | Uint8Array, { overwrite }: AtomicWriteOptions): Promise<void> {
+  const bytes = typeof data === "string" ? Buffer.from(data, "utf-8") : data;
+  if (overwrite && (await holdsContent(filePath, bytes))) return;
   const tempPath = stagingPathFor(filePath);
   try {
-    await writeFile(tempPath, bytes, writeOptions);
+    await writeFile(tempPath, bytes);
     if (overwrite) {
-      const mode = await replacedMode(filePath, writeOptions.mode);
+      const mode = await replacedMode(filePath);
       if (mode !== undefined) await chmod(tempPath, mode);
       await rename(tempPath, filePath);
     } else {

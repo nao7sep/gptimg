@@ -6,9 +6,10 @@ import { GptImgError } from "../errors.ts";
  * resolving a relative path is the caller's job, because the SDK reads no
  * working directory. A relative one is an `invalid` call naming the field.
  */
-export function assertAbsolutePath(value: unknown, field: string): asserts value is string {
+export function assertAbsolutePath(value: unknown, field: string, verb?: string): asserts value is string {
   if (typeof value !== "string" || value.length === 0 || !path.isAbsolute(value)) {
-    throw new GptImgError("args.invalid", `${field} must be an absolute path; got ${JSON.stringify(value)}.`, {
+    const where = verb === undefined ? field : `${verb}: ${field}`;
+    throw new GptImgError("args.invalid", `${where} must be an absolute path; got ${JSON.stringify(value)}.`, {
       details: { field, constraint: "absolute path" },
     });
   }

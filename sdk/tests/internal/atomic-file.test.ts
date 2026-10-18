@@ -39,37 +39,30 @@ describe("writeFileAtomic", () => {
 
   it("writes the content to the target path", async () => {
     const target = path.join(tmp, "out.txt");
-    await writeFileAtomic(target, "hello world", { encoding: "utf-8" });
+    await writeFileAtomic(target, "hello world", { overwrite: true });
     expect(await readFile(target, "utf-8")).toBe("hello world");
   });
 
   it("writes Buffer/Uint8Array content unchanged", async () => {
     const target = path.join(tmp, "out.bin");
     const data = Buffer.from([1, 2, 3, 4]);
-    await writeFileAtomic(target, data);
+    await writeFileAtomic(target, data, { overwrite: true });
     expect(await readFile(target)).toEqual(data);
-  });
-
-  it.skipIf(process.platform === "win32")("honors the POSIX mode option", async () => {
-    const target = path.join(tmp, "secret.json");
-    await writeFileAtomic(target, "{}", { encoding: "utf-8", mode: 0o600 });
-    const info = await stat(target);
-    expect(info.mode & 0o777).toBe(0o600);
   });
 
   it("overwrites an existing target with entirely new content", async () => {
     const target = path.join(tmp, "config.json");
-    await writeFileAtomic(target, "first", { encoding: "utf-8" });
-    await writeFileAtomic(target, "second", { encoding: "utf-8" });
+    await writeFileAtomic(target, "first", { overwrite: true });
+    await writeFileAtomic(target, "second", { overwrite: true });
     expect(await readFile(target, "utf-8")).toBe("second");
   });
 
   it("skips an overwrite whose content is identical, leaving the file itself in place", async () => {
     const target = path.join(tmp, "same.json");
-    await writeFileAtomic(target, "same", { encoding: "utf-8" });
+    await writeFileAtomic(target, "same", { overwrite: true });
     const before = await stat(target);
 
-    await writeFileAtomic(target, Buffer.from("same", "utf-8"));
+    await writeFileAtomic(target, Buffer.from("same", "utf-8"), { overwrite: true });
 
     const after = await stat(target);
     expect(after.ino).toBe(before.ino);
@@ -77,24 +70,12 @@ describe("writeFileAtomic", () => {
     expect(await readdir(tmp)).toEqual(["same.json"]);
   });
 
-  it.skipIf(process.platform === "win32")("still applies a requested mode when identical content is skipped", async () => {
-    const target = path.join(tmp, "secret.json");
-    await writeFileAtomic(target, "{}", { encoding: "utf-8", mode: 0o644 });
-    const before = await stat(target);
-
-    await writeFileAtomic(target, "{}", { encoding: "utf-8", mode: 0o600 });
-
-    const after = await stat(target);
-    expect(after.ino).toBe(before.ino);
-    expect(after.mode & 0o777).toBe(0o600);
-  });
-
   it.skipIf(process.platform === "win32")("keeps the replaced file's permission mode when content changes", async () => {
     const target = path.join(tmp, "shared.png");
-    await writeFileAtomic(target, "first", { encoding: "utf-8" });
+    await writeFileAtomic(target, "first", { overwrite: true });
     await chmod(target, 0o640);
 
-    await writeFileAtomic(target, "second", { encoding: "utf-8" });
+    await writeFileAtomic(target, "second", { overwrite: true });
 
     expect(await readFile(target, "utf-8")).toBe("second");
     expect((await stat(target)).mode & 0o777).toBe(0o640);
@@ -102,33 +83,23 @@ describe("writeFileAtomic", () => {
 
   it.skipIf(process.platform === "win32")("does not carry the replaced file's mode on Windows, whose mode holds only a read-only bit", async () => {
     const fresh = path.join(tmp, "fresh.png");
-    await writeFileAtomic(fresh, "fresh", { encoding: "utf-8" });
+    await writeFileAtomic(fresh, "fresh", { overwrite: true });
     const target = path.join(tmp, "shared.png");
-    await writeFileAtomic(target, "first", { encoding: "utf-8" });
+    await writeFileAtomic(target, "first", { overwrite: true });
     await chmod(target, 0o640);
 
     reportPlatform("win32");
-    await writeFileAtomic(target, "second", { encoding: "utf-8" });
+    await writeFileAtomic(target, "second", { overwrite: true });
 
     expect(await readFile(target, "utf-8")).toBe("second");
     expect((await stat(target)).mode & 0o777).toBe((await stat(fresh)).mode & 0o777);
   });
 
-  it.skipIf(process.platform === "win32")("applies a requested mode over the replaced file's mode", async () => {
-    const target = path.join(tmp, "profile.json");
-    await writeFileAtomic(target, "first", { encoding: "utf-8" });
-    await chmod(target, 0o644);
-
-    await writeFileAtomic(target, "second", { encoding: "utf-8", mode: 0o600 });
-
-    expect((await stat(target)).mode & 0o777).toBe(0o600);
-  });
-
   it("atomically refuses to replace a target when overwrite is false", async () => {
     const target = path.join(tmp, "claimed.txt");
-    await writeFileAtomic(target, "winner", { encoding: "utf-8" });
+    await writeFileAtomic(target, "winner", { overwrite: true });
 
-    await expect(writeFileAtomic(target, "loser", { encoding: "utf-8", overwrite: false })).rejects.toMatchObject({
+    await expect(writeFileAtomic(target, "loser", { overwrite: false })).rejects.toMatchObject({
       code: "EEXIST",
     });
     expect(await readFile(target, "utf-8")).toBe("winner");
@@ -163,7 +134,7 @@ describe("writeFileAtomic", () => {
 
   it("leaves no stray temp file behind after a successful write", async () => {
     const target = path.join(tmp, "clean.txt");
-    await writeFileAtomic(target, "x", { encoding: "utf-8" });
+    await writeFileAtomic(target, "x", { overwrite: true });
     const entries = await readdir(tmp);
     expect(entries).toEqual(["clean.txt"]);
   });
@@ -177,7 +148,7 @@ describe("writeFileAtomic", () => {
     const { mkdir } = await import("node:fs/promises");
     await mkdir(targetDir);
 
-    await expect(writeFileAtomic(targetDir, "x", { encoding: "utf-8" })).rejects.toThrow();
+    await expect(writeFileAtomic(targetDir, "x", { overwrite: true })).rejects.toThrow();
 
     const entries = await readdir(tmp);
     // Only the pre-existing directory remains; no leftover `<stem>-<random>.tmp`.

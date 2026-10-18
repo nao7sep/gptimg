@@ -122,8 +122,8 @@ export interface VisionPolicy {
   [key: string]: unknown;
 }
 
-/** Defaults for `mask --method chroma` and the implicit chroma backdrop record on `generate`. */
-export interface MaskPolicy {
+/** The `chroma` policy section: defaults for `mask` with `method: "chroma"`, and the backdrop key `generate` asks for and records. */
+export interface ChromaPolicy {
   /** Chroma key color, "#rrggbb". Also recorded in the sidecar when `generate` runs. */
   color?: string;
   /** When true, interior key-colored regions are kept opaque. Default false. */
@@ -132,11 +132,7 @@ export interface MaskPolicy {
   borderSample?: number;
   /** Spill ratio at which near-key pixels saturate to α=0. */
   saturationRatio?: number;
-  [key: string]: unknown;
 }
-
-/** The `chroma` policy section: chroma-mask defaults and the key `generate` records. */
-export type ChromaPolicy = MaskPolicy;
 
 /** ONNX Runtime tuning for the local models. */
 export interface OnnxPolicy {
@@ -172,8 +168,6 @@ export interface Policy {
   };
   onnx?: OnnxPolicy;
 }
-
-export type PolicyVerb = "generate" | "edit" | "vision";
 
 /** One file a paid record describes: its name, the SHA-256 of its bytes, and its format. */
 export interface SidecarFileEntry {
@@ -273,6 +267,8 @@ export type LogStage =
   | "stats"
   | "retry"
   | "download"
+  | "read"
+  | "process"
   | "infer"
   | "hash"
   | "cancelled"
@@ -325,7 +321,9 @@ export interface ProgressUpdate {
   stage: LogStage;
   done: number;
   total: number;
-  unit: "bytes" | "tiles" | "inputs" | "renditions" | "passes" | "models";
+  unit: "bytes" | "tiles" | "inputs" | "renditions" | "passes";
+  /** The item the count belongs to when a call works through several: a model's file name while models install or verify. */
+  subject?: string;
 }
 
 /** How a companion file's publication went, reported on its own (sdk-conventions, *An artifact holds itself*). */
@@ -360,8 +358,9 @@ export interface ItemFailure {
 
 export interface GenerateArgs {
   prompt: string;
-  /** Destination for generated images; required because there is no source folder. */
-  outDir: string;
+  /** Destination for generated images. There is no source folder, so either this or an absolute `outName` is required. */
+  outDir?: string;
+  /** A bare stem in `outDir`, or an absolute stem that also chooses the folder. */
   outName?: string;
   /** Policy for this call, merged over the instance's and the profile's (last wins). */
   policy?: Policy;
@@ -707,7 +706,7 @@ export interface UpscaleArgs extends EncodingArgs {
   tile?: number;
   /** The models folder for this call; default the instance's, then the profile's, then `~/.gptimgsdk/models`. */
   modelsDir?: string;
-  /** Network policy for this call (only `network` applies to upscale). */
+  /** Policy for this call; upscale reads only `onnx`. */
   policy?: Policy;
   outDir?: string;
   outName?: string;
@@ -1106,6 +1105,14 @@ export interface GridArgs extends EncodingArgs {
   overwrite?: boolean;
 }
 
+/** A `grid` input that could not be read; nothing was written for it. */
+export interface GridSkip {
+  input: string;
+  code: ErrorCode;
+  effect: "none";
+  message: string;
+}
+
 export interface GridResult {
   status: "completed";
   output: string;
@@ -1113,8 +1120,8 @@ export interface GridResult {
   count: number;
   /** Tiles actually drawn (readable inputs). */
   placed: number;
-  /** Inputs that could not be read, in order, each with the error code naming why — skipped, never fatal. */
-  skipped: Array<{ input: string; code: ErrorCode; message: string }>;
+  /** Inputs that could not be read, in order, each with the error naming why — skipped, unless none could be read. */
+  skipped: GridSkip[];
   cols: number;
   rows: number;
   /** Resolved cell side (px). */
@@ -1149,8 +1156,12 @@ export interface ModelListEntry {
   key: string;
   name: string;
   path: string;
+  /** True when the installed file is complete; a verb can use it. */
   cached: boolean;
+  /** The size of the file on disk, when there is one. */
   sizeBytes?: number;
+  /** The size an install downloads, for a free-space check before it starts. */
+  downloadBytes: number | null;
 }
 
 /** Result of `model list`: every known model and whether it is cached. */
@@ -1239,3 +1250,33 @@ export interface GptImgOptions {
   /** The calling app, recorded in each sidecar's `writer` beside the SDK's own name and version. */
   app?: { name: string; version: string };
 }
+
+// The dependency-free tables a renderer needs beside these types, so the
+// `gptimgsdk/types` entry alone can map codes to its own text and fill its
+// pickers without loading sharp, ONNX Runtime or the OpenAI client.
+export { ERROR_CODES, ERROR_EFFECTS, ERROR_KINDS, isGptImgErrorData } from "./errors.ts";
+export type { ErrorCode, ErrorDetails, ErrorEffect, ErrorKind, GptImgErrorData, SerializedCause } from "./errors.ts";
+export { REFUSAL_CODES } from "./refusal.ts";
+export type { Refusal, RefusalCode, RefusedResult } from "./refusal.ts";
+export {
+  BACKPLATE_SHAPES,
+  COMBINE_OPS,
+  DESPECKLE_KEEP,
+  ENCODE_FORMATS,
+  FRAMECHECK_AXES,
+  LAYER_GRAVITIES,
+  MASK_METHODS,
+  RESAMPLE_KERNELS,
+  VISION_DETAILS,
+} from "./enums.ts";
+export { MODEL_LINEUP, SUPPORTED_MODELS, defaultModelFor, modelsFor } from "./ai-models.ts";
+export type {
+  AiKind,
+  AiProvider,
+  ImageCapabilities,
+  ImageModelRow,
+  ImageSizeRule,
+  ModelRow,
+  SupportedModel,
+  VisionModelRow,
+} from "./ai-models.ts";

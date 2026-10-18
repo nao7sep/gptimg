@@ -2,37 +2,8 @@ import { GptImgError, type ErrorEffect, cancelledError, isCancelled } from "../e
 import { maskCredentials } from "../log/mask.ts";
 import { refuse } from "../refusal.ts";
 import { BUDGET_RESEND_POLICY, type NetworkBudgetName } from "./defaults.ts";
+import { DROPPED_CODES, UNREACHABLE_CODES, isConnectionError, isTimeout, networkCode } from "./failure.ts";
 import { isAbortError } from "./retry.ts";
-
-const UNREACHABLE_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]);
-const DROPPED_CODES = new Set(["ECONNRESET", "EPIPE", "UND_ERR_SOCKET", "ECONNABORTED"]);
-
-/** The first string `code` on the error or its cause chain (fetch and the OpenAI client wrap socket errors). */
-function networkCode(err: unknown): string | null {
-  let cur: unknown = err;
-  for (let depth = 0; depth < 5 && cur && typeof cur === "object"; depth++) {
-    const code = (cur as { code?: unknown }).code;
-    if (typeof code === "string" && /^[A-Z_]+$/.test(code)) return code;
-    cur = (cur as { cause?: unknown }).cause;
-  }
-  return null;
-}
-
-/** The error's own name or its class's, since the OpenAI client's errors keep the generic name. */
-function errorNames(err: object): string[] {
-  return [(err as { name?: unknown }).name, err.constructor?.name].filter((n): n is string => typeof n === "string");
-}
-
-function isTimeout(err: unknown): boolean {
-  let cur: unknown = err;
-  for (let depth = 0; depth < 5 && cur && typeof cur === "object"; depth++) {
-    const names = errorNames(cur);
-    if (names.includes("TimeoutError") || names.includes("APIConnectionTimeoutError")) return true;
-    if ((cur as { code?: unknown }).code === "ETIMEDOUT") return true;
-    cur = (cur as { cause?: unknown }).cause;
-  }
-  return false;
-}
 
 /** The provider's machine-readable error code, as the OpenAI client exposes it. */
 export function providerCode(err: unknown): string | undefined {
@@ -115,6 +86,6 @@ export function classifyRequestFailure(
   if (net && UNREACHABLE_CODES.has(net)) return make("provider.unreachable", "none");
   if (isTimeout(err)) return make("provider.timeout", maybeSpent);
   if (net && DROPPED_CODES.has(net)) return make("provider.connectionLost", maybeSpent);
-  if (err && typeof err === "object" && errorNames(err).includes("APIConnectionError")) return make("provider.connectionLost", maybeSpent);
+  if (isConnectionError(err)) return make("provider.connectionLost", maybeSpent);
   return new GptImgError("internal.unexpected", message, { cause: err, effect: maybeSpent, details });
 }

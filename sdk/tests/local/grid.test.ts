@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -114,17 +115,18 @@ describe("runGrid", () => {
     const res = await runGrid({ inputs: [a, missing, b], out, cell: CELL, gap: GAP });
     expect(res.count).toBe(3);
     expect(res.placed).toBe(2);
-    expect(res.skipped).toEqual([{ input: missing, code: "fs.notFound", message: expect.stringContaining("nope.png") }]);
+    expect(res.skipped).toEqual([{ input: missing, code: "fs.notFound", effect: "none", message: expect.stringContaining("nope.png") }]);
     expect(res.cols).toBe(2); // ceil(sqrt(2)), over the 2 readable tiles
     const sheet = await readRGBA(out);
     expect(sheet.width).toBe(res.width); // output still written
   });
 
-  it("throws when no input is readable (an empty sheet is a caller error)", async () => {
+  it("throws the first input's own error when no input is readable, writing nothing", async () => {
     const out = path.join(tmp, "sheet.png");
     await expect(
       runGrid({ inputs: [path.join(tmp, "x.png"), path.join(tmp, "y.png")], out }),
-    ).rejects.toThrow(/none of the 2 input/);
+    ).rejects.toMatchObject({ code: "fs.notFound", subject: path.join(tmp, "x.png") });
+    expect(existsSync(out)).toBe(false);
   });
 
   it("fills the gaps with the background colour (and leaves them transparent by default)", async () => {

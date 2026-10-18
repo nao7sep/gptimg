@@ -88,6 +88,7 @@ export function listModelsImpl(ctx: SdkContext, opts: { modelsDir?: string } = {
       path: filePath,
       cached: cache.usable,
       sizeBytes: cache.sizeBytes,
+      downloadBytes: entry.byteSize ?? null,
     };
   });
   return { status: "completed", models };
@@ -125,7 +126,7 @@ export async function verifyModelsImpl(
           sizeBytes: cache.sizeBytes ?? null,
         });
         actualSha256 = await fileSha256(filePath, opts.signal, (done) =>
-          logger.progress("hash", done, cache.sizeBytes ?? done, "bytes"),
+          logger.progress("hash", done, cache.sizeBytes ?? done, "bytes", entry.name),
         );
         integrity = actualSha256 === entry.sha256 ? "ok" : "mismatch";
       }

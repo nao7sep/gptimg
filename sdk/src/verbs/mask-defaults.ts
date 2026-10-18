@@ -1,4 +1,4 @@
-import type { MaskArgs, MaskPolicy } from "../types.ts";
+import type { ChromaPolicy, MaskArgs } from "../types.ts";
 
 /**
  * Fill the unset chroma-mask args from the policy's `chroma` section. An arg the
@@ -7,7 +7,7 @@ import type { MaskArgs, MaskPolicy } from "../types.ts";
  * leaves `key` unset (i.e. "auto"). Pure: returns a new args object, never
  * mutating the input.
  */
-export function applyChromaPolicyDefaults(args: MaskArgs, section: MaskPolicy): MaskArgs {
+export function applyChromaPolicyDefaults(args: MaskArgs, section: ChromaPolicy): MaskArgs {
   const merged: MaskArgs = { ...args };
   if (merged.preserveInterior === undefined && section.preserveInterior !== undefined) {
     merged.preserveInterior = section.preserveInterior;

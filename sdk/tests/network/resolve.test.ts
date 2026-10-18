@@ -1,3 +1,4 @@
+import { resolveNetworkForCall } from "../../src/network/index.ts";
 import { describe, expect, it } from "vitest";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.ts";
 import { resolveNetworkConfig } from "../../src/network/resolve.ts";
@@ -37,22 +38,16 @@ describe("resolveNetworkConfig", () => {
     expect(cfg.imageDownload.timeout).toBe(NETWORK_DEFAULTS.imageDownload.timeout);
   });
 
-  it("ignores malformed fields and falls back to defaults", () => {
-    const cfg = resolveNetworkConfig({
-      imageGenerate: {
-        timeout: "not a number" as unknown as number,
-        maxRetries: -3,
-        retryIntervals: [1, "bad" as unknown as number, 3],
-      },
-    });
-    expect(cfg.imageGenerate.timeout).toBe(
-      NETWORK_DEFAULTS.imageGenerate.timeout,
-    );
-    expect(cfg.imageGenerate.maxRetries).toBe(
-      NETWORK_DEFAULTS.imageGenerate.maxRetries,
-    );
-    expect(cfg.imageGenerate.retryIntervals).toEqual(
-      NETWORK_DEFAULTS.imageGenerate.retryIntervals,
+  it.each([
+    ["a negative retry count", { maxRetries: -1 }],
+    ["a fractional retry count", { maxRetries: 0.5 }],
+    ["a disabled timeout", { timeout: 0 }],
+    ["a timeout longer than a timer can hold", { timeout: 2_147_000_001 }],
+    ["a non-numeric retry interval", { retryIntervals: [1, "bad"] }],
+    ["an unknown field", { retries: 3 }],
+  ])("refuses %s in policy.network before any request", (_label, budget) => {
+    expect(() => resolveNetworkForCall({ network: { modelDownload: budget as never } })).toThrow(
+      expect.objectContaining({ code: "policy.invalid", details: expect.objectContaining({ section: "network" }) }),
     );
   });
 

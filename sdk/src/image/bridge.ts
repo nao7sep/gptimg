@@ -1,7 +1,6 @@
 import sharp, { type Sharp } from "sharp";
 import { GptImgError, fsError, processingError } from "../errors.ts";
-import { refuse } from "../refusal.ts";
-import { writeFileAtomic } from "../internal/atomic-file.ts";
+import { writeOutputBytes } from "../internal/output-files.ts";
 import type { EncodingArgs, PngEncodingArgs, ResampleKernel } from "../types.ts";
 import { readCaptureMetadata, withCaptureMetadata, type CaptureMetadata } from "./capture.ts";
 
@@ -66,15 +65,7 @@ export interface ImageTarget {
  * replaced. Any other failure names the filesystem's cause.
  */
 async function publishImage(target: ImageTarget, bytes: Buffer, failure: string): Promise<void> {
-  const overwrite = target.overwrite ?? false;
-  try {
-    await writeFileAtomic(target.path, bytes, { overwrite });
-  } catch (err) {
-    if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
-      refuse("output.exists", `Output exists: ${target.path}. Set overwrite: true to allow.`, { subject: target.path });
-    }
-    throw fsError(err, failure, target.path, "unknown");
-  }
+  await writeOutputBytes(target.path, bytes, target.overwrite ?? false, failure);
 }
 
 /**
@@ -167,11 +158,7 @@ export async function loadRawRGBA(path: string): Promise<RawImage> {
   try {
     out = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   } catch (err) {
-    throw new GptImgError(
-      "image.undecodable",
-      `Failed to decode image at ${path}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw inputImageError(err, "Failed to decode image at", path);
   }
   const { data, info } = out;
   return {
@@ -242,11 +229,7 @@ export async function loadMaskPNG(path: string): Promise<RawImage> {
       resolveWithObject: true,
     });
   } catch (err) {
-    throw new GptImgError(
-      "image.undecodable",
-      `Failed to decode mask at ${path}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw inputImageError(err, "Failed to decode mask at", path);
   }
   const { data, info } = out;
   return {

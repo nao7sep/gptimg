@@ -2,6 +2,8 @@
 // Nothing else decides which model a call uses: a caller's `model` param wins, and without
 // one the role's default from this table applies.
 
+import { GptImgError } from "./errors.ts";
+
 /** The lineup research document these rows and defaults come from. */
 export const MODEL_LINEUP = "ai-model-lineup-20261004";
 
@@ -27,7 +29,7 @@ export interface ImageCapabilities {
   readonly size: ImageSizeRule;
 }
 
-interface ModelRow {
+export interface ModelRow {
   readonly provider: AiProvider;
   readonly id: string;
   readonly kinds: readonly AiKind[];
@@ -92,6 +94,6 @@ export function modelsFor(provider: AiProvider, kind: AiKind): readonly Supporte
 export function defaultModelFor(provider: AiProvider, kind: AiKind): string {
   const rows = modelsFor(provider, kind);
   const row = rows.find((candidate) => candidate.defaultFor.includes(kind)) ?? rows[0];
-  if (!row) throw new Error(`No supported ${provider} model for ${kind}.`);
+  if (!row) throw new GptImgError("internal.invariant", `No supported ${provider} model for ${kind}.`);
   return row.id;
 }

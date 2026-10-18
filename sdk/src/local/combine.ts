@@ -63,7 +63,7 @@ async function boxBlurInPlace(
     // The radius has no upper bound, so a long feather yields between passes
     // and stops at the next one once cancelled.
     if (pass > 0) {
-      logger?.progress("infer", pass, passes, "passes");
+      logger?.progress("process", pass, passes, "passes");
       await new Promise((resolve) => setImmediate(resolve));
     }
     throwIfAborted(signal);
@@ -156,7 +156,7 @@ export async function runCombine(
     height = loaded.height;
     out = new Uint8Array(loaded.buffers[0]!);
     await boxBlurInPlace(out, width, height, Math.floor(radius), signal, opts.logger);
-    opts.logger?.progress("infer", Math.floor(radius), Math.floor(radius), "passes");
+    opts.logger?.progress("process", Math.floor(radius), Math.floor(radius), "passes");
   }
 
   throwIfAborted(signal);

@@ -18,4 +18,12 @@ describe("the package on plain Node", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toMatch(/^function \d+\.\d+\.\d+/);
   });
+
+  it("loads the gptimgsdk/types entry by name, with its code tables", () => {
+    const script = 'const t = await import("gptimgsdk/types"); process.stdout.write(Object.keys(t.ERROR_CODES).length + " " + t.REFUSAL_CODES.length + " " + t.SUPPORTED_MODELS.length);';
+    const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { cwd: PACKAGE, encoding: "utf8" });
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toMatch(/^[1-9]\d* [1-9]\d* [1-9]\d*$/);
+  });
 });

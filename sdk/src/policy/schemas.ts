@@ -60,7 +60,7 @@ const ChromaPolicySchema = z
     borderSample: z.number().int().positive().optional(),
     saturationRatio: z.number().positive().max(1).optional(),
   })
-  .passthrough();
+  .strict();
 
 // ONNX Runtime tuning, formerly the GPTIMG_ONNX_INTRA_OP_THREADS and
 // GPTIMG_ONNX_EP environment variables: the SDK reads no environment.
@@ -71,19 +71,17 @@ const OnnxPolicySchema = z
   })
   .strict();
 
-const PolicySchema = z
-  .object({
-    generate: GeneratePolicySchema.optional(),
-    edit: EditPolicySchema.optional(),
-    vision: VisionPolicySchema.optional(),
-    chroma: ChromaPolicySchema.optional(),
-    network: NetworkSchema.optional(),
-    onnx: OnnxPolicySchema.optional(),
-  })
-  .strict();
+const SECTION_SCHEMAS: Record<keyof Policy, z.ZodType> = {
+  generate: GeneratePolicySchema,
+  edit: EditPolicySchema,
+  vision: VisionPolicySchema,
+  chroma: ChromaPolicySchema,
+  network: NetworkSchema,
+  onnx: OnnxPolicySchema,
+};
 
 /** `policy.invalid` for a section, naming its first faulty field. */
-function policyError(section: string, err: z.ZodError): GptImgError {
+export function policyError(section: string, err: z.ZodError): GptImgError {
   const { field, constraint } = firstZodIssue(err);
   return new GptImgError("policy.invalid", `${section} policy invalid: ${formatZodError(err)}`, {
     details: { section, field, constraint },
@@ -122,12 +120,29 @@ export function validateChromaSection(input: unknown): ChromaPolicy {
   return r.data as ChromaPolicy;
 }
 
+/**
+ * Check a whole policy: unknown sections are refused, and each section is
+ * checked as its verb will check it. The constructor and each call check the
+ * policy they are given, and a profile's is checked when it is loaded, so a
+ * misspelt section or field fails where it was written.
+ */
 export function validatePolicy(input: unknown): Policy {
-  const r = PolicySchema.safeParse(input ?? {});
-  if (!r.success) {
-    throw policyError("policy", r.error);
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new GptImgError("policy.invalid", "policy must be an object.", { details: { section: "policy", constraint: "object" } });
   }
-  return r.data as Policy;
+  for (const [section, value] of Object.entries(input)) {
+    if (value === undefined) continue;
+    if (!Object.hasOwn(SECTION_SCHEMAS, section)) {
+      throw new GptImgError(
+        "policy.invalid",
+        `policy has no section ${JSON.stringify(section)}; the sections are ${Object.keys(SECTION_SCHEMAS).join(", ")}.`,
+        { details: { section, constraint: "known section" } },
+      );
+    }
+    const r = SECTION_SCHEMAS[section as keyof Policy].safeParse(value);
+    if (!r.success) throw policyError(section, r.error);
+  }
+  return input as Policy;
 }
 
 export function validateOnnxSection(input: unknown): OnnxPolicy {

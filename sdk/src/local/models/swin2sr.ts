@@ -1,6 +1,6 @@
 /**
- * Swin2SR ×4 super-resolution wrapper. Lazy: the ONNX session is created on
- * first use and reused for the process lifetime.
+ * Swin2SR ×4 super-resolution wrapper. The ONNX session over the installed
+ * model is created by the first upscale and reused for the process lifetime.
  *
  * The model is a windowed-attention transformer with two hard constraints the
  * caller must satisfy, neither of which the exported graph handles itself:

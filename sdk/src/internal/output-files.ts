@@ -20,15 +20,16 @@ export async function ensureOutputDir(outDir: string): Promise<void> {
  */
 export async function writeOutputBytes(
   filePath: string,
-  data: Buffer | Uint8Array,
+  data: Buffer | Uint8Array | string,
   overwrite: boolean,
+  failure = "Failed to write output",
 ): Promise<void> {
   try {
-    await writeFileAtomic(filePath, Buffer.from(data), { overwrite });
+    await writeFileAtomic(filePath, typeof data === "string" ? data : Buffer.from(data), { overwrite });
   } catch (err) {
     if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
       refuse("output.exists", `Output exists: ${filePath}. Set overwrite: true to allow.`, { subject: filePath });
     }
-    throw fsError(err, "Failed to write output", filePath, "unknown");
+    throw fsError(err, failure, filePath, "unknown");
   }
 }

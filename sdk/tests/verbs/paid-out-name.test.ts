@@ -48,10 +48,10 @@ describe("paid verbs' outName", () => {
     expect(await readdir(tmp)).toEqual(["in.png", "out"]);
   });
 
-  it("puts an absolute stem in its own folder", async () => {
+  it("puts an absolute stem in its own folder, with no outDir needed", async () => {
     const elsewhere = path.join(tmp, "elsewhere");
     await mkdir(elsewhere);
-    const result = done(await sdk.generate({ prompt: "x", outDir, outName: path.join(elsewhere, "picked") }));
+    const result = done(await sdk.generate({ prompt: "x", outName: path.join(elsewhere, "picked") }));
     expect(result.files[0]!.path).toBe(path.join(elsewhere, "picked.png"));
     expect((await readdir(elsewhere)).sort()).toEqual(["picked.json", "picked.png"]);
     expect(await readdir(outDir)).toEqual([]);

@@ -10,7 +10,7 @@
 import path from "node:path";
 import { readdirSync } from "node:fs";
 import { GptImgError, fsError } from "../errors.ts";
-import { createLogger, safeLogError, type Logger } from "../log/index.ts";
+import { createLogger, type Logger } from "../log/index.ts";
 import { failedResponseFields } from "../network/retry.ts";
 import { RefusalSignal, refuse, type RefusedResult } from "../refusal.ts";
 import type { VerbCallOptions } from "../verbs/options.ts";
@@ -125,9 +125,15 @@ export function assertOutputStem(stem: string, field = "outName"): void {
  * goes in `outDir`, and an absolute one also chooses the folder, as it does
  * for the local verbs.
  */
-export function outputStemLocation(outDir: string, outName: string): { outDir: string; stem: string } {
+export function outputStemLocation(outDir: string | undefined, outName: string): { outDir: string; stem: string } {
   assertOutputStem(outName);
-  return path.isAbsolute(outName) ? { outDir: path.dirname(outName), stem: path.basename(outName) } : { outDir, stem: outName };
+  if (path.isAbsolute(outName)) return { outDir: path.dirname(outName), stem: path.basename(outName) };
+  if (outDir === undefined) {
+    throw new GptImgError("args.invalid", "Set outDir to choose an output directory, or use an absolute outName.", {
+      details: { field: "outDir", constraint: "required" },
+    });
+  }
+  return { outDir, stem: outName };
 }
 
 function serializeThrownError(
@@ -206,7 +212,8 @@ export async function withVerbLogger<T>(
       return { status: "refused", refusal: thrown.refusal, logPath: logger.handle.path };
     }
     const err = toSdkError(verbName, thrown);
-    await safeLogError(logger, err.message, {
+    // Logging never throws (a failed line is announced once and dropped), so the original error survives.
+    await logger.error("error", err.message, {
       code: err.code,
       kind: err.kind,
       effect: err.effect,

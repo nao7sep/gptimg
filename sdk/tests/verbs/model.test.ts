@@ -232,7 +232,7 @@ describe("model.verify integrity check", () => {
         stage: "resolve",
       }),
     );
-    expect(onProgress).toHaveBeenLastCalledWith({ verb: "model", stage: "hash", done: 3, total: 3, unit: "bytes" });
+    expect(onProgress).toHaveBeenLastCalledWith({ verb: "model", stage: "hash", done: 3, total: 3, unit: "bytes", subject: expect.any(String) });
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         message: "model verification result",

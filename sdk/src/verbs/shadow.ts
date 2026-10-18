@@ -36,7 +36,7 @@ export async function shadowImpl(
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     await logger.info("resolve", "shadow start", {
-      in: args.in,
+      input: args.in,
       out: outPath,
       blur: args.blur ?? null,
       offset: args.offset ?? null,

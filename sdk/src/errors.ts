@@ -1,7 +1,7 @@
 /**
  * The SDK's one error type (sdk-conventions, *Errors*). An error means the
  * operation could not run; a decision not to proceed is a refusal result, not
- * an error (see `REFUSAL_CODES` in `results.ts`). Consumers branch on the
+ * an error (see `REFUSAL_CODES` in `refusal.ts`). Consumers branch on the
  * fields, never on a class: `code` names the observed cause, `kind` says what a
  * consumer can do without knowing every code, and `effect` says, from the
  * evidence held where the failure occurred, whether anything may have changed

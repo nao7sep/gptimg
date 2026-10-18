@@ -1,4 +1,4 @@
-// A recipe checked against the chosen model's row before any paid call
+// A policy checked against the chosen model's row before any paid call
 // (ai-model-routing-conventions). An id with no row is not checked: its request is the plain
 // one, and OpenAI's answer at call time is the verdict on it.
 
@@ -90,9 +90,9 @@ export function resolveGenerateModeration(model: string): "low" | undefined {
 }
 
 /**
- * The reasoning effort a vision call sends: the recipe's value, checked against the supported
- * model's list, else that model's own default. An id with no row sends the recipe's value
- * unchecked, or none when the recipe sets none.
+ * The reasoning effort a vision call sends: the policy's value, checked against the supported
+ * model's list, else that model's own default. An id with no row sends the policy's value
+ * unchecked, or none when the policy sets none.
  */
 export function resolveVisionReasoning(model: string, chosen: string | undefined): string | undefined {
   const row = visionRow(model);
@@ -103,8 +103,8 @@ export function resolveVisionReasoning(model: string, chosen: string | undefined
 }
 
 /**
- * The image detail a vision call sends: the recipe's value, else `auto`, for a supported model.
- * An id with no row sends the recipe's value, or none when the recipe sets none.
+ * The image detail a vision call sends: the policy's value, else `auto`, for a supported model.
+ * An id with no row sends the policy's value, or none when the policy sets none.
  */
 export function resolveVisionDetail(model: string, chosen: VisionDetail | undefined): VisionDetail | undefined {
   if (!visionRow(model)) return chosen;

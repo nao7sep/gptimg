@@ -252,7 +252,7 @@ async function downloadAttempt(
           stream.write(value, (err) => (err ? reject(err) : resolve()));
         });
         const expectedTotal = total ?? expectedBytes;
-        if (expectedTotal !== undefined && expectedTotal > 0) logger?.progress("download", received, expectedTotal, "bytes");
+        if (expectedTotal !== undefined && expectedTotal > 0) logger?.progress("download", received, expectedTotal, "bytes", name);
       }
     } catch (err) {
       await reader.cancel().catch(() => undefined);
@@ -330,7 +330,7 @@ export function inspectCachedModel(
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       return { present: false, usable: false };
     }
-    throw err;
+    throw fsError(err, "Failed to inspect the model file", filePath);
   }
 }
 
@@ -359,9 +359,8 @@ function assertSafeUrl(url: string, allowLoopbackHttp = true): void {
 }
 
 // A short, filename-safe tag identifying this host, so a staged file's owner
-// can be told apart from a same-pid process on another machine. `GPTIMG_MODELS_DIR`
-// exists precisely so the cache can be relocated onto shared storage (a NAS, a
-// container bind mount), where two hosts' pid spaces overlap: pid 4021 dead on
+// can be told apart from a same-pid process on another machine. `modelsDir` can
+// put the models on shared storage (a NAS, a container bind mount), where two hosts' pid spaces overlap: pid 4021 dead on
 // host A says nothing about whether host B's pid 4021 is still downloading.
 // Hashed rather than embedding the raw hostname, which can contain characters
 // outside the staged-name grammar (spaces, dots, unicode) and would otherwise
@@ -403,8 +402,8 @@ function processIsAlive(pid: number): boolean {
  * can leave hundreds of MB in temp/. The owning host tag and pid are in every
  * staged name; a file tagged for another host is left alone regardless of
  * whether its pid happens to be alive here — pid liveness is only meaningful
- * within the host that reported it, and `GPTIMG_MODELS_DIR` can point several
- * hosts at the same shared directory. Among this host's own files, one whose
+ * within the host that reported it, and `modelsDir` can point several hosts at
+ * the same shared directory. Among this host's own files, one whose
  * pid no longer runs is abandoned; files of live processes (this one included)
  * are in flight and stay. Best effort: a file another sweeper removed first,
  * or one that cannot be removed, is skipped.
@@ -525,18 +524,6 @@ async function acquireModel(
   const { signal, logger } = opts;
   const force = opts.force ?? false;
   const budget = opts.budget ?? NETWORK_DEFAULTS.modelDownload;
-  if (!Number.isSafeInteger(entry.byteSize) && entry.byteSize !== undefined) {
-    throw new GptImgError("internal.invariant", `Invalid expected byte size for ${entry.name}.`);
-  }
-  if (entry.byteSize !== undefined && entry.byteSize <= 0) {
-    throw new GptImgError("internal.invariant", `Invalid expected byte size for ${entry.name}.`);
-  }
-  if (!Number.isSafeInteger(budget.timeout) || budget.timeout <= 0 || budget.timeout > MAX_TIMER_MS) {
-    throw new GptImgError("policy.invalid", "Model network timeout must be positive.", { details: { section: "network", field: "modelDownload.timeout" } });
-  }
-  if (!Number.isSafeInteger(budget.maxRetries) || budget.maxRetries < 0) {
-    throw new GptImgError("policy.invalid", "Model maxRetries must be a non-negative integer.", { details: { section: "network", field: "modelDownload.maxRetries" } });
-  }
   const byteLimit = entry.byteSize ?? MAX_MODEL_BYTES;
   const operationSignal = combineSignals(signal, modelWholeTimeoutMs(byteLimit, budget.maxRetries));
   throwIfAborted(operationSignal);
@@ -598,7 +585,10 @@ async function acquireModel(
     // changed or the download is corrupt — fail loudly rather than cache bad
     // bytes. Non-retryable: a fully-downloaded-but-wrong file won't fix itself.
     if (entry.sha256) {
-      const got = await fileSha256(partialPath, operationSignal);
+      const size = entry.byteSize;
+      const got = await fileSha256(partialPath, operationSignal, (done) =>
+        logger?.progress("hash", done, size ?? done, "bytes", entry.name),
+      );
       if (got !== entry.sha256) {
         throw new GptImgError(
           "model.integrity",

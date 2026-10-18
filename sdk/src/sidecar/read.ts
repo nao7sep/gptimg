@@ -3,12 +3,10 @@ import { readFile } from "node:fs/promises";
 import { GptImgError, fsError } from "../errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { assertAbsolutePath } from "../internal/absolute-path.ts";
+import { takeFormatVersion } from "../internal/format-version.ts";
 import { formatZodError } from "../internal/zodError.ts";
 import type { Sidecar, SidecarKind } from "../types.ts";
 import { SidecarV1Schema, SidecarV2Schema } from "./schema.ts";
-
-/** The version an unmarked sidecar reads as: v0.1.0's format, which version 1 kept. */
-const UNVERSIONED = 1;
 
 /**
  * Read the sidecar at the absolute `sidecarPath` (`<image stem>.json`), any
@@ -38,9 +36,8 @@ export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
 }
 
 /** A parsed sidecar body of any supported format as its typed record, or `sidecar.malformed`/`sidecar.newerFormat`. */
-export function parseSidecar(parsed: unknown, subject: string): Sidecar {
-  const version = formatVersionOf(parsed, subject);
-  const { formatVersion: _omit, ...body } = parsed as Record<string, unknown>;
+function parseSidecar(parsed: unknown, subject: string): Sidecar {
+  const { version, body } = takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, "sidecar", subject);
   // The schemas validate; the record returned is the file's own body, so its
   // key order and any unknown keys survive a read-then-write unchanged.
   if (version === 1) {
@@ -51,26 +48,6 @@ export function parseSidecar(parsed: unknown, subject: string): Sidecar {
   const r = SidecarV2Schema.safeParse(body);
   if (!r.success) throw malformed(subject, formatZodError(r.error));
   return { formatVersion: 2, ...body } as Sidecar;
-}
-
-function formatVersionOf(parsed: unknown, subject: string): number {
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw malformed(subject, "must be a JSON object");
-  }
-  // Only an absent field means unversioned; `null` is malformed, as for profiles.
-  const marked = (parsed as { formatVersion?: unknown }).formatVersion;
-  const version = marked === undefined ? UNVERSIONED : marked;
-  if (typeof version !== "number" || !Number.isInteger(version) || version < 1) {
-    throw malformed(subject, "formatVersion is not a positive integer");
-  }
-  if (version > SIDECAR_FORMAT_VERSION) {
-    throw new GptImgError(
-      "sidecar.newerFormat",
-      `${subject} has format version ${version}, newer than the ${SIDECAR_FORMAT_VERSION} this gptimgsdk reads; it was left unchanged.`,
-      { subject, details: { expected: SIDECAR_FORMAT_VERSION, actual: version } },
-    );
-  }
-  return version;
 }
 
 function kindOfV1(body: { request: Record<string, unknown>; response: unknown }): SidecarKind {
@@ -100,7 +77,7 @@ export function refuseNewerSidecar(sidecarPath: string): void {
     return;
   }
   try {
-    formatVersionOf(parsed, sidecarPath);
+    takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, "sidecar", sidecarPath);
   } catch (err) {
     if ((err as GptImgError).code === "sidecar.newerFormat") throw err;
   }

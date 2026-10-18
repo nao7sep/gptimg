@@ -1,6 +1,6 @@
 /**
  * Shared hex-color helpers. Verb-neutral: parsing and validation used by
- * backplate, compose, mask, shadow, and the recipe schema. No I/O.
+ * backplate, compose, mask, shadow, and the policy schema. No I/O.
  */
 
 import { GptImgError } from "./errors.ts";

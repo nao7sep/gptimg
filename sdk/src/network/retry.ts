@@ -1,6 +1,7 @@
 import type { Logger } from "../log/index.ts";
 import { cancelledError, isCancelled } from "../errors.ts";
 import { isQuotaExhausted } from "./classify.ts";
+import { UNREACHABLE_CODES, isConnectionError, isTimeout, networkCode } from "./failure.ts";
 import {
   BUDGET_RESEND_POLICY,
   type NetworkBudget,
@@ -47,31 +48,10 @@ function statusFromError(err: unknown): number | null {
 }
 
 // Failures that prove a request never reached the provider's work: it was
-// refused, could not be resolved, or was rejected as over capacity before any
-// processing. Everything else in the transient sets may have been processed.
+// refused, could not be resolved (UNREACHABLE_CODES), or was rejected as over
+// capacity before any processing. Everything else in the transient sets may
+// have been processed.
 const UNPROCESSED_HTTP_STATUSES = new Set([408, 429, 503]);
-const UNPROCESSED_NETWORK_CODES = new Set([
-  "ECONNREFUSED",
-  "ENOTFOUND",
-  "EAI_AGAIN",
-  "UND_ERR_CONNECT_TIMEOUT",
-]);
-
-/**
- * The first string `code` on the error or its `cause` chain. The OpenAI SDK
- * wraps a fetch failure in APIConnectionError, and fetch wraps the socket
- * error in a TypeError, so the system code sits two causes deep.
- */
-function networkCode(err: unknown): string | null {
-  let cur: unknown = err;
-  for (let depth = 0; depth < 5 && cur && typeof cur === "object"; depth++) {
-    const code = (cur as { code?: unknown }).code;
-    if (typeof code === "string") return code;
-    cur = (cur as { cause?: unknown }).cause;
-  }
-  return null;
-}
-
 function isRetryableError(err: unknown, policy: ResendPolicy): boolean {
   if (isAbortError(err)) return false;
   // An exhausted quota is a 429 that waiting cannot fix (sdk-conventions, *Retries*).
@@ -85,16 +65,12 @@ function isRetryableError(err: unknown, policy: ResendPolicy): boolean {
   if (!(err instanceof Error)) return false;
   const code = networkCode(err);
   if (policy === "unprocessed") {
-    return code != null && UNPROCESSED_NETWORK_CODES.has(code);
+    return code != null && UNREACHABLE_CODES.has(code);
   }
   if (code != null && RETRYABLE_NETWORK_CODES.has(code)) return true;
-  if (err.name === "TimeoutError") return true;
-  // Heuristic: fetch failures land as TypeError with cause; the OpenAI SDK
-  // wraps connection errors in APIConnectionError without a status.
-  if (err.name === "APIConnectionError" || err.name === "APIConnectionTimeoutError") {
-    return true;
-  }
-  return false;
+  // A timeout, or the OpenAI client's connection failure, which carries no status
+  // and keeps the generic error name, so it is told by its class.
+  return isTimeout(err) || isConnectionError(err);
 }
 
 function readHeader(headers: unknown, name: string): string | null {

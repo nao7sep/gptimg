@@ -15,7 +15,6 @@ describe("planGenerateOutputs", () => {
   it("names a single image with no suffix", () => {
     const plan = planGenerateOutputs(1, "shot", [ok("png")]);
     expect(plan.suffixCount).toBe(1);
-    expect(plan.partial).toBe(false);
     expect(plan.groupExtension).toBe("png");
     expect(plan.images).toEqual([{ index: 1, format: fmt("png"), fileName: "shot.png" }]);
   });
@@ -37,7 +36,6 @@ describe("planGenerateOutputs", () => {
 
   it("keeps a failed image's index as a gap rather than compacting (stable provenance)", () => {
     const plan = planGenerateOutputs(3, "shot", [ok("png"), fail, ok("png")]);
-    expect(plan.partial).toBe(true);
     expect(plan.images.map((i) => i.index)).toEqual([1, 3]);
     expect(plan.images.map((i) => i.fileName)).toEqual(["shot-1.png", "shot-3.png"]);
   });
@@ -58,7 +56,6 @@ describe("planGenerateOutputs", () => {
     const plan = planGenerateOutputs(2, "shot", [fail, fail]);
     expect(plan.images).toEqual([]);
     expect(plan.groupExtension).toBe("png");
-    expect(plan.partial).toBe(true);
   });
 
   it("rejects a group whose surviving images carry mixed extensions", () => {

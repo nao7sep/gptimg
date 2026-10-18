@@ -1,6 +1,7 @@
 import { GptImgError } from "./errors.ts";
 import { assertAbsolutePath } from "./internal/absolute-path.ts";
 import { defaultModelsDir } from "./internal/resource-home.ts";
+import { validatePolicy } from "./policy/schemas.ts";
 import { mergePolicies } from "./policy/merge.ts";
 import type { GptImgOptions, Policy, ResolvedProfile } from "./types.ts";
 
@@ -46,6 +47,7 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
   const project = optionalString(opts.project, "project") ?? profile?.project;
   if (opts.modelsDir !== undefined) assertAbsolutePath(opts.modelsDir, "modelsDir");
   if (opts.logDir !== undefined) assertAbsolutePath(opts.logDir, "logDir");
+  if (opts.policy !== undefined) validatePolicy(opts.policy);
   let app: SdkContext["app"];
   if (opts.app !== undefined) {
     const name = optionalString(opts.app?.name, "app.name");
@@ -90,7 +92,9 @@ export function requireCredentials(ctx: SdkContext): ResolvedProfile {
 
 /** The policy one call runs with: the call's over the instance's (last wins). */
 export function callPolicy(ctx: SdkContext, policy: Policy | undefined): Policy {
-  return policy === undefined ? ctx.policy : mergePolicies(ctx.policy, policy);
+  if (policy === undefined) return ctx.policy;
+  validatePolicy(policy);
+  return mergePolicies(ctx.policy, policy);
 }
 
 /** The models folder one call uses: its own, then the instance's. */

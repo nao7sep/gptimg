@@ -1,7 +1,6 @@
-import { GptImgError } from "../errors.ts";
+import { policyError } from "../policy/schemas.ts";
 import type { Policy } from "../types.ts";
 import type { NetworkConfig } from "./defaults.ts";
-import { firstZodIssue, formatZodError } from "../internal/zodError.ts";
 import { resolveNetworkConfig } from "./resolve.ts";
 import { NetworkSchema } from "./schema.ts";
 
@@ -25,11 +24,6 @@ export function resolveNetworkForCall(
     return resolveNetworkConfig(undefined);
   }
   const r = NetworkSchema.safeParse(network);
-  if (!r.success) {
-    const { field, constraint } = firstZodIssue(r.error);
-    throw new GptImgError("policy.invalid", `network policy invalid: ${formatZodError(r.error)}`, {
-      details: { section: "network", field, constraint },
-    });
-  }
+  if (!r.success) throw policyError("network", r.error);
   return resolveNetworkConfig(r.data);
 }

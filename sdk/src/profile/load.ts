@@ -8,6 +8,7 @@ import { assertAbsolutePath } from "../internal/absolute-path.ts";
 import { firstZodIssue, formatZodError } from "../internal/zodError.ts";
 import type { LoadedProfile, Policy, Profile } from "../types.ts";
 import { deobfuscate } from "./obfuscate.ts";
+import { validatePolicy } from "../policy/schemas.ts";
 import { ProfileSchema } from "./schema.ts";
 
 /** The environment a caller passes in; the SDK never reads the process environment. */
@@ -33,14 +34,8 @@ function enforcesFileMode(): boolean {
  * file's JSON with or without its `formatVersion`.
  */
 export function validateProfile(value: unknown, subject = "profile"): Profile {
-  const body = takeFormatVersion(value, PROFILE_FORMAT_VERSION, {
-    name: "profile",
-    path: subject,
-    invalidCode: "profile.malformed",
-  });
-  const result = ProfileSchema.safeParse(
-    (value as { formatVersion?: unknown }).formatVersion === 2 ? body : withoutEmptyOptionals(body as Record<string, unknown>),
-  );
+  const { version, body } = takeFormatVersion(value, PROFILE_FORMAT_VERSION, "profile", subject);
+  const result = ProfileSchema.safeParse(version >= 2 ? body : withoutEmptyOptionals(body));
   if (!result.success) {
     const { field, constraint } = firstZodIssue(result.error);
     throw new GptImgError("profile.malformed", `${subject} is invalid: ${formatZodError(result.error)}`, {
@@ -48,6 +43,8 @@ export function validateProfile(value: unknown, subject = "profile"): Profile {
       details: { field, constraint },
     });
   }
+  // The policy is checked whole here, so a misspelt section fails at load, not when a verb reads it.
+  if (result.data.policy !== undefined) validatePolicy(result.data.policy);
   return result.data as Profile;
 }
 

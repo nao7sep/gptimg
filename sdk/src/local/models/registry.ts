@@ -1,12 +1,12 @@
 /**
- * Model registry. One entry per AI artifact GptImg can lazily fetch.
+ * Model registry. One entry per AI model gptimgsdk can install.
  *
  * Each entry pins:
  *   name      — cache filename. Bump the suffix when changing models.
  *   supersedes — cache filenames of this model's earlier pins. When a pin
  *               changes, add the old `name` here: acquiring the new file
  *               deletes the old one once the new one is verified on disk.
- *   url       — single source of truth, fetched on first use. Prefer
+ *   url       — single source of truth, fetched by `model.install`. Prefer
  *               commit-pinned HuggingFace URLs (`/resolve/<commit-sha>/...`)
  *               over `/resolve/main/...`.
  *   inputSize — square spatial dimension the model expects.
@@ -105,8 +105,8 @@ export const SWIN2SR_X4: ModelEntry = {
 };
 
 /**
- * Registry of installable models, keyed by short name. `model install <name>`
- * and `model list` resolve against this map; add a `ModelEntry` here (with its
+ * Registry of installable models, keyed by short name. `model.install(key)`
+ * and `model.list()` resolve against this map; add a `ModelEntry` here (with its
  * pinned `url` and `sha256`) to make a new model installable.
  */
 export const MODELS = {

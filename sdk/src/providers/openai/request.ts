@@ -1,6 +1,6 @@
 // One branch per supported model id, holding exactly what that model needs beyond the plain
 // request of its endpoint (ai-model-routing-conventions). A supported model's moderation,
-// effort and detail are settled before the call (recipe/model-check.ts), so the sidecar
+// effort and detail are settled before the call (policy/model-check.ts), so the sidecar
 // records them. An id with no branch gets the plain request plus only what the caller set
 // explicitly, and OpenAI's answer at call time is the verdict on it.
 
@@ -21,7 +21,7 @@ export const IMAGE_REQUEST_BRANCHES: Readonly<Record<string, ImageBranch>> = {
 };
 
 // Reasoning models: no temperature is sent and the verdict uses no output ceiling. The chosen
-// effort, the row's default when the recipe sets none, is sent as `reasoning_effort`.
+// effort, the row's default when the policy sets none, is sent as `reasoning_effort`.
 const effort: VisionBranch = (request, reasoning) => ({ ...request, reasoning_effort: reasoning });
 
 /** Branches for the vision check's `chat.completions.create`. */

@@ -6,11 +6,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createLogger,
-  safeLogError,
-  type Logger,
-} from "../../src/log/index.ts";
+import { createLogger } from "../../src/log/index.ts";
 import { GptImg } from "../../src/index.ts";
 import type { LogEntry } from "../../src/types.ts";
 import { captureStderr } from "../helpers/streams.ts";
@@ -146,15 +142,6 @@ describe("log helpers", () => {
     expect(stderr).toBe("");
     expect(JSON.parse(stdout)).toMatchObject({ outputs: 2, events: scenario === "async-notice" ? 3 : 2 });
     if (scenario === "pending-progress") expect(JSON.parse(stdout).pendingAtFinish).toBe(true);
-  });
-
-  it("safeLogError preserves the original path when logging fails", async () => {
-    const logger: Pick<Logger, "error"> = {
-      error: vi.fn().mockRejectedValue(new Error("disk full")),
-    };
-
-    await expect(safeLogError(logger, "original")).resolves.toBeUndefined();
-    expect(logger.error).toHaveBeenCalledWith("error", "original", undefined);
   });
 });
 

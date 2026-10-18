@@ -115,16 +115,14 @@ async function appendLog(
     stage: LogStage;
     message: string;
     data?: Record<string, unknown>;
-    verb?: LogVerb;
-    time?: string;
   },
   onEvent?: (entry: LogEntry) => void,
 ): Promise<void> {
   const final: LogEntry = {
-    time: entry.time ?? new Date().toISOString(),
+    time: new Date().toISOString(),
     level: entry.level,
     message: entry.message,
-    verb: entry.verb ?? handle.verb,
+    verb: handle.verb,
     stage: entry.stage,
   };
   if (entry.data) final.data = entry.data;
@@ -199,7 +197,7 @@ export interface Logger {
    * per 100 ms plus the final count. Only real counts are reported: bytes of a
    * download or hash, tiles, inputs, renditions, passes.
    */
-  progress(stage: LogStage, done: number, total: number, unit: ProgressUpdate["unit"]): void;
+  progress(stage: LogStage, done: number, total: number, unit: ProgressUpdate["unit"], subject?: string): void;
   /** Mask `credential` (an API key) in every later record, file and `onEvent` alike. */
   addCredential(credential: string): void;
   close(): Promise<void>;
@@ -230,26 +228,14 @@ export async function createLogger(
     warn: (stage, message, data) => record("warn", stage, message, data),
     error: (stage, message, data) => record("error", stage, message, data),
     debug: (stage, message, data) => record("debug", stage, message, data),
-    progress: (stage, done, total, unit) => {
+    progress: (stage, done, total, unit, subject) => {
       if (!onProgress) return;
       const now = Date.now();
       if (done < total && now - lastProgress < PROGRESS_INTERVAL_MS) return;
       lastProgress = now;
-      dispatchHook(onProgress, { verb, stage, done, total, unit });
+      dispatchHook(onProgress, { verb, stage, done, total, unit, ...(subject !== undefined && { subject }) });
     },
     addCredential: (credential) => addLogCredential(handle, credential),
     close: () => closeLog(handle),
   };
-}
-
-export async function safeLogError(
-  logger: Pick<Logger, "error">,
-  message: string,
-  data?: Record<string, unknown>,
-): Promise<void> {
-  try {
-    await logger.error("error", message, data);
-  } catch {
-    // Preserve the original error; logging is best-effort on failure paths.
-  }
 }

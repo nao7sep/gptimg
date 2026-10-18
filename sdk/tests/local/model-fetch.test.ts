@@ -509,43 +509,6 @@ describe("ensureModel", () => {
     expect(fetcher).toHaveBeenCalledTimes(11);
   });
 
-  it.each([0, -1, 1.5])("refuses an entry whose expected byte size is %j", async (byteSize) => {
-    const fetcher = vi.fn();
-    vi.stubGlobal("fetch", fetcher);
-    const entry: ModelEntry = {
-      name: "bad-size.bin",
-      url: "https://example.com/model.bin",
-      inputSize: 0,
-      byteSize,
-    };
-    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "internal.invariant" });
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
-  it.each([-1, 0.5])("refuses a retry count of %j", async (maxRetries) => {
-    const entry: ModelEntry = {
-      name: "bad-retries.bin",
-      url: "https://example.com/model.bin",
-      inputSize: 0,
-    };
-    await expect(
-      ensureModel(entry, tmp, { budget: { timeout: 1_000, maxRetries, retryIntervals: [] } }),
-    ).rejects.toMatchObject({ code: "policy.invalid" });
-  });
-
-  it("rejects a disabled model timeout", async () => {
-    const entry: ModelEntry = {
-      name: "no-timeout.bin",
-      url: "https://example.com/model.bin",
-      inputSize: 0,
-    };
-    await expect(
-      ensureModel(entry, tmp, {
-        budget: { timeout: 0, maxRetries: 0, retryIntervals: [] },
-      }),
-    ).rejects.toMatchObject({ code: "policy.invalid" });
-  });
-
   it("honors cancellation after download and removes the staged file", async () => {
     const body = Buffer.from(new Uint8Array([1, 1, 2, 3, 5, 8]));
     const sha = createHash("sha256").update(body).digest("hex");

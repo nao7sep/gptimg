@@ -1,15 +1,15 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SdkContext } from "../context.ts";
-import { GptImgError, fsError } from "../errors.ts";
+import { GptImgError, fsError, throwIfAborted } from "../errors.ts";
 import { detectFormat } from "../image/detectFormat.ts";
 import { hash } from "../image/hash.ts";
-import { assertAbsolutePath } from "../internal/absolute-path.ts";
 import { withVerbLogger } from "../internal/local-verb.ts";
 import type { RefusedResult } from "../refusal.ts";
 import { readSidecar } from "../sidecar/read.ts";
 import type { Sidecar, VerifyArgs, VerifyFinding, VerifyResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
+import { validateVerifyArgs } from "./schemas.ts";
 
 /**
  * Check a published paid image against the sidecar beside it before a
@@ -24,16 +24,14 @@ export async function verifyImpl(
   args: VerifyArgs,
   opts: VerbCallOptions = {},
 ): Promise<VerifyResult | RefusedResult> {
-  if (typeof args !== "object" || args === null) {
-    throw new GptImgError("args.invalid", "verify: args must be an object.", { details: { field: "args", constraint: "object" } });
-  }
-  assertAbsolutePath(args.in, "in");
+  validateVerifyArgs(args);
   const imagePath = args.in;
   const base = path.basename(imagePath);
   const dot = base.lastIndexOf(".");
   const sidecarPath = path.join(path.dirname(imagePath), `${dot > 0 ? base.slice(0, dot) : base}.json`);
 
   return withVerbLogger(ctx, "verify", opts, async (logger) => {
+    throwIfAborted(opts.signal);
     let bytes: Buffer;
     try {
       bytes = await readFile(imagePath);
@@ -43,6 +41,7 @@ export async function verifyImpl(
     const findings: VerifyFinding[] = [];
     const sha256 = hash(bytes);
 
+    throwIfAborted(opts.signal);
     let record: Sidecar | null = null;
     try {
       record = await readSidecar(sidecarPath);
@@ -57,6 +56,7 @@ export async function verifyImpl(
       }
     }
 
+    throwIfAborted(opts.signal);
     let format: string | null = null;
     try {
       format = (await detectFormat(bytes)).format;

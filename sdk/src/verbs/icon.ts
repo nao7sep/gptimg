@@ -35,7 +35,7 @@ export async function iconImpl(
     }
 
     await logger.info("resolve", "icon start", {
-      in: args.in,
+      input: args.in,
       outDir,
       name,
       pngs,
