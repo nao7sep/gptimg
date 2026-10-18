@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -74,6 +74,19 @@ describe("unpublished output cleanup", () => {
     expect(await readFile(path.join(tmp, "result-2.jpg"), "utf-8")).toBe("old image 2");
     expect(await readFile(published[0]!, "utf-8")).toBe("published image");
     expect(await readdir(tmp)).toEqual(["result-1.json", "result-1.png", "result-2.jpg", "result-2.json"]);
+  });
+
+  it.skipIf(process.platform === "win32")("reports the owned slots it can see, without throwing, when the folder cannot be listed", async () => {
+    await writeFile(path.join(tmp, "result.png"), "published image");
+    await writeFile(path.join(tmp, "result-2.png"), "old image 2");
+    const group = createOutputGroup(tmp, "result", "png");
+    await chmod(tmp, 0o300);
+    try {
+      await expect(removeUnpublishedSlots(group, ownedSlotFiles(group, 2, 2), [path.join(tmp, "result.png")]))
+        .resolves.toEqual([path.join(tmp, "result-2.png")]);
+    } finally {
+      await chmod(tmp, 0o700);
+    }
   });
 
   it("retains sidecar authority while removing images whose extension sorts after JSON", async () => {

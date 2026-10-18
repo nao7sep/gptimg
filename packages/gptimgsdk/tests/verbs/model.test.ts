@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, truncate, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, truncate, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -257,5 +257,40 @@ describe("model.verify integrity check", () => {
       subject: modelPath,
       cause: expect.any(Error),
     });
+  });
+});
+
+describe("models install only on request", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-model-required-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("AI masking and upscaling refuse to start without the model and name the install call, downloading nothing", async () => {
+    const input = path.join(tmp, "in.png");
+    await writeFile(input, await readFile(new URL("../fixtures/green-disk.png", import.meta.url)));
+    const modelsDir = path.join(tmp, "models");
+    const sdk = new GptImg({ modelsDir });
+    await expect(sdk.mask({ in: input, method: "ai" })).rejects.toMatchObject({
+      code: "model.notInstalled",
+      kind: "unavailable",
+      message: expect.stringContaining('img.model.install("birefnet")'),
+    });
+    await expect(sdk.upscale({ in: input })).rejects.toMatchObject({
+      code: "model.notInstalled",
+      message: expect.stringContaining('img.model.install("swin2sr")'),
+    });
+    expect(existsSync(modelsDir)).toBe(false);
+  });
+
+  it("uses a call's own models folder over the instance's, so several folders work side by side", async () => {
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "a") });
+    const listed = sdk.model.list({ modelsDir: path.join(tmp, "b") });
+    expect(listed.models.every((m) => m.path.startsWith(path.join(tmp, "b")))).toBe(true);
+    expect(() => sdk.model.list({ modelsDir: "relative" })).toThrow(expect.objectContaining({ code: "args.invalid" }));
   });
 });

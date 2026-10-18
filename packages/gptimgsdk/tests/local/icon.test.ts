@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -168,6 +168,42 @@ describe("runIcon", () => {
     expect(out.sourceWidth).toBe(2048);
     const m = await sharp(out.png).metadata();
     expect(m.width).toBe(1024);
+  });
+
+  it("publishes its set together: an existing file stops it and the files it created are removed", async () => {
+    const outDir = path.join(tmp, "set");
+    await mkdir(outDir);
+    // The master png exists already; publishing reaches it after the icns and ico.
+    const existing = path.join(outDir, "app.png");
+    await writeFile(existing, "keep");
+    await expect(runIcon({ in: master, outDir, name: "app", pngs: true })).rejects.toMatchObject({
+      refusal: { code: "output.exists", subject: existing },
+    });
+    expect(await readdir(outDir)).toEqual(["app.png"]);
+    expect(await readFile(existing, "utf8")).toBe("keep");
+  });
+
+  it("stops publishing when cancelled part-way and leaves no file of the set behind", async () => {
+    const outDir = path.join(tmp, "cancelled");
+    await mkdir(outDir);
+    const ctrl = new AbortController();
+    const logger = {
+      handle: { path: null, verb: "icon" as const },
+      info: async () => {},
+      warn: async () => {},
+      error: async () => {},
+      debug: async () => {},
+      progress: (_stage: string, done: number) => {
+        if (done === 1) ctrl.abort(new Error("stop"));
+      },
+      addCredential: () => {},
+      close: async () => {},
+    };
+    await expect(runIcon({ in: master, outDir, name: "app" }, { signal: ctrl.signal, logger })).rejects.toMatchObject({
+      code: "cancelled",
+      effect: "none",
+    });
+    expect(await readdir(outDir)).toEqual([]);
   });
 
   it("rejects a non-square master", async () => {

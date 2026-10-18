@@ -1,0 +1,48 @@
+{
+  "formatVersion": 2,
+  "kind": "generate",
+  "writer": {
+    "name": "gptimgsdk",
+    "version": "0.1.0",
+    "app": {
+      "name": "GptImg",
+      "version": "0.1.0"
+    }
+  },
+  "request": {
+    "size": "1024x640",
+    "quality": "low",
+    "model": "gpt-image-2.5-flare",
+    "moderation": "low",
+    "prompt": "A red disc on white.",
+    "n": 1,
+    "chroma": {
+      "color": "#00ff00"
+    }
+  },
+  "response": {
+    "created": 1791931849,
+    "background": "opaque",
+    "data": [
+      {
+        "b64_json": null
+      }
+    ],
+    "output_format": "png",
+    "quality": "low",
+    "size": "1024x640",
+    "usage": {
+      "input_tokens": 19,
+      "output_tokens": 107,
+      "total_tokens": 126
+    }
+  },
+  "files": [
+    {
+      "index": 1,
+      "name": "disc.png",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "format": "png"
+    }
+  ]
+}

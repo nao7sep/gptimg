@@ -166,6 +166,19 @@ describe("local verbs success path (via GptImg SDK)", () => {
     expect(lines.at(-1)).toMatchObject({ level: "error", data: { code: "memory.exhausted" } });
   });
 
+  it("grid reports one progress count per input through onProgress", async () => {
+    const inputs: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const p = path.join(tmp, `p-${i}.png`);
+      await writeRawPng(p, 4, 4, diskish(4, 4));
+      inputs.push(p);
+    }
+    const updates: Array<{ done: number; total: number; unit: string }> = [];
+    done(await sdk.grid({ inputs, cell: 4, outName: "progress-sheet" }, { onProgress: (u) => void updates.push({ done: u.done, total: u.total, unit: u.unit }) }));
+    expect(updates.at(-1)).toEqual({ done: 3, total: 3, unit: "inputs" });
+    expect(updates.every((u) => u.total === 3 && u.unit === "inputs")).toBe(true);
+  });
+
   it("combine: unions two masks into the named output", async () => {
     const a = path.join(tmp, "a.png");
     const b = path.join(tmp, "b.png");

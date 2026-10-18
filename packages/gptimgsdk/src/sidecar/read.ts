@@ -41,21 +41,25 @@ export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
 export function parseSidecar(parsed: unknown, subject: string): Sidecar {
   const version = formatVersionOf(parsed, subject);
   const { formatVersion: _omit, ...body } = parsed as Record<string, unknown>;
+  // The schemas validate; the record returned is the file's own body, so its
+  // key order and any unknown keys survive a read-then-write unchanged.
   if (version === 1) {
     const r = SidecarV1Schema.safeParse(body);
     if (!r.success) throw malformed(subject, formatZodError(r.error));
-    return { formatVersion: 1, kind: kindOfV1(r.data), writer: null, ...r.data } as Sidecar;
+    return { formatVersion: 1, kind: kindOfV1(r.data), writer: null, ...body } as Sidecar;
   }
   const r = SidecarV2Schema.safeParse(body);
   if (!r.success) throw malformed(subject, formatZodError(r.error));
-  return { formatVersion: 2, ...r.data } as Sidecar;
+  return { formatVersion: 2, ...body } as Sidecar;
 }
 
 function formatVersionOf(parsed: unknown, subject: string): number {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw malformed(subject, "must be a JSON object");
   }
-  const version = (parsed as { formatVersion?: unknown }).formatVersion ?? UNVERSIONED;
+  // Only an absent field means unversioned; `null` is malformed, as for profiles.
+  const marked = (parsed as { formatVersion?: unknown }).formatVersion;
+  const version = marked === undefined ? UNVERSIONED : marked;
   if (typeof version !== "number" || !Number.isInteger(version) || version < 1) {
     throw malformed(subject, "formatVersion is not a positive integer");
   }

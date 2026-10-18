@@ -42,7 +42,7 @@ describe("analyzeKey", () => {
     expect(analyzeKey([0, 0.25, 0.5])).toEqual({
       kind: "primary",
       channel: 2,
-      strength: 0.5,
+      strength: 0.25,
     });
   });
 });

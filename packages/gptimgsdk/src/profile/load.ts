@@ -38,7 +38,9 @@ export function validateProfile(value: unknown, subject = "profile"): Profile {
     path: subject,
     invalidCode: "profile.malformed",
   });
-  const result = ProfileSchema.safeParse(body);
+  const result = ProfileSchema.safeParse(
+    (value as { formatVersion?: unknown }).formatVersion === 2 ? body : withoutEmptyOptionals(body as Record<string, unknown>),
+  );
   if (!result.success) {
     const { field, constraint } = firstZodIssue(result.error);
     throw new GptImgError("profile.malformed", `${subject} is invalid: ${formatZodError(result.error)}`, {
@@ -47,6 +49,16 @@ export function validateProfile(value: unknown, subject = "profile"): Profile {
     });
   }
   return result.data as Profile;
+}
+
+/**
+ * Format 1 and unmarked v0.1.0 profiles accepted an empty `apiKeyEnv`,
+ * `organization` or `project` and treated it as absent, so they read that way.
+ */
+function withoutEmptyOptionals(body: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...body };
+  for (const field of ["apiKeyEnv", "organization", "project"]) if (out[field] === "") delete out[field];
+  return out;
 }
 
 /**

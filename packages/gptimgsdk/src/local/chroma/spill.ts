@@ -65,10 +65,12 @@ export function analyzeKey(linear: [number, number, number]): KeyTopology {
   const primaryGap = max - mid;
   const secondaryGap = mid - min;
   if (primaryGap >= secondaryGap && primaryGap >= MIN_CHANNEL_GAP) {
-    return { kind: "primary", channel: maxIdx, strength: max };
+    // The spill a pixel equal to the key produces, so that pixel reaches α = 0;
+    // `max` alone would leave a lighter or darker key's own backdrop partly opaque.
+    return { kind: "primary", channel: maxIdx, strength: primaryGap };
   }
   if (secondaryGap > primaryGap && secondaryGap >= MIN_CHANNEL_GAP) {
-    return { kind: "secondary", suppressed: minIdx, strength: mid - min };
+    return { kind: "secondary", suppressed: minIdx, strength: secondaryGap };
   }
   return null;
 }

@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { realpath, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { GptImgError, fsError } from "../errors.ts";
@@ -35,9 +35,10 @@ const TARGET_MARKER = ".gptimg-target";
 function normalizedOutputGroup(group: OutputGroup): OutputGroup {
   // Append a marker before resolving so even unusual stems such as `.` and an
   // empty string retain the same filename semantics as `<stem>.<extension>`.
-  // path.join mirrors the publication path, while path.resolve collapses `.`
-  // and `..` aliases before any reservation or sibling decision is made.
-  const target = path.resolve(path.join(group.dir, `${group.stem}${TARGET_MARKER}`));
+  // path.join mirrors the publication path, while path.normalize collapses `.`
+  // and `..` aliases before any reservation or sibling decision is made; output
+  // folders are absolute, so no working directory is involved.
+  const target = path.normalize(path.join(group.dir, `${group.stem}${TARGET_MARKER}`));
   const markedName = path.basename(target);
   return {
     ...group,
@@ -318,7 +319,8 @@ export function ownedSlotFiles(group: OutputGroup, requested: number, returned: 
  * this run owns but did not fill: an old image format beside its replacement,
  * or the image and sidecar of a slot whose new item failed. The group then
  * holds exactly this run's files, unless a newer sidecar now protects a slot.
- * Returns the files it could not remove; the run's published results stand.
+ * Returns the files it could not remove; the run's published results stand,
+ * so it never throws.
  */
 export async function removeUnpublishedSlots(
   group: OutputGroup,
@@ -329,7 +331,15 @@ export async function removeUnpublishedSlots(
   // Exact names: the pre-publication check refused case-only renames, so a
   // retained file has exactly a published name.
   const published = new Set(publishedFiles.map(fileName));
-  const siblings = siblingsOnDisk(group);
+  let siblings: string[];
+  try {
+    siblings = siblingsOnDisk(group);
+  } catch {
+    // The run's results are already published, so a folder that cannot be
+    // listed now must not fail it: report the owned slots still present
+    // under this run's names, which is all that can be seen without a listing.
+    return ownedFiles.filter((filePath) => !published.has(fileName(filePath)) && existsSync(filePath));
+  }
   const sidecars = new Map(siblings
     .filter((filePath) => artifactIdentity(filePath, group.sidecarExt).startsWith("sidecar:"))
     .map((filePath) => [artifactIdentity(filePath, group.sidecarExt), filePath]));

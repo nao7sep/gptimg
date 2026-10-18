@@ -9,7 +9,7 @@ import {
   assertStemAvailable,
   createOutputGroup,
 } from "../internal/output-group.ts";
-import { withVerbLogger } from "../internal/local-verb.ts";
+import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
 import { multiline } from "../internal/textCleanup.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { checkImageParams, resolveGenerateModeration } from "../policy/model-check.ts";
@@ -66,9 +66,8 @@ export async function generateImpl(
 
     const n = typeof section.n === "number" && section.n > 0 ? section.n : 1;
 
-    const outDir = args.outDir;
+    const { outDir, stem } = outputStemLocation(args.outDir, args.outName ?? defaultStem());
     await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem();
     const overwrite = args.overwrite ?? false;
     // Reserve before the paid provider edge, so a live overlapping run in this
     // process fails without charging.

@@ -10,7 +10,7 @@ import { RefusalSignal } from "../refusal.ts";
 import { hash } from "../image/hash.ts";
 import { ensureOutputDir } from "../internal/output-files.ts";
 import { reserveOutputGroup, assertOutputGroupAvailable, createOutputGroup } from "../internal/output-group.ts";
-import { withVerbLogger } from "../internal/local-verb.ts";
+import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
 import { singleLine } from "../internal/textCleanup.ts";
 import type { Logger } from "../log/index.ts";
 import { maskDiagnosticCopy } from "../log/mask.ts";
@@ -125,9 +125,11 @@ export async function visionImpl(
 
     // Resolve + guard the sidecar path before the (paid) provider call so a
     // name collision fails fast without spending, like generate/edit.
-    const outDir = args.outDir ?? path.dirname(Array.isArray(args.in) ? args.in[0]! : args.in);
+    const { outDir, stem } = outputStemLocation(
+      args.outDir ?? path.dirname(Array.isArray(args.in) ? args.in[0]! : args.in),
+      args.outName ?? defaultStem(),
+    );
     await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem();
     const stemPath = path.join(outDir, stem);
     const outputGroup = createOutputGroup(outDir, stem, "json");
     using _outputReservation = await reserveOutputGroup(outputGroup);

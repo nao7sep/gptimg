@@ -60,8 +60,10 @@ describe("sidecar read/write", () => {
   });
 
   it("treats a formatVersion that is not a positive integer as malformed", async () => {
-    await writeFile(sidecarPath, JSON.stringify({ formatVersion: 1.5, request: {}, response: {}, files: [] }));
-    await expect(readSidecar(sidecarPath)).rejects.toMatchObject({ code: "sidecar.malformed", subject: sidecarPath });
+    for (const formatVersion of [1.5, null]) {
+      await writeFile(sidecarPath, JSON.stringify({ formatVersion, request: {}, response: {}, files: [] }));
+      await expect(readSidecar(sidecarPath)).rejects.toMatchObject({ code: "sidecar.malformed", subject: sidecarPath });
+    }
   });
 
   it("refuses a sidecar of a newer format and leaves it byte-identical", async () => {
@@ -83,12 +85,11 @@ describe("sidecar read/write", () => {
     expect(await readFile(sidecarPath, "utf-8")).toBe(newer);
   });
 
-  it("preserves an existing sidecar when overwrite is false", async () => {
+  it("refuses with output.exists and preserves an existing sidecar when overwrite is false", async () => {
     await writeFile(sidecarPath, "existing");
     await expect(writeSidecar(sidecarPath, generateRecord(), { overwrite: false })).rejects.toMatchObject({
-      kind: "unavailable",
-      effect: "unknown",
-      details: { errno: "EEXIST" },
+      code: "output.exists",
+      refusal: { subject: sidecarPath },
     });
     expect(await readFile(sidecarPath, "utf-8")).toBe("existing");
   });

@@ -120,6 +120,16 @@ export function assertOutputStem(stem: string, field = "outName"): void {
   }
 }
 
+/**
+ * The folder and bare stem a group of outputs lands under: a bare `outName`
+ * goes in `outDir`, and an absolute one also chooses the folder, as it does
+ * for the local verbs.
+ */
+export function outputStemLocation(outDir: string, outName: string): { outDir: string; stem: string } {
+  assertOutputStem(outName);
+  return path.isAbsolute(outName) ? { outDir: path.dirname(outName), stem: path.basename(outName) } : { outDir, stem: outName };
+}
+
 function serializeThrownError(
   err: unknown,
   seen = new Set<object>(),
@@ -156,6 +166,8 @@ function serializeThrownError(
  *   - always close the log.
  *
  * The body puts `logger.handle.path` into the completed result it returns.
+ * Claiming a log in a caller's folder waits on local storage without a bound,
+ * as every storage wait in this SDK does (see `writeFileAtomic`).
  */
 export async function withVerbLogger<T>(
   ctx: { logDir: string | null },

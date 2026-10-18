@@ -4,6 +4,7 @@ import { GptImgError, fsError } from "../errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { writeFileAtomic } from "../internal/atomic-file.ts";
 import { formatZodError } from "../internal/zodError.ts";
+import { refuse } from "../refusal.ts";
 import type { Sidecar } from "../types.ts";
 import { refuseNewerSidecar } from "./read.ts";
 import { SidecarV2Schema } from "./schema.ts";
@@ -37,6 +38,9 @@ export async function writeSidecar(
     await mkdir(path.dirname(sidecarPath), { recursive: true });
     await writeFileAtomic(sidecarPath, text, { encoding: "utf-8", overwrite: opts.overwrite });
   } catch (err) {
+    if (!opts.overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
+      refuse("output.exists", `Sidecar exists: ${sidecarPath}. Set overwrite: true to allow.`, { subject: sidecarPath });
+    }
     throw fsError(err, "Failed to write sidecar", sidecarPath, "unknown");
   }
 }

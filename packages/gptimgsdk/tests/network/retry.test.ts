@@ -67,6 +67,13 @@ describe("callWithRetry", () => {
     expect(fn).toHaveBeenCalledTimes(3);
   });
 
+  it("never retries an exhausted quota, which waiting cannot fix", async () => {
+    const quota = Object.assign(new Error("429 quota"), { status: 429, code: "insufficient_quota", error: { code: "insufficient_quota" } });
+    const fn = vi.fn().mockRejectedValue(quota);
+    await expect(callWithRetry({ budgetName: "imageGenerate", budget: fast }, fn)).rejects.toBe(quota);
+    expect(fn).toHaveBeenCalledOnce();
+  });
+
   it("retries on 500/502/503/504 and 408", async () => {
     for (const status of [500, 502, 503, 504, 408]) {
       const fn = vi

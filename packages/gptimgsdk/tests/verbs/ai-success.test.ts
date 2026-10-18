@@ -503,7 +503,7 @@ describe("AI verb implementations with mocked provider", () => {
     await firstAtProvider;
 
     await expect(
-      sdk.generate({ prompt: "second contender", outDir, outName: "nested/../same" }),
+      sdk.generate({ prompt: "second contender", outDir, outName: `${outDir}/nested/../same` }),
     ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.busy" } });
     expect(providerCalls.generate).toHaveBeenCalledOnce();
 

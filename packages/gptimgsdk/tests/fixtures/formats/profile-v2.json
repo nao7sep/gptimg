@@ -1,0 +1,15 @@
+{
+  "formatVersion": 2,
+  "provider": "openai",
+  "apiKeyEnv": "OPENAI_API_KEY",
+  "modelsDir": "~/models",
+  "logDir": "logs",
+  "policy": {
+    "generate": {
+      "quality": "low"
+    },
+    "onnx": {
+      "intraOpThreads": 2
+    }
+  }
+}

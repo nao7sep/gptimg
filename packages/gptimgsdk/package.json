@@ -39,9 +39,11 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.9",
+    "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "^5.0.4",
+    "fast-check": "^4.10.2",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.4",
-    "@types/node": "^26.6.5"
+    "vitest": "^5.0.4"
   }
 }

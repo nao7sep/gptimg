@@ -27,13 +27,9 @@ function walk(v: unknown): unknown {
   if (typeof v === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      if (BASE64_FIELDS.has(k)) {
-        out[k] = null;
-      } else if (k === "url" && typeof val === "string") {
-        out[k] = maskUrlQuery(val);
-      } else {
-        out[k] = walk(val);
-      }
+      const value = BASE64_FIELDS.has(k) ? null : k === "url" && typeof val === "string" ? maskUrlQuery(val) : walk(val);
+      // Defined, not assigned, so a field named "__proto__" stays a field.
+      Object.defineProperty(out, k, { value, enumerable: true, writable: true, configurable: true });
     }
     return out;
   }

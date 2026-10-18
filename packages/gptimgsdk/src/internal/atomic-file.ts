@@ -88,6 +88,11 @@ async function replacedMode(filePath: string, requested: number | undefined): Pr
  * file and its times stay as they are (content-lifecycle-conventions, *Files*);
  * a requested `mode` is still applied to it. A changed overwrite keeps the
  * replaced file's permission mode unless the caller requests its own.
+ *
+ * Storage waits are unbounded by design (sdk-conventions, *Waits are bounded
+ * where a stall is realistic*): gptimgsdk's storage is local, and Node cannot
+ * cancel a filesystem call already running, so a timer would only stop waiting
+ * while the call kept its thread and its write might still land.
  */
 export async function writeFileAtomic(filePath: string, data: string | Buffer | Uint8Array, options?: AtomicWriteOptions): Promise<void> {
   const { overwrite = true, ...writeOptions } = options ?? {};

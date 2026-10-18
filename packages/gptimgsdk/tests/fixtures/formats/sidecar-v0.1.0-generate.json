@@ -1,0 +1,44 @@
+{
+  "request": {
+    "size": "1024x1024",
+    "quality": "medium",
+    "prompt": "A cute star, halfway between a photograph and an illustration: a plump dimensional five-point star with a soft tactile material, realistic highlights and gentle shading, gently stylized with a subtle friendly face. Warm golden yellow with a clean smooth silhouette. Centered, printed on a solid pure green #00ff00 background, absolutely no green on the star, soft studio lighting, no drop shadow, no text.",
+    "n": 1,
+    "chroma": {
+      "color": "#00ff00"
+    }
+  },
+  "response": {
+    "created": 1780368395,
+    "background": "opaque",
+    "data": [
+      {
+        "b64_json": null
+      }
+    ],
+    "output_format": "png",
+    "quality": "medium",
+    "size": "1024x1024",
+    "usage": {
+      "input_tokens": 88,
+      "input_tokens_details": {
+        "image_tokens": 0,
+        "text_tokens": 88
+      },
+      "output_tokens": 1756,
+      "output_tokens_details": {
+        "image_tokens": 1756,
+        "text_tokens": 0
+      },
+      "total_tokens": 1844
+    }
+  },
+  "files": [
+    {
+      "index": 1,
+      "name": "star-original.png",
+      "sha256": "a34bdbb835fc5e7a2bced5f1ccf338e176e36fce1c89c97ff2f313f591acf80e",
+      "format": "png"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "request": {
+    "model": "gpt-6-luna",
+    "reasoning": "none",
+    "check": "A disc is visible.",
+    "detail": "low",
+    "inputs": [
+      {
+        "name": "disc.png",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "shrink": {
+          "applied": false,
+          "originalWidth": 128,
+          "originalHeight": 128,
+          "outputWidth": 128,
+          "outputHeight": 128
+        }
+      }
+    ]
+  },
+  "response": {
+    "verdict": {
+      "ok": true,
+      "score": 1,
+      "reasons": [
+        "A red disc is visible."
+      ]
+    },
+    "raw": {
+      "id": "chatcmpl-fixture",
+      "object": "chat.completion",
+      "created": 1791931869,
+      "model": "gpt-6-luna",
+      "usage": {
+        "prompt_tokens": 378,
+        "completion_tokens": 35,
+        "total_tokens": 413
+      }
+    }
+  },
+  "files": [],
+  "formatVersion": 1
+}

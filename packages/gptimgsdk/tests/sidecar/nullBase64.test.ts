@@ -35,6 +35,12 @@ describe("nullBase64InResponse", () => {
     });
   });
 
+  it("keeps a field named __proto__ as a field and still nulls its payload", () => {
+    const out = nullBase64InResponse(JSON.parse('{"__proto__":{"b64_json":"AAAA"},"x":1}')) as object;
+    expect(Object.keys(out)).toEqual(["__proto__", "x"]);
+    expect(JSON.stringify(out)).toBe('{"__proto__":{"b64_json":null},"x":1}');
+  });
+
   it("does not mutate the input", () => {
     const input = { data: [{ b64_json: "AAA" }] };
     const snapshot = JSON.stringify(input);

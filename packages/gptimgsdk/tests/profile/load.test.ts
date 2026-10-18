@@ -144,4 +144,11 @@ describe("validateProfile", () => {
     expect(validateProfile({ formatVersion: 2, provider: "openai", modelsDir: "/m" })).toEqual({ provider: "openai", modelsDir: "/m" });
     expect(() => validateProfile({ provider: "other" })).toThrow(/provider/);
   });
+
+  it("reads an empty apiKeyEnv, organization or project in an older profile as absent, and refuses it in format 2", () => {
+    const empty = { provider: "openai", apiKeyEnv: "", organization: "", project: "" };
+    expect(validateProfile(empty)).toEqual({ provider: "openai" });
+    expect(validateProfile({ formatVersion: 1, ...empty })).toEqual({ provider: "openai" });
+    expect(() => validateProfile({ formatVersion: 2, ...empty })).toThrow(expect.objectContaining({ code: "profile.malformed" }));
+  });
 });

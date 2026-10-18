@@ -13,7 +13,7 @@ import {
   assertStemAvailable,
   createOutputGroup,
 } from "../internal/output-group.ts";
-import { withVerbLogger } from "../internal/local-verb.ts";
+import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
 import { multiline } from "../internal/textCleanup.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { checkImageParams } from "../policy/model-check.ts";
@@ -79,9 +79,8 @@ export async function editImpl(
     const inputSha256 = await readImageSha256(args.in, "input");
     const maskSha256 = args.mask ? await readImageSha256(args.mask, "mask") : null;
 
-    const outDir = args.outDir ?? path.dirname(args.in);
+    const { outDir, stem } = outputStemLocation(args.outDir ?? path.dirname(args.in), args.outName ?? defaultStem());
     await ensureOutputDir(outDir);
-    const stem = args.outName ?? defaultStem();
     const overwrite = args.overwrite ?? false;
     using _outputReservation = await reserveOutputGroup(createOutputGroup(outDir, stem, "json"));
     // Fail before the paid provider call when this stem already conflicts.
