@@ -17,15 +17,15 @@
   },
   "type": "module",
   "workspaces": [
-    "packages/gptimgsdk"
+    "sdk"
   ],
   "engines": {
     "node": ">=24.12.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run typecheck && vitest run && npm test -w gptimgsdk",
-    "test:full": "npm run typecheck && vitest run && npm run test:full -w gptimgsdk",
+    "test": "npm run typecheck && npm run typecheck -w gptimgsdk && vitest run",
+    "test:full": "npm test && npm run test:live -w gptimgsdk",
     "check:release-tag": "node scripts/check-release-tag.ts"
   },
   "devDependencies": {

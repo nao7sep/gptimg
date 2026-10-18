@@ -10,8 +10,9 @@
 // the SDK only through the environment map passed to loadProfile.
 
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
@@ -24,8 +25,18 @@ import { done } from "../helpers/results.ts";
 const PACKAGE = fileURLToPath(new URL("../../", import.meta.url));
 const CACHE = join(PACKAGE, "node_modules", ".cache", "gptimgsdk-live");
 const MODELS = join(CACHE, "models");
-// The shared corpus sits beside the gptimg repository, two levels above this package.
-const CORPUS = join(PACKAGE, "..", "..", "..", "company", "assets", "test-fixtures");
+// The shared corpus is the company repository's, checked out beside the repository
+// that holds this package: found by walking up, so the lane runs the same from the
+// app's repository or from a repository of the SDK's own.
+const CORPUS = corpusDir();
+
+function corpusDir(): string {
+  for (let dir = PACKAGE; ; dir = dirname(dir)) {
+    const candidate = join(dir, "company", "assets", "test-fixtures");
+    if (existsSync(candidate)) return candidate;
+    if (dirname(dir) === dir) return join(dirname(dirname(PACKAGE)), "company", "assets", "test-fixtures");
+  }
+}
 // A red disc of radius 30 centred on a noisy green backdrop, 128 x 128.
 const DISC = join(PACKAGE, "tests", "fixtures", "green-disk.png");
 const CAT_PHOTO = "photos/similarity/apartment-cat/reference.jpg";

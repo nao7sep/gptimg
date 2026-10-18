@@ -1,6 +1,6 @@
 name: Release
 
-# GptImg is the GUI app that carries GptImgSdk (packages/gptimgsdk). Until the
+# GptImg is the GUI app that carries GptImgSdk (sdk/). Until the
 # app exists there is no artifact to build: a tag runs the test gate on every
 # supported OS and checks that the tag matches the version. The SDK is never
 # packed or published on its own; it is consumed from source and released

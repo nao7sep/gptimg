@@ -11,7 +11,7 @@ The SDK was redesigned under the fleet's SDK conventions. Every change below is 
 
 ### Changed
 
-- The SDK is the workspace package `gptimgsdk` in `packages/gptimgsdk/` of the GptImg repository, imported by that name; the repository root is the GptImg app package.
+- The SDK is the package `gptimgsdk` in `sdk/` of the GptImg repository, laid out as the repository root it would become and imported by that name; the repository root is the GptImg app package.
 - The source runs on plain Node 24.12 or later with type stripping: no `tsx` or other loader is needed.
 - Configuration comes only from the caller. `new GptImg()` takes `profile` (from `loadProfile`), `apiKey`, `organization`, `project`, `modelsDir`, `logDir`, `policy` and `app`, and touches no disk. The SDK reads no environment variable and no working directory, and has no home folder for consumer data.
 - Profiles are format 2, a superset of format 1, adding `modelsDir`, `logDir` and `policy`. `loadProfile(path, { env })` reads one from a path the caller gives and resolves `apiKeyEnv` from the environment map the caller passes, never from the process environment; `validateProfile` checks a profile body. Format 1 and unmarked v0.1.0 profiles read unchanged. The SDK never writes a profile.

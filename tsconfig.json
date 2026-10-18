@@ -1,6 +1,6 @@
 {
-  // The app root's own scripts and tests. The SDK type-checks itself in
-  // packages/gptimgsdk; the GUI app adds its configurations here when it exists.
+  // The app root's own scripts and tests. The SDK type-checks itself in sdk/;
+  // the GUI app adds its configurations here when it exists.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -17,5 +17,5 @@
     "types": ["node"]
   },
   "include": ["scripts/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["node_modules", "packages"]
+  "exclude": ["node_modules", "sdk"]
 }
