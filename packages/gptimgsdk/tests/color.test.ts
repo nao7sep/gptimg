@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isHexColor, parseHex, normalizeHex } from "../src/color.ts";
-import { LocalOpError } from "../src/errors.ts";
+import { GptImgError } from "../src/errors.ts";
 
 describe("isHexColor", () => {
   it("accepts #rrggbb in either case", () => {
@@ -37,17 +37,17 @@ describe("normalizeHex", () => {
     expect(normalizeHex("#000000")).toBe("#000000");
   });
 
-  it("throws LocalOpError args.invalid on malformed input", () => {
-    expect(() => normalizeHex("nope")).toThrowError(LocalOpError);
+  it("throws GptImgError args.invalid on malformed input", () => {
+    expect(() => normalizeHex("nope")).toThrowError(GptImgError);
     try {
       normalizeHex("nope");
       expect.unreachable("normalizeHex should have thrown");
     } catch (err) {
-      expect(err).toBeInstanceOf(LocalOpError);
-      expect((err as LocalOpError).code).toBe("args.invalid");
+      expect(err).toBeInstanceOf(GptImgError);
+      expect((err as GptImgError).code).toBe("args.invalid");
       // Default label and the offending value both appear in the message.
-      expect((err as LocalOpError).message).toContain("color");
-      expect((err as LocalOpError).message).toContain("nope");
+      expect((err as GptImgError).message).toContain("color");
+      expect((err as GptImgError).message).toContain("nope");
     }
   });
 
@@ -56,7 +56,7 @@ describe("normalizeHex", () => {
       normalizeHex("#xyz", "--from");
       expect.unreachable("normalizeHex should have thrown");
     } catch (err) {
-      expect((err as LocalOpError).message).toContain("--from");
+      expect((err as GptImgError).message).toContain("--from");
     }
   });
 });

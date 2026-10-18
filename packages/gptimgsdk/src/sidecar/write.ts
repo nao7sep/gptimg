@@ -1,48 +1,42 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { writeFileAtomic } from "../internal/atomic-file.ts";
-import { LocalOpError } from "../errors.ts";
+import { GptImgError, fsError } from "../errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
+import { writeFileAtomic } from "../internal/atomic-file.ts";
+import { formatZodError } from "../internal/zodError.ts";
 import type { Sidecar } from "../types.ts";
-import { refuseNewerSidecar, validSidecar } from "./read.ts";
+import { refuseNewerSidecar } from "./read.ts";
+import { SidecarV2Schema } from "./schema.ts";
 
-function sidecarPathForStem(stem: string): string {
-  return `${stem}.json`;
+/** The bytes of a current-format sidecar: fixed key order, two-space indent, trailing newline. */
+export function serializeSidecar(sidecar: Sidecar): string {
+  const { kind, writer, request, response, files } = sidecar;
+  return JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION, kind, writer, request, response, files }, null, 2) + "\n";
 }
 
 /**
- * Write a sidecar to `<stem>.json`, stamped with its format version. A sidecar
- * not of the current shape is refused, and an existing sidecar in a newer
- * format is refused and left unchanged.
- *
- * @returns the absolute or relative sidecar path that was written.
+ * Publish a current-format sidecar at the absolute `sidecarPath`, whole or not
+ * at all. A record not of the current shape is an internal error (the SDK
+ * built it), and an existing sidecar in a newer format is refused and left
+ * unchanged.
  */
 export async function writeSidecar(
-  stem: string,
+  sidecarPath: string,
   sidecar: Sidecar,
-  opts: { overwrite?: boolean } = {},
-): Promise<string> {
-  const sidecarPath = sidecarPathForStem(stem);
-  const overwrite = opts.overwrite ?? true;
-  validSidecar(sidecar, `Sidecar for ${sidecarPath} is invalid and was not written`);
-  if (overwrite) refuseNewerSidecar(sidecarPath);
+  opts: { overwrite: boolean },
+): Promise<void> {
+  const text = serializeSidecar(sidecar);
+  const check = SidecarV2Schema.safeParse(JSON.parse(text));
+  if (!check.success) {
+    throw new GptImgError("internal.invariant", `Sidecar for ${sidecarPath} would be invalid: ${formatZodError(check.error)}`, {
+      subject: sidecarPath,
+    });
+  }
+  if (opts.overwrite) refuseNewerSidecar(sidecarPath);
   try {
     await mkdir(path.dirname(sidecarPath), { recursive: true });
-    const text = JSON.stringify({ ...sidecar, formatVersion: SIDECAR_FORMAT_VERSION }, null, 2) + "\n";
-    await writeFileAtomic(sidecarPath, text, { encoding: "utf-8", overwrite });
+    await writeFileAtomic(sidecarPath, text, { encoding: "utf-8", overwrite: opts.overwrite });
   } catch (err) {
-    if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new LocalOpError(
-        "output.exists",
-        `Output exists: ${sidecarPath}. Set overwrite: true to allow.`,
-        { cause: err },
-      );
-    }
-    throw new LocalOpError(
-      "sidecar.writeFailed",
-      `Failed to write sidecar at ${sidecarPath}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw fsError(err, "Failed to write sidecar", sidecarPath, "unknown");
   }
-  return sidecarPath;
 }

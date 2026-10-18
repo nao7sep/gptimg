@@ -14,7 +14,7 @@
  */
 
 import { normalizeHex, parseHex } from "../../color.ts";
-import { LocalOpError, throwIfAborted } from "../../errors.ts";
+import { GptImgError, throwIfAborted } from "../../errors.ts";
 import { loadRawRGBA } from "../../image/bridge.ts";
 import type { ChromaKeySource, ChromaMaskStats } from "../../types.ts";
 import { CHROMA_DEFAULTS } from "./defaults.ts";
@@ -190,9 +190,10 @@ export async function chromaMask(
     source = "auto";
   } else if (keyArg === "from-sidecar") {
     if (!sourcePath) {
-      throw new LocalOpError(
+      throw new GptImgError(
         "args.invalid",
         "from-sidecar requires an input file path; pass it via chromaMaskFromFile().",
+        { details: { field: "key", constraint: "input file path" } },
       );
     }
     hex = normalizeHex(await loadKeyFromSidecar(sourcePath, { verifyImage: true }), "sidecar key");

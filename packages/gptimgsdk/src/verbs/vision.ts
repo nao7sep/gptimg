@@ -1,8 +1,12 @@
+import type { RefusedResult } from "../refusal.ts";
+import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
+import { sidecarWriter } from "../sidecar/writer.ts";
 import { defaultModelFor } from "../ai-models.ts";
 import { resolveModel } from "../providers/openai/client.ts";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { LocalOpError } from "../errors.ts";
+import { GptImgError, fsError } from "../errors.ts";
+import { RefusalSignal } from "../refusal.ts";
 import { hash } from "../image/hash.ts";
 import { ensureOutputDir } from "../internal/output-files.ts";
 import { reserveOutputGroup, assertOutputGroupAvailable, createOutputGroup } from "../internal/output-group.ts";
@@ -11,35 +15,26 @@ import { singleLine } from "../internal/textCleanup.ts";
 import type { Logger } from "../log/index.ts";
 import { maskDiagnosticCopy } from "../log/mask.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
-import { loadProfile } from "../profile/load.ts";
-import { resolveProfile } from "../profile/resolve.ts";
-import { mergeRecipes } from "../recipe/merge.ts";
-import { loadRecipeForCall } from "../recipe/load.ts";
-import { resolveVisionDetail, resolveVisionReasoning } from "../recipe/model-check.ts";
-import { validateVisionSection } from "../recipe/schemas.ts";
+import { resolveVisionDetail, resolveVisionReasoning } from "../policy/model-check.ts";
+import { validateVisionSection } from "../policy/schemas.ts";
 import { writeSidecar } from "../sidecar/write.ts";
 import { getProvider } from "../providers/index.ts";
 import { detectFormat } from "../image/detectFormat.ts";
 import { shrinkForVision } from "../image/shrinkForVision.ts";
 import type {
-  Sidecar,
+  FilePublication,
+  VisionSidecar,
   VisionDetail,
   VisionArgs,
   VisionResult,
 } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateVisionArgs } from "./schemas.ts";
-import {
-  defaultProfilePath,
-  defaultStem,
-} from "../internal/paths.ts";
+import { defaultStem } from "../internal/paths.ts";
 
 import { VISION_DEFAULTS } from "./defaults.ts";
 
-export interface VisionContext {
-  profileDir: string;
-  logDir: string;
-}
+export type VisionContext = SdkContext;
 
 interface PreparedImage {
   path: string;
@@ -67,11 +62,7 @@ async function prepareImage(
   try {
     raw = await readFile(imagePath);
   } catch (err) {
-    throw new LocalOpError(
-      "image.readFailed",
-      `Failed to read image at ${imagePath}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw fsError(err, "Failed to read image", imagePath);
   }
   const shrink = await shrinkForVision(raw, fit);
   await logger.info("write", "prepared vision input", {
@@ -105,27 +96,24 @@ export async function visionImpl(
   ctx: VisionContext,
   args: VisionArgs,
   opts: VerbCallOptions = {},
-): Promise<VisionResult> {
+): Promise<VisionResult | RefusedResult> {
   validateVisionArgs(args);
-  const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
   // The check is a scalar instruction; normalize it to a single line once at the
   // input boundary so the same cleaned value is sent to the model and stored in
   // the sidecar.
   const check = singleLine(args.check);
 
-  return withVerbLogger(ctx, "vision", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
-    const profile = await loadProfile(profilePath);
-    const resolved = resolveProfile(profile);
+  return withVerbLogger(ctx, "vision", opts, async (logger) => {
+    const resolved = requireCredentials(ctx);
     await logger.info("resolve", "apiKey resolved", {
       apiKeySource: resolved.apiKeySource,
-      provider: profile.provider,
+      provider: resolved.redacted.provider,
     });
 
-    let recipe = await loadRecipeForCall(args.recipe, ctx.profileDir);
-    if (args.overrides) recipe = mergeRecipes(recipe, args.overrides);
-    const network = resolveNetworkForCall(recipe);
-    const section = validateVisionSection(recipe.vision);
+    const policy = callPolicy(ctx, args.policy);
+    const network = resolveNetworkForCall(policy);
+    const section = validateVisionSection(policy.vision);
     const { shrink: configuredShrink, detail: configuredDetail, reasoning: configuredReasoning, ...sectionParams } = section;
     // The model, its effort and its detail are settled, and the effort checked against the
     // model's row, before the call, so the log and the sidecar name what is sent.
@@ -151,12 +139,12 @@ export async function visionImpl(
     );
 
     await logger.info("request", "calling provider.vision", {
-      provider: profile.provider,
+      provider: resolved.redacted.provider,
       model: params.model ?? null,
       images: prepared.length,
     });
 
-    const provider = getProvider(profile.provider);
+    const provider = getProvider(resolved.redacted.provider);
     const providerResult = await provider.vision({
       check,
       images: prepared.map((p) => ({
@@ -178,7 +166,10 @@ export async function visionImpl(
       score: providerResult.verdict.score,
     });
 
-    const sidecar: Sidecar = maskDiagnosticCopy({
+    const record = maskDiagnosticCopy({
+      formatVersion: 2,
+      kind: "vision",
+      writer: sidecarWriter(ctx),
       request: {
         ...params,
         check,
@@ -194,13 +185,23 @@ export async function visionImpl(
         raw: providerResult.raw,
       },
       files: [],
-    }, [resolved.apiKey]);
-    const sidecarPath = await writeSidecar(stemPath, sidecar, {
-      overwrite: args.overwrite ?? false,
-    });
-    await logger.info("write", "wrote sidecar", {
-      name: path.basename(sidecarPath),
-    });
+    }, [resolved.apiKey]) as VisionSidecar;
+    // The verdict was paid for: a sidecar that cannot be written is reported,
+    // never thrown, and the record stays in the result.
+    const sidecarPath = `${stemPath}.json`;
+    let sidecar: FilePublication = { status: "published" };
+    try {
+      await writeSidecar(sidecarPath, record, { overwrite: args.overwrite ?? false });
+      await logger.info("write", "wrote sidecar", { name: path.basename(sidecarPath) });
+    } catch (err) {
+      const failure = err instanceof RefusalSignal
+        ? { code: err.refusal.code, message: err.refusal.message }
+        : err instanceof GptImgError
+          ? { code: err.code, message: err.message }
+          : { code: "internal.unexpected" as const, message: (err as Error)?.message ?? String(err) };
+      sidecar = { status: "failed", ...failure, effect: "unknown" };
+      await logger.warn("write", "vision sidecar could not be published", { name: path.basename(sidecarPath), error: failure.message });
+    }
 
     return {
       ok: providerResult.verdict.ok,
@@ -208,7 +209,10 @@ export async function visionImpl(
       reasons: providerResult.verdict.reasons,
       raw: providerResult.raw,
       sidecarPath,
+      sidecar,
+      record,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

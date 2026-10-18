@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AbortError, LocalOpError } from "../../src/errors.ts";
+import { GptImgError, cancelledError } from "../../src/errors.ts";
 import { containOutOfMemory, isOutOfMemory } from "../../src/internal/out-of-memory.ts";
 
 /** The RangeError V8 itself throws for an allocation it refuses. */
@@ -20,15 +20,15 @@ describe("isOutOfMemory", () => {
 
   it("recognizes native allocation failures through a typed error's cause chain", () => {
     for (const native of ["std::bad_alloc", "bad allocation", "Failed to allocate memory for requested buffer of size 123", "vips: out of memory"]) {
-      const wrapped = new LocalOpError("model.runFailed", `ONNX inference failed: ${native}`, { cause: new Error(native) });
-      expect(isOutOfMemory(new LocalOpError("image.writeFailed", "upscale: failed", { cause: wrapped })), native).toBe(true);
+      const wrapped = new GptImgError("model.runFailed", `ONNX inference failed: ${native}`, { cause: new Error(native) });
+      expect(isOutOfMemory(new GptImgError("fs.failed", "upscale: failed", { cause: wrapped })), native).toBe(true);
     }
   });
 
   it("leaves cancellation and unrelated failures alone", () => {
-    expect(isOutOfMemory(new AbortError("cancelled", { cause: new RangeError("Array buffer allocation failed") }))).toBe(false);
+    expect(isOutOfMemory(cancelledError(new RangeError("Array buffer allocation failed")))).toBe(false);
     expect(isOutOfMemory(new RangeError("Maximum call stack size exceeded"))).toBe(false);
-    expect(isOutOfMemory(new LocalOpError("image.sizeMismatch", "mask size 2x2 does not match image 3x3."))).toBe(false);
+    expect(isOutOfMemory(new GptImgError("image.sizeMismatch", "mask size 2x2 does not match image 3x3."))).toBe(false);
     expect(isOutOfMemory("out of memory")).toBe(false);
   });
 
@@ -43,8 +43,8 @@ describe("isOutOfMemory", () => {
 describe("containOutOfMemory", () => {
   it("reports an allocation failure as memory.exhausted with the verb's advice and the original cause", () => {
     const cause = v8Refusal(() => new Uint8Array(2 ** 53));
-    const upscale = containOutOfMemory("upscale", cause) as LocalOpError;
-    expect(upscale).toBeInstanceOf(LocalOpError);
+    const upscale = containOutOfMemory("upscale", cause) as GptImgError;
+    expect(upscale).toBeInstanceOf(GptImgError);
     expect(upscale.code).toBe("memory.exhausted");
     expect(upscale.message).toMatch(/^upscale ran out of memory \(.+\)\. Pass a smaller tile/);
     expect(upscale.cause).toBe(cause);
@@ -54,7 +54,7 @@ describe("containOutOfMemory", () => {
   });
 
   it("returns other errors, and an already contained one, unchanged", () => {
-    const other = new LocalOpError("image.readFailed", "missing");
+    const other = new GptImgError("fs.notFound", "missing");
     expect(containOutOfMemory("resize", other)).toBe(other);
     const contained = containOutOfMemory("resize", new RangeError("Array buffer allocation failed"));
     expect(containOutOfMemory("resize", contained)).toBe(contained);

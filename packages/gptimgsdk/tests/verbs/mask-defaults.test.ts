@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { applyChromaRecipeDefaults } from "../../src/verbs/mask-defaults.ts";
+import { applyChromaPolicyDefaults } from "../../src/verbs/mask-defaults.ts";
 import type { MaskArgs } from "../../src/types.ts";
 
 function args(over: Partial<MaskArgs> = {}): MaskArgs {
   return { in: "a.png", ...over };
 }
 
-describe("applyChromaRecipeDefaults", () => {
+describe("applyChromaPolicyDefaults", () => {
   it("fills every unset field from the recipe", () => {
-    const merged = applyChromaRecipeDefaults(args(), {
+    const merged = applyChromaPolicyDefaults(args(), {
       color: "#00ff00",
       preserveInterior: true,
       borderSample: 4,
@@ -21,7 +21,7 @@ describe("applyChromaRecipeDefaults", () => {
   });
 
   it("never overrides an explicitly-passed arg, including a falsy one", () => {
-    const merged = applyChromaRecipeDefaults(
+    const merged = applyChromaPolicyDefaults(
       args({ key: "auto", preserveInterior: false, borderSample: 1, saturationRatio: 0.9 }),
       { color: "#00ff00", preserveInterior: true, borderSample: 4, saturationRatio: 0.5 },
     );
@@ -32,13 +32,13 @@ describe("applyChromaRecipeDefaults", () => {
   });
 
   it("treats a blank or absent recipe color as no key default", () => {
-    expect(applyChromaRecipeDefaults(args(), { color: "" }).key).toBeUndefined();
-    expect(applyChromaRecipeDefaults(args(), {}).key).toBeUndefined();
+    expect(applyChromaPolicyDefaults(args(), { color: "" }).key).toBeUndefined();
+    expect(applyChromaPolicyDefaults(args(), {}).key).toBeUndefined();
   });
 
   it("returns a new object without mutating the input args", () => {
     const input = args();
-    const merged = applyChromaRecipeDefaults(input, { color: "#abcdef" });
+    const merged = applyChromaPolicyDefaults(input, { color: "#abcdef" });
     expect(input.key).toBeUndefined();
     expect(merged).not.toBe(input);
   });

@@ -3,7 +3,7 @@
 // one, and OpenAI's answer at call time is the verdict on it.
 
 import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../ai-models.ts";
-import { RecipeError } from "../errors.ts";
+import { GptImgError } from "../errors.ts";
 import type { VisionDetail } from "../types.ts";
 import { VISION_DEFAULTS } from "../verbs/defaults.ts";
 
@@ -17,8 +17,8 @@ function visionRow(model: string): VisionModelRow | undefined {
   return SUPPORTED_MODELS.find((row): row is VisionModelRow => "thinking" in row && row.id === model);
 }
 
-function refuse(section: string, message: string): never {
-  throw new RecipeError("recipe.validationFailed", `${section} section invalid: ${message}`);
+function invalidPolicy(section: string, message: string): never {
+  throw new GptImgError("policy.invalid", `${section} policy invalid: ${message}`, { details: { section } });
 }
 
 function listed(values: readonly string[]): string {
@@ -28,7 +28,7 @@ function listed(values: readonly string[]): string {
 function checkListed(section: string, model: string, field: string, value: unknown, allowed: readonly string[]): void {
   if (value === undefined) return;
   if (typeof value !== "string" || !allowed.includes(value)) {
-    refuse(section, `${model} takes ${field} ${listed(allowed)}, not ${JSON.stringify(value)}.`);
+    invalidPolicy(section, `${model} takes ${field} ${listed(allowed)}, not ${JSON.stringify(value)}.`);
   }
 }
 
@@ -36,18 +36,18 @@ function checkSize(section: string, row: ImageModelRow, value: unknown): void {
   if (value === undefined || value === "auto") return;
   const rule = row.image.size;
   const match = typeof value === "string" ? /^(\d+)x(\d+)$/.exec(value) : null;
-  if (!match) refuse(section, `${row.id} takes size "auto" or WIDTHxHEIGHT, not ${JSON.stringify(value)}.`);
+  if (!match) invalidPolicy(section, `${row.id} takes size "auto" or WIDTHxHEIGHT, not ${JSON.stringify(value)}.`);
   const width = Number(match[1]);
   const height = Number(match[2]);
   const pixels = width * height;
   if (width % rule.multipleOf !== 0 || height % rule.multipleOf !== 0) {
-    refuse(section, `${row.id} takes sizes whose sides are divisible by ${rule.multipleOf}, not ${value}.`);
+    invalidPolicy(section, `${row.id} takes sizes whose sides are divisible by ${rule.multipleOf}, not ${value}.`);
   }
   if (Math.max(width, height) > rule.maxRatio * Math.min(width, height)) {
-    refuse(section, `${row.id} takes sizes up to a ${rule.maxRatio}:1 ratio, not ${value}.`);
+    invalidPolicy(section, `${row.id} takes sizes up to a ${rule.maxRatio}:1 ratio, not ${value}.`);
   }
   if (pixels < rule.minPixels || pixels > rule.maxPixels) {
-    refuse(
+    invalidPolicy(
       section,
       `${row.id} takes sizes of ${rule.minPixels.toLocaleString("en-US")} to ${rule.maxPixels.toLocaleString("en-US")} pixels, not ${value} (${pixels.toLocaleString("en-US")}).`,
     );
@@ -67,15 +67,15 @@ export function checkImageParams(section: ImageSection, params: Readonly<Record<
   // OpenAI's own default format is png, which takes neither compression nor a jpeg's opacity.
   const format = typeof params.output_format === "string" ? params.output_format : "png";
   if (params.background === "transparent" && !["png", "webp"].includes(format)) {
-    refuse(section, `a transparent background needs output_format png or webp, not ${format}.`);
+    invalidPolicy(section, `a transparent background needs output_format png or webp, not ${format}.`);
   }
   const level = params.output_compression;
   if (level !== undefined) {
     if (!compression.formats.includes(format)) {
-      refuse(section, `output_compression applies to output_format ${compression.formats.join(" or ")} only, not ${format}.`);
+      invalidPolicy(section, `output_compression applies to output_format ${compression.formats.join(" or ")} only, not ${format}.`);
     }
     if (typeof level !== "number" || !Number.isInteger(level) || level < compression.min || level > compression.max) {
-      refuse(section, `${model} takes output_compression ${compression.min} to ${compression.max}, not ${JSON.stringify(level)}.`);
+      invalidPolicy(section, `${model} takes output_compression ${compression.min} to ${compression.max}, not ${JSON.stringify(level)}.`);
     }
   }
   checkSize(section, row, params.size);

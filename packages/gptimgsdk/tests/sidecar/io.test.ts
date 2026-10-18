@@ -2,140 +2,124 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LocalOpError } from "../../src/errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../../src/format-versions.ts";
 import { readSidecar } from "../../src/sidecar/read.ts";
-import { writeSidecar } from "../../src/sidecar/write.ts";
-import type { Sidecar } from "../../src/types.ts";
+import { serializeSidecar, writeSidecar } from "../../src/sidecar/write.ts";
+import type { GenerateSidecar } from "../../src/types.ts";
+
+const WRITER = { name: "gptimgsdk" as const, version: "1.2.3" };
+
+function generateRecord(overrides: Partial<GenerateSidecar> = {}): GenerateSidecar {
+  return {
+    formatVersion: 2,
+    kind: "generate",
+    writer: WRITER,
+    request: { model: "gpt-image-2.5-flare", prompt: "a red disc", n: 1, chroma: { color: "#00ff00" } },
+    response: { created: 1791931849, data: [{ b64_json: null }], usage: { total_tokens: 126 } },
+    files: [{ index: 1, name: "out.png", sha256: "ab".repeat(32), format: "png" }],
+    ...overrides,
+  };
+}
 
 describe("sidecar read/write", () => {
   let tmp: string;
-  let stem: string;
+  let sidecarPath: string;
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-sidecar-"));
-    stem = path.join(tmp, "result");
+    sidecarPath = path.join(tmp, "out.json");
   });
 
   afterEach(async () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("writes the sidecar as given with its format version, as JSON with a trailing newline, and reads it back", async () => {
-    const sidecar: Sidecar = {
-      request: { prompt: "x", apiKey: "secret" },
-      response: { ok: true },
-      files: [{ index: 1, name: "out.png", sha256: "abc", format: "png" }],
-    };
-
-    const file = await writeSidecar(stem, sidecar);
-
-    const text = await readFile(file, "utf-8");
+  it("writes format 2 with a fixed key order and trailing newline, and reads it back as the typed record", async () => {
+    const record = generateRecord();
+    await writeSidecar(sidecarPath, record, { overwrite: false });
+    const text = await readFile(sidecarPath, "utf-8");
+    expect(text).toBe(serializeSidecar(record));
     expect(text.endsWith("\n")).toBe(true);
-    expect(JSON.parse(text)).toEqual({ formatVersion: SIDECAR_FORMAT_VERSION, ...sidecar });
-    await expect(readSidecar(stem)).resolves.toEqual(sidecar);
+    expect(Object.keys(JSON.parse(text))).toEqual(["formatVersion", "kind", "writer", "request", "response", "files"]);
+    expect(JSON.parse(text).formatVersion).toBe(SIDECAR_FORMAT_VERSION);
+    await expect(readSidecar(sidecarPath)).resolves.toEqual(record);
   });
 
-  it("reads a v0.1.0 sidecar, which has no formatVersion, as version 1", async () => {
-    const old = { request: { prompt: "old" }, response: {}, files: [{ index: 1, name: "a.png", sha256: "ab", format: "png" }] };
-    await writeFile(`${stem}.json`, JSON.stringify(old));
+  it("reads an unmarked v0.1.0 sidecar as format 1, telling its kind apart by shape, with no writer", async () => {
+    const generate = { request: { prompt: "old", n: 1 }, response: {}, files: [{ index: 1, name: "a.png", sha256: "ab", format: "png" }] };
+    await writeFile(sidecarPath, JSON.stringify(generate));
+    await expect(readSidecar(sidecarPath)).resolves.toEqual({ formatVersion: 1, kind: "generate", writer: null, ...generate });
 
-    await expect(readSidecar(stem)).resolves.toEqual(old);
+    const edit = { formatVersion: 1, request: { prompt: "e", n: 1, input: "a.png", mask: null }, response: {}, files: [] };
+    await writeFile(sidecarPath, JSON.stringify(edit));
+    await expect(readSidecar(sidecarPath)).resolves.toMatchObject({ formatVersion: 1, kind: "edit" });
+
+    const vision = { formatVersion: 1, request: { check: "c", inputs: [] }, response: { verdict: { ok: true, score: 1, reasons: [] }, raw: {} }, files: [] };
+    await writeFile(sidecarPath, JSON.stringify(vision));
+    await expect(readSidecar(sidecarPath)).resolves.toMatchObject({ formatVersion: 1, kind: "vision" });
   });
 
-  it("treats a sidecar whose formatVersion is not a positive integer as unreadable", async () => {
-    await writeFile(`${stem}.json`, JSON.stringify({ formatVersion: 1.5, request: {}, response: {}, files: [] }));
-
-    await expect(readSidecar(stem)).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "image.decodeFailed",
-    });
-  });
-
-  it.each([0, SIDECAR_FORMAT_VERSION + 1])("owns the format marker even when the caller supplies %s", async (formatVersion) => {
-    const sidecar = { request: {}, response: null, files: [], note: "kept", formatVersion };
-    const file = await writeSidecar(stem, sidecar);
-    expect(JSON.parse(await readFile(file, "utf-8"))).toEqual({ ...sidecar, formatVersion: SIDECAR_FORMAT_VERSION });
-    await expect(readSidecar(stem)).resolves.toEqual({ request: {}, response: null, files: [], note: "kept" });
+  it("treats a formatVersion that is not a positive integer as malformed", async () => {
+    await writeFile(sidecarPath, JSON.stringify({ formatVersion: 1.5, request: {}, response: {}, files: [] }));
+    await expect(readSidecar(sidecarPath)).rejects.toMatchObject({ code: "sidecar.malformed", subject: sidecarPath });
   });
 
   it("refuses a sidecar of a newer format and leaves it byte-identical", async () => {
-    const file = `${stem}.json`;
-    const text = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: "new" });
-    await writeFile(file, text);
-
-    const err = await readSidecar(stem).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(LocalOpError);
-    expect(err).toMatchObject({ code: "sidecar.newerFormat" });
-    expect((err as Error).message).toContain(file);
-    expect(await readFile(file, "utf-8")).toBe(text);
+    const newer = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, future: true });
+    await writeFile(sidecarPath, newer);
+    await expect(readSidecar(sidecarPath)).rejects.toMatchObject({
+      code: "sidecar.newerFormat",
+      details: { expected: SIDECAR_FORMAT_VERSION, actual: SIDECAR_FORMAT_VERSION + 1 },
+    });
+    expect(await readFile(sidecarPath, "utf-8")).toBe(newer);
   });
 
   it("refuses to overwrite a sidecar of a newer format and leaves it byte-identical", async () => {
-    const file = `${stem}.json`;
-    const text = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: "new" });
-    await writeFile(file, text);
-
-    await expect(writeSidecar(stem, { request: {}, response: {}, files: [] })).rejects.toMatchObject({
+    const newer = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, future: true });
+    await writeFile(sidecarPath, newer);
+    await expect(writeSidecar(sidecarPath, generateRecord(), { overwrite: true })).rejects.toMatchObject({
       code: "sidecar.newerFormat",
     });
-    expect(await readFile(file, "utf-8")).toBe(text);
+    expect(await readFile(sidecarPath, "utf-8")).toBe(newer);
   });
 
   it("preserves an existing sidecar when overwrite is false", async () => {
-    const first: Sidecar = { request: { prompt: "winner" }, response: {}, files: [] };
-    const second: Sidecar = { request: { prompt: "loser" }, response: {}, files: [] };
-    await writeSidecar(stem, first);
-
-    await expect(writeSidecar(stem, second, { overwrite: false })).rejects.toMatchObject({
-      code: "output.exists",
+    await writeFile(sidecarPath, "existing");
+    await expect(writeSidecar(sidecarPath, generateRecord(), { overwrite: false })).rejects.toMatchObject({
+      kind: "unavailable",
+      effect: "unknown",
+      details: { errno: "EEXIST" },
     });
-    await expect(readSidecar(stem)).resolves.toMatchObject({ request: { prompt: "winner" } });
+    expect(await readFile(sidecarPath, "utf-8")).toBe("existing");
   });
 
-  it("reports a current sidecar of the wrong shape with its path and leaves it untouched", async () => {
-    const file = `${stem}.json`;
-    const valid = { request: { chroma: { color: "#00ff00" } }, response: {}, files: [] };
-    const { files: _files, ...noFiles } = valid;
-    const { response: _response, ...noResponse } = valid;
-    for (const body of [noFiles, noResponse, { ...valid, request: "x" }, { ...valid, files: [{ index: 1, name: "a.png" }] }]) {
-      const text = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION, ...body });
-      await writeFile(file, text);
-
-      const err = await readSidecar(stem).catch((e: unknown) => e);
-      expect(err).toMatchObject({ errorType: "localOp", code: "sidecar.malformed" });
-      expect((err as Error).message).toContain(file);
-      expect(await readFile(file, "utf-8")).toBe(text);
-    }
+  it("reports a format-2 sidecar of the wrong shape with its path and leaves it untouched", async () => {
+    const wrong = JSON.stringify({ formatVersion: 2, kind: "edit", writer: WRITER, request: { prompt: "x", n: 1 }, response: {}, files: [] });
+    await writeFile(sidecarPath, wrong);
+    await expect(readSidecar(sidecarPath)).rejects.toMatchObject({ code: "sidecar.malformed", subject: sidecarPath });
+    expect(await readFile(sidecarPath, "utf-8")).toBe(wrong);
   });
 
-  it("keeps keys it does not know when reading a current sidecar", async () => {
-    await writeFile(
-      `${stem}.json`,
-      JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION, request: {}, response: null, files: [], note: "kept" }),
-    );
-    await expect(readSidecar(stem)).resolves.toEqual({ request: {}, response: null, files: [], note: "kept" });
+  it("keeps keys it does not know when reading", async () => {
+    const record = { ...generateRecord(), extra: { kept: true } };
+    await writeFile(sidecarPath, serializeSidecar(record).replace(/\n}\n$/, `,\n  "extra": {"kept": true}\n}\n`));
+    await expect(readSidecar(sidecarPath)).resolves.toMatchObject({ extra: { kept: true } });
   });
 
-  it("refuses to write a sidecar of the wrong shape and writes nothing", async () => {
-    const bad = { request: {}, response: {} } as unknown as Sidecar;
-    await expect(writeSidecar(stem, bad)).rejects.toMatchObject({ code: "sidecar.malformed" });
+  it("refuses to write a record of the wrong shape and writes nothing", async () => {
+    await expect(
+      writeSidecar(sidecarPath, generateRecord({ files: [] }), { overwrite: false }),
+    ).rejects.toMatchObject({ code: "internal.invariant", kind: "internal" });
     expect(await readdir(tmp)).toEqual([]);
   });
 
-  it("reports invalid sidecar JSON as a local image decode failure", async () => {
-    await writeFile(`${stem}.json`, "{bad json");
-
-    await expect(readSidecar(stem)).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "image.decodeFailed",
-    });
+  it("reports invalid JSON as malformed and a missing sidecar by the filesystem's cause", async () => {
+    await writeFile(sidecarPath, "{ nope");
+    await expect(readSidecar(sidecarPath)).rejects.toMatchObject({ code: "sidecar.malformed" });
+    await expect(readSidecar(path.join(tmp, "missing.json"))).rejects.toMatchObject({ code: "fs.notFound" });
   });
 
-  it("reports missing sidecars as local image decode failures", async () => {
-    await expect(readSidecar(path.join(tmp, "missing"))).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "image.decodeFailed",
-    });
+  it("refuses a relative sidecar path", async () => {
+    await expect(readSidecar("out.json")).rejects.toMatchObject({ code: "args.invalid" });
   });
 });

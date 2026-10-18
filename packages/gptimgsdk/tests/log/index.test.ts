@@ -7,16 +7,12 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  appendLog,
-  closeLog,
   createLogger,
-  debugEnabled,
-  openLog,
   safeLogError,
   type Logger,
 } from "../../src/log/index.ts";
 import { GptImg } from "../../src/index.ts";
-import type { LogEntry, LogHandle } from "../../src/types.ts";
+import type { LogEntry } from "../../src/types.ts";
 import { captureStderr } from "../helpers/streams.ts";
 
 const execFileAsync = promisify(execFile);
@@ -34,27 +30,40 @@ describe("log helpers", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("opens, appends JSONL entries with the envelope keys and data as given, and closes", async () => {
-    const handle = await openLog(file, "generate");
-    await appendLog(handle, {
-      time: "2026-01-01T00:00:00.000Z",
-      level: "info",
-      stage: "request",
-      message: "hello",
-      data: { apiKey: "secret", value: 1 },
-    });
-    await closeLog(handle);
+  it("writes JSONL entries with the envelope keys and data as given", async () => {
+    const logger = await createLogger(file, "generate");
+    await logger.info("request", "hello", { apiKey: "secret", value: 1 });
+    await logger.close();
 
     const lines = (await readFile(file, "utf-8")).trimEnd().split("\n");
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? "")).toEqual({
-      time: "2026-01-01T00:00:00.000Z",
+      time: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
       verb: "generate",
       level: "info",
       stage: "request",
       message: "hello",
       data: { apiKey: "secret", value: 1 },
     });
+  });
+
+  it("writes no file without a path, while events still reach onEvent", async () => {
+    const seen: LogEntry[] = [];
+    const logger = await createLogger(null, "mask", { onEvent: (e) => seen.push(e) });
+    await logger.info("resolve", "no file");
+    await logger.close();
+    expect(logger.handle.path).toBeNull();
+    expect(seen.map((e) => e.message)).toEqual(["no file"]);
+  });
+
+  it("reports countable work to onProgress, throttled, always with the final count", async () => {
+    const updates: Array<{ done: number; total: number }> = [];
+    const logger = await createLogger(null, "upscale", { onProgress: (u) => updates.push({ done: u.done, total: u.total }) });
+    for (let i = 1; i <= 50; i++) logger.progress("infer", i, 50, "tiles");
+    await logger.close();
+    expect(updates.length).toBeGreaterThanOrEqual(2);
+    expect(updates.length).toBeLessThan(50);
+    expect(updates.at(-1)).toEqual({ done: 50, total: 50 });
   });
 
   it("masks short query credentials without corrupting JSON values, keys or escapes", async () => {
@@ -85,7 +94,7 @@ describe("log helpers", () => {
     ]);
   });
 
-  it("fans out info and warn entries to onEvent, but never error", async () => {
+  it("fans out every entry to onEvent, error included", async () => {
     const seen: { level: string; stage: string; message: string }[] = [];
     const logger = await createLogger(file, "upscale", {
       onEvent: (e) => seen.push({ level: e.level, stage: e.stage, message: e.message }),
@@ -97,11 +106,11 @@ describe("log helpers", () => {
     await logger.error("error", "boom");
     await logger.close();
 
-    // Error is a failure the caller learns about via the thrown error, not the
-    // progress stream — only info/warn (and debug) are forwarded.
+    // Every event reaches the hook, error included (sdk-conventions).
     expect(seen).toEqual([
       { level: "info", stage: "infer", message: "tile 1/2" },
       { level: "warn", stage: "retry", message: "retrying" },
+      { level: "error", stage: "error", message: "boom" },
     ]);
     // The file still records all three levels.
     const lines = (await readFile(file, "utf-8")).trimEnd().split("\n");
@@ -149,23 +158,6 @@ describe("log helpers", () => {
   });
 });
 
-describe("debugEnabled", () => {
-  afterEach(() => vi.unstubAllEnvs());
-
-  it("accepts 1 and true (case- and space-insensitive) and rejects everything else", () => {
-    for (const v of ["1", "true", "TRUE", " True "]) {
-      vi.stubEnv("GPTIMG_DEBUG", v);
-      expect(debugEnabled(), v).toBe(true);
-    }
-    for (const v of ["0", "false", "yes", "2", ""]) {
-      vi.stubEnv("GPTIMG_DEBUG", v);
-      expect(debugEnabled(), v).toBe(false);
-    }
-    vi.stubEnv("GPTIMG_DEBUG", undefined);
-    expect(debugEnabled()).toBe(false);
-  });
-});
-
 describe("debug gating", () => {
   let tmp: string;
   let file: string;
@@ -179,8 +171,7 @@ describe("debug gating", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("does NOT persist debug lines to the file when debug is disabled, but still forwards them live", async () => {
-    vi.stubEnv("GPTIMG_DEBUG", undefined);
+  it("does NOT persist debug lines to the file unless asked, but still forwards them live", async () => {
     const seen: LogEntry[] = [];
     const logger = await createLogger(file, "model", { onEvent: (e) => seen.push(e) });
     await logger.debug("download", "prog.bin 50%");
@@ -194,9 +185,8 @@ describe("debug gating", () => {
     expect(JSON.parse(lines[0]!).level).toBe("info");
   });
 
-  it("persists debug lines to the file when debug is enabled", async () => {
-    vi.stubEnv("GPTIMG_DEBUG", "1");
-    const logger = await createLogger(file, "model");
+  it("persists debug lines to the file when the log option asks for them", async () => {
+    const logger = await createLogger(file, "model", { debug: true });
     await logger.debug("download", "prog.bin 50%");
     await logger.close();
 
@@ -227,14 +217,11 @@ describe("logging fallback when the file can't be written", () => {
     };
 
     const chunks = await captureStderr(async () => {
-      const handle = await openLog(logPath, "mask", onEvent);
+      const logger = await createLogger(logPath, "mask", { onEvent });
       // Never throws, even though no file could be opened.
-      await expect(
-        appendLog(handle, { level: "info", stage: "resolve", message: "still works" }, onEvent),
-      ).resolves.toBeUndefined();
-      await expect(
-        appendLog(handle, { level: "info", stage: "write", message: "still works again" }, onEvent),
-      ).resolves.toBeUndefined();
+      await expect(logger.info("resolve", "still works")).resolves.toBeUndefined();
+      await expect(logger.info("write", "still works again")).resolves.toBeUndefined();
+      await logger.close();
     });
 
     expect(existsSync(logPath)).toBe(false);
@@ -252,18 +239,17 @@ describe("logging fallback when the file can't be written", () => {
     // A handle whose path is a directory: opening is fine, appendFile fails (EISDIR).
     const asDir = path.join(tmp, "is-a-dir");
     await mkdir(asDir);
-    const handle: LogHandle = { path: asDir, verb: "compose" };
     const seen: LogEntry[] = [];
     const onEvent = (e: LogEntry): void => {
       seen.push(e);
     };
 
     const chunks = await captureStderr(async () => {
+      const logger = await createLogger(asDir, "compose", { onEvent });
       for (let i = 0; i < 3; i++) {
-        await expect(
-          appendLog(handle, { level: "warn", stage: "retry", message: `retry ${i}` }, onEvent),
-        ).resolves.toBeUndefined();
+        await expect(logger.warn("retry", `retry ${i}`)).resolves.toBeUndefined();
       }
+      await logger.close();
     });
 
     // Three failing appends, one notice — and the retries themselves still reach the sink.
@@ -300,16 +286,16 @@ describe("logging fallback when the file can't be written", () => {
       // A named pipe nobody reads: every append to it blocks until a reader opens it.
       const fifo = path.join(tmp, "stalled.log");
       execFileSync("mkfifo", [fifo]);
-      const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+      const sdk = new GptImg();
       const seen: LogEntry[] = [];
       try {
         const started = Date.now();
-        await sdk.backplate({ size: 16, from: "#ffffff", to: "#000000", outDir: tmp, outName: "plate", log: fifo }, { onProgress: (e) => seen.push(e) });
+        await sdk.backplate({ size: 16, from: "#ffffff", to: "#000000", outDir: tmp, outName: "plate" }, { log: { file: fifo }, onEvent: (e) => seen.push(e) });
         const ctrl = new AbortController();
         ctrl.abort();
         await expect(
-          sdk.backplate({ size: 16, from: "#ffffff", to: "#000000", outDir: tmp, outName: "plate-2", log: fifo }, { signal: ctrl.signal }),
-        ).rejects.toMatchObject({ name: "AbortError" });
+          sdk.backplate({ size: 16, from: "#ffffff", to: "#000000", outDir: tmp, outName: "plate-2" }, { log: { file: fifo }, signal: ctrl.signal }),
+        ).rejects.toMatchObject({ code: "cancelled" });
         // Each call waits at most the bounded close for its pending lines.
         expect(Date.now() - started).toBeLessThan(6_000);
         expect(seen.length).toBeGreaterThan(0);

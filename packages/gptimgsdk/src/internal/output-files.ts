@@ -1,20 +1,23 @@
 import { mkdir } from "node:fs/promises";
 import { Buffer } from "node:buffer";
+import { fsError } from "../errors.ts";
+import { refuse } from "../refusal.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
-import { LocalOpError } from "../errors.ts";
 
 export async function ensureOutputDir(outDir: string): Promise<void> {
   try {
     await mkdir(outDir, { recursive: true });
   } catch (err) {
-    throw new LocalOpError(
-      "output.mkdirFailed",
-      `Failed to create output directory ${outDir}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw fsError(err, "Failed to create output directory", outDir);
   }
 }
 
+/**
+ * Publish `data` at `filePath` whole or not at all. A destination that appeared
+ * since the availability check is refused when the call did not ask to
+ * overwrite; any other failure is the filesystem's cause, with effect
+ * `unknown` because the write had begun.
+ */
 export async function writeOutputBytes(
   filePath: string,
   data: Buffer | Uint8Array,
@@ -24,16 +27,8 @@ export async function writeOutputBytes(
     await writeFileAtomic(filePath, Buffer.from(data), { overwrite });
   } catch (err) {
     if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new LocalOpError(
-        "output.exists",
-        `Output exists: ${filePath}. Set overwrite: true to allow.`,
-        { cause: err },
-      );
+      refuse("output.exists", `Output exists: ${filePath}. Set overwrite: true to allow.`, { subject: filePath });
     }
-    throw new LocalOpError(
-      "output.writeFailed",
-      `Failed to write output at ${filePath}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw fsError(err, "Failed to write output", filePath, "unknown");
   }
 }

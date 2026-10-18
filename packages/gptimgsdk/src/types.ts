@@ -1,3 +1,5 @@
+import type { ErrorCode, ErrorEffect } from "./errors.ts";
+import type { RefusalCode } from "./refusal.ts";
 export type {
   BackplateShape,
   CombineOp,
@@ -21,30 +23,60 @@ import type {
   VisionDetail,
 } from "./enums.ts";
 
+/**
+ * A profile (format 2): a bundle of arguments a caller keeps in one file and
+ * points the SDK at (`loadProfile`). The SDK reads a profile only from a path
+ * it is given and never writes one. Format 1 profiles (`provider`, `apiKey`,
+ * `apiKeyEnv`, `organization`, `project`) read unchanged.
+ */
 export interface Profile {
+  /** The image provider; `"openai"` is the only one. */
   provider: string;
+  /** A stored key, `obf:`-encoded or plain. A profile holding one must be readable by its owner only. */
   apiKey?: string;
+  /** The environment variable holding the key, looked up in the map the caller passes to `loadProfile`. */
   apiKeyEnv?: string;
   organization?: string;
   project?: string;
+  /** The models folder; `~`, `$VAR` and `%VAR%` expand from the passed map, and a relative path resolves against the profile's folder. */
+  modelsDir?: string;
+  /** The folder logs are written to when a call asks for a log without naming one; expanded like `modelsDir`. */
+  logDir?: string;
+  /** Policy defaults below the instance's and the call's. */
+  policy?: Policy;
 }
 
+/** A profile as `loadProfile` returns it: the key resolved and every path absolute. */
+export interface LoadedProfile {
+  /** The absolute path the profile was read from. */
+  path: string;
+  provider: "openai";
+  /** The resolved key, or null when the profile supplies none. */
+  apiKey: string | null;
+  /** Where the key came from: `env:<NAME>`, `profile.apiKey`, or null. */
+  apiKeySource: string | null;
+  organization?: string;
+  project?: string;
+  modelsDir?: string;
+  logDir?: string;
+  policy?: Policy;
+}
+
+/** The credentials a paid call uses (internal). */
 export interface ResolvedProfile {
-  /** Original profile fields other than the key and where it comes from. */
-  redacted: Omit<Profile, "apiKey" | "apiKeyEnv">;
-  /** Resolved API key value; a provider attempt's log line records it in its headers. */
+  redacted: { provider: string; organization?: string; project?: string };
   apiKey: string;
-  /** Where the key came from: "env:NAME" or "profile.apiKey". */
+  /** Where the key came from: "constructor", "env:NAME" or "profile.apiKey". */
   apiKeySource: string;
 }
 
 /**
- * The `images.generate` / `images.edit` parameters a recipe sets; other fields pass through to
+ * The `images.generate` / `images.edit` parameters a policy sets; other fields pass through to
  * OpenAI as given. For a supported model (`src/ai-models.ts`), `quality`, `background`,
  * `output_format`, `output_compression` and `size` are checked against its row before any paid
  * call; any other model id is sent unchecked, with nothing added.
  */
-export interface GenerateRecipe {
+export interface GeneratePolicy {
   model?: string;
   size?: string;
   quality?: string;
@@ -57,8 +89,8 @@ export interface GenerateRecipe {
   [key: string]: unknown;
 }
 
-/** As {@link GenerateRecipe}; the edit endpoint takes no moderation. */
-export interface EditRecipe {
+/** As {@link GeneratePolicy}; the edit endpoint takes no moderation. */
+export interface EditPolicy {
   model?: string;
   size?: string;
   quality?: string;
@@ -71,7 +103,7 @@ export interface EditRecipe {
   [key: string]: unknown;
 }
 
-export interface VisionRecipe {
+export interface VisionPolicy {
   model?: string;
   shrink?: { width: number; height: number };
   /**
@@ -91,7 +123,7 @@ export interface VisionRecipe {
 }
 
 /** Defaults for `mask --method chroma` and the implicit chroma backdrop record on `generate`. */
-export interface MaskRecipe {
+export interface MaskPolicy {
   /** Chroma key color, "#rrggbb". Also recorded in the sidecar when `generate` runs. */
   color?: string;
   /** When true, interior key-colored regions are kept opaque. Default false. */
@@ -103,24 +135,47 @@ export interface MaskRecipe {
   [key: string]: unknown;
 }
 
-/**
- * `chroma` is the historical name; the recipe slot stays under `recipe.chroma`
- * so existing recipe files keep working. `MaskRecipe` is the type alias used
- * by Phase 2 code paths.
- */
-export type ChromaRecipe = MaskRecipe;
+/** The `chroma` policy section: chroma-mask defaults and the key `generate` records. */
+export type ChromaPolicy = MaskPolicy;
 
-export interface Recipe {
-  generate?: GenerateRecipe;
-  edit?: EditRecipe;
-  vision?: VisionRecipe;
-  chroma?: ChromaRecipe;
-  /** Per-category network budgets. See src/network/defaults.ts. */
-  network?: Record<string, unknown>;
+/** ONNX Runtime tuning for the local models. */
+export interface OnnxPolicy {
+  /** Intra-op threads per session. Default half the CPU cores, at least one. */
+  intraOpThreads?: number;
+  /** Execution providers in priority order, e.g. `["coreml", "cpu"]`. Default `["cpu"]`. */
+  executionProviders?: string[];
 }
 
-export type RecipeVerb = "generate" | "edit" | "vision";
+/** A per-category network budget override; unset fields keep their defaults. */
+export interface NetworkBudgetPolicy {
+  timeout?: number;
+  maxRetries?: number;
+  retryIntervals?: number[];
+}
 
+/**
+ * How the work is done: typed sections with documented defaults, overridden
+ * partially per profile, per instance and per call, the call winning. A list
+ * replaces the earlier list whole.
+ */
+export interface Policy {
+  generate?: GeneratePolicy;
+  edit?: EditPolicy;
+  vision?: VisionPolicy;
+  chroma?: ChromaPolicy;
+  /** Per-category network budgets. See src/network/defaults.ts. */
+  network?: {
+    imageGenerate?: NetworkBudgetPolicy;
+    imageVision?: NetworkBudgetPolicy;
+    imageDownload?: NetworkBudgetPolicy;
+    modelDownload?: NetworkBudgetPolicy;
+  };
+  onnx?: OnnxPolicy;
+}
+
+export type PolicyVerb = "generate" | "edit" | "vision";
+
+/** One file a paid record describes: its name, the SHA-256 of its bytes, and its format. */
 export interface SidecarFileEntry {
   index: number;
   name: string;
@@ -128,11 +183,86 @@ export interface SidecarFileEntry {
   format: string;
 }
 
-export interface Sidecar {
-  request: Record<string, unknown>;
-  response: unknown;
+/** Who wrote a format-2 sidecar: this SDK and its version, and the calling app when the caller named one. */
+export interface SidecarWriter {
+  name: "gptimgsdk";
+  version: string;
+  app?: { name: string; version: string };
+}
+
+export type SidecarKind = "generate" | "edit" | "vision";
+
+/** The common shape of every sidecar as `readSidecar` returns it. */
+interface SidecarBase {
+  /** The file's format: 1 (and unmarked v0.1.0 files) or 2. */
+  formatVersion: 1 | 2;
+  /** Null for format 1, which did not record its writer. */
+  writer: SidecarWriter | null;
+}
+
+/**
+ * The request a generate record holds: the parameters sent to the provider as
+ * sent (model, size, quality, moderation and the rest), the prompt as sent, the
+ * image count, and gptimgsdk's own annotation `chroma.color`, the key colour the
+ * policy named, which `mask` and `keycheck` read back.
+ */
+export interface GenerateRequestRecord {
+  prompt: string;
+  n: number;
+  model?: string;
+  chroma?: { color: string };
+  [param: string]: unknown;
+}
+
+/** An edit's request: as generate's, plus the source image and optional mask by name and SHA-256. */
+export interface EditRequestRecord extends GenerateRequestRecord {
+  input: string;
+  /** Absent only in format-1 records written before digests were recorded. */
+  inputSha256?: string;
+  mask: string | null;
+  maskSha256?: string | null;
+}
+
+/** A vision check's request: the parameters sent, the check, and each input by name, SHA-256 and shrink. */
+export interface VisionRequestRecord {
+  check: string;
+  model?: string;
+  detail?: string;
+  reasoning?: string;
+  inputs: Array<{
+    name: string;
+    /** Absent only in format-1 records written before digests were recorded. */
+    sha256?: string;
+    shrink: { applied: boolean; originalWidth: number; originalHeight: number; outputWidth: number; outputHeight: number };
+  }>;
+  [param: string]: unknown;
+}
+
+/** The record beside a generated image: the request as sent, the provider's reply without image bytes, and the image. */
+export interface GenerateSidecar extends SidecarBase {
+  kind: "generate";
+  request: GenerateRequestRecord;
+  /** The provider's reply as received, with its creation time and token usage; image bytes are nulled. */
+  response: Record<string, unknown>;
   files: SidecarFileEntry[];
 }
+
+export interface EditSidecar extends SidecarBase {
+  kind: "edit";
+  request: EditRequestRecord;
+  response: Record<string, unknown>;
+  files: SidecarFileEntry[];
+}
+
+/** The record of a vision check, which produces no image: the request, the verdict and the provider's raw reply. */
+export interface VisionSidecar extends SidecarBase {
+  kind: "vision";
+  request: VisionRequestRecord;
+  response: { verdict: VisionVerdict; raw: unknown };
+  files: [];
+}
+
+export type Sidecar = GenerateSidecar | EditSidecar | VisionSidecar;
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogStage =
@@ -144,6 +274,7 @@ export type LogStage =
   | "retry"
   | "download"
   | "infer"
+  | "hash"
   | "cancelled"
   | "error"
   // The logging subsystem reporting on itself (e.g. the session file is unavailable).
@@ -167,7 +298,8 @@ export type LogVerb =
   | "keycheck"
   | "framecheck"
   | "grid"
-  | "model";
+  | "model"
+  | "verify";
 
 export interface LogEntry {
   /** Event instant: UTC ISO-8601 with milliseconds and `Z` (logging-conventions envelope). */
@@ -182,17 +314,48 @@ export interface LogEntry {
 }
 
 export interface LogHandle {
-  path: string;
+  /** The log file, or null when the call asked for no log. */
+  path: string | null;
   verb: LogVerb;
 }
 
+/** Countable work done so far, for a progress bar (`onProgress`). */
+export interface ProgressUpdate {
+  verb: LogVerb;
+  stage: LogStage;
+  done: number;
+  total: number;
+  unit: "bytes" | "tiles" | "inputs" | "renditions" | "passes" | "models";
+}
+
+/** How a companion file's publication went, reported on its own (sdk-conventions, *An artifact holds itself*). */
+export type FilePublication =
+  | { status: "published" }
+  | { status: "failed"; code: ErrorCode | RefusalCode; effect: ErrorEffect; message: string };
+
+/** A paid image that was published. Its sidecar is reported separately; the image is kept when the sidecar fails. */
 export interface OutputFile {
   index: number;
   path: string;
-  /** Per-image sidecar: `<image-stem>.json`. Same stem as `path` minus the extension. */
-  sidecarPath: string;
   sha256: string;
   format: string;
+  /** Per-image sidecar: `<image-stem>.json`, the same stem as `path`. */
+  sidecarPath: string;
+  sidecar: FilePublication;
+  /** The record the sidecar holds, also here so a caller keeps it when the sidecar could not be written. */
+  record: GenerateSidecar | EditSidecar;
+}
+
+/** Item failure codes beyond the error and refusal codes: the provider returned no image for the item. */
+export const ITEM_FAILURE_CODES = ["provider.noImage"] as const;
+
+/** A requested image that yielded no published file, with its own code and effect. */
+export interface ItemFailure {
+  index: number;
+  code: (typeof ITEM_FAILURE_CODES)[number] | ErrorCode | RefusalCode;
+  /** `unknown`: the paid request had taken effect, and a write may have begun. */
+  effect: ErrorEffect;
+  message: string;
 }
 
 export interface GenerateArgs {
@@ -200,18 +363,20 @@ export interface GenerateArgs {
   /** Destination for generated images; required because there is no source folder. */
   outDir: string;
   outName?: string;
-  profile?: string;
-  recipe?: string;
-  log?: string;
-  /** Typed recipe overrides merged over the loaded recipe (caller-supplied, last wins). */
-  overrides?: Partial<Recipe>;
+  /** Policy for this call, merged over the instance's and the profile's (last wins). */
+  policy?: Policy;
   overwrite?: boolean;
 }
 
 export interface GenerateResult {
+  status: "completed";
+  /** Every image that was published, in index order. */
   files: OutputFile[];
-  logPath: string;
-  partial: boolean;
+  /** Every requested image that yielded no published file. */
+  failures: ItemFailure[];
+  /** Earlier-run slot files an overwrite could not remove; empty normally. */
+  leftovers: string[];
+  logPath: string | null;
 }
 
 export interface EditArgs extends Omit<GenerateArgs, "outDir"> {
@@ -226,11 +391,8 @@ export type EditResult = GenerateResult;
 export interface VisionArgs {
   in: string | string[];
   check: string;
-  profile?: string;
-  recipe?: string;
-  log?: string;
-  /** Typed recipe overrides merged over the loaded recipe (caller-supplied, last wins). */
-  overrides?: Partial<Recipe>;
+  /** Policy for this call, merged over the instance's and the profile's (last wins). */
+  policy?: Policy;
   /** Defaults beside the first input image. */
   outDir?: string;
   outName?: string;
@@ -245,9 +407,13 @@ export interface VisionVerdict {
 }
 
 export interface VisionResult extends VisionVerdict {
+  status: "completed";
   raw: unknown;
   sidecarPath: string;
-  logPath: string;
+  sidecar: FilePublication;
+  /** The record the sidecar holds, also here so a caller keeps it when the sidecar could not be written. */
+  record: VisionSidecar;
+  logPath: string | null;
 }
 
 // ----- mask / compose / combine -----
@@ -290,21 +456,21 @@ export interface MaskArgs extends PngEncodingArgs {
   borderSample?: number;
   /** Spill ratio at which near-key pixels saturate to α=0 (0..1]. Chroma-method only. */
   saturationRatio?: number;
-  /** Skip writing the mask; emit stats only. */
-  dryRun?: boolean;
+  /** The models folder for the AI method; default the instance's, then the profile's, then `~/.gptimgsdk/models`. */
+  modelsDir?: string;
+  /** Policy for this call; the chroma method takes its unset arguments from `chroma`. */
+  policy?: Policy;
   outDir?: string;
   outName?: string;
-  recipe?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface MaskResult {
+  status: "completed";
   input: string;
-  /** Null when dryRun was set. */
-  output: string | null;
+  output: string;
   stats: MaskStats;
-  logPath: string;
+  logPath: string | null;
 }
 
 export interface ComposeArgs extends EncodingArgs {
@@ -326,18 +492,18 @@ export interface ComposeArgs extends EncodingArgs {
   removeBleed?: string;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface ComposeResult {
+  status: "completed";
   input: string;
   mask: string;
   output: string;
   width: number;
   height: number;
   over: "transparent" | "color" | "image";
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- trim -----
@@ -360,11 +526,11 @@ export interface TrimArgs extends EncodingArgs {
   square?: boolean;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface TrimResult {
+  status: "completed";
   input: string;
   output: string;
   /** The detected alpha bounding box in the source image. */
@@ -378,7 +544,7 @@ export interface TrimResult {
   /** Final output height. */
   height: number;
   square: boolean;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- backplate -----
@@ -401,11 +567,11 @@ export interface BackplateArgs extends EncodingArgs {
   /** Required unless outName is an absolute output stem. */
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface BackplateResult {
+  status: "completed";
   output: string;
   size: number;
   /** Resolved content side as a fraction of `size`. */
@@ -418,7 +584,7 @@ export interface BackplateResult {
   /** Resolved gradient end color, "#rrggbb". */
   to: string;
   angle: number;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- layer -----
@@ -451,11 +617,11 @@ export interface LayerArgs extends EncodingArgs {
   topOffset?: LayerOffset;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface LayerResult {
+  status: "completed";
   base: string;
   top: string;
   output: string;
@@ -468,7 +634,7 @@ export interface LayerResult {
   /** Resolved placement. One of `gravity` or `topOffset` is null. */
   gravity: LayerGravity | null;
   topOffset: LayerOffset | null;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- shadow -----
@@ -499,11 +665,11 @@ export interface ShadowArgs extends EncodingArgs {
   keepCanvas?: boolean;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface ShadowResult {
+  status: "completed";
   input: string;
   output: string;
   /** Final canvas size (grown to fit the shadow unless `keepCanvas`). */
@@ -519,7 +685,7 @@ export interface ShadowResult {
   opacity: number;
   spread: number;
   keepCanvas: boolean;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- resample (shared by upscale + resize) -----
@@ -539,14 +705,17 @@ export interface UpscaleArgs extends EncodingArgs {
    * much. A tile too large for the machine fails as `memory.exhausted`.
    */
   tile?: number;
-  recipe?: string;
+  /** The models folder for this call; default the instance's, then the profile's, then `~/.gptimgsdk/models`. */
+  modelsDir?: string;
+  /** Network policy for this call (only `network` applies to upscale). */
+  policy?: Policy;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface UpscaleResult {
+  status: "completed";
   input: string;
   output: string;
   sourceWidth: number;
@@ -563,7 +732,7 @@ export interface UpscaleResult {
   tile: number;
   /** Number of model passes (tiles) the source was split into. */
   tiles: number;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- resize -----
@@ -577,11 +746,11 @@ export interface ResizeArgs extends EncodingArgs {
   kernel?: ResampleKernel;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface ResizeResult {
+  status: "completed";
   input: string;
   output: string;
   sourceWidth: number;
@@ -591,7 +760,7 @@ export interface ResizeResult {
   height: number;
   toSize: number;
   kernel: ResampleKernel;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- encode -----
@@ -646,11 +815,11 @@ export interface EncodeArgs extends EncodingArgs {
   format: EncodeFormat;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface EncodeResult {
+  status: "completed";
   input: string;
   output: string;
   format: EncodeFormat;
@@ -665,7 +834,7 @@ export interface EncodeResult {
   sourceBytes: number;
   /** Output file size in bytes. */
   bytes: number;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- icon -----
@@ -682,11 +851,11 @@ export interface IconArgs extends PngEncodingArgs {
   pngs?: boolean;
   /** Output directory. Default: same as `in`. */
   outDir?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface IconResult {
+  status: "completed";
   input: string;
   /** Every file written, absolute paths (icns, ico, png, then any sized PNGs). */
   outputs: string[];
@@ -698,7 +867,7 @@ export interface IconResult {
   /** Source master dimensions. */
   width: number;
   height: number;
-  logPath: string;
+  logPath: string | null;
 }
 
 export interface CombineArgs extends PngEncodingArgs {
@@ -709,17 +878,17 @@ export interface CombineArgs extends PngEncodingArgs {
   radius?: number;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface CombineResult {
+  status: "completed";
   inputs: string[];
   output: string;
   width: number;
   height: number;
   op: CombineOp;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- despeckle -----
@@ -737,11 +906,11 @@ export interface DespeckleArgs extends EncodingArgs {
   keep?: DespeckleKeep;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface DespeckleResult {
+  status: "completed";
   input: string;
   output: string;
   /** Resolved threshold (floor / component on-level). */
@@ -765,13 +934,14 @@ export interface DespeckleResult {
   bboxAfter: AlphaBBox | null;
   width: number;
   height: number;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- keycheck -----
 
 /** A "clean" cutout has residue within the verdict thresholds; "residue" exceeds them. */
-export type KeyResidueVerdict = "clean" | "residue";
+export const KEY_RESIDUE_VERDICTS = ["clean", "residue"] as const;
+export type KeyResidueVerdict = (typeof KEY_RESIDUE_VERDICTS)[number];
 
 /**
  * Deterministic key-residue analysis of a keyed cutout — *did background removal
@@ -802,11 +972,11 @@ export interface KeycheckArgs extends EncodingArgs {
   heatmap?: boolean;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface KeycheckResult {
+  status: "completed";
   input: string;
   /** Resolved key color, "#rrggbb". */
   key: string;
@@ -839,7 +1009,7 @@ export interface KeycheckResult {
   verdict: KeyResidueVerdict;
   /** Debug heatmap path when `heatmap` was set, else null. */
   heatmapPath: string | null;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- framecheck -----
@@ -859,6 +1029,10 @@ export interface FrameEdgeContact {
   top: boolean;
   bottom: boolean;
 }
+
+/** "centered" when the enforced margin-pair asymmetries are within tolerance; "offset" otherwise. */
+export const FRAMECHECK_VERDICTS = ["centered", "offset"] as const;
+export type FramecheckVerdict = (typeof FRAMECHECK_VERDICTS)[number];
 
 /** Margin-pair asymmetries in pixels. The verdict is computed from these. */
 export interface FrameDeltas {
@@ -886,10 +1060,10 @@ export interface FramecheckArgs {
   tolerance?: number;
   /** Which axis/axes the verdict enforces. Both deltas are always reported. Default "horizontal". */
   axes?: FramecheckAxes;
-  log?: string;
 }
 
 export interface FramecheckResult {
+  status: "completed";
   input: string;
   width: number;
   height: number;
@@ -910,8 +1084,8 @@ export interface FramecheckResult {
   deltas: FrameDeltas | null;
   edgeContact: FrameEdgeContact | null;
   /** "centered" when the enforced axes are within tolerance (empty is vacuously centered). */
-  verdict: "centered" | "offset";
-  logPath: string;
+  verdict: FramecheckVerdict;
+  logPath: string | null;
 }
 
 // ----- grid -----
@@ -929,18 +1103,18 @@ export interface GridArgs extends EncodingArgs {
   background?: string;
   outDir?: string;
   outName?: string;
-  log?: string;
   overwrite?: boolean;
 }
 
 export interface GridResult {
+  status: "completed";
   output: string;
   /** Inputs supplied. */
   count: number;
   /** Tiles actually drawn (readable inputs). */
   placed: number;
-  /** Inputs that could not be read, in order — skipped, never fatal. */
-  skipped: string[];
+  /** Inputs that could not be read, in order, each with the error code naming why — skipped, never fatal. */
+  skipped: Array<{ input: string; code: ErrorCode; message: string }>;
   cols: number;
   rows: number;
   /** Resolved cell side (px). */
@@ -949,7 +1123,7 @@ export interface GridResult {
   gap: number;
   width: number;
   height: number;
-  logPath: string;
+  logPath: string | null;
 }
 
 // ----- model management -----
@@ -959,13 +1133,15 @@ export interface InstalledModel {
   key: string;
   name: string;
   path: string;
-  /** True when `force` re-downloaded over an existing cache entry. */
+  /** True when `force` re-downloaded over an installed file. */
   forced: boolean;
 }
 
-/** Result of `model install`: every model the call installed. */
+/** Result of `model install` and `installAll`: every model the call installed. */
 export interface ModelInstallResult {
+  status: "completed";
   installed: InstalledModel[];
+  logPath: string | null;
 }
 
 /** One known model and its cache state, from `model list`. */
@@ -979,6 +1155,7 @@ export interface ModelListEntry {
 
 /** Result of `model list`: every known model and whether it is cached. */
 export interface ModelListResult {
+  status: "completed";
   models: ModelListEntry[];
 }
 
@@ -989,7 +1166,8 @@ export interface ModelListResult {
  *   "missing"      — not cached.
  *   "unverifiable" — the registry entry pins no sha256 (ad-hoc entries only).
  */
-export type ModelIntegrity = "ok" | "mismatch" | "missing" | "unverifiable";
+export const MODEL_INTEGRITIES = ["ok", "mismatch", "missing", "unverifiable"] as const;
+export type ModelIntegrity = (typeof MODEL_INTEGRITIES)[number];
 
 /** One model's integrity result, from `model verify`. */
 export interface ModelVerifyEntry {
@@ -1005,14 +1183,59 @@ export interface ModelVerifyEntry {
 
 /** Result of `model verify`: the on-disk integrity of every known model. */
 export interface ModelVerifyResult {
+  status: "completed";
   models: ModelVerifyEntry[];
   /** JSONL log for this verification session. */
-  logPath: string;
+  logPath: string | null;
+}
+
+/** What `verify` can find wrong with a published paid image and its sidecar. */
+export const VERIFY_FINDING_CODES = [
+  "sidecar.missing",
+  "sidecar.malformed",
+  "sidecar.newerFormat",
+  "sidecar.hashMismatch",
+  "sidecar.nameMismatch",
+  "image.undecodable",
+  "image.formatMismatch",
+] as const;
+export type VerifyFindingCode = (typeof VERIFY_FINDING_CODES)[number];
+
+export interface VerifyFinding {
+  code: VerifyFindingCode;
+  message: string;
+}
+
+export interface VerifyArgs {
+  /** The published image (absolute); its sidecar is `<stem>.json` beside it. */
+  in: string;
+}
+
+export interface VerifyResult {
+  status: "completed";
+  input: string;
+  sidecarPath: string;
+  /** True when there are no findings. */
+  ok: boolean;
+  findings: VerifyFinding[];
+  /** The sidecar as read, or null when it is missing or unreadable. */
+  record: Sidecar | null;
+  logPath: string | null;
 }
 
 export interface GptImgOptions {
-  /** The storage root. `~` and `$VAR`/`%VAR%` are expanded; a relative path is under the home directory. */
-  profileDir?: string;
-  /** Where default logs go, expanded and anchored like `profileDir`. */
+  /** A profile from `loadProfile`; every option below overrides its value. */
+  profile?: LoadedProfile;
+  /** The API key, overriding the profile's. Needed only by paid verbs. */
+  apiKey?: string;
+  organization?: string;
+  project?: string;
+  /** The models folder (absolute). Default the profile's, then `~/.gptimgsdk/models`. */
+  modelsDir?: string;
+  /** The folder calls log into when they ask for no other (absolute). No default: without one, nothing is logged. */
   logDir?: string;
+  /** Policy merged over the profile's; each call's policy merges over this. */
+  policy?: Policy;
+  /** The calling app, recorded in each sidecar's `writer` beside the SDK's own name and version. */
+  app?: { name: string; version: string };
 }

@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -11,10 +13,7 @@ import type { ResizeArgs, ResizeResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateResizeArgs } from "./schemas.ts";
 
-export interface ResizeContext {
-  profileDir: string;
-  logDir: string;
-}
+export type ResizeContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-resize`;
@@ -24,11 +23,11 @@ export async function resizeImpl(
   ctx: ResizeContext,
   args: ResizeArgs,
   opts: VerbCallOptions = {},
-): Promise<ResizeResult> {
+): Promise<ResizeResult | RefusedResult> {
   validateResizeArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "resize", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "resize", opts, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
@@ -74,6 +73,7 @@ export async function resizeImpl(
       toSize: result.toSize,
       kernel: result.kernel,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

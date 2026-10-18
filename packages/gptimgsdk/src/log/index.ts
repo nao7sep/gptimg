@@ -1,25 +1,11 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { LogEntry, LogHandle, LogLevel, LogStage, LogVerb } from "../types.ts";
+import type { LogEntry, LogHandle, LogLevel, LogStage, LogVerb, ProgressUpdate } from "../types.ts";
 import { maskCredentials } from "./mask.ts";
-
-/**
- * `debug` logging is a developer-only firehose: it is written to the session log
- * file only when explicitly enabled, so it never floods an end-user's disk
- * (logging-conventions). GptImg ships a single compiled artifact everywhere —
- * there is no separate "dev build" — so the one gate is the `GPTIMG_DEBUG`
- * environment variable. Accept the two forms a human reaches for (`1` / `true`,
- * case- and space-insensitive) so a mis-typed `true` is not a silent no-op. Read
- * per-call so a process that sets it late, or a test that toggles it, is honored.
- */
-export function debugEnabled(): boolean {
-  const v = process.env.GPTIMG_DEBUG?.trim().toLowerCase();
-  return v === "1" || v === "true";
-}
 
 // Credentials registered for a handle (`Logger.addCredential`). Every record is
 // masked against them before any sink receives it, so a key echoed anywhere in a
-// request, response or error chain never reaches the file or `onProgress`.
+// request, response or error chain never reaches the file or `onEvent`.
 const credentialsByHandle = new WeakMap<LogHandle, Set<string>>();
 
 // Each handle's file writes, chained so lines land in order. Logging is a
@@ -46,21 +32,25 @@ function serialize(handle: LogHandle, entry: LogEntry): string {
   ) + "\n";
 }
 
-/** Dispatch advisory progress immediately, containing sync and async sink failures. */
-function dispatchEvent(onEvent: ((entry: LogEntry) => void) | undefined, entry: LogEntry): void {
-  if (!onEvent) return;
+/**
+ * Call a hook immediately, containing sync and async failures: a hook's failure
+ * never breaks the verb and is never reported through the hook that failed
+ * (sdk-conventions, *Events, progress and cancellation*).
+ */
+function dispatchHook<T>(hook: ((value: T) => unknown) | undefined, value: T): void {
+  if (!hook) return;
   try {
-    // Callers may return a promise despite the compatible void callback type.
-    // Observe its rejection without making callback settlement a logging wait.
-    void Promise.resolve(onEvent(entry)).catch(() => {
-      // A failing progress observer must never disrupt an operation or its peers.
+    // Callers may return a promise despite the void callback type. Observe its
+    // rejection without making callback settlement a logging wait.
+    void Promise.resolve(hook(value)).catch(() => {
+      // A failing observer must never disrupt an operation or its peers.
     });
   } catch {
     // The same best-effort boundary owns synchronous callback failures.
   }
 }
 
-function enqueueWrite(handle: LogHandle, line: string, onEvent?: (entry: LogEntry) => void): Promise<void> {
+function enqueueWrite(handle: LogHandle & { path: string }, line: string, onEvent?: (entry: LogEntry) => void): Promise<void> {
   const next = (pendingWrites.get(handle) ?? Promise.resolve())
     .then(() => appendFile(handle.path, line, { encoding: "utf-8", mode: 0o600 }))
     .catch((err: unknown) => announceLogFailure(handle, err, onEvent));
@@ -71,7 +61,7 @@ function enqueueWrite(handle: LogHandle, line: string, onEvent?: (entry: LogEntr
 // Handles for which a file-logging failure has already been surfaced. The notice
 // goes through the caller's progress sink (`onEvent`) exactly ONCE per session, not
 // on every line — and never to a standard stream: an SDK prints nothing, ever
-// (sdk-toolkit-conventions, *Output*). With no sink the SDK is silent; the live event
+// (sdk-conventions, *Logging*). With no sink the SDK is silent; the live event
 // stream, which is independent of the file, already carries every event. Module-
 // private (a WeakSet, not a field) so the public LogHandle stays a plain `{path, verb}`.
 const failureAnnounced = new WeakSet<LogHandle>();
@@ -81,9 +71,8 @@ const failureAnnounced = new WeakSet<LogHandle>();
  * print. The notice is one warn-level record forwarded through the caller's
  * progress sink (`onEvent`) — the same envelope a normal line uses — so a watcher
  * learns the on-disk log is unavailable. With no sink the SDK stays silent
- * (sdk-toolkit-conventions, *Output* and *Progress*); the live event stream
- * already carries every non-error event and errors still reach the caller as
- * thrown exceptions, so the file failing loses no part of the contract.
+ * (sdk-conventions, *Logging*); the live event stream already carries every
+ * event, so the file failing loses no part of the contract.
  */
 function announceLogFailure(handle: LogHandle, err: unknown, onEvent?: (entry: LogEntry) => void): void {
   if (failureAnnounced.has(handle)) return;
@@ -97,15 +86,16 @@ function announceLogFailure(handle: LogHandle, err: unknown, onEvent?: (entry: L
     stage: "log",
     data: { path: handle.path, error: err instanceof Error ? err.message : String(err) },
   };
-  dispatchEvent(onEvent, notice);
+  dispatchHook(onEvent, notice);
 }
 
-export async function openLog(
-  filePath: string,
+async function openLog(
+  filePath: string | null,
   verb: LogVerb,
   onEvent?: (entry: LogEntry) => void,
 ): Promise<LogHandle> {
   const handle: LogHandle = { path: filePath, verb };
+  if (filePath === null) return handle;
   try {
     await mkdir(path.dirname(filePath), { recursive: true });
   } catch (err) {
@@ -117,8 +107,9 @@ export async function openLog(
   return handle;
 }
 
-export async function appendLog(
+async function appendLog(
   handle: LogHandle,
+  debug: boolean,
   entry: {
     level: LogLevel;
     stage: LogStage;
@@ -149,27 +140,25 @@ export async function appendLog(
     return;
   }
 
-  // Fan out to the live progress sink (a caller's `onProgress` handler) before the
-  // file write, so a watcher sees the event immediately. Everything but `error`
-  // is progress — an error is a failure the caller learns about through the
-  // thrown error, not the stream. `debug` stage events (e.g. download ticks) ARE
-  // forwarded live; the debug gate below governs only on-disk persistence. A
-  // throwing sink must never break logging.
-  if (final.level !== "error") dispatchEvent(onEvent, event);
+  // Every event reaches the caller's `onEvent` before the file write, so a
+  // watcher sees it at once, error and debug levels included; the debug switch
+  // governs only what the file keeps.
+  dispatchHook(onEvent, event);
 
-  // The developer-only firehose reaches the file only when debug is enabled; it
-  // has already been forwarded to the live stream above.
-  if (final.level === "debug" && !debugEnabled()) return;
+  if (handle.path === null) return;
+  // The developer-only firehose reaches the file only when the caller's log
+  // option asks for debug lines (logging-conventions).
+  if (final.level === "debug" && !debug) return;
 
   // Logging must never crash the operation it observes: a failed write is
   // surfaced once (through the sink), and later lines keep trying the file so a
   // transient failure self-heals. The returned promise settles when this line is
   // written or has failed; the verb logger does not wait for it.
-  await enqueueWrite(handle, line, onEvent);
+  await enqueueWrite(handle as LogHandle & { path: string }, line, onEvent);
 }
 
 /** Mask `credential` in every later record of this handle. */
-export function addLogCredential(handle: LogHandle, credential: string): void {
+function addLogCredential(handle: LogHandle, credential: string): void {
   if (credential.length === 0) return;
   const credentials = credentialsByHandle.get(handle) ?? new Set<string>();
   credentials.add(credential);
@@ -182,7 +171,7 @@ export function addLogCredential(handle: LogHandle, credential: string): void {
  * disk cannot hold the verb. Each write opens, appends and closes the file, so
  * there is no descriptor to release.
  */
-export async function closeLog(handle: LogHandle): Promise<void> {
+async function closeLog(handle: LogHandle): Promise<void> {
   const pending = pendingWrites.get(handle);
   if (!pending) return;
   let timer: NodeJS.Timeout | undefined;
@@ -205,28 +194,49 @@ export interface Logger {
   warn(stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void>;
   error(stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void>;
   debug(stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void>;
+  /**
+   * Report countable work to the caller's `onProgress`, throttled to one update
+   * per 100 ms plus the final count. Only real counts are reported: bytes of a
+   * download or hash, tiles, inputs, renditions, passes.
+   */
+  progress(stage: LogStage, done: number, total: number, unit: ProgressUpdate["unit"]): void;
   /** Mask `credential` (an API key) in every later record, file and `onEvent` alike. */
   addCredential(credential: string): void;
   close(): Promise<void>;
 }
 
+const PROGRESS_INTERVAL_MS = 100;
+
 export async function createLogger(
-  filePath: string,
+  filePath: string | null,
   verb: LogVerb,
-  opts: { onEvent?: (entry: LogEntry) => void } = {},
+  opts: {
+    onEvent?: ((entry: LogEntry) => void) | undefined;
+    onProgress?: ((update: ProgressUpdate) => void) | undefined;
+    debug?: boolean | undefined;
+  } = {},
 ): Promise<Logger> {
-  const onEvent = opts.onEvent;
+  const { onEvent, onProgress } = opts;
+  const debug = opts.debug ?? false;
   const handle = await openLog(filePath, verb, onEvent);
   const record = (level: LogLevel, stage: LogStage, message: string, data?: Record<string, unknown>): Promise<void> => {
-    void appendLog(handle, { level, stage, message, data }, onEvent);
+    void appendLog(handle, debug, { level, stage, message, data }, onEvent);
     return Promise.resolve();
   };
+  let lastProgress = 0;
   return {
     handle,
     info: (stage, message, data) => record("info", stage, message, data),
     warn: (stage, message, data) => record("warn", stage, message, data),
     error: (stage, message, data) => record("error", stage, message, data),
     debug: (stage, message, data) => record("debug", stage, message, data),
+    progress: (stage, done, total, unit) => {
+      if (!onProgress) return;
+      const now = Date.now();
+      if (done < total && now - lastProgress < PROGRESS_INTERVAL_MS) return;
+      lastProgress = now;
+      dispatchHook(onProgress, { verb, stage, done, total, unit });
+    },
     addCredential: (credential) => addLogCredential(handle, credential),
     close: () => closeLog(handle),
   };

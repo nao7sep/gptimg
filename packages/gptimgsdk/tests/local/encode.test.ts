@@ -129,7 +129,7 @@ describe("runEncode", () => {
     const input = path.join(tmp, "in.png");
     await writeFile(input, "not an image");
     await expect(runEncode({ in: input, out: path.join(tmp, "out.png"), format: "png" })).rejects.toMatchObject({
-      code: "image.decodeFailed",
+      code: "image.undecodable",
     });
   });
 

@@ -1,10 +1,12 @@
 import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { done } from "../helpers/results.ts";
+import { cancelledError } from "../../src/errors.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AbortError, GptImg, LocalOpError } from "../../src/index.ts";
+import { GptImg, GptImgError } from "../../src/index.ts";
 import type { ModelEntry } from "../../src/local/models/registry.ts";
 
 const native = vi.hoisted(() => ({ create: vi.fn(), run: vi.fn() }));
@@ -17,7 +19,7 @@ vi.mock("onnxruntime-node", async (importOriginal) => ({
 }));
 vi.mock("../../src/local/models/fetch.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/local/models/fetch.ts")>()),
-  ensureModel: async (entry: ModelEntry, cacheDir: string) => path.join(cacheDir, entry.name),
+  requireInstalledModel: (entry: ModelEntry, _key: string, modelsDir: string) => path.join(modelsDir, entry.name),
 }));
 
 function deferred() {
@@ -48,7 +50,7 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
     vi.stubEnv("GPTIMG_ONNX_EP", undefined);
     vi.stubEnv("GPTIMG_MODELS_DIR", undefined);
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-native-run-"));
-    sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     input = path.join(tmp, "input.png");
     await sharp({ create: { width: 8, height: 8, channels: 4, background: "#446688" } }).png().toFile(input);
     native.create.mockReset().mockImplementation(async () => ({
@@ -71,7 +73,8 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
       : sdk.upscale({ in: input, toSize: 16, kernel: "nearest", outName }, options);
   }
 
-  async function assertPublished(result: Awaited<ReturnType<typeof call>>, outName: string) {
+  async function assertPublished(outcome: Awaited<ReturnType<typeof call>>, outName: string) {
+    const result = done(outcome);
     expect(result.output).toBe(path.join(tmp, `${outName}.png`));
     const { data, info } = await sharp(result.output!).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     expect([info.width, info.height]).toEqual(verb === "mask" ? [8, 8] : [16, 16]);
@@ -89,8 +92,7 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
     });
     const operation = call("failed");
     const rejected = expect(operation).rejects.toMatchObject({
-      name: "LocalOpError",
-      errorType: "localOp",
+      name: "GptImgError",
       code: "model.runFailed",
       cause,
     });
@@ -102,7 +104,7 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
       released.resolve();
       await rejected;
       const failure = await operation.catch((error: unknown) => error);
-      expect(failure).toBeInstanceOf(LocalOpError);
+      expect(failure).toBeInstanceOf(GptImgError);
       expect((failure as Error).cause).toBe(cause);
       await assertPublished(await call("later"), "later");
       expect(native.create).toHaveBeenCalledOnce();
@@ -115,20 +117,27 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
   });
 
   it.each([
-    new LocalOpError("model.invalidOutput", "already classified"),
-    new AbortError("native cancellation"),
-    Object.assign(new Error("native cancellation"), { name: "AbortError" }),
-    Object.assign(new Error("native cancellation"), { code: "ABORT_ERR" }),
-    Object.assign(new Error("native cancellation"), { code: "ERR_ABORTED" }),
+    new GptImgError("model.outputShape", "already classified"),
+    cancelledError("native cancellation"),
   ])("preserves the identity of a typed failure or cancellation: %s", async (error) => {
     native.run.mockRejectedValueOnce(error);
     await expect(call("rejected")).rejects.toBe(error);
     expect((await readdir(tmp)).filter((name) => name.startsWith("rejected"))).toEqual([]);
   });
 
+  it.each([
+    Object.assign(new Error("native cancellation"), { name: "AbortError" }),
+    Object.assign(new Error("native cancellation"), { code: "ABORT_ERR" }),
+    Object.assign(new Error("native cancellation"), { code: "ERR_ABORTED" }),
+  ])("turns a native abort into the SDK's cancellation with the original as cause: %s", async (error) => {
+    native.run.mockRejectedValueOnce(error);
+    await expect(call("rejected")).rejects.toMatchObject({ name: "GptImgError", code: "cancelled", cause: error });
+    expect((await readdir(tmp)).filter((name) => name.startsWith("rejected"))).toEqual([]);
+  });
+
   it("retains ownership until native settlement while a peer completes and cancellation discards only its result", async () => {
     const ctrl = new AbortController();
-    const reason = new AbortError("stop this run");
+    const reason = cancelledError("stop this run");
     const entered = deferred();
     const released = deferred();
     native.run.mockImplementationOnce(async (feeds: ort.InferenceSession.FeedsType) => {

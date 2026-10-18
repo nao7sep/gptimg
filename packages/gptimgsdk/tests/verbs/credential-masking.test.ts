@@ -5,9 +5,26 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { APIConnectionTimeoutError, APIError, AuthenticationError } from "openai";
-import { GptImg } from "../../src/index.ts";
-import { ProviderError } from "../../src/errors.ts";
+import { GptImg, loadProfile } from "../../src/index.ts";
+
+// The SDK builds its OpenAI client with an explicit base URL and ignores the
+// process environment, so these tests point the real client at the local
+// server through the client builder instead of OPENAI_BASE_URL.
+const local = vi.hoisted(() => ({ baseURL: "" }));
+vi.mock("../../src/providers/openai/client.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/providers/openai/client.ts")>();
+  return {
+    ...actual,
+    buildOpenAIClient: (profile: Parameters<typeof actual.buildOpenAIClient>[0]) => {
+      const client = actual.buildOpenAIClient(profile);
+      client.baseURL = local.baseURL;
+      return client;
+    },
+  };
+});
+import { GptImgError } from "../../src/errors.ts";
 import type { EditResult, GenerateResult, LogEntry, VisionResult } from "../../src/types.ts";
+import type { RefusedResult } from "../../src/refusal.ts";
 
 // End to end against a local stand-in for the OpenAI API, with a fake key: the
 // key must reach the server and no sink — log file, progress event, thrown
@@ -85,15 +102,17 @@ describe("credential masking across every sink", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
     const { port } = server.address() as { port: number };
-    vi.stubEnv("OPENAI_BASE_URL", `http://127.0.0.1:${port}/v1`);
-    vi.stubEnv("GPTIMG_TEST_FAKE_KEY", FAKE);
+    local.baseURL = `http://127.0.0.1:${port}/v1`;
     await mkdir(path.join(tmp, "data"));
     await writeFile(
       path.join(tmp, "data", "profile.json"),
       JSON.stringify({ formatVersion: 1, provider: "openai", apiKeyEnv: "GPTIMG_TEST_FAKE_KEY" }),
       { mode: 0o600 },
     );
-    sdk = new GptImg({ profileDir: path.join(tmp, "data"), logDir: path.join(tmp, "logs") });
+    sdk = new GptImg({
+      profile: await loadProfile(path.join(tmp, "data", "profile.json"), { env: { GPTIMG_TEST_FAKE_KEY: FAKE } }),
+      logDir: path.join(tmp, "logs"),
+    });
   });
 
   afterEach(async () => {
@@ -108,28 +127,32 @@ describe("credential masking across every sink", () => {
     thrown: string;
     error: unknown;
     result: GenerateResult | EditResult | VisionResult | undefined;
+    refused: RefusedResult | undefined;
   }> {
     mode = m;
     const events: LogEntry[] = [];
     let thrown = "";
     let error: unknown;
     let result: GenerateResult | EditResult | VisionResult | undefined;
+    let refused: RefusedResult | undefined;
     try {
       const output = { outDir: path.join(tmp, "out"), outName: `${m}-${verb}` };
-      const options = { onProgress: (e: LogEntry) => events.push(e), ...(signal && { signal }) };
-      const overrides = m === "timeout"
+      const options = { onEvent: (e: LogEntry) => events.push(e), ...(signal && { signal }) };
+      const policy = m === "timeout"
         ? { network: { imageGenerate: { timeout: 100, maxRetries: 0 }, imageVision: { timeout: 100, maxRetries: 0 } } }
         : undefined;
-      result = verb === "vision"
-        ? await sdk.vision({ check: instruction, in: INPUT, ...output, overrides }, options)
+      const outcome = verb === "vision"
+        ? await sdk.vision({ check: instruction, in: INPUT, ...output, policy }, options)
         : verb === "edit"
-          ? await sdk.edit({ prompt: instruction, in: INPUT, ...output, overrides }, options)
-          : await sdk.generate({ prompt: instruction, ...output, overrides }, options);
+          ? await sdk.edit({ prompt: instruction, in: INPUT, ...output, policy }, options)
+          : await sdk.generate({ prompt: instruction, ...output, policy }, options);
+      if (outcome.status === "refused") refused = outcome;
+      else result = outcome;
     } catch (err) {
       error = err;
       thrown = diagnosticStrings(err).join("\n");
     }
-    return { events: JSON.stringify(events), thrown, error, result };
+    return { events: JSON.stringify(events), thrown, error, result, refused };
   }
 
   async function logs(): Promise<string> {
@@ -186,23 +209,26 @@ describe("credential masking across every sink", () => {
     expect(receivedAuth).toEqual([`Bearer ${FAKE}`]);
   });
 
-  it("masks an echoed key in a public vision refusal while preserving its typed reason", async () => {
-    const { events, thrown, error, result } = await run("refusal", undefined, "vision");
-    expect(error).toBeInstanceOf(ProviderError);
-    expect((error as ProviderError).code).toBe("provider.refused");
-    expect((error as ProviderError).message).toBe("The model declined to verify this image: Cannot verify with credential [REDACTED].");
-    expect(result).toBeUndefined();
-    for (const sink of [events, thrown, await logs()]) {
+  it("masks an echoed key in a public vision refusal while preserving its safe reason", async () => {
+    const { events, thrown, error, refused } = await run("refusal", undefined, "vision");
+    expect(error).toBeUndefined();
+    expect(refused).toMatchObject({
+      status: "refused",
+      refusal: { code: "provider.refused", safeReason: "Cannot verify with credential [REDACTED]." },
+    });
+    expect(JSON.stringify(refused)).not.toContain(FAKE);
+    for (const sink of [events, await logs()]) {
       expect(sink).not.toContain(FAKE);
       expect(sink).toContain("[REDACTED]");
     }
+    expect(thrown).toBe("");
     expect(receivedAuth).toEqual([`Bearer ${FAKE}`]);
   });
 
   it.each<Verb>(["generate", "edit", "vision"])("preserves %s's real SDK timeout and native fetch abort diagnostics", async (verb) => {
     const { events, thrown, error, result } = await run("timeout", undefined, verb);
-    expect(error).toBeInstanceOf(ProviderError);
-    expect((error as ProviderError).code).toBe("provider.requestFailed");
+    expect(error).toBeInstanceOf(GptImgError);
+    expect(error).toMatchObject({ code: "provider.timeout", kind: "unavailable", effect: "unknown" });
     const sdkError = (error as Error).cause as APIConnectionTimeoutError;
     expect(sdkError).toBeInstanceOf(APIConnectionTimeoutError);
     expect(sdkError.message).toBe("Request timed out.");

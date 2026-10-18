@@ -40,7 +40,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { finished } from "node:stream/promises";
 import { nanoid } from "nanoid";
-import { LocalOpError, throwIfAborted, toAbortError } from "../../errors.ts";
+import { GptImgError, cancelledError, fsError, throwIfAborted } from "../../errors.ts";
 import type { Logger } from "../../log/index.ts";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.ts";
 import { combineSignals, HttpStatusError } from "../../network/http.ts";
@@ -50,24 +50,28 @@ import { MODELS, type ModelEntry } from "./registry.ts";
 export async function fileSha256(
   filePath: string,
   signal?: AbortSignal | undefined,
+  onBytes?: (done: number) => void,
 ): Promise<string> {
   throwIfAborted(signal);
   const hash = createHash("sha256");
+  let done = 0;
   const stream = createReadStream(filePath);
   const abort = (): void => {
-    stream.destroy(toAbortError(signal?.reason));
+    stream.destroy(cancelledError(signal?.reason));
   };
   signal?.addEventListener("abort", abort, { once: true });
   try {
     for await (const chunk of stream) {
       throwIfAborted(signal);
       hash.update(chunk);
+      done += (chunk as Buffer).length;
+      onBytes?.(done);
     }
     throwIfAborted(signal);
     return hash.digest("hex");
   } catch (err) {
-    if (signal?.aborted) throw toAbortError(signal.reason);
-    throw err;
+    if (signal?.aborted) throw cancelledError(signal.reason);
+    throw fsError(err, "Failed to hash", filePath);
   } finally {
     signal?.removeEventListener("abort", abort);
   }
@@ -80,7 +84,7 @@ function timeoutError(message: string): Error {
 }
 
 function errorFromSignal(signal: AbortSignal): Error {
-  return signal.reason instanceof Error ? signal.reason : toAbortError(signal.reason);
+  return signal.reason instanceof Error ? signal.reason : cancelledError(signal.reason);
 }
 
 /** A resettable bound for DNS/connect/TLS/redirect/body-idle waits. */
@@ -115,11 +119,11 @@ function advertisedLength(headers: Headers): number | undefined {
   const raw = headers.get("content-length");
   if (raw === null) return undefined;
   if (!/^\d+$/.test(raw)) {
-    throw new LocalOpError("model.invalidSize", `Invalid model Content-Length: ${raw}.`);
+    throw new GptImgError("model.integrity", `Invalid model Content-Length: ${raw}.`, { details: { actual: raw } });
   }
   const value = Number(raw);
   if (!Number.isSafeInteger(value)) {
-    throw new LocalOpError("model.invalidSize", `Model Content-Length is not a safe integer: ${raw}.`);
+    throw new GptImgError("model.integrity", `Model Content-Length is not a safe integer: ${raw}.`, { details: { actual: raw } });
   }
   return value;
 }
@@ -182,20 +186,19 @@ async function downloadAttempt(
       }
       if (!REDIRECT_STATUSES.has(response.status)) break;
       if (redirects === MAX_REDIRECTS) {
-        throw new LocalOpError("model.redirectFailed", `Too many redirects downloading ${url}.`);
+        throw new GptImgError("model.badRedirect", `Too many redirects downloading ${url}.`, { subject: url });
       }
       const location = response.headers.get("location");
       if (!location) {
-        throw new LocalOpError(
-          "model.redirectFailed",
-          `Redirect downloading ${currentUrl} did not include a Location header.`,
-        );
+        throw new GptImgError("model.badRedirect", `Redirect downloading ${currentUrl} did not include a Location header.`, {
+          subject: currentUrl,
+        });
       }
       await response.body?.cancel();
       currentUrl = new URL(location, currentUrl).toString();
       assertSafeUrl(currentUrl, allowLoopbackHttp);
     }
-    if (!response) throw new LocalOpError("model.downloadFailed", `No response downloading ${url}.`);
+    if (!response) throw new GptImgError("internal.invariant", `No response downloading ${url}.`, { subject: url });
     if (!response.ok || !response.body) {
       // Keep the server's complete error body (text-cleanup-conventions, rule
       // 4); a body that cannot be read still leaves the status to classify.
@@ -207,20 +210,17 @@ async function downloadAttempt(
     const total = advertisedLength(response.headers);
     if (total !== undefined && total > maxBytes) {
       await response.body.cancel();
-      throw new LocalOpError(
-        "model.sizeExceeded",
-        `Refusing ${name}: advertised ${total} bytes exceeds the ${maxBytes}-byte limit.`,
-      );
+      throw new GptImgError("model.integrity", `Refusing ${name}: advertised ${total} bytes exceeds the ${maxBytes}-byte limit.`, {
+        details: { expected: maxBytes, actual: total },
+      });
     }
     if (expectedBytes !== undefined && total !== undefined && total !== expectedBytes) {
       await response.body.cancel();
-      throw new LocalOpError(
-        "model.sizeMismatch",
-        `Refusing ${name}: advertised ${total} bytes, expected exactly ${expectedBytes}.`,
-      );
+      throw new GptImgError("model.integrity", `Refusing ${name}: advertised ${total} bytes, expected exactly ${expectedBytes}.`, {
+        details: { expected: expectedBytes, actual: total },
+      });
     }
     let received = 0;
-    let lastReported = 0;
     const stream = createWriteStream(destPath);
     // Observe the stream from creation so an abort or filesystem failure can
     // never emit an unhandled `error` event between the failing write and the
@@ -243,27 +243,16 @@ async function downloadAttempt(
         if (done) break;
         const nextReceived = received + value.length;
         if (nextReceived > maxBytes) {
-          throw new LocalOpError(
-            "model.sizeExceeded",
-            `Refusing ${name}: streamed bytes exceed the ${maxBytes}-byte limit.`,
-          );
+          throw new GptImgError("model.integrity", `Refusing ${name}: streamed bytes exceed the ${maxBytes}-byte limit.`, {
+            details: { expected: maxBytes, actual: nextReceived },
+          });
         }
         received = nextReceived;
         await new Promise<void>((resolve, reject) => {
           stream.write(value, (err) => (err ? reject(err) : resolve()));
         });
-        if (total !== undefined && total > 0) {
-          const percent = Math.floor((received / total) * 100);
-          if (percent >= lastReported + 10) {
-            lastReported = percent;
-            await logger?.debug("download", `${name} ${percent}% (${received}/${total} bytes)`, {
-              name,
-              percent,
-              received,
-              total,
-            });
-          }
-        }
+        const expectedTotal = total ?? expectedBytes;
+        if (expectedTotal !== undefined && expectedTotal > 0) logger?.progress("download", received, expectedTotal, "bytes");
       }
     } catch (err) {
       await reader.cancel().catch(() => undefined);
@@ -281,10 +270,9 @@ async function downloadAttempt(
       signal.removeEventListener("abort", abortWrite);
     }
     if (expectedBytes !== undefined && received !== expectedBytes) {
-      throw new LocalOpError(
-        "model.sizeMismatch",
-        `Refusing ${name}: downloaded ${received} bytes, expected exactly ${expectedBytes}.`,
-      );
+      throw new GptImgError("model.integrity", `Refusing ${name}: downloaded ${received} bytes, expected exactly ${expectedBytes}.`, {
+        details: { expected: expectedBytes, actual: received },
+      });
     }
     await logger?.info("download", `downloaded ${name} (${received} bytes)`, {
       name,
@@ -307,6 +295,23 @@ export function modelWholeTimeoutMs(byteLimit: number, maxRetries: number): numb
     MAX_TIMER_MS,
     MODEL_OPERATION_OVERHEAD_MS +
       Math.ceil((byteLimit * attempts * 1000) / MIN_TRANSFER_BYTES_PER_SECOND),
+  );
+}
+
+/**
+ * The path of `entry` in `modelsDir` when it is installed, or `model.notInstalled`
+ * naming the install call. Nothing installs implicitly (sdk-conventions): a
+ * 490 MB download never starts inside a masking or upscaling call.
+ */
+export function requireInstalledModel(entry: ModelEntry, key: string, modelsDir: string): string {
+  const filePath = path.join(modelsDir, entry.name);
+  const cache = inspectCachedModel(filePath, entry.byteSize);
+  if (cache.usable) return filePath;
+  throw new GptImgError(
+    "model.notInstalled",
+    `The ${key} model is not installed in ${modelsDir}${cache.present ? " (the file there is incomplete)" : ""}. ` +
+      `Install it with img.model.install("${key}") first.`,
+    { subject: filePath },
   );
 }
 
@@ -339,7 +344,7 @@ function assertSafeUrl(url: string, allowLoopbackHttp = true): void {
   try {
     parsed = new URL(url);
   } catch {
-    throw new LocalOpError("model.insecureUrl", `Invalid model URL: ${url}`);
+    throw new GptImgError("model.insecureUrl", `Invalid model URL: ${url}`, { subject: url });
   }
   const loopback =
     parsed.hostname === "localhost" ||
@@ -348,10 +353,9 @@ function assertSafeUrl(url: string, allowLoopbackHttp = true): void {
     parsed.hostname === "[::1]";
   if (parsed.protocol === "https:") return;
   if (allowLoopbackHttp && parsed.protocol === "http:" && loopback) return;
-  throw new LocalOpError(
-    "model.insecureUrl",
-    `Refusing insecure model URL (${parsed.protocol}//${parsed.hostname}); only https is allowed.`,
-  );
+  throw new GptImgError("model.insecureUrl", `Refusing insecure model URL (${parsed.protocol}//${parsed.hostname}); only https is allowed.`, {
+    subject: url,
+  });
 }
 
 // A short, filename-safe tag identifying this host, so a staged file's owner
@@ -425,6 +429,35 @@ export async function sweepAbandonedStaging(cacheDir: string): Promise<void> {
   }
 }
 
+/**
+ * A failed model download as the error naming its cause: the server's status,
+ * a timeout, a lost connection, or the filesystem failing under the staged
+ * file. A model download changes nothing remote, so no effect is unknown.
+ */
+function classifyDownloadFailure(err: unknown, url: string, finalPath: string): GptImgError {
+  if (err instanceof GptImgError) return err;
+  if (isAbortError(err)) return cancelledError(err);
+  if (err instanceof HttpStatusError) {
+    return new GptImgError("model.httpStatus", `Failed to download ${url}: ${err.message}`, {
+      cause: err,
+      subject: url,
+      details: { status: err.status },
+    });
+  }
+  const name = (err as { name?: unknown } | null)?.name;
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  if (name === "TimeoutError" || code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") {
+    return new GptImgError("model.timeout", `Timed out downloading ${url}: ${(err as Error).message}`, { cause: err, subject: url });
+  }
+  if (typeof code === "string" && /^E[A-Z]+$/.test(code) && !/^E(CONN|NOTFOUND|AI_AGAIN|PIPE|HOSTUNREACH|NETUNREACH)/.test(code)) {
+    return fsError(err, "Failed to stage a model download for", finalPath);
+  }
+  return new GptImgError("model.connectionLost", `Failed to download ${url}: ${(err as Error)?.message ?? String(err)}`, {
+    cause: err,
+    subject: url,
+  });
+}
+
 interface EnsureModelOptions {
   signal?: AbortSignal | undefined;
   budget?: NetworkBudget;
@@ -493,16 +526,16 @@ async function acquireModel(
   const force = opts.force ?? false;
   const budget = opts.budget ?? NETWORK_DEFAULTS.modelDownload;
   if (!Number.isSafeInteger(entry.byteSize) && entry.byteSize !== undefined) {
-    throw new LocalOpError("model.invalidSize", `Invalid expected byte size for ${entry.name}.`);
+    throw new GptImgError("internal.invariant", `Invalid expected byte size for ${entry.name}.`);
   }
   if (entry.byteSize !== undefined && entry.byteSize <= 0) {
-    throw new LocalOpError("model.invalidSize", `Invalid expected byte size for ${entry.name}.`);
+    throw new GptImgError("internal.invariant", `Invalid expected byte size for ${entry.name}.`);
   }
   if (!Number.isSafeInteger(budget.timeout) || budget.timeout <= 0 || budget.timeout > MAX_TIMER_MS) {
-    throw new LocalOpError("model.invalidBudget", "Model network timeout must be positive.");
+    throw new GptImgError("policy.invalid", "Model network timeout must be positive.", { details: { section: "network", field: "modelDownload.timeout" } });
   }
   if (!Number.isSafeInteger(budget.maxRetries) || budget.maxRetries < 0) {
-    throw new LocalOpError("model.invalidBudget", "Model maxRetries must be a non-negative integer.");
+    throw new GptImgError("policy.invalid", "Model maxRetries must be a non-negative integer.", { details: { section: "network", field: "modelDownload.maxRetries" } });
   }
   const byteLimit = entry.byteSize ?? MAX_MODEL_BYTES;
   const operationSignal = combineSignals(signal, modelWholeTimeoutMs(byteLimit, budget.maxRetries));
@@ -552,17 +585,11 @@ async function acquireModel(
       },
     );
   } catch (err) {
-    if (signal?.aborted) throw toAbortError(signal.reason);
+    if (signal?.aborted) throw cancelledError(signal.reason);
     if (operationSignal.aborted) {
-      throw new LocalOpError("model.timeout", `Timed out acquiring ${entry.name}.`, { cause: err });
+      throw new GptImgError("model.timeout", `Timed out acquiring ${entry.name}.`, { cause: err, subject: entry.url });
     }
-    if (isAbortError(err)) throw err;
-    if (err instanceof LocalOpError) throw err;
-    throw new LocalOpError(
-      "model.downloadFailed",
-      `Failed to download ${entry.url}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw classifyDownloadFailure(err, entry.url, finalPath);
   }
 
   let namespacePublished = false;
@@ -573,10 +600,11 @@ async function acquireModel(
     if (entry.sha256) {
       const got = await fileSha256(partialPath, operationSignal);
       if (got !== entry.sha256) {
-        throw new LocalOpError(
-          "model.checksumMismatch",
+        throw new GptImgError(
+          "model.integrity",
           `Downloaded ${entry.name} has sha256 ${got}, expected ${entry.sha256}. ` +
             `The pinned URL may have changed or the download is corrupt.`,
+          { subject: entry.url, details: { expected: entry.sha256, actual: got } },
         );
       }
     }
@@ -589,11 +617,7 @@ async function acquireModel(
         await rename(partialPath, finalPath);
         namespacePublished = true;
       } catch (err) {
-        throw new LocalOpError(
-          "model.downloadFailed",
-          `Failed to publish model at ${finalPath}: ${(err as Error).message}`,
-          { cause: err },
-        );
+        throw fsError(err, "Failed to publish model at", finalPath);
       }
       await syncDirectory(cacheDir);
       return finalPath;
@@ -612,11 +636,7 @@ async function acquireModel(
         await rename(partialPath, finalPath);
         namespacePublished = true;
       } else if (code !== "EEXIST") {
-        throw new LocalOpError(
-          "model.downloadFailed",
-          `Failed to publish model at ${finalPath}: ${(err as Error).message}`,
-          { cause: err },
-        );
+        throw fsError(err, "Failed to publish model at", finalPath);
       }
       // Another concurrent caller won the publish race — drop our copy.
     }
@@ -627,23 +647,15 @@ async function acquireModel(
     // directory-sync error remains an error, but cancellation cannot relabel
     // an artifact that was already published as cancelled or timed out.
     if (namespacePublished) {
-      if (err instanceof LocalOpError) throw err;
-      throw new LocalOpError(
-        "model.downloadFailed",
-        `Published ${entry.name}, but failed to sync ${cacheDir}: ${(err as Error).message}`,
-        { cause: err },
-      );
+      if (err instanceof GptImgError) throw err;
+      throw fsError(err, `Published ${entry.name}, but failed to sync`, cacheDir);
     }
-    if (signal?.aborted) throw toAbortError(signal.reason);
+    if (signal?.aborted) throw cancelledError(signal.reason);
     if (operationSignal.aborted) {
-      throw new LocalOpError("model.timeout", `Timed out acquiring ${entry.name}.`, { cause: err });
+      throw new GptImgError("model.timeout", `Timed out acquiring ${entry.name}.`, { cause: err, subject: entry.url });
     }
-    if (err instanceof LocalOpError) throw err;
-    throw new LocalOpError(
-      "model.downloadFailed",
-      `Failed to prepare ${entry.name} for publication: ${(err as Error).message}`,
-      { cause: err },
-    );
+    if (err instanceof GptImgError) throw err;
+    throw fsError(err, `Failed to prepare ${entry.name} for publication at`, finalPath);
   }
   await unlink(partialPath).catch(() => undefined);
 

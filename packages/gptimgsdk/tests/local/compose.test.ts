@@ -181,7 +181,7 @@ describe("runCompose", () => {
 
     await expect(
       runCompose({ in: inPath, mask: maskPath, out: outPath }),
-    ).rejects.toMatchObject({ errorType: "localOp" });
+    ).rejects.toMatchObject({ name: "GptImgError" });
   });
 });
 

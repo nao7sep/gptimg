@@ -1,4 +1,5 @@
 import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { done } from "../helpers/results.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -14,7 +15,7 @@ const model = vi.hoisted(() => ({
 
 vi.mock("../../src/local/models/fetch.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/local/models/fetch.ts")>()),
-  ensureModel: vi.fn(async () => "/nonexistent/birefnet.onnx"),
+  requireInstalledModel: vi.fn(() => "/nonexistent/birefnet.onnx"),
 }));
 
 vi.mock("../../src/local/models/session.ts", async (importOriginal) => ({
@@ -40,7 +41,7 @@ describe("mask (ai) cancellation around inference", () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-mask-ai-abort-"));
-    sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     model.loadSession.mockReset();
     model.run.mockReset();
     model.run.mockImplementation(async () => ({
@@ -61,7 +62,7 @@ describe("mask (ai) cancellation around inference", () => {
 
     await expect(
       sdk.mask({ in: INPUT, method: "ai", outDir: tmp, outName: "cut" }, { signal: ctrl.signal }),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    ).rejects.toMatchObject({ code: "cancelled" });
     expect(model.run).not.toHaveBeenCalled();
     expect((await readdir(tmp)).filter((name) => name.startsWith("cut"))).toEqual([]);
   });
@@ -76,22 +77,22 @@ describe("mask (ai) cancellation around inference", () => {
 
     await expect(
       sdk.mask({ in: INPUT, method: "ai", outDir: tmp, outName: "cut" }, { signal: ctrl.signal }),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    ).rejects.toMatchObject({ code: "cancelled" });
     expect(model.run).toHaveBeenCalledOnce();
     expect((await readdir(tmp)).filter((name) => name.startsWith("cut"))).toEqual([]);
   });
 
   it.each([
-    ["running BiRefNet inference", false],
-    ["BiRefNet inference complete", true],
-    ["mask complete", true],
-  ] as const)("honors cancellation at %s, including dry runs", async (message, dryRun) => {
+    ["running BiRefNet inference"],
+    ["BiRefNet inference complete"],
+    ["mask complete"],
+  ] as const)("honors cancellation at %s, before publication", async (message) => {
     const ctrl = new AbortController();
     model.loadSession.mockResolvedValue(fakeSession());
     await expect(sdk.mask(
-      { in: INPUT, method: "ai", outDir: tmp, outName: "cut", dryRun },
-      { signal: ctrl.signal, onProgress: (event) => { if (event.message === message) ctrl.abort(); } },
-    )).rejects.toMatchObject({ name: "AbortError" });
+      { in: INPUT, method: "ai", outDir: tmp, outName: "cut" },
+      { signal: ctrl.signal, onEvent: (event) => { if (event.message === message) ctrl.abort(); } },
+    )).rejects.toMatchObject({ code: "cancelled" });
     expect(model.run).toHaveBeenCalledTimes(message === "running BiRefNet inference" ? 0 : 1);
     expect((await readdir(tmp)).filter((name) => name.startsWith("cut"))).toEqual([]);
   });
@@ -99,7 +100,7 @@ describe("mask (ai) cancellation around inference", () => {
   it("still publishes when not cancelled", async () => {
     model.loadSession.mockResolvedValue(fakeSession());
 
-    const result = await sdk.mask({ in: INPUT, method: "ai", outDir: tmp, outName: "cut" });
+    const result = done(await sdk.mask({ in: INPUT, method: "ai", outDir: tmp, outName: "cut" }));
     expect(result.output).toBe(path.join(tmp, "cut.png"));
   });
 });

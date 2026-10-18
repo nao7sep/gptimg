@@ -47,9 +47,10 @@ describe("unpublished output cleanup", () => {
     await writeFile(sidecar, newer);
     const group = createOutputGroup(tmp, "result", "png");
 
-    await expect(removeUnpublishedSlots(group, ownedSlotFiles(group, 1, 1), [])).rejects.toMatchObject({
-      code: "sidecar.newerFormat",
-    });
+    // A newer sidecar protects its slot: cleanup keeps both files and reports them.
+    await expect(removeUnpublishedSlots(group, ownedSlotFiles(group, 1, 1), [])).resolves.toEqual(
+      expect.arrayContaining([image, sidecar]),
+    );
     expect(await readFile(image, "utf-8")).toBe("old image");
     expect(await readFile(sidecar, "utf-8")).toBe(newer);
   });
@@ -66,9 +67,9 @@ describe("unpublished output cleanup", () => {
     newerWriter.bytes = newer;
     const group = createOutputGroup(tmp, "result", "png");
 
-    await expect(removeUnpublishedSlots(group, ownedSlotFiles(group, 2, 2), published)).rejects.toMatchObject({
-      code: "sidecar.newerFormat",
-    });
+    await expect(removeUnpublishedSlots(group, ownedSlotFiles(group, 2, 2), published)).resolves.toEqual(
+      expect.arrayContaining([newerWriter.sidecar, path.join(tmp, "result-2.jpg")]),
+    );
     expect(await readFile(newerWriter.sidecar, "utf-8")).toBe(newer);
     expect(await readFile(path.join(tmp, "result-2.jpg"), "utf-8")).toBe("old image 2");
     expect(await readFile(published[0]!, "utf-8")).toBe("published image");
@@ -87,9 +88,9 @@ describe("unpublished output cleanup", () => {
     newerWriter.bytes = newer;
     const group = createOutputGroup(tmp, "result", "png");
 
-    await expect(removeUnpublishedSlots(group, ownedSlotFiles(group, 1, 1), [])).rejects.toMatchObject({
-      code: "sidecar.newerFormat",
-    });
+    await expect(removeUnpublishedSlots(group, ownedSlotFiles(group, 1, 1), [])).resolves.toEqual(
+      expect.arrayContaining([sidecar, secondImage]),
+    );
     expect(await readFile(sidecar, "utf-8")).toBe(newer);
     expect(await readFile(secondImage, "utf-8")).toBe("old PNG");
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LocalOpError } from "../../src/errors.ts";
+import { GptImgError } from "../../src/errors.ts";
 import { planGenerateOutputs, type DetectedImage } from "../../src/verbs/generate-plan.ts";
 import type { DetectedFormat } from "../../src/image/detectFormat.ts";
 
@@ -68,7 +68,7 @@ describe("planGenerateOutputs", () => {
     } catch (err) {
       caught = err;
     }
-    expect(caught).toBeInstanceOf(LocalOpError);
-    expect((caught as LocalOpError).code).toBe("output.mixedExtensions");
+    expect(caught).toBeInstanceOf(GptImgError);
+    expect((caught as GptImgError).code).toBe("provider.invalidResponse");
   });
 });

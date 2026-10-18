@@ -106,7 +106,6 @@ describe("runDespeckle", () => {
       await writeRawPng(inPath, W, H, cutout());
 
       await expect(runDespeckle({ in: inPath, out: outPath, opaque: true })).rejects.toMatchObject({
-        errorType: "localOp",
         code: "image.notOpaque",
       });
       expect(existsSync(outPath)).toBe(false);

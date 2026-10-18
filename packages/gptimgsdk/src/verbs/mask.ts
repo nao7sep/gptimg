@@ -1,4 +1,6 @@
-import { LocalOpError, throwIfAborted } from "../errors.ts";
+import type { RefusedResult } from "../refusal.ts";
+import { callModelsDir, callPolicy, type SdkContext } from "../context.ts";
+import { GptImgError, throwIfAborted } from "../errors.ts";
 import { writeMaskPNG } from "../image/bridge.ts";
 import {
   assertSingleFileAvailable,
@@ -10,23 +12,17 @@ import {
 } from "../internal/local-verb.ts";
 import { aiMaskFromFile } from "../local/ai-mask.ts";
 import { chromaMaskFromFile } from "../local/chroma/mask.ts";
-import { resolveNetworkForCall } from "../network/index.ts";
-import { loadRecipeForCall } from "../recipe/load.ts";
-import { validateChromaSection } from "../recipe/schemas.ts";
+import { validateChromaSection, validateOnnxSection } from "../policy/schemas.ts";
 import type {
   MaskArgs,
   MaskResult,
   MaskStats,
 } from "../types.ts";
-import { defaultModelsDir } from "../internal/paths.ts";
 import type { VerbCallOptions } from "./options.ts";
-import { applyChromaRecipeDefaults } from "./mask-defaults.ts";
+import { applyChromaPolicyDefaults } from "./mask-defaults.ts";
 import { validateMaskArgs } from "./schemas.ts";
 
-export interface MaskContext {
-  profileDir: string;
-  logDir: string;
-}
+export type MaskContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-mask`;
@@ -36,28 +32,24 @@ export async function maskImpl(
   ctx: MaskContext,
   args: MaskArgs,
   opts: VerbCallOptions = {},
-): Promise<MaskResult> {
+): Promise<MaskResult | RefusedResult> {
   validateMaskArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "mask", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "mask", opts, async (logger) => {
     const method = args.method ?? "chroma";
-    const recipe = await loadRecipeForCall(args.recipe, ctx.profileDir);
+    const policy = callPolicy(ctx, args.policy);
 
     // Resolve and check the output before doing any masking work — including,
-    // for method "ai", a model download and inference run — so a rerun without
-    // `overwrite` over an existing output fails fast instead of after paying
-    // for the compute, as every other local verb (e.g. upscale) already does.
-    const outPath = args.dryRun
-      ? undefined
-      : await resolveOutputPath(args, {
-          inputForDir: args.in,
-          stem: defaultStem(args.in),
-          ext: "png",
-        });
-    if (outPath !== undefined) {
-      assertSingleFileAvailable(outPath, args.overwrite ?? false);
-    }
+    // for method "ai", an inference run — so a rerun without `overwrite` over
+    // an existing output is refused at once instead of after the compute, as
+    // every other local verb (e.g. upscale) already does.
+    const outPath = await resolveOutputPath(args, {
+      inputForDir: args.in,
+      stem: defaultStem(args.in),
+      ext: "png",
+    });
+    assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     let alpha: Uint8Array;
     let width: number;
@@ -65,15 +57,14 @@ export async function maskImpl(
     let stats: MaskStats;
 
     if (method === "chroma") {
-      const chromaSection = validateChromaSection(recipe.chroma);
-      const resolved = applyChromaRecipeDefaults(args, chromaSection);
+      const chromaSection = validateChromaSection(policy.chroma);
+      const resolved = applyChromaPolicyDefaults(args, chromaSection);
 
       await logger.info("resolve", "mask start", {
         input: resolved.in,
         method,
         key: resolved.key ?? "auto",
         preserveInterior: resolved.preserveInterior ?? false,
-        dryRun: resolved.dryRun ?? false,
         ...pngEncodingLogFields(args),
       });
 
@@ -92,42 +83,31 @@ export async function maskImpl(
       height = result.height;
       stats = result.stats;
     } else if (method === "ai") {
-      const network = resolveNetworkForCall(recipe);
+      const onnx = validateOnnxSection(policy.onnx);
       await logger.info("resolve", "mask start", {
         input: args.in,
         method,
-        dryRun: args.dryRun ?? false,
         ...pngEncodingLogFields(args),
       });
 
-      const cacheDir = defaultModelsDir(ctx.profileDir);
       const result = await aiMaskFromFile(
         { in: args.in },
-        cacheDir,
-        { signal, budget: network.modelDownload, logger },
+        callModelsDir(ctx, args.modelsDir),
+        { signal, onnx, logger },
       );
       alpha = result.alpha;
       width = result.width;
       height = result.height;
       stats = result.stats;
     } else {
-      throw new LocalOpError(
-        "args.invalid",
-        `mask method "${method}" is not implemented.`,
-      );
+      throw new GptImgError("args.invalid", `mask method "${method}" is not implemented.`, {
+        details: { field: "method", constraint: "chroma or ai" },
+      });
     }
 
     await logger.info("stats", "mask complete", { stats });
 
     throwIfAborted(signal);
-    if (args.dryRun || outPath === undefined) {
-      return {
-        input: args.in,
-        output: null,
-        stats,
-        logPath: logger.handle.path,
-      };
-    }
 
     await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false, source: args.in }, pngEncodingOf(args));
     await logger.info("write", "wrote mask", { path: outPath });
@@ -137,6 +117,7 @@ export async function maskImpl(
       output: outPath,
       stats,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

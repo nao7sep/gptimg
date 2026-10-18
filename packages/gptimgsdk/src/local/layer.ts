@@ -18,8 +18,8 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, throwIfAborted } from "../errors.ts";
-import { readImageSize, writeImageFile } from "../image/bridge.ts";
+import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
+import { inputImageError, readImageSize, writeImageFile } from "../image/bridge.ts";
 import type { EncodingArgs, LayerGravity, LayerOffset } from "../types.ts";
 
 export const LAYER_DEFAULTS = {
@@ -105,9 +105,10 @@ export async function runLayer(
       args.scale * Math.min(baseMeta.width, baseMeta.height),
     );
     if (targetLonger < 1) {
-      throw new LocalOpError(
+      throw new GptImgError(
         "args.invalid",
         `layer: scale ${args.scale} on base ${baseMeta.width}x${baseMeta.height} resolves to < 1 px.`,
+      { details: { field: "scale", constraint: "resolves to at least 1 px" } },
       );
     }
     const aspect = topMeta.width / topMeta.height;
@@ -125,11 +126,7 @@ export async function runLayer(
   try {
     topBuffer = await topPipeline.png().toBuffer();
   } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `layer: failed to resize top ${args.top}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw inputImageError(err, "layer: failed to resize top", args.top);
   }
   throwIfAborted(signal);
 
@@ -145,9 +142,10 @@ export async function runLayer(
     // Defensive: the schema enforces integers, but runLayer is also called
     // directly. A non-integer offset would desync from sharp's integer extract.
     if (!Number.isInteger(x) || !Number.isInteger(y)) {
-      throw new LocalOpError(
+      throw new GptImgError(
         "args.invalid",
         `layer: topOffset (${x}, ${y}) must be integers.`,
+      { details: { field: "topOffset", constraint: "integers" } },
       );
     }
     usedOffset = { x, y };
@@ -174,9 +172,10 @@ export async function runLayer(
   const visW = Math.min(topWidth - srcX, baseMeta.width - dstX);
   const visH = Math.min(topHeight - srcY, baseMeta.height - dstY);
   if (visW <= 0 || visH <= 0) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `layer: top ${topWidth}x${topHeight} placed at (${destX}, ${destY}) lands entirely outside base ${baseMeta.width}x${baseMeta.height}.`,
+      { details: { field: "topOffset", constraint: "overlaps the base" } },
     );
   }
 
@@ -190,11 +189,7 @@ export async function runLayer(
         .png()
         .toBuffer();
     } catch (err) {
-      throw new LocalOpError(
-        "image.writeFailed",
-        `layer: failed to clip top ${args.top}: ${(err as Error).message}`,
-        { cause: err },
-      );
+      throw processingError(err, "layer: failed to clip top", args.top, "none");
     }
     throwIfAborted(signal);
   }

@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -11,10 +13,7 @@ import type { EncodeArgs, EncodeResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateEncodeArgs } from "./schemas.ts";
 
-export interface EncodeContext {
-  profileDir: string;
-  logDir: string;
-}
+export type EncodeContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-encode`;
@@ -24,11 +23,11 @@ export async function encodeImpl(
   ctx: EncodeContext,
   args: EncodeArgs,
   opts: VerbCallOptions = {},
-): Promise<EncodeResult> {
+): Promise<EncodeResult | RefusedResult> {
   validateEncodeArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "encode", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "encode", opts, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
@@ -75,6 +74,7 @@ export async function encodeImpl(
       sourceBytes: result.sourceBytes,
       bytes: result.bytes,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

@@ -3,9 +3,9 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AbortError, GptImg } from "../../src/index.ts";
+import { GptImg, GptImgError } from "../../src/index.ts";
 import { callWithRetry } from "../../src/network/retry.ts";
-import { obfuscate } from "../../src/profile/obfuscate.ts";
+import { obfuscate } from "../helpers/obf.ts";
 import type { Provider } from "../../src/providers/types.ts";
 import type {
   GenerateProviderArgs,
@@ -34,7 +34,7 @@ describe("SDK abort errors", () => {
   });
 
   it("rejects with the exported AbortError shape", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const ctrl = new AbortController();
     ctrl.abort(new Error("stop"));
 
@@ -42,13 +42,10 @@ describe("SDK abort errors", () => {
       sdk.mask(
         {
           in: fixture("green-disk.png"),
-          log: path.join(tmp, "mask.log"),
         },
         { signal: ctrl.signal },
       ),
     ).rejects.toMatchObject({
-      name: "AbortError",
-      errorType: "abort",
       code: "cancelled",
       message: "stop",
     });
@@ -57,11 +54,10 @@ describe("SDK abort errors", () => {
       sdk.mask(
         {
           in: fixture("green-disk.png"),
-          log: path.join(tmp, "mask-2.log"),
         },
         { signal: ctrl.signal },
       ),
-    ).rejects.toBeInstanceOf(AbortError);
+    ).rejects.toBeInstanceOf(GptImgError);
   });
 });
 
@@ -102,7 +98,7 @@ describe("AI verb abort propagation", () => {
     providerCalls.vision.mockReset();
 
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-ai-abort-"));
-    sdk = new GptImg({ profileDir: tmp, logDir: path.join(tmp, "logs") });
+    sdk = new GptImg({ apiKey: "sk-profile-only", modelsDir: path.join(tmp, "models"), logDir: path.join(tmp, "logs") });
     const defaultProfile = path.join(tmp, "profile.json");
     await writeFile(
       defaultProfile,
@@ -140,8 +136,6 @@ describe("AI verb abort propagation", () => {
   }
 
   const ABORT_SHAPE = {
-    name: "AbortError",
-    errorType: "abort",
     code: "cancelled",
     message: "stop",
   };
@@ -171,7 +165,7 @@ describe("AI verb abort propagation", () => {
     });
   }
 
-  it("generate rejects with the AbortError shape when the signal is already aborted", async () => {
+  it("generate is cancelled with no effect when the signal is already aborted", async () => {
     const ctrl = new AbortController();
     ctrl.abort(new Error("stop"));
     let innerRan = false;
@@ -188,17 +182,17 @@ describe("AI verb abort propagation", () => {
         { prompt: "a green disk", outDir: path.join(tmp, "out"), outName: "gen" },
         { signal: ctrl.signal },
       ),
-    ).rejects.toMatchObject(ABORT_SHAPE);
+    ).rejects.toMatchObject({ ...ABORT_SHAPE, effect: "none" });
     await expect(
       sdk.generate(
         { prompt: "a green disk", outDir: path.join(tmp, "out2"), outName: "gen" },
         { signal: ctrl.signal },
       ),
-    ).rejects.toBeInstanceOf(AbortError);
+    ).rejects.toBeInstanceOf(GptImgError);
     expect(innerRan).toBe(false);
   });
 
-  it("generate rejects with the AbortError shape when the signal aborts mid-call", async () => {
+  it("generate is cancelled with an unknown effect when the signal aborts mid-call", async () => {
     const ctrl = new AbortController();
     providerCalls.generate.mockImplementation(
       (args: GenerateProviderArgs): Promise<ProviderImageResult> =>
@@ -210,10 +204,10 @@ describe("AI verb abort propagation", () => {
         { prompt: "a green disk", outDir: path.join(tmp, "out"), outName: "gen" },
         { signal: ctrl.signal },
       ),
-    ).rejects.toMatchObject(ABORT_SHAPE);
+    ).rejects.toMatchObject({ ...ABORT_SHAPE, effect: "unknown" });
   });
 
-  it("edit rejects with the AbortError shape when the signal is already aborted", async () => {
+  it("edit is cancelled with no effect when the signal is already aborted", async () => {
     const input = path.join(tmp, "input.png");
     await copyFile(fixture("green-disk.png"), input);
     const ctrl = new AbortController();
@@ -232,11 +226,11 @@ describe("AI verb abort propagation", () => {
         { prompt: "make it blue", in: input, outDir: path.join(tmp, "edits"), outName: "edit" },
         { signal: ctrl.signal },
       ),
-    ).rejects.toMatchObject(ABORT_SHAPE);
+    ).rejects.toMatchObject({ ...ABORT_SHAPE, effect: "none" });
     expect(innerRan).toBe(false);
   });
 
-  it("edit rejects with the AbortError shape when the signal aborts mid-call", async () => {
+  it("edit is cancelled with an unknown effect when the signal aborts mid-call", async () => {
     const input = path.join(tmp, "input.png");
     await copyFile(fixture("green-disk.png"), input);
     const ctrl = new AbortController();
@@ -250,10 +244,10 @@ describe("AI verb abort propagation", () => {
         { prompt: "make it blue", in: input, outDir: path.join(tmp, "edits"), outName: "edit" },
         { signal: ctrl.signal },
       ),
-    ).rejects.toMatchObject(ABORT_SHAPE);
+    ).rejects.toMatchObject({ ...ABORT_SHAPE, effect: "unknown" });
   });
 
-  it("vision rejects with the AbortError shape when the signal is already aborted", async () => {
+  it("vision is cancelled with no effect when the signal is already aborted", async () => {
     const input = path.join(tmp, "single.png");
     await copyFile(fixture("green-disk.png"), input);
     const ctrl = new AbortController();
@@ -272,11 +266,11 @@ describe("AI verb abort propagation", () => {
         { in: input, check: "is it green?", outDir: path.join(tmp, "vision-out"), outName: "vision" },
         { signal: ctrl.signal },
       ),
-    ).rejects.toMatchObject(ABORT_SHAPE);
+    ).rejects.toMatchObject({ ...ABORT_SHAPE, effect: "none" });
     expect(innerRan).toBe(false);
   });
 
-  it("vision rejects with the AbortError shape when the signal aborts mid-call", async () => {
+  it("vision is cancelled with an unknown effect when the signal aborts mid-call", async () => {
     const input = path.join(tmp, "single.png");
     await copyFile(fixture("green-disk.png"), input);
     const ctrl = new AbortController();
@@ -290,6 +284,6 @@ describe("AI verb abort propagation", () => {
         { in: input, check: "is it green?", outDir: path.join(tmp, "vision-out"), outName: "vision" },
         { signal: ctrl.signal },
       ),
-    ).rejects.toMatchObject(ABORT_SHAPE);
+    ).rejects.toMatchObject({ ...ABORT_SHAPE, effect: "unknown" });
   });
 });

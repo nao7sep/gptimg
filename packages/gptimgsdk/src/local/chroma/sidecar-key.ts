@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { LocalOpError } from "../../errors.ts";
+import { GptImgError, fsError } from "../../errors.ts";
+import { refuse } from "../../refusal.ts";
 import { hash } from "../../image/hash.ts";
 import { readSidecar } from "../../sidecar/read.ts";
 import type { Sidecar } from "../../types.ts";
@@ -27,12 +28,12 @@ export async function loadKeyFromSidecar(
   const dot = base.lastIndexOf(".");
   const stem = dot > 0 ? base.slice(0, dot) : base;
   const stemFull = path.join(dir, stem);
-  const sidecar = await readSidecar(stemFull);
+  const sidecar = await readSidecar(`${stemFull}.json`);
   if (options.verifyImage) await assertSidecarDescribesImage(sidecar, `${stemFull}.json`, inputPath);
   const req = sidecar.request as Record<string, unknown> | undefined;
   const chroma = req?.chroma as { color?: string } | undefined;
   if (!chroma || typeof chroma.color !== "string") {
-    throw new LocalOpError(
+    throw new GptImgError(
       "sidecar.malformed",
       `Sidecar at ${stemFull}.json does not contain request.chroma.color`,
     );
@@ -45,16 +46,15 @@ async function assertSidecarDescribesImage(sidecar: Sidecar, sidecarPath: string
   try {
     image = await readFile(inputPath);
   } catch (err) {
-    throw new LocalOpError("image.readFailed", `Failed to read image at ${inputPath}: ${(err as Error).message}`, {
-      cause: err,
-    });
+    throw fsError(err, "Failed to read image", inputPath);
   }
   const sha256 = hash(image);
   if (!sidecar.files.some((file) => file.sha256 === sha256)) {
-    throw new LocalOpError(
+    refuse(
       "sidecar.imageMismatch",
       `Sidecar at ${sidecarPath} does not describe ${inputPath}: no file entry has its SHA-256. ` +
         `The image was replaced after the sidecar was written; pass the key color explicitly.`,
+      { subject: sidecarPath },
     );
   }
 }

@@ -1,5 +1,5 @@
 /**
- * All local-chroma defaults live here. Recipe entries and per-call arguments
+ * All local-chroma defaults live here. Policy entries and per-call arguments
  * override these at runtime; this file is the single source of truth.
  */
 export const CHROMA_DEFAULTS = {

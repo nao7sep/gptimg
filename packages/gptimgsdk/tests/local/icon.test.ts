@@ -178,7 +178,6 @@ describe("runIcon", () => {
       .png()
       .toFile(wide);
     await expect(runIcon({ in: wide, outDir: tmp })).rejects.toMatchObject({
-      errorType: "localOp",
       code: "args.invalid",
     });
   });

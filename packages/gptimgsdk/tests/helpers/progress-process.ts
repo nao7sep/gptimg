@@ -10,7 +10,7 @@ import type { LogEntry } from "../../src/types.ts";
 const [scenario, directory] = process.argv.slice(2);
 assert(directory);
 assert(["async-progress", "thenable-progress", "async-notice", "pending-progress"].includes(scenario ?? ""));
-const sdk = new GptImg({ profileDir: directory, logDir: directory });
+const sdk = new GptImg({ logDir: directory });
 const events: LogEntry[] = [];
 let thenablesObserved = 0;
 let release!: () => void;
@@ -18,7 +18,7 @@ let callbackSettled = false;
 const callbackGate = new Promise<void>((resolve) => { release = resolve; });
 void callbackGate.then(() => { callbackSettled = true; });
 
-const onProgress = (event: LogEntry) => {
+const onEvent = (event: LogEntry) => {
   events.push(event);
   if (scenario === "pending-progress") return callbackGate;
   if (scenario === "thenable-progress") {
@@ -41,16 +41,17 @@ try {
   const results = await Promise.all([
     sdk.backplate({
       size: 16, from: "#ffffff", to: "#000000", outDir: directory, outName: "watched",
-      ...(scenario === "async-notice" && { log: failedLog }),
-    }, { onProgress }),
+    }, { onEvent, ...(scenario === "async-notice" && { log: { file: failedLog } }) }),
     sdk.backplate({ size: 16, from: "#ff0000", to: "#000000", outDir: directory, outName: "peer" }),
   ]);
   for (const result of results) {
+    assert.equal(result.status, "completed");
+    if (result.status !== "completed") throw new Error("refused");
     assert.equal(result.size, 16);
     const image = await readFile(result.output);
     assert.equal(image.subarray(1, 4).toString(), "PNG");
     if (result.logPath !== failedLog) {
-      const lines = (await readFile(result.logPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+      const lines = (await readFile(result.logPath!, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
       assert.equal(lines.length, 2);
       assert.equal(lines[1].message, "wrote backplate");
     }

@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -11,10 +13,7 @@ import type { TrimArgs, TrimResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateTrimArgs } from "./schemas.ts";
 
-export interface TrimContext {
-  profileDir: string;
-  logDir: string;
-}
+export type TrimContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-trim`;
@@ -24,11 +23,11 @@ export async function trimImpl(
   ctx: TrimContext,
   args: TrimArgs,
   opts: VerbCallOptions = {},
-): Promise<TrimResult> {
+): Promise<TrimResult | RefusedResult> {
   validateTrimArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "trim", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "trim", opts, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
@@ -74,6 +73,7 @@ export async function trimImpl(
       height: result.height,
       square: result.square,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

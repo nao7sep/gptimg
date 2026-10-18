@@ -29,7 +29,8 @@
  */
 
 import { isHexColor, parseHex } from "../color.ts";
-import { LocalOpError, throwIfAborted } from "../errors.ts";
+import { GptImgError, throwIfAborted } from "../errors.ts";
+import { assertAbsolutePath } from "../internal/absolute-path.ts";
 import { loadMaskPNG, loadRawRGBA, writeRGBA } from "../image/bridge.ts";
 import type { EncodingArgs } from "../types.ts";
 import {
@@ -63,11 +64,13 @@ export function parseOverColor(value: string): ComposeOver {
   // Six bare hex digits is almost certainly a color with a forgotten "#" — fail
   // with that hint rather than silently treating it as an image path.
   if (/^[0-9a-fA-F]{6}$/.test(value)) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `compose: --over "${value}" looks like a hex color but is missing the leading "#"; use "#${value}".`,
+      { details: { field: "over", constraint: "#rrggbb hex color or absolute path" } },
     );
   }
+  assertAbsolutePath(value, "compose: over");
   return { kind: "image", path: value };
 }
 
@@ -78,7 +81,7 @@ async function loadOverImage(
 ): Promise<Uint8Array> {
   const img = await loadRawRGBA(path);
   if (img.width !== width || img.height !== height) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "image.sizeMismatch",
       `over-image size ${img.width}x${img.height} does not match input ${width}x${height}.`,
     );
@@ -211,7 +214,7 @@ export async function runCompose(
   throwIfAborted(signal);
   const mask = await loadMaskPNG(args.mask);
   if (mask.width !== image.width || mask.height !== image.height) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "image.sizeMismatch",
       `mask size ${mask.width}x${mask.height} does not match image ${image.width}x${image.height}.`,
     );

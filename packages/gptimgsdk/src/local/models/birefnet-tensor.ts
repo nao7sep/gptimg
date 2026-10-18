@@ -6,7 +6,7 @@
  * here.
  */
 
-import { LocalOpError } from "../../errors.ts";
+import { GptImgError } from "../../errors.ts";
 
 const IMAGENET_MEAN = [0.485, 0.456, 0.406];
 const IMAGENET_STD = [0.229, 0.224, 0.225];
@@ -41,7 +41,7 @@ export function logitsToAlpha(
   dims: readonly number[],
 ): { alpha: Uint8Array; width: number; height: number } {
   if (dims.length !== 4 || dims[0] !== 1 || dims[1] !== 1) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "model.outputShape",
       `BiRefNet output shape unexpected: got [${dims.join(",")}], expected [1, 1, H, W].`,
     );
@@ -49,14 +49,14 @@ export function logitsToAlpha(
   const height = Number(dims[2]);
   const width = Number(dims[3]);
   if (!Number.isFinite(height) || !Number.isFinite(width) || height <= 0 || width <= 0) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "model.outputShape",
       `BiRefNet output spatial dims invalid: H=${dims[2]}, W=${dims[3]}.`,
     );
   }
   const expected = width * height;
   if (data.length !== expected) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "model.outputShape",
       `BiRefNet output tensor has ${data.length} elements; expected ${expected} for [1,1,${height},${width}].`,
     );

@@ -9,7 +9,7 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, throwIfAborted } from "../errors.ts";
+import { GptImgError, throwIfAborted } from "../errors.ts";
 import { loadRawRGBA, writeImageFile } from "../image/bridge.ts";
 import type { AlphaBBox, EncodingArgs } from "../types.ts";
 
@@ -80,7 +80,7 @@ export async function runTrim(
   throwIfAborted(signal);
   const bbox = computeAlphaBBox(data, width, height);
   if (!bbox) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "image.noContent",
       `trim: ${args.in} is fully transparent; nothing to crop.`,
     );

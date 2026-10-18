@@ -42,7 +42,7 @@ describe("readImageSize", () => {
       const file = path.join(dir, "not-an-image.png");
       await writeFile(file, "plain text");
       await expect(readImageSize(file, "layer")).rejects.toMatchObject({
-        code: "image.decodeFailed",
+        code: "image.undecodable",
         message: expect.stringMatching(/^layer: failed to read /),
       });
     } finally {
@@ -72,13 +72,13 @@ describe("writeImageFile", () => {
         throw new Error("bad geometry");
       });
       await expect(failingBuild).rejects.toMatchObject({
-        code: "image.writeFailed",
+        code: "internal.unexpected",
         message: expect.stringMatching(/^trim: failed to write .*bad geometry$/),
       });
       const missingFolder = writeImageFile({ path: path.join(dir, "missing", "out.png") }, "trim", {}, () =>
         sharp({ create: { width: 1, height: 1, channels: 4, background: "#000" } }).png(),
       );
-      await expect(missingFolder).rejects.toMatchObject({ code: "image.writeFailed" });
+      await expect(missingFolder).rejects.toMatchObject({ code: "fs.notFound" });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -118,7 +118,7 @@ describe("image publication", () => {
       // A raw buffer too short for its declared size fails inside the encoder,
       // as an interrupted or failing libvips run would.
       await expect(writeRGBA(new Uint8Array(3), 4, 4, { path: file, overwrite: true }, {})).rejects.toMatchObject({
-        code: "image.writeFailed",
+        code: "internal.unexpected",
       });
       expect((await readFile(file)).equals(before)).toBe(true);
       await expect(readdir(dir)).resolves.toEqual(["out.png"]);

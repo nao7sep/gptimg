@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { LocalOpError } from "../../../src/errors.ts";
+import { GptImgError } from "../../../src/errors.ts";
 import { logitsToAlpha, normalizeImageNet } from "../../../src/local/models/birefnet-tensor.ts";
 
 describe("normalizeImageNet", () => {
@@ -43,15 +43,15 @@ describe("logitsToAlpha", () => {
   });
 
   it("rejects a shape that is not [1,1,H,W]", () => {
-    expect(() => logitsToAlpha(Float32Array.from([0, 0]), [1, 2, 1, 1])).toThrow(LocalOpError);
-    expect(() => logitsToAlpha(Float32Array.from([0]), [1, 1])).toThrow(LocalOpError);
+    expect(() => logitsToAlpha(Float32Array.from([0, 0]), [1, 2, 1, 1])).toThrow(GptImgError);
+    expect(() => logitsToAlpha(Float32Array.from([0]), [1, 1])).toThrow(GptImgError);
   });
 
   it("rejects non-positive spatial dims", () => {
-    expect(() => logitsToAlpha(Float32Array.from([]), [1, 1, 0, 2])).toThrow(LocalOpError);
+    expect(() => logitsToAlpha(Float32Array.from([]), [1, 1, 0, 2])).toThrow(GptImgError);
   });
 
   it("rejects a data length that does not match the dims", () => {
-    expect(() => logitsToAlpha(Float32Array.from([0, 0, 0]), [1, 1, 2, 2])).toThrow(LocalOpError);
+    expect(() => logitsToAlpha(Float32Array.from([0, 0, 0]), [1, 1, 2, 2])).toThrow(GptImgError);
   });
 });

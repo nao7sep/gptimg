@@ -114,7 +114,7 @@ describe("runGrid", () => {
     const res = await runGrid({ inputs: [a, missing, b], out, cell: CELL, gap: GAP });
     expect(res.count).toBe(3);
     expect(res.placed).toBe(2);
-    expect(res.skipped).toEqual([missing]);
+    expect(res.skipped).toEqual([{ input: missing, code: "fs.notFound", message: expect.stringContaining("nope.png") }]);
     expect(res.cols).toBe(2); // ceil(sqrt(2)), over the 2 readable tiles
     const sheet = await readRGBA(out);
     expect(sheet.width).toBe(res.width); // output still written

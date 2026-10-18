@@ -43,9 +43,9 @@ describe("managed ONNX sessions", () => {
     expect(ortMocks.create).toHaveBeenCalledTimes(2);
   });
 
-  it("uses the CPU provider and half the cores unless the environment overrides them", async () => {
-    vi.stubEnv("GPTIMG_ONNX_EP", undefined);
-    vi.stubEnv("GPTIMG_ONNX_INTRA_OP_THREADS", undefined);
+  it("uses the CPU provider and half the cores unless the policy sets them, ignoring the environment", async () => {
+    vi.stubEnv("GPTIMG_ONNX_EP", "coreml");
+    vi.stubEnv("GPTIMG_ONNX_INTRA_OP_THREADS", "7");
     await loadSession("/tmp/gptimg-session-defaults.onnx");
 
     expect(ortMocks.create).toHaveBeenLastCalledWith(
@@ -57,10 +57,8 @@ describe("managed ONNX sessions", () => {
     );
   });
 
-  it("reads a provider list and thread count from the environment", async () => {
-    vi.stubEnv("GPTIMG_ONNX_EP", " CoreML , ,cpu ");
-    vi.stubEnv("GPTIMG_ONNX_INTRA_OP_THREADS", "3");
-    await loadSession("/tmp/gptimg-session-overrides.onnx");
+  it("takes providers and threads from policy.onnx", async () => {
+    await loadSession("/tmp/gptimg-session-overrides.onnx", { executionProviders: ["coreml", "cpu"], intraOpThreads: 3 });
 
     expect(ortMocks.create).toHaveBeenLastCalledWith(
       "/tmp/gptimg-session-overrides.onnx",
@@ -68,25 +66,13 @@ describe("managed ONNX sessions", () => {
     );
   });
 
-  it("falls back to CPU when the provider override lists nothing", async () => {
-    vi.stubEnv("GPTIMG_ONNX_EP", " , ");
-    vi.stubEnv("GPTIMG_ONNX_INTRA_OP_THREADS", undefined);
-    await loadSession("/tmp/gptimg-session-empty-ep.onnx");
-
-    expect(ortMocks.create).toHaveBeenLastCalledWith(
-      "/tmp/gptimg-session-empty-ep.onnx",
-      expect.objectContaining({ executionProviders: ["cpu"] }),
-    );
-  });
-
-  it.each(["0", "-2", "1.5", "many"])("refuses a thread override of %j before loading the model", async (value) => {
-    vi.stubEnv("GPTIMG_ONNX_EP", undefined);
-    vi.stubEnv("GPTIMG_ONNX_INTRA_OP_THREADS", value);
-
-    await expect(loadSession(`/tmp/gptimg-session-bad-threads-${value}.onnx`)).rejects.toMatchObject({
-      code: "model.loadFailed",
-      message: expect.stringContaining("GPTIMG_ONNX_INTRA_OP_THREADS"),
-    });
-    expect(ortMocks.create).not.toHaveBeenCalled();
+  it("keeps a separate session per tuning of one model", async () => {
+    const modelPath = "/tmp/gptimg-session-tunings.onnx";
+    const a = await loadSession(modelPath, { intraOpThreads: 1 });
+    const b = await loadSession(modelPath, { intraOpThreads: 2 });
+    const again = await loadSession(modelPath, { intraOpThreads: 1 });
+    expect(ortMocks.create).toHaveBeenCalledTimes(2);
+    expect(again).toBe(a);
+    expect(b).not.toBe(a);
   });
 });

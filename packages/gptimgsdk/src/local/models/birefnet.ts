@@ -14,11 +14,11 @@
 
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
-import { LocalOpError, throwIfAborted } from "../../errors.ts";
+import { GptImgError, throwIfAborted } from "../../errors.ts";
 import { resizeSingleChannel } from "../../image/bridge.ts";
 import type { Logger } from "../../log/index.ts";
-import type { NetworkBudget } from "../../network/defaults.ts";
-import { ensureModel } from "./fetch.ts";
+import { requireInstalledModel } from "./fetch.ts";
+import type { OnnxPolicy } from "../../types.ts";
 import { BIREFNET } from "./registry.ts";
 import { loadSession, runSession } from "./session.ts";
 import { logitsToAlpha, normalizeImageNet } from "./birefnet-tensor.ts";
@@ -65,19 +65,19 @@ export async function runBirefnet(
   rgba: Uint8Array,
   width: number,
   height: number,
-  cacheDir: string,
+  modelsDir: string,
   opts: {
     signal?: AbortSignal | undefined;
-    budget?: NetworkBudget;
+    onnx?: OnnxPolicy | undefined;
     logger?: Logger;
   } = {},
 ): Promise<BirefnetOutput> {
-  const modelPath = await ensureModel(BIREFNET, cacheDir, opts);
+  const modelPath = requireInstalledModel(BIREFNET, "birefnet", modelsDir);
   // Session creation and inference block the thread and cannot be interrupted
   // (onnxruntime-node runs them synchronously), so cancellation is honored at
   // the boundaries around them.
   throwIfAborted(opts.signal);
-  const session = await loadSession(modelPath);
+  const session = await loadSession(modelPath, opts.onnx);
   throwIfAborted(opts.signal);
 
   const size = BIREFNET.inputSize;
@@ -86,7 +86,7 @@ export async function runBirefnet(
 
   const inputName = session.inputNames[0];
   if (!inputName) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "model.loadFailed",
       "BiRefNet ONNX session has no input. Model file may be malformed.",
     );
@@ -99,7 +99,7 @@ export async function runBirefnet(
   const outputName = session.outputNames[session.outputNames.length - 1]!;
   const output = outputs[outputName];
   if (!output) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "model.loadFailed",
       `BiRefNet ONNX session produced no output named ${outputName}.`,
     );

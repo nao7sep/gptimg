@@ -7,12 +7,28 @@ import type { ResolvedProfile } from "../../types.ts";
 // driven by the network category budgets in src/network/defaults.ts.
 const CLIENT_PASSTHROUGH_KEYS = new Set(["organization", "project"]);
 
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+
+/**
+ * The OpenAI client with every option it would otherwise fill from the process
+ * environment set explicitly (sdk-conventions: the SDK reads nothing ambient):
+ * the base URL, organization, project, admin key and webhook secret. The one
+ * read the client offers no switch for is `OPENAI_CUSTOM_HEADERS`, which it
+ * skips only with its `provider` or X.509 `credential` options, neither of
+ * which applies here; that residual read is accepted, and a test pins that
+ * every other ambient value is ignored.
+ */
 export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
   const opts: Record<string, unknown> = {
     apiKey: profile.apiKey,
+    baseURL: DEFAULT_BASE_URL,
+    organization: null,
+    project: null,
+    adminAPIKey: null,
+    webhookSecret: null,
     maxRetries: 0,
-    // An SDK prints nothing (sdk-toolkit-conventions); gptimg's own records
-    // carry what the client would warn about.
+    // An SDK prints nothing (sdk-conventions); gptimgsdk's own records carry
+    // what the client would warn about.
     logLevel: "off",
   };
   for (const k of CLIENT_PASSTHROUGH_KEYS) {
@@ -25,8 +41,7 @@ export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
 
 /**
  * The headers that identify the caller, as the built client sends them: its key as the bearer
- * token, and the organization and project it resolved, from the profile or the SDK's own
- * `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` defaults. Each attempt's log line records them,
+ * token, and the organization and project the caller gave, if any. Each attempt's log line records them,
  * the key masked by the call's logger (data-lifecycle-conventions).
  */
 export function clientHeaders(client: OpenAI): Record<string, string> {

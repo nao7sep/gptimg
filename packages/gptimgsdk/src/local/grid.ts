@@ -14,10 +14,13 @@
  */
 
 import sharp from "sharp";
-import { LocalOpError, throwIfAborted } from "../errors.ts";
-import { writeImageFile } from "../image/bridge.ts";
+import { GptImgError, throwIfAborted } from "../errors.ts";
+import { inputImageError, writeImageFile } from "../image/bridge.ts";
+import type { Logger } from "../log/index.ts";
 import { parseHex } from "../color.ts";
-import type { EncodingArgs } from "../types.ts";
+import type { EncodingArgs, GridResult } from "../types.ts";
+
+type GridSkip = GridResult["skipped"][number];
 
 export const GRID_DEFAULTS = {
   cell: 256,
@@ -41,7 +44,7 @@ export interface GridRunResult {
   output: string;
   count: number;
   placed: number;
-  skipped: string[];
+  skipped: GridSkip[];
   cols: number;
   rows: number;
   cell: number;
@@ -52,7 +55,7 @@ export interface GridRunResult {
 
 export async function runGrid(
   args: GridRunArgs,
-  opts: { signal?: AbortSignal | undefined } = {},
+  opts: { signal?: AbortSignal | undefined; logger?: Logger } = {},
 ): Promise<GridRunResult> {
   const { signal } = opts;
   throwIfAborted(signal);
@@ -72,7 +75,8 @@ export async function runGrid(
   // Render each input into a cell-sized tile. A read/decode failure is the one
   // case we tolerate: record it and carry on.
   const tiles: Buffer[] = [];
-  const skipped: string[] = [];
+  const skipped: GridSkip[] = [];
+  let read = 0;
   for (const input of args.inputs) {
     throwIfAborted(signal);
     try {
@@ -81,16 +85,19 @@ export async function runGrid(
         .png()
         .toBuffer();
       tiles.push(tile);
-    } catch {
-      skipped.push(input);
+    } catch (err) {
+      const reason = inputImageError(err, "grid: failed to read", input) as GptImgError;
+      skipped.push({ input, code: reason.code, message: reason.message });
     }
+    read += 1;
+    opts.logger?.progress("infer", read, args.inputs.length, "inputs");
     // Decode failures are tolerated; cancellation after either outcome is not.
     throwIfAborted(signal);
   }
 
   const placed = tiles.length;
   if (placed === 0) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "image.noContent",
       `grid: none of the ${args.inputs.length} input(s) could be read.`,
     );

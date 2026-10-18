@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -11,10 +13,7 @@ import type { ShadowArgs, ShadowResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateShadowArgs } from "./schemas.ts";
 
-export interface ShadowContext {
-  profileDir: string;
-  logDir: string;
-}
+export type ShadowContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-shadow`;
@@ -24,11 +23,11 @@ export async function shadowImpl(
   ctx: ShadowContext,
   args: ShadowArgs,
   opts: VerbCallOptions = {},
-): Promise<ShadowResult> {
+): Promise<ShadowResult | RefusedResult> {
   validateShadowArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "shadow", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "shadow", opts, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
@@ -86,6 +85,7 @@ export async function shadowImpl(
       spread: result.spread,
       keepCanvas: result.keepCanvas,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

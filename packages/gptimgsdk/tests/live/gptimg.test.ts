@@ -3,10 +3,11 @@
 // installer, and the real OpenAI API. Run only by npm run test:full, through
 // vitest.live.config.ts.
 //
-// The models live in a cache that persists between runs (GPTIMG_MODELS_DIR, the
-// SDK's own relocation seam) and follow its rule: install what is missing, and
+// The models live in a folder that persists between runs, named in each profile's
+// modelsDir, and follow the SDK's rule: install explicitly what is missing, and
 // replace a model only when a new pin names a new file. Each test runs on a
-// throwaway profile whose profile.json names OPENAI_API_KEY and stores no key.
+// throwaway profile that names OPENAI_API_KEY and stores no key; the key reaches
+// the SDK only through the environment map passed to loadProfile.
 
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -17,7 +18,8 @@ import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../../src/ai-models.ts";
-import { GptImg } from "../../src/index.ts";
+import { GptImg, loadProfile } from "../../src/index.ts";
+import { done } from "../helpers/results.ts";
 
 const PACKAGE = fileURLToPath(new URL("../../", import.meta.url));
 const CACHE = join(PACKAGE, "node_modules", ".cache", "gptimgsdk-live");
@@ -37,16 +39,15 @@ const VISION_ROWS = SUPPORTED_MODELS.filter((row): row is VisionModelRow => "thi
 // Models the vision guide does not list as honouring `detail`, checked against the real API.
 const DETAIL_CHECKED_VISION_MODELS = ["gpt-6-luna", "gpt-6.1-sol"] as const;
 
-process.env.GPTIMG_MODELS_DIR = MODELS;
-
 const homes: string[] = [];
 
 /** A GptImg on a throwaway profile that resolves its key from OPENAI_API_KEY only. */
 async function freshSdk(label: string): Promise<{ img: GptImg; home: string }> {
   const home = await mkdtemp(join(CACHE, `${label}-`));
   homes.push(home);
-  await writeFile(join(home, "profile.json"), `${JSON.stringify({ formatVersion: 1, provider: "openai", apiKeyEnv: "OPENAI_API_KEY" })}\n`);
-  return { img: new GptImg({ profileDir: home }), home };
+  const profilePath = join(home, "profile.json");
+  await writeFile(profilePath, `${JSON.stringify({ formatVersion: 2, provider: "openai", apiKeyEnv: "OPENAI_API_KEY", modelsDir: MODELS, logDir: home })}\n`);
+  return { img: new GptImg({ profile: await loadProfile(profilePath, { env: process.env }), app: { name: "gptimgsdk-live", version: "1" } }), home };
 }
 
 function requireKey(): void {
@@ -70,6 +71,8 @@ async function sentRequest(sidecarPath: string): Promise<Record<string, unknown>
 
 interface ImageSidecar {
   formatVersion: number;
+  kind: string;
+  writer: { name: string; version: string; app?: { name: string; version: string } };
   request: Record<string, unknown>;
   response: { created?: unknown; usage?: unknown; data?: Array<{ b64_json?: unknown }> };
   files: Array<{ index: number; name: string; sha256: string; format: string }>;
@@ -81,13 +84,19 @@ interface ImageSidecar {
  * and the file it describes by name, digest and format. It never holds the key.
  */
 async function expectCompleteImageSidecar(
-  file: { path: string; sidecarPath: string; sha256: string; format: string },
+  file: { path: string; sidecarPath: string; sha256: string; format: string; sidecar: { status: string }; record: unknown },
   request: Record<string, unknown>,
+  kind: "generate" | "edit" = "generate",
 ): Promise<ImageSidecar> {
+  expect(file.sidecar.status).toBe("published");
   const text = await readFile(file.sidecarPath, "utf8");
   expect(text).not.toContain(process.env.OPENAI_API_KEY!.trim());
   const sidecar = JSON.parse(text) as ImageSidecar;
-  expect(sidecar.formatVersion).toBe(1);
+  expect(sidecar.formatVersion).toBe(2);
+  expect(sidecar.kind).toBe(kind);
+  expect(sidecar.writer).toEqual({ name: "gptimgsdk", version: expect.stringMatching(/^\d+\.\d+\.\d+/), app: { name: "gptimgsdk-live", version: "1" } });
+  // The result carries the same record the sidecar holds.
+  expect(file.record).toEqual({ ...sidecar });
   expect(sidecar.request).toMatchObject({ n: 1, ...request });
   expect(typeof sidecar.request.prompt, "the prompt is recorded").toBe("string");
   expect(typeof sidecar.response.created, "the provider's creation time is kept").toBe("number");
@@ -134,7 +143,7 @@ afterAll(async () => {
 });
 
 describe("the live SDK", () => {
-  it("has every pinned model installed and matching its pinned digest", async () => {
+  it("has every pinned model installed and matching its pinned digest, and verify passes a real output", async () => {
     const { img } = await freshSdk("verify");
     for (const model of img.model.list().models) expect(model.cached, model.name).toBe(true);
     const { models } = await img.model.verify();
@@ -143,7 +152,7 @@ describe("the live SDK", () => {
 
   it("cuts the subject out of a test image with the pinned BiRefNet", async () => {
     const { img, home } = await freshSdk("mask");
-    const result = await img.mask({ in: await copyInto(home, DISC), method: "ai", outDir: home });
+    const result = done(await img.mask({ in: await copyInto(home, DISC), method: "ai", outDir: home }));
     expect(result.stats).toMatchObject({ method: "ai", model: "birefnet", width: 128, height: 128 });
     expect(await maskValue(result.output!, 64, 64), "the disc is kept").toBeGreaterThan(200);
     for (const [x, y] of [[4, 4], [123, 4], [4, 123], [123, 123]] as const) {
@@ -153,7 +162,7 @@ describe("the live SDK", () => {
 
   it("enlarges a test image with the pinned Swin2SR", async () => {
     const { img, home } = await freshSdk("upscale");
-    const result = await img.upscale({ in: await copyInto(home, DISC), outDir: home });
+    const result = done(await img.upscale({ in: await copyInto(home, DISC), outDir: home }));
     expect(result).toMatchObject({ sourceWidth: 128, modelWidth: 512, width: 1024, height: 1024 });
     expect(await sharp(result.output).metadata()).toMatchObject({ width: 1024, height: 1024 });
     const centre = await centreColour(result.output, 0.2);
@@ -166,12 +175,12 @@ describe("the live SDK", () => {
     it(`generates and edits an image with ${model} through the real OpenAI API`, async () => {
       requireKey();
       const { img, home } = await freshSdk(`generate-${model}`);
-      const result = await img.generate({
+      const result = done(await img.generate({
         prompt: "A single flat solid red circle centred on a plain white background. No shading, texture, or other objects.",
         outDir: home,
-        overrides: { generate: { ...CHEAPEST_IMAGE, model } },
-      });
-      expect(result.partial).toBe(false);
+        policy: { generate: { ...CHEAPEST_IMAGE, model } },
+      }));
+      expect(result.failures).toEqual([]);
       expect(result.files).toHaveLength(1);
       const [file] = result.files;
       await expectCompleteImageSidecar(file!, { ...CHEAPEST_IMAGE, model, moderation: "low" });
@@ -179,14 +188,14 @@ describe("the live SDK", () => {
       const centre = await centreColour(file!.path, 0.2);
       expect(centre.r, "the centre is red").toBeGreaterThan(centre.g + 80);
 
-      const edited = await img.edit({
+      const edited = done(await img.edit({
         in: file!.path,
         prompt: "Recolour the red circle pure blue. Keep its size and position and keep the white background unchanged.",
         outDir: home,
         outName: "edited",
-        overrides: { edit: { ...CHEAPEST_IMAGE, model } },
-      });
-      expect(edited.partial).toBe(false);
+        policy: { edit: { ...CHEAPEST_IMAGE, model } },
+      }));
+      expect(edited.failures).toEqual([]);
       expect(edited.files).toHaveLength(1);
       const [editedFile] = edited.files;
       // The edit's record names its source by file and digest, so it stays traceable.
@@ -197,7 +206,7 @@ describe("the live SDK", () => {
         inputSha256: file!.sha256,
         mask: null,
         maskSha256: null,
-      });
+      }, "edit");
       const editedCentre = await centreColour(editedFile!.path, 0.2);
       expect(editedCentre.b, "the circle is now blue").toBeGreaterThan(editedCentre.r + 80);
     });
@@ -206,11 +215,11 @@ describe("the live SDK", () => {
   it("writes the provider's WebP as a .webp whose sidecar names the default model, the file and the key colour mask reads", async () => {
     requireKey();
     const { img, home } = await freshSdk("generate-webp");
-    const result = await img.generate({
+    const result = done(await img.generate({
       prompt: "A single flat solid red circle centred on a plain white background.",
       outDir: home,
-      overrides: { generate: { ...CHEAPEST_IMAGE, output_format: "webp" }, chroma: { color: "#00ff00" } },
-    });
+      policy: { generate: { ...CHEAPEST_IMAGE, output_format: "webp" }, chroma: { color: "#00ff00" } },
+    }));
     const [file] = result.files;
     expect(file!.path.endsWith(".webp")).toBe(true);
     expect((await sharp(file!.path).metadata()).format).toBe("webp");
@@ -219,8 +228,10 @@ describe("the live SDK", () => {
       output_format: "webp",
       chroma: { color: "#00ff00" },
     });
-    const keyed = await img.mask({ in: file!.path, method: "chroma", key: "from-sidecar", dryRun: true });
+    const keyed = done(await img.mask({ in: file!.path, method: "chroma", key: "from-sidecar", outName: "keyed" }));
     expect(keyed.stats).toMatchObject({ key: "#00ff00", keySource: "sidecar" });
+    // The real output passes verification against its sidecar.
+    expect(done(await img.verify({ in: file!.path }))).toMatchObject({ ok: true, findings: [] });
   });
 
   // A vision model honours detail=low when a low-detail check of a large photo stays under the
@@ -230,12 +241,12 @@ describe("the live SDK", () => {
       requireKey();
       const { img, home } = await freshSdk(`detail-${model}`);
       const photo = await copyInto(home, join(CORPUS, CAT_PHOTO));
-      const holds = await img.vision({
+      const holds = done(await img.vision({
         in: photo,
         check: "A cat is visible in the image.",
         outDir: home,
-        overrides: { vision: { ...CHEAPEST_VISION, model } },
-      });
+        policy: { vision: { ...CHEAPEST_VISION, model } },
+      }));
       const sidecar = JSON.parse(await readFile(holds.sidecarPath, "utf8")) as {
         request: Record<string, unknown>;
         response: { raw: { usage?: { prompt_tokens?: number } } };
@@ -253,12 +264,12 @@ describe("the live SDK", () => {
     it(`judges a tiny image with ${row.id} at its default effort and detail`, async () => {
       requireKey();
       const { img, home } = await freshSdk(`effort-${row.id}`);
-      const result = await img.vision({
+      const result = done(await img.vision({
         in: await copyInto(home, DISC),
         check: "A red disc is visible.",
         outDir: home,
-        overrides: { vision: { model: row.id } },
-      });
+        policy: { vision: { model: row.id } },
+      }));
       expect(await sentRequest(result.sidecarPath)).toMatchObject({
         model: row.id,
         detail: "auto",
@@ -272,12 +283,12 @@ describe("the live SDK", () => {
     requireKey();
     const { img, home } = await freshSdk("vision");
     const photo = await copyInto(home, join(CORPUS, CAT_PHOTO));
-    const holds = await img.vision({
+    const holds = done(await img.vision({
       in: photo,
       check: "A cat is visible in the image.",
       outDir: home,
-      overrides: { vision: CHEAPEST_VISION },
-    });
+      policy: { vision: CHEAPEST_VISION },
+    }));
     expect(holds.ok, holds.reasons.join(" ")).toBe(true);
     // The verdict's record: what was asked of which image, and the answer with its time and usage.
     const text = await readFile(holds.sidecarPath, "utf8");
@@ -288,7 +299,9 @@ describe("the live SDK", () => {
       response: { verdict: unknown; raw: { created?: unknown; model?: unknown; usage?: unknown } };
       files: unknown[];
     };
-    expect(sidecar.formatVersion).toBe(1);
+    expect(sidecar.formatVersion).toBe(2);
+    expect(holds.sidecar).toEqual({ status: "published" });
+    expect(holds.record).toEqual(sidecar);
     expect(sidecar.request).toMatchObject({
       ...CHEAPEST_VISION,
       model: "gpt-6-luna",
@@ -305,13 +318,13 @@ describe("the live SDK", () => {
     expect(typeof sidecar.response.raw.model).toBe("string");
     expect(sidecar.response.raw.usage, "the provider's usage is kept").toBeDefined();
     expect(sidecar.files).toEqual([]);
-    const fails = await img.vision({
+    const fails = done(await img.vision({
       in: photo,
       check: "A dog is visible in the image.",
       outDir: home,
       outName: "dog-check",
-      overrides: { vision: CHEAPEST_VISION },
-    });
+      policy: { vision: CHEAPEST_VISION },
+    }));
     expect(fails.ok, fails.reasons.join(" ")).toBe(false);
   });
 });

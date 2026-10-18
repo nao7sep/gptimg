@@ -12,13 +12,16 @@
  * differs, which the caller arranges.
  */
 
+import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
-import { LocalOpError, throwIfAborted } from "../errors.ts";
-import { encodeImage, readImageSize } from "../image/bridge.ts";
+import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
+import { encodeImage, inputImageError, readImageSize } from "../image/bridge.ts";
 import { readCaptureMetadata, type CaptureMetadata } from "../image/capture.ts";
 import { writeOutputBytes } from "../internal/output-files.ts";
+import type { Logger } from "../log/index.ts";
 import type { PngEncodingArgs } from "../types.ts";
 
 export const ICON_DEFAULTS = {
@@ -117,7 +120,7 @@ export interface IconRunResult {
 
 export async function runIcon(
   args: IconRunArgs,
-  opts: { signal?: AbortSignal | undefined } = {},
+  opts: { signal?: AbortSignal | undefined; logger?: Logger } = {},
 ): Promise<IconRunResult> {
   const { signal } = opts;
   throwIfAborted(signal);
@@ -127,15 +130,17 @@ export async function runIcon(
 
   const { width, height } = await readImageSize(args.in, "icon");
   if (width !== height) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `icon: master must be square; got ${width}x${height}. Use \`trim --square\` or \`backplate\`.`,
+      { details: { field: "in", constraint: "square image" } },
     );
   }
   if (width < MIN_MASTER) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `icon: master must be at least ${MIN_MASTER}x${MIN_MASTER}; got ${width}x${height}.`,
+      { details: { field: "in", constraint: "at least the master size" } },
     );
   }
   throwIfAborted(signal);
@@ -150,11 +155,7 @@ export async function runIcon(
     master = await sharp(args.in).ensureAlpha().png().toBuffer();
     capture = await readCaptureMetadata(args.in);
   } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
-      `icon: failed to decode ${args.in}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw inputImageError(err, "icon: failed to decode", args.in);
   }
 
   const cache = new Map<number, Promise<Buffer>>();
@@ -172,6 +173,9 @@ export async function runIcon(
     return p;
   };
 
+  // Encode the whole set before writing anything, so a failure to build any
+  // rendition leaves the folder untouched.
+  const files: Array<{ path: string; bytes: Uint8Array }> = [];
   try {
     const icns = new IconIcns();
     icns.toc = true;
@@ -186,21 +190,37 @@ export async function runIcon(
       throwIfAborted(signal);
     }
 
-    const overwrite = args.overwrite ?? false;
-    await writeOutputBytes(plan.icns, icns.encode(), overwrite);
-    await writeOutputBytes(plan.ico, ico.encode(), overwrite);
-    await writeOutputBytes(plan.png, await render(MASTER_SIZE), overwrite);
+    files.push({ path: plan.icns, bytes: icns.encode() });
+    files.push({ path: plan.ico, bytes: ico.encode() });
+    files.push({ path: plan.png, bytes: await render(MASTER_SIZE) });
     for (const { size, path: p } of plan.pngSet) {
       throwIfAborted(signal);
-      await writeOutputBytes(p, await render(size), overwrite);
+      files.push({ path: p, bytes: await render(size) });
     }
   } catch (err) {
-    if ((err as { errorType?: string }).errorType) throw err; // already a LocalOpError
-    throw new LocalOpError(
-      "image.writeFailed",
-      `icon: failed to build icons from ${args.in}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw processingError(err, "icon: failed to build icons from", args.in, "none");
+  }
+
+  // Publish the set together: each file appears whole, and a failure or a
+  // cancellation part-way removes the files this call created, never a file
+  // that existed before it (an overwrite has already replaced those).
+  const overwrite = args.overwrite ?? false;
+  const created: string[] = [];
+  let replaced = false;
+  try {
+    for (const [i, file] of files.entries()) {
+      throwIfAborted(signal);
+      const existed = existsSync(file.path);
+      await writeOutputBytes(file.path, file.bytes, overwrite);
+      if (existed) replaced = true;
+      else created.push(file.path);
+      opts.logger?.progress("write", i + 1, files.length, "renditions");
+    }
+  } catch (err) {
+    for (const filePath of created) await unlink(filePath).catch(() => undefined);
+    const failure = processingError(err, "icon: failed to publish icons from", args.in);
+    // With the created files removed, only replaced files are left changed.
+    throw failure instanceof GptImgError ? failure.withEffect(replaced ? "unknown" : "none") : failure;
   }
 
   return {

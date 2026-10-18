@@ -243,7 +243,6 @@ describe("runBackplate", () => {
         to: "#000000",
       }),
     ).rejects.toMatchObject({
-      errorType: "localOp",
       code: "args.invalid",
     });
   });

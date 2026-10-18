@@ -1,4 +1,5 @@
 import { link, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { RefusalSignal, refuse } from "../../src/refusal.ts";
 import { statSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -10,7 +11,7 @@ import {
   withVerbLogger,
 } from "../../src/internal/local-verb.ts";
 import { APIError } from "openai";
-import { LocalOpError, ProviderError } from "../../src/errors.ts";
+import { GptImgError } from "../../src/errors.ts";
 
 describe("inferStem", () => {
   it("strips the final extension from a basename", () => {
@@ -48,12 +49,12 @@ describe("assertSingleFileAvailable", () => {
     const target = path.join(tmp, "there.png");
     await writeFile(target, "x");
     expect(() => assertSingleFileAvailable(target, false)).toThrowError(
-      LocalOpError,
+      RefusalSignal,
     );
     try {
       assertSingleFileAvailable(target, false);
     } catch (err) {
-      expect((err as LocalOpError).code).toBe("output.exists");
+      expect((err as RefusalSignal).code).toBe("output.exists");
       expect((err as Error).message).toContain("overwrite: true");
     }
   });
@@ -68,11 +69,11 @@ describe("assertSingleFileAvailable", () => {
     await writeFile(path.join(tmp, "Photo.png"), "x");
     expect(() =>
       assertSingleFileAvailable(path.join(tmp, "photo.png"), false),
-    ).toThrowError(LocalOpError);
+    ).toThrowError(RefusalSignal);
     try {
       assertSingleFileAvailable(path.join(tmp, "photo.png"), false);
     } catch (err) {
-      expect((err as LocalOpError).code).toBe("output.exists");
+      expect((err as RefusalSignal).code).toBe("output.exists");
       expect((err as Error).message).toContain("Photo.png");
     }
   });
@@ -174,7 +175,7 @@ describe("resolveOutputPath", () => {
   it("throws when a verb supplies neither an input file nor a chosen destination", async () => {
     await expect(
       resolveOutputPath({}, { stem: "x", ext: "png" }),
-    ).rejects.toBeInstanceOf(LocalOpError);
+    ).rejects.toMatchObject({ code: "args.invalid", details: { field: "outDir" } });
   });
 
   it("creates the resolved outDir (mkdir -p)", async () => {
@@ -221,7 +222,7 @@ describe("withVerbLogger", () => {
     const result = await withVerbLogger(
       { logDir: tmp },
       "compose",
-      { log: logPath },
+      { log: { file: logPath } },
       async (logger) => {
         await logger.info("resolve", "hello", { x: 1 });
         return { ok: true as const, logPath: logger.handle.path };
@@ -242,9 +243,9 @@ describe("withVerbLogger", () => {
 
   it("logs the thrown error and rethrows it", async () => {
     const logPath = path.join(tmp, "verb.jsonl");
-    const err = new LocalOpError("output.exists", "boom");
+    const err = new GptImgError("fs.noSpace", "boom");
     await expect(
-      withVerbLogger({ logDir: tmp }, "mask", { log: logPath }, async () => {
+      withVerbLogger({ logDir: tmp }, "mask", { log: { file: logPath } }, async () => {
         throw err;
       }),
     ).rejects.toBe(err);
@@ -256,12 +257,12 @@ describe("withVerbLogger", () => {
       level: "error",
       stage: "error",
       message: "boom",
-      data: { code: "output.exists" },
+      data: { code: "fs.noSpace", kind: "unavailable", effect: "none" },
     });
     expect(entry.data.error).toMatchObject({
-      type: "LocalOpError",
+      type: "GptImgError",
       message: "boom",
-      stack: expect.stringContaining("LocalOpError: boom"),
+      stack: expect.stringContaining("GptImgError: boom"),
     });
   });
 
@@ -269,9 +270,9 @@ describe("withVerbLogger", () => {
     const logPath = path.join(tmp, "provider.jsonl");
     const body = { message: "Invalid size", type: "invalid_request_error", param: "size", code: "invalid_value" };
     const cause = new APIError(400, body, undefined, new Headers({ "x-request-id": "req_123" }));
-    const err = new ProviderError("provider.requestFailed", "OpenAI images.generate failed", { cause });
+    const err = new GptImgError("provider.rejected", "OpenAI images.generate failed", { cause });
     await expect(
-      withVerbLogger({ logDir: tmp }, "generate", { log: logPath }, async () => {
+      withVerbLogger({ logDir: tmp }, "generate", { log: { file: logPath } }, async () => {
         throw err;
       }),
     ).rejects.toBe(err);
@@ -288,30 +289,70 @@ describe("withVerbLogger", () => {
   it("records a bounded cause chain for failure diagnosis", async () => {
     const logPath = path.join(tmp, "caused.jsonl");
     const cause = new TypeError("inner failure");
-    const err = new LocalOpError("output.writeFailed", "outer failure", { cause });
+    const err = new GptImgError("fs.failed", "outer failure", { cause });
     await expect(
-      withVerbLogger({ logDir: tmp }, "mask", { log: logPath }, async () => {
+      withVerbLogger({ logDir: tmp }, "mask", { log: { file: logPath } }, async () => {
         throw err;
       }),
     ).rejects.toBe(err);
     const entry = JSON.parse((await readFile(logPath, "utf-8")).trim());
     expect(entry.data.error).toMatchObject({
-      type: "LocalOpError",
+      type: "GptImgError",
       message: "outer failure",
       cause: { type: "TypeError", message: "inner failure" },
     });
   });
 
-  it("derives a default second-stamped session log path with an ID when logArg is undefined", async () => {
+  it("writes no log without a log option or a logDir, and events still reach onEvent", async () => {
+    const events: string[] = [];
+    const result = await withVerbLogger({ logDir: null }, "combine", { onEvent: (e) => void events.push(e.message) }, async (logger) => {
+      await logger.info("resolve", "ok");
+      return logger.handle.path;
+    });
+    expect(result).toBeNull();
+    expect(events).toEqual(["ok"]);
+  });
+
+  it("turns a refusal into a refused result, logged at warn", async () => {
+    const logPath = path.join(tmp, "refused.jsonl");
+    const result = await withVerbLogger({ logDir: null }, "mask", { log: { file: logPath } }, async () => {
+      refuse("output.exists", "Output exists: x", { subject: "/x" });
+    });
+    expect(result).toEqual({
+      status: "refused",
+      refusal: { code: "output.exists", message: "Output exists: x", subject: "/x", safeReason: null },
+      logPath,
+    });
+    const entry = JSON.parse((await readFile(logPath, "utf-8")).trim());
+    expect(entry).toMatchObject({ level: "warn", data: { code: "output.exists" } });
+  });
+
+  it("wraps a failure that escaped classification as internal.unexpected with its cause", async () => {
+    const cause = new TypeError("surprise");
+    await expect(
+      withVerbLogger({ logDir: null }, "mask", {}, async () => {
+        throw cause;
+      }),
+    ).rejects.toMatchObject({ name: "GptImgError", code: "internal.unexpected", kind: "internal", cause });
+  });
+
+  it("refuses a relative log target", async () => {
+    await expect(withVerbLogger({ logDir: null }, "mask", { log: { file: "x.log" } }, async () => 1)).rejects.toMatchObject({
+      code: "args.invalid",
+      details: { field: "log.file" },
+    });
+  });
+
+  it("derives a second-stamped session log path with an ID in the instance's logDir", async () => {
     const result = await withVerbLogger(
       { logDir: tmp },
       "combine",
       {},
       async (logger) => {
         await logger.info("resolve", "ok");
-        return logger.handle.path;
+        return logger.handle.path!;
       },
-    );
+    ) as string;
     expect(result.startsWith(tmp + path.sep)).toBe(true);
     // Concurrent runs share the log directory, so the name carries an ID:
     // yyyymmdd-hhmmss-utc-<id>.log.

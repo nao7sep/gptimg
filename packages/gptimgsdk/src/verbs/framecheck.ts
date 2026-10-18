@@ -1,13 +1,12 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import { withVerbLogger } from "../internal/local-verb.ts";
 import { runFramecheck } from "../local/framecheck.ts";
 import type { FramecheckArgs, FramecheckResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateFramecheckArgs } from "./schemas.ts";
 
-export interface FramecheckContext {
-  profileDir: string;
-  logDir: string;
-}
+export type FramecheckContext = SdkContext;
 
 /**
  * framecheck — read-only alpha-coverage geometry. It writes nothing (no output
@@ -19,11 +18,11 @@ export async function framecheckImpl(
   ctx: FramecheckContext,
   args: FramecheckArgs,
   opts: VerbCallOptions = {},
-): Promise<FramecheckResult> {
+): Promise<FramecheckResult | RefusedResult> {
   validateFramecheckArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "framecheck", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "framecheck", opts, async (logger) => {
     await logger.info("resolve", "framecheck start", {
       input: args.in,
       threshold: args.threshold ?? null,
@@ -61,6 +60,7 @@ export async function framecheckImpl(
       edgeContact: result.edgeContact,
       verdict: result.verdict,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

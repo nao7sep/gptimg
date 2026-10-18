@@ -1,11 +1,25 @@
 import { open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { ProfileError } from "../errors.ts";
+import path from "node:path";
+import { GptImgError, fsError } from "../errors.ts";
 import { PROFILE_FORMAT_VERSION } from "../format-versions.ts";
-import type { Profile } from "../types.ts";
 import { takeFormatVersion } from "../internal/format-version.ts";
-import { formatZodError } from "../internal/zodError.ts";
+import { assertAbsolutePath } from "../internal/absolute-path.ts";
+import { firstZodIssue, formatZodError } from "../internal/zodError.ts";
+import type { LoadedProfile, Policy, Profile } from "../types.ts";
+import { deobfuscate } from "./obfuscate.ts";
 import { ProfileSchema } from "./schema.ts";
+
+/** The environment a caller passes in; the SDK never reads the process environment. */
+export type EnvironmentMap = Readonly<Record<string, string | undefined>>;
+
+export interface LoadProfileOptions {
+  /**
+   * The variables a profile's `apiKeyEnv` and path references resolve from,
+   * typically `process.env`. Omitted, nothing resolves from the environment.
+   */
+  env?: EnvironmentMap;
+}
 
 // POSIX-only. Windows reports a synthesized mode whose lower bits do not
 // reflect access control, so this check would produce false positives there.
@@ -14,110 +28,137 @@ function enforcesFileMode(): boolean {
 }
 
 /**
- * Options for `loadProfile`.
- *
- * `enforceMode` (default true): on POSIX, refuse to return a profile that
- * carries an `apiKey` when the file is readable beyond the owner. Set false
- * from callers whose purpose is to *modify* the profile (e.g. `clearApiKey`,
- * `setApiKey`) — those callers immediately rewrite the file at 0o600 (or, for
- * an unchanged key, tighten its mode), so the insecure state is being
- * repaired rather than ignored. When false, the file's mode is not fetched at
- * all; there is no failure surface from a stat-only error on the modify paths.
+ * Check a parsed profile body against format 2 (format 1 is a subset), for an
+ * app that creates or edits profiles with the SDK's own rules. The value is the
+ * file's JSON with or without its `formatVersion`.
  */
-export interface LoadProfileOptions {
-  enforceMode?: boolean;
-}
-
-interface RawProfileRead {
-  text: string;
-  /** Mode of the opened inode (POSIX-only, gated by enforceMode). 0 when unread. */
-  mode: number;
+export function validateProfile(value: unknown, subject = "profile"): Profile {
+  const body = takeFormatVersion(value, PROFILE_FORMAT_VERSION, {
+    name: "profile",
+    path: subject,
+    invalidCode: "profile.malformed",
+  });
+  const result = ProfileSchema.safeParse(body);
+  if (!result.success) {
+    const { field, constraint } = firstZodIssue(result.error);
+    throw new GptImgError("profile.malformed", `${subject} is invalid: ${formatZodError(result.error)}`, {
+      subject,
+      details: { field, constraint },
+    });
+  }
+  return result.data as Profile;
 }
 
 /**
- * Open the profile once and pull content (and optionally the mode) off the
- * same file handle. `fstat` on an open descriptor reports the inode the read
- * is reading from, so there is no path-level TOCTOU between fetching the
- * mode and fetching the bytes. The two failure spaces are also separated:
+ * Read a profile from the absolute `filePath` the caller gives and return it
+ * with its key resolved and its paths absolute. The SDK never searches for a
+ * profile and never writes one.
  *
- *   - `open()` failure is the existence question. ENOENT here means the
- *     profile does not exist; anything else is an open-time read failure.
- *   - Any failure *after* `open()` succeeds is a read failure on a file we
- *     proved exists. It is never misreported as "not found".
+ * Key resolution: the variable `apiKeyEnv` names, looked up in `env`, then the
+ * stored `apiKey` (`obf:` or plain), each trimmed, empty meaning absent. A
+ * missing key is not an error here: local verbs need none, and a paid verb
+ * fails `apiKey.missing` when it runs. A profile that stores a key and is
+ * readable beyond its owner on POSIX is refused, never tightened: a library does
+ * not change the mode of a path its caller handed it.
  */
-async function readProfileFile(
-  filePath: string,
-  fetchMode: boolean,
-): Promise<RawProfileRead> {
-  let fh: FileHandle;
-  try {
-    fh = await open(filePath, "r");
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException;
-    if (e.code === "ENOENT") {
-      throw new ProfileError(
-        "profile.notFound",
-        `Profile not found at ${filePath}. Store a key with profile.setApiKey(), or write ` +
-          `{"provider": "openai", "apiKeyEnv": "<variable>"} there to read the key from that environment variable.`,
-        { cause: err },
-      );
-    }
-    throw new ProfileError(
-      "profile.readFailed",
-      `Failed to open profile at ${filePath}: ${e.message}`,
-      { cause: err },
-    );
-  }
-  try {
-    let mode = 0;
-    if (fetchMode) {
-      mode = (await fh.stat()).mode;
-    }
-    const text = await fh.readFile("utf-8");
-    return { text, mode };
-  } catch (err) {
-    throw new ProfileError(
-      "profile.readFailed",
-      `Failed to read profile at ${filePath}: ${(err as Error).message}`,
-      { cause: err },
-    );
-  } finally {
-    await fh.close().catch(() => {});
-  }
-}
-
-function parseProfile(text: string, filePath: string): Profile {
+export async function loadProfile(filePath: string, options: LoadProfileOptions = {}): Promise<LoadedProfile> {
+  assertAbsolutePath(filePath, "profile path");
+  const env = options.env ?? {};
+  const { text, mode } = await readProfileFile(filePath);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    throw new ProfileError(
-      "profile.invalidJson",
-      `Invalid JSON in profile at ${filePath}`,
-      { cause: err },
-    );
+    throw new GptImgError("profile.malformed", `Invalid JSON in profile at ${filePath}`, {
+      cause: err,
+      subject: filePath,
+    });
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new ProfileError(
-      "profile.invalidJson",
-      `Profile at ${filePath} must be a JSON object`,
-    );
-  }
-  const body = takeFormatVersion(parsed, PROFILE_FORMAT_VERSION, {
-    name: "profile",
+  const profile = validateProfile(parsed, filePath);
+  assertSecureMode(filePath, mode, profile);
+
+  const base = path.dirname(filePath);
+  const key = resolveKey(profile, env);
+  return {
     path: filePath,
-    ErrorClass: ProfileError,
-    invalidCode: "profile.validationFailed",
-  });
-  const result = ProfileSchema.safeParse(body);
-  if (!result.success) {
-    const detail = formatZodError(result.error);
-    throw new ProfileError(
-      "profile.validationFailed",
-      `Profile at ${filePath} invalid: ${detail}`,
-    );
+    provider: "openai",
+    apiKey: key?.apiKey ?? null,
+    apiKeySource: key?.source ?? null,
+    ...(profile.organization !== undefined && { organization: profile.organization }),
+    ...(profile.project !== undefined && { project: profile.project }),
+    ...(profile.modelsDir !== undefined && { modelsDir: resolveProfilePath(profile.modelsDir, "modelsDir", base, env, filePath) }),
+    ...(profile.logDir !== undefined && { logDir: resolveProfilePath(profile.logDir, "logDir", base, env, filePath) }),
+    ...(profile.policy !== undefined && { policy: profile.policy as Policy }),
+  };
+}
+
+function resolveKey(profile: Profile, env: EnvironmentMap): { apiKey: string; source: string } | null {
+  if (profile.apiKeyEnv) {
+    const value = env[profile.apiKeyEnv]?.trim();
+    if (value) return { apiKey: value, source: `env:${profile.apiKeyEnv}` };
   }
-  return result.data as Profile;
+  if (typeof profile.apiKey === "string" && profile.apiKey.length > 0) {
+    const value = deobfuscate(profile.apiKey).trim();
+    if (value) return { apiKey: value, source: "profile.apiKey" };
+  }
+  return null;
+}
+
+/**
+ * A profile path as an absolute path: `~` from the map's `HOME` (`USERPROFILE`
+ * on Windows), `$VAR`, `${VAR}` and `%VAR%` from the map, and a relative result
+ * against the profile's own folder, never the working directory. A reference
+ * the map cannot satisfy is `profile.malformed` naming the variable.
+ */
+function resolveProfilePath(value: string, field: string, base: string, env: EnvironmentMap, subject: string): string {
+  const lookup = (name: string): string => {
+    const v = env[name];
+    if (v === undefined || v.length === 0) {
+      throw new GptImgError(
+        "profile.malformed",
+        `Profile ${field} ${JSON.stringify(value)} refers to ${name}, which the environment passed to loadProfile does not set.`,
+        { subject, details: { field, variable: name } },
+      );
+    }
+    return v;
+  };
+  let out = value;
+  if (out === "~" || out.startsWith("~/") || out.startsWith("~\\")) {
+    const home = lookup(process.platform === "win32" ? "USERPROFILE" : "HOME");
+    out = out === "~" ? home : path.join(home, out.slice(2));
+  }
+  out = out
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, name: string) => lookup(name))
+    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name: string) => lookup(name))
+    .replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (_m, name: string) => lookup(name));
+  return path.isAbsolute(out) ? path.normalize(out) : path.resolve(base, out);
+}
+
+interface RawProfileRead {
+  text: string;
+  /** Mode of the opened inode; 0 where the mode is not checked. */
+  mode: number;
+}
+
+/**
+ * Open the profile once and read content and mode off the same handle, so the
+ * mode checked is the mode of the bytes read (a symlink's target).
+ */
+async function readProfileFile(filePath: string): Promise<RawProfileRead> {
+  let fh: FileHandle;
+  try {
+    fh = await open(filePath, "r");
+  } catch (err) {
+    throw fsError(err, "Failed to open profile", filePath);
+  }
+  try {
+    const mode = enforcesFileMode() ? (await fh.stat()).mode : 0;
+    return { text: await fh.readFile("utf-8"), mode };
+  } catch (err) {
+    throw fsError(err, "Failed to read profile", filePath);
+  } finally {
+    await fh.close().catch(() => {});
+  }
 }
 
 function assertSecureMode(filePath: string, mode: number, profile: Profile): void {
@@ -125,23 +166,10 @@ function assertSecureMode(filePath: string, mode: number, profile: Profile): voi
   if (typeof profile.apiKey !== "string" || profile.apiKey.length === 0) return;
   if ((mode & 0o077) === 0) return;
   const octal = (mode & 0o777).toString(8).padStart(3, "0");
-  throw new ProfileError(
+  throw new GptImgError(
     "profile.insecureMode",
-    `Profile at ${filePath} contains apiKey but file mode is ${octal} (readable beyond owner). ` +
-      `Run \`chmod 600 ${filePath}\` to restrict it, or remove apiKey and use apiKeyEnv instead.`,
+    `Profile at ${filePath} contains apiKey but its mode is ${octal} (readable beyond its owner). ` +
+      `Run \`chmod 600 ${filePath}\`, or remove apiKey and name the variable in apiKeyEnv instead.`,
+    { subject: filePath, details: { mode: octal } },
   );
-}
-
-export async function loadProfile(
-  filePath: string,
-  opts: LoadProfileOptions = {},
-): Promise<Profile> {
-  const enforceMode = opts.enforceMode ?? true;
-  const { text, mode } = await readProfileFile(
-    filePath,
-    enforceMode && enforcesFileMode(),
-  );
-  const profile = parseProfile(text, filePath);
-  if (enforceMode) assertSecureMode(filePath, mode, profile);
-  return profile;
 }

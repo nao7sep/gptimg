@@ -12,20 +12,15 @@ import {
 } from "../../src/local/models/swin2sr.ts";
 import type { Logger } from "../../src/log/index.ts";
 
-/** Minimal Logger that records the messages forwarded to it. */
-function recordingLogger(events: { stage: string; msg: string }[]): Logger {
-  // Per-tile progress is a firehose tick, so tileAndStitch emits it at `debug`
-  // (logging conventions: per-chunk progress ticks are debug, never info).
-  // Record debug as well as info so those ticks are captured.
-  const record = async (stage: string, msg: string): Promise<void> => {
-    events.push({ stage, msg });
-  };
+/** Minimal Logger that records the progress counts forwarded to it. */
+function recordingLogger(events: { stage: string; done: number; total: number; unit: string }[]): Logger {
   return {
-    handle: { path: "mem.jsonl", verb: "upscale" },
-    info: record,
+    handle: { path: null, verb: "upscale" },
+    info: async () => {},
     warn: async () => {},
     error: async () => {},
-    debug: record,
+    debug: async () => {},
+    progress: (stage, done, total, unit) => void events.push({ stage, done, total, unit }),
     addCredential: () => {},
     close: async () => {},
   };
@@ -204,18 +199,17 @@ describe("tileAndStitch", () => {
     expect(firstDiff).toBe(-1);
   });
 
-  it("emits one infer progress event per tile through the logger", async () => {
+  it("reports one progress count per tile through the logger", async () => {
     const W = 200,
       H = 200,
       tile = 256; // region 192 → 2×2 tiles
     const src = rgbPattern(W, H);
-    const events: { stage: string; msg: string }[] = [];
+    const events: { stage: string; done: number; total: number; unit: string }[] = [];
     await tileAndStitch(src, W, H, tile, nearestPaddedX4, undefined, recordingLogger(events));
     const n = planTiles(W, H, tile, 32).length;
     expect(events).toHaveLength(n);
-    expect(events.every((e) => e.stage === "infer")).toBe(true);
-    expect(events[0]!.msg).toBe(`upscaled tile 1/${n}`);
-    expect(events[n - 1]!.msg).toBe(`upscaled tile ${n}/${n}`);
+    expect(events.every((e) => e.stage === "infer" && e.unit === "tiles" && e.total === n)).toBe(true);
+    expect(events.map((e) => e.done)).toEqual(Array.from({ length: n }, (_, i) => i + 1));
   });
 });
 
@@ -291,7 +285,7 @@ describe("runUpscale", () => {
   // to-size / kernel / tile argument rejections now live in verbs/schemas.ts
   // (validateUpscaleArgs) and are covered by tests/verbs/schemas.test.ts.
 
-  it("reports image.decodeFailed for a missing input even with valid args", async () => {
+  it("reports fs.notFound for a missing input even with valid args", async () => {
     // Valid args pass validation; the failure must come from loadRawRGBA,
     // before the (injected) upscaler is ever reached.
     await expect(
@@ -300,7 +294,7 @@ describe("runUpscale", () => {
         tmp,
         { upscaler: nearestX4 },
       ),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "image.decodeFailed" });
+    ).rejects.toMatchObject({ code: "fs.notFound" });
   });
 
   it("refuses a source whose ×4 result the resample cannot take, before the model runs", async () => {
@@ -311,7 +305,7 @@ describe("runUpscale", () => {
     const upscaler = vi.fn(nearestX4);
     await expect(
       runUpscale({ in: input, out: path.join(tmp, "big-up.png"), toSize: 1024 }, tmp, { upscaler }),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "image.tooLarge" });
+    ).rejects.toMatchObject({ code: "image.tooLarge" });
     expect(upscaler).not.toHaveBeenCalled();
   });
 

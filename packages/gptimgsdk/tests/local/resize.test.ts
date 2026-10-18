@@ -184,7 +184,6 @@ describe("runResize", () => {
     await writeRawPng(inPath, 100, 100, diskish(100, 100));
 
     await expect(runResize({ in: inPath, out: outPath, toSize: 50, opaque: true })).rejects.toMatchObject({
-      errorType: "localOp",
       code: "image.notOpaque",
     });
     expect(existsSync(outPath)).toBe(false);
@@ -208,6 +207,6 @@ describe("runResize", () => {
   it("reports a clean error when the input cannot be read", async () => {
     await expect(
       runResize({ in: path.join(tmp, "missing.png"), out: path.join(tmp, "o.png"), toSize: 32 }),
-    ).rejects.toMatchObject({ errorType: "localOp", code: "image.decodeFailed" });
+    ).rejects.toMatchObject({ code: "fs.notFound" });
   });
 });

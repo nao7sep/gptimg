@@ -195,7 +195,6 @@ describe("runLayer", () => {
     await expect(
       runLayer({ base: basePath, top: topPath, out: outPath, scale: 0 }),
     ).rejects.toMatchObject({
-      errorType: "localOp",
       code: "args.invalid",
     });
     await expect(
@@ -367,8 +366,7 @@ describe("runLayer", () => {
         out: path.join(tmp, "out.png"),
       }),
     ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "image.decodeFailed",
+      code: "fs.notFound",
     });
   });
 });

@@ -1,4 +1,5 @@
 import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { done } from "../helpers/results.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
@@ -54,7 +55,7 @@ describe("public grid cancellation after its final tile", () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-grid-abort-"));
-    sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     first = path.join(tmp, "first.png");
     last = path.join(tmp, "last.png");
     missing = path.join(tmp, "missing.png");
@@ -83,7 +84,7 @@ describe("public grid cancellation after its final tile", () => {
         { inputs: [first, decode.input], cell: 8, gap: 0, outName: "sheet" },
         { signal: ctrl.signal },
       );
-      const rejected = expect(operation).rejects.toMatchObject({ name: "AbortError", code: "cancelled" });
+      const rejected = expect(operation).rejects.toMatchObject({ code: "cancelled" });
       void rejected.catch(() => undefined);
       try {
         await entered.promise;
@@ -102,12 +103,12 @@ describe("public grid cancellation after its final tile", () => {
     "still publishes the successful grid after the final %s tile when not cancelled",
     async (kind) => {
       const final = kind === "decoded" ? last : missing;
-      const result = await sdk.grid({ inputs: [first, final], cell: 8, gap: 0, outName: "sheet" });
+      const result = done(await sdk.grid({ inputs: [first, final], cell: 8, gap: 0, outName: "sheet" }));
       expect(result).toMatchObject({
         output: path.join(tmp, "sheet.png"),
         count: 2,
         placed: kind === "decoded" ? 2 : 1,
-        skipped: kind === "decoded" ? [] : [missing],
+        skipped: kind === "decoded" ? [] : [expect.objectContaining({ input: missing, code: "fs.notFound" })],
       });
       const metadata = await sharp(result.output).metadata();
       expect([metadata.width, metadata.height]).toEqual(kind === "decoded" ? [16, 8] : [8, 8]);

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { LocalOpError } from "../../../src/errors.ts";
+import { GptImgError } from "../../../src/errors.ts";
 import { packNchw01, unpackChwToU8 } from "../../../src/local/models/swin2sr-tensor.ts";
 
 describe("packNchw01", () => {
@@ -36,7 +36,7 @@ describe("unpackChwToU8", () => {
 
   it("rejects an output shape that is not [1,3,oh,ow]", () => {
     const data = Float32Array.from([0, 0, 0]);
-    expect(() => unpackChwToU8(data, [1, 1, 1, 1], 1, 1)).toThrow(LocalOpError);
-    expect(() => unpackChwToU8(data, [1, 3, 2, 2], 1, 1)).toThrow(LocalOpError);
+    expect(() => unpackChwToU8(data, [1, 1, 1, 1], 1, 1)).toThrow(GptImgError);
+    expect(() => unpackChwToU8(data, [1, 3, 2, 2], 1, 1)).toThrow(GptImgError);
   });
 });

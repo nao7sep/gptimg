@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { done } from "../helpers/results.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
@@ -54,7 +55,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
   });
 
   it("trim rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
     const out = path.join(tmp, "out.png");
@@ -62,17 +63,16 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
 
     await expect(
       sdk.trim({ in: input, outName: "out" }),
-    ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "output.exists",
+    ).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.exists" },
     });
 
-    const res = await sdk.trim({ in: input, outName: "out", overwrite: true });
+    const res = done(await sdk.trim({ in: input, outName: "out", overwrite: true }));
     expect(res.output).toBe(out);
   });
 
   it("encode rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
     const out = path.join(tmp, "out.webp");
@@ -80,17 +80,16 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
 
     await expect(
       sdk.encode({ in: input, format: "webp", outName: "out" }),
-    ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "output.exists",
+    ).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.exists" },
     });
 
-    const res = await sdk.encode({ in: input, format: "webp", outName: "out", overwrite: true });
+    const res = done(await sdk.encode({ in: input, format: "webp", outName: "out", overwrite: true }));
     expect(res.output).toBe(out);
   });
 
   it("backplate rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const out = path.join(tmp, "plate.png");
     await writeFile(out, "blocker");
 
@@ -102,24 +101,23 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
         outDir: tmp,
         outName: "plate",
       }),
-    ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "output.exists",
+    ).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.exists" },
     });
 
-    const res = await sdk.backplate({
+    const res = done(await sdk.backplate({
       size: 32,
       from: "#000000",
       to: "#ffffff",
       outDir: tmp,
       outName: "plate",
       overwrite: true,
-    });
+    }));
     expect(res.output).toBe(out);
   });
 
   it("layer rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const basePath = path.join(tmp, "base.png");
     const topPath = path.join(tmp, "top.png");
     await writeRawPng(basePath, 32, 32, makeOpaque(32, 32, 0, 0, 0));
@@ -129,22 +127,21 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
 
     await expect(
       sdk.layer({ base: basePath, top: topPath, outName: "out" }),
-    ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "output.exists",
+    ).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.exists" },
     });
 
-    const res = await sdk.layer({
+    const res = done(await sdk.layer({
       base: basePath,
       top: topPath,
       outName: "out",
       overwrite: true,
-    });
+    }));
     expect(res.output).toBe(out);
   });
 
   it("despeckle rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
     const out = path.join(tmp, "out.png");
@@ -152,17 +149,16 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
 
     await expect(
       sdk.despeckle({ in: input, outName: "out" }),
-    ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "output.exists",
+    ).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.exists" },
     });
 
-    const res = await sdk.despeckle({ in: input, outName: "out", overwrite: true });
+    const res = done(await sdk.despeckle({ in: input, outName: "out", overwrite: true }));
     expect(res.output).toBe(out);
   });
 
   it("mask (chroma) rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 0, 255, 0));
     const out = path.join(tmp, "out-mask.png");
@@ -170,18 +166,17 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
 
     await expect(
       sdk.mask({ in: input, method: "chroma", outName: "out-mask" }),
-    ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "output.exists",
+    ).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.exists" },
     });
 
-    const res = await sdk.mask({ in: input, method: "chroma", outName: "out-mask", overwrite: true });
+    const res = done(await sdk.mask({ in: input, method: "chroma", outName: "out-mask", overwrite: true }));
     expect(res.output).toBe(out);
   });
 
   it("mask (ai) checks the output before running the mask, never loading the model for a refused overwrite", async () => {
     aiMaskFromFile.mockReset();
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 0, 255, 0));
     const out = path.join(tmp, "out-ai-mask.png");
@@ -189,9 +184,8 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
 
     await expect(
       sdk.mask({ in: input, method: "ai", outName: "out-ai-mask" }),
-    ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "output.exists",
+    ).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.exists" },
     });
     // The regression this guards: the fix moves this check ahead of the model
     // download and inference, so a refused overwrite must never reach the
@@ -204,7 +198,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
       height: 16,
       stats: { method: "ai", model: "birefnet", removedPixels: 0, removedFraction: 0, width: 16, height: 16 },
     });
-    const res = await sdk.mask({ in: input, method: "ai", outName: "out-ai-mask", overwrite: true });
+    const res = done(await sdk.mask({ in: input, method: "ai", outName: "out-ai-mask", overwrite: true }));
     expect(res.output).toBe(out);
     expect(aiMaskFromFile).toHaveBeenCalledTimes(1);
   });

@@ -1,4 +1,4 @@
-import { ProfileError } from "../errors.ts";
+import { GptImgError } from "../errors.ts";
 
 const MARKER = "obf:";
 
@@ -10,11 +10,6 @@ function reverseBytes(bytes: Buffer): Buffer {
   return Buffer.from(bytes).reverse();
 }
 
-export function obfuscate(raw: string): string {
-  const reversed = reverseBytes(Buffer.from(raw, "utf-8"));
-  return MARKER + reversed.toString("base64");
-}
-
 export function deobfuscate(stored: string): string {
   if (!stored.startsWith(MARKER)) {
     return stored;
@@ -24,19 +19,12 @@ export function deobfuscate(stored: string): string {
     payload.length > 0 &&
     !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(payload)
   ) {
-    throw new ProfileError(
-      "apiKey.invalidObf",
-      "Obfuscated apiKey is not valid base64",
-    );
+    throw new GptImgError("apiKey.malformed", "Obfuscated apiKey is not valid base64");
   }
   try {
     const bytes = reverseBytes(Buffer.from(payload, "base64"));
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch (err) {
-    throw new ProfileError(
-      "apiKey.invalidObf",
-      "Obfuscated apiKey is not valid base64",
-      { cause: err },
-    );
+    throw new GptImgError("apiKey.malformed", "Obfuscated apiKey is not valid base64", { cause: err });
   }
 }

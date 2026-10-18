@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import { normalizeHex } from "../color.ts";
 import {
   assertSingleFileAvailable,
@@ -13,10 +15,7 @@ import type { ChromaKeySource, KeycheckArgs, KeycheckResult } from "../types.ts"
 import type { VerbCallOptions } from "./options.ts";
 import { validateKeycheckArgs } from "./schemas.ts";
 
-export interface KeycheckContext {
-  profileDir: string;
-  logDir: string;
-}
+export type KeycheckContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-keycheck`;
@@ -49,11 +48,11 @@ export async function keycheckImpl(
   ctx: KeycheckContext,
   args: KeycheckArgs,
   opts: VerbCallOptions = {},
-): Promise<KeycheckResult> {
+): Promise<KeycheckResult | RefusedResult> {
   validateKeycheckArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "keycheck", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "keycheck", opts, async (logger) => {
     const { key, keySource } = await resolveKey(args);
 
     // The heatmap is the only file keycheck can write; with no heatmap it is a
@@ -128,6 +127,7 @@ export async function keycheckImpl(
       verdict: result.verdict,
       heatmapPath: result.heatmapPath,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

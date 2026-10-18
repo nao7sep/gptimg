@@ -1,24 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../../src/ai-models.ts";
-import { RecipeError } from "../../src/errors.ts";
+import { GptImgError } from "../../src/errors.ts";
 import {
   checkImageParams,
   resolveGenerateModeration,
   resolveVisionDetail,
   resolveVisionReasoning,
-} from "../../src/recipe/model-check.ts";
+} from "../../src/policy/model-check.ts";
 
 const imageRows = SUPPORTED_MODELS.filter((row): row is ImageModelRow => "image" in row);
 const visionRows = SUPPORTED_MODELS.filter((row): row is VisionModelRow => "thinking" in row);
 
-function refusal(run: () => unknown): RecipeError {
+function refusal(run: () => unknown): GptImgError {
   try {
     run();
   } catch (err) {
-    expect(err).toBeInstanceOf(RecipeError);
-    expect((err as RecipeError).code).toBe("recipe.validationFailed");
-    return err as RecipeError;
+    expect(err).toBeInstanceOf(GptImgError);
+    expect((err as GptImgError).code).toBe("policy.invalid");
+    return err as GptImgError;
   }
   throw new Error("expected a refusal");
 }
@@ -36,7 +36,7 @@ describe("checkImageParams", () => {
 
   it("refuses a quality the row does not list, naming the model and what it takes", () => {
     const err = refusal(() => checkImageParams("generate", { model: "gpt-image-2", quality: "xhigh" }));
-    expect(err.message).toBe('generate section invalid: gpt-image-2 takes quality auto, low, medium, high, not "xhigh".');
+    expect(err.message).toBe('generate policy invalid: gpt-image-2 takes quality auto, low, medium, high, not "xhigh".');
     refusal(() => checkImageParams("edit", { model: "gpt-image-2.5-sunburst", quality: "ultra" }));
   });
 
@@ -141,7 +141,7 @@ describe("resolveVisionReasoning", () => {
 
   it("refuses an effort the row does not list", () => {
     const err = refusal(() => resolveVisionReasoning("gpt-6-astra", "none"));
-    expect(err.message).toBe('vision section invalid: gpt-6-astra takes reasoning low, medium, high, xhigh, max, not "none".');
+    expect(err.message).toBe('vision policy invalid: gpt-6-astra takes reasoning low, medium, high, xhigh, max, not "none".');
     refusal(() => resolveVisionReasoning("gpt-6-luna", "minimal"));
   });
 

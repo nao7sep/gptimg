@@ -13,8 +13,8 @@
 
 import sharp from "sharp";
 import { normalizeHex, parseHex } from "../color.ts";
-import { LocalOpError, throwIfAborted } from "../errors.ts";
-import { loadRawRGBA, writeImageFile } from "../image/bridge.ts";
+import { processingError, throwIfAborted } from "../errors.ts";
+import { inputImageError, loadRawRGBA, writeImageFile } from "../image/bridge.ts";
 import type { EncodingArgs, ShadowOffset } from "../types.ts";
 
 export const SHADOW_DEFAULTS = {
@@ -172,11 +172,7 @@ export async function runShadow(
     shadowPng = await shadowPipe.png().toBuffer();
     subjectPng = await sharp(args.in).ensureAlpha().png().toBuffer();
   } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `shadow: failed to render layers from ${args.in}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw inputImageError(err, "shadow: failed to render layers from", args.in);
   }
   throwIfAborted(signal);
 
@@ -208,11 +204,7 @@ export async function runShadow(
       .png()
       .toBuffer();
   } catch (err) {
-    throw new LocalOpError(
-      "image.writeFailed",
-      `shadow: failed to composite ${args.in}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw processingError(err, "shadow: failed to composite", args.in, "none");
   }
   throwIfAborted(signal);
 

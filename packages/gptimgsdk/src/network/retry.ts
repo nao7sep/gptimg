@@ -1,5 +1,6 @@
 import type { Logger } from "../log/index.ts";
-import { toAbortError } from "../errors.ts";
+import { cancelledError, isCancelled } from "../errors.ts";
+import { isQuotaExhausted } from "./classify.ts";
 import {
   BUDGET_RESEND_POLICY,
   type NetworkBudget,
@@ -34,7 +35,7 @@ const RETRYABLE_NETWORK_CODES = new Set([
 
 export function isAbortError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  if (err.name === "AbortError") return true;
+  if (isCancelled(err) || err.name === "AbortError") return true;
   const code = (err as { code?: string }).code;
   return code === "ABORT_ERR" || code === "ERR_ABORTED";
 }
@@ -73,6 +74,8 @@ function networkCode(err: unknown): string | null {
 
 function isRetryableError(err: unknown, policy: ResendPolicy): boolean {
   if (isAbortError(err)) return false;
+  // An exhausted quota is a 429 that waiting cannot fix (sdk-conventions, *Retries*).
+  if (isQuotaExhausted(err)) return false;
   const status = statusFromError(err);
   if (status != null) {
     return policy === "unprocessed"
@@ -135,7 +138,7 @@ function computeScheduledWait(retryNumber: number, intervals: number[]): number 
 }
 
 function abortReason(signal: AbortSignal): Error {
-  return toAbortError(signal.reason);
+  return cancelledError(signal.reason);
 }
 
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -261,7 +264,11 @@ export async function callWithRetry<T>(
             outcome: "cancelled",
           });
         }
-        throw toAbortError(signal?.aborted ? (signal.reason ?? err) : err);
+        // A paid request in flight may already have been accepted.
+        throw cancelledError(
+          signal?.aborted ? (signal.reason ?? err) : err,
+          BUDGET_RESEND_POLICY[budgetName] === "unprocessed" ? "unknown" : "none",
+        );
       }
       const remaining = budget.maxRetries - attempt;
       if (remaining <= 0 || !isRetryableError(err, BUDGET_RESEND_POLICY[budgetName])) {

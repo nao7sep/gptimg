@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { LocalOpError } from "../errors.ts";
+import { GptImgError } from "../errors.ts";
 import { FORMAT_TO_EXT } from "./formats.ts";
 
 export interface DetectedFormat {
@@ -14,11 +14,11 @@ export async function detectFormat(buf: Buffer | Uint8Array): Promise<DetectedFo
   try {
     meta = await sharp(buf).metadata();
   } catch (err) {
-    throw new LocalOpError("image.decodeFailed", "Failed to decode image bytes", { cause: err });
+    throw new GptImgError("image.undecodable", "Failed to decode image bytes", { cause: err });
   }
   const fmt = meta.format;
   if (!fmt) {
-    throw new LocalOpError("image.formatUnknown", "Could not determine image format from bytes");
+    throw new GptImgError("image.unsupportedFormat", "Could not determine image format from bytes");
   }
   return {
     format: fmt,

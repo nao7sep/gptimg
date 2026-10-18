@@ -1,24 +1,24 @@
 import { existsSync } from "node:fs";
+import { done } from "../helpers/results.ts";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from "vitest";
+import * as sdkEntry from "../../src/index.ts";
 import { GptImg } from "../../src/index.ts";
 import type {
-  DetectedFormat,
   EncodeFormat,
   EncodingArgs,
-  LoadProfileOptions,
-  Logger,
+  LoadedProfile,
   MaskArgs,
   ModelVerifyResult,
   PngEncodingArgs,
+  RefusedResult,
   ResizeArgs,
-  ShrinkBox,
-  ShrinkResult,
+  ResizeResult,
   VisionDetail,
-  VisionRecipe,
+  VisionPolicy,
 } from "../../src/index.ts";
 
 describe("GptImg SDK surface", () => {
@@ -32,81 +32,70 @@ describe("GptImg SDK surface", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("exports the named types used by public helper signatures", () => {
-    expectTypeOf<Parameters<GptImg["profile"]["load"]>[1]>()
-      .toEqualTypeOf<LoadProfileOptions | undefined>();
-    expectTypeOf<Awaited<ReturnType<GptImg["log"]["createLogger"]>>>()
-      .toEqualTypeOf<Logger>();
-    expectTypeOf<Awaited<ReturnType<GptImg["image"]["detectFormat"]>>>()
-      .toEqualTypeOf<DetectedFormat>();
-    expectTypeOf<Parameters<GptImg["image"]["shrinkForVision"]>[1]>()
-      .toEqualTypeOf<ShrinkBox | undefined>();
-    expectTypeOf<Awaited<ReturnType<GptImg["image"]["shrinkForVision"]>>>()
-      .toEqualTypeOf<ShrinkResult>();
-    expectTypeOf<Awaited<ReturnType<GptImg["model"]["verify"]>>>()
-      .toEqualTypeOf<ModelVerifyResult>();
-    expectTypeOf<VisionRecipe["detail"]>().toEqualTypeOf<VisionDetail | undefined>();
+  it("exports the named types used by public signatures", () => {
+    expectTypeOf<Parameters<typeof sdkEntry.loadProfile>[0]>().toEqualTypeOf<string>();
+    expectTypeOf<Awaited<ReturnType<typeof sdkEntry.loadProfile>>>().toEqualTypeOf<LoadedProfile>();
+    expectTypeOf<Awaited<ReturnType<GptImg["model"]["verify"]>>>().toEqualTypeOf<ModelVerifyResult>();
+    expectTypeOf<Awaited<ReturnType<GptImg["resize"]>>>().toEqualTypeOf<ResizeResult | RefusedResult>();
+    expectTypeOf<VisionPolicy["detail"]>().toEqualTypeOf<VisionDetail | undefined>();
     expectTypeOf<EncodingArgs["format"]>().toEqualTypeOf<EncodeFormat | undefined>();
     expectTypeOf<ResizeArgs>().toMatchTypeOf<EncodingArgs>();
     expectTypeOf<MaskArgs>().toMatchTypeOf<PngEncodingArgs>();
     expectTypeOf<MaskArgs>().not.toHaveProperty("format");
+    expectTypeOf<MaskArgs>().not.toHaveProperty("dryRun");
   });
 
-  it("uses custom profile and log directories", () => {
-    const sdk = new GptImg({
-      profileDir: path.join(tmp, "profile-dir"),
-      logDir: path.join(tmp, "log-dir"),
-    });
-
-    expect(sdk.profileDir).toBe(path.join(tmp, "profile-dir"));
-    expect(sdk.logDir).toBe(path.join(tmp, "log-dir"));
+  it("exports the verbs' class, the profile reader, the sidecar reader, the error and code tables, and the constant lists", () => {
+    expect(Object.keys(sdkEntry).sort()).toEqual([
+      "BACKPLATE_SHAPES",
+      "COMBINE_OPS",
+      "DESPECKLE_KEEP",
+      "ENCODE_FORMATS",
+      "ERROR_CODES",
+      "ERROR_EFFECTS",
+      "ERROR_KINDS",
+      "FRAMECHECK_AXES",
+      "FRAMECHECK_VERDICTS",
+      "GptImg",
+      "GptImgError",
+      "ITEM_FAILURE_CODES",
+      "KEY_RESIDUE_VERDICTS",
+      "LAYER_GRAVITIES",
+      "MASK_METHODS",
+      "MODEL_INTEGRITIES",
+      "NETWORK_BUDGET_NAMES",
+      "NETWORK_DEFAULTS",
+      "REFUSAL_CODES",
+      "RESAMPLE_KERNELS",
+      "VERIFY_FINDING_CODES",
+      "VERSION",
+      "VISION_DETAILS",
+      "isGptImgErrorData",
+      "loadProfile",
+      "readSidecar",
+      "validateProfile",
+    ].sort());
   });
 
-  it("expands environment references in the profile and log directories before using them", () => {
-    vi.stubEnv("GPTIMG_TEST_ROOT", tmp);
-    try {
-      const sdk = new GptImg({ profileDir: "$GPTIMG_TEST_ROOT/profile-dir", logDir: "%GPTIMG_TEST_ROOT%/log-dir" });
-
-      expect(sdk.profileDir).toBe(path.join(tmp, "profile-dir"));
-      expect(sdk.logDir).toBe(path.join(tmp, "log-dir"));
-      expect(existsSync(path.join(tmp, "profile-dir"))).toBe(true);
-    } finally {
-      vi.unstubAllEnvs();
+  it("keeps no helper groups and no stored state on the instance", () => {
+    const sdk = new GptImg() as unknown as Record<string, unknown>;
+    for (const removed of ["profile", "recipe", "sidecar", "image", "log", "profileDir", "logDir"]) {
+      expect(sdk[removed], removed).toBeUndefined();
     }
+    expect(typeof sdk.model).toBe("object");
+    expect(typeof sdk.verify).toBe("function");
   });
 
-  it("exposes the documented helper groups as callable functions", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
-    const profilePath = path.join(tmp, "profile.json");
-    const recipePath = path.join(tmp, "recipe.json");
-
-    await sdk.profile.setApiKey("sk-sdk", { path: profilePath });
-    const profile = await sdk.profile.load(profilePath);
-    expect(sdk.profile.resolve(profile).apiKey).toBe("sk-sdk");
-    await sdk.profile.clearApiKey({ path: profilePath });
-
-    await writeFile(recipePath, '{"formatVersion":1,"generate":{"n":1}}\n');
-    expect(await sdk.recipe.load(recipePath)).toEqual({ generate: { n: 1 } });
-    expect(sdk.recipe.merge({}, { vision: { shrink: { width: 1, height: 1 } } })).toEqual({
-      vision: { shrink: { width: 1, height: 1 } },
-    });
-
-    expect(typeof sdk.sidecar.read).toBe("function");
-    expect(typeof sdk.sidecar.write).toBe("function");
-    expect(typeof sdk.image.hash).toBe("function");
-    expect(typeof sdk.image.detectFormat).toBe("function");
-    expect(typeof sdk.image.shrinkForVision).toBe("function");
-    expect(typeof sdk.log.open).toBe("function");
-    expect(typeof sdk.log.append).toBe("function");
-    expect(typeof sdk.log.close).toBe("function");
-    expect(typeof sdk.log.createLogger).toBe("function");
-    expect(typeof sdk.keycheck).toBe("function");
-    expect(typeof sdk.framecheck).toBe("function");
-    expect(typeof sdk.grid).toBe("function");
+  it("touches no disk when constructed, and refuses relative locations", () => {
+    new GptImg({ modelsDir: path.join(tmp, "models"), logDir: path.join(tmp, "logs") });
+    expect(existsSync(path.join(tmp, "models"))).toBe(false);
+    expect(existsSync(path.join(tmp, "logs"))).toBe(false);
+    expect(() => new GptImg({ modelsDir: "models" })).toThrow(expect.objectContaining({ code: "args.invalid" }));
+    expect(() => new GptImg({ logDir: "logs" })).toThrow(expect.objectContaining({ code: "args.invalid" }));
   });
 
   it("keycheck resolves the key from the sidecar and measures residue end-to-end", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     // A blue island over transparent, with a generate-style sidecar recording a
     // green chroma key beside it — the from-sidecar path mask uses.
     const W = 8, H = 8;
@@ -123,7 +112,7 @@ describe("GptImg SDK surface", () => {
       JSON.stringify({ formatVersion: 1, request: { chroma: { color: "#00ff00" } }, response: {}, files: [] }),
     );
 
-    const res = await sdk.keycheck({ in: imgPath, key: "from-sidecar" });
+    const res = done(await sdk.keycheck({ in: imgPath, key: "from-sidecar" }));
     expect(res.key).toBe("#00ff00");
     expect(res.keySource).toBe("sidecar");
     expect(res.residuePixels).toBe(0);
@@ -131,7 +120,7 @@ describe("GptImg SDK surface", () => {
   });
 
   it("keycheck accepts an explicit key and writes a heatmap", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const W = 8, H = 8;
     const rgba = new Uint8Array(W * H * 4);
     for (let y = 2; y <= 5; y++)
@@ -142,7 +131,7 @@ describe("GptImg SDK surface", () => {
     const imgPath = path.join(tmp, "cut.png");
     await sharp(Buffer.from(rgba), { raw: { width: W, height: H, channels: 4 } }).png().toFile(imgPath);
 
-    const res = await sdk.keycheck({ in: imgPath, key: "#00ff00", heatmap: true, outName: "qa" });
+    const res = done(await sdk.keycheck({ in: imgPath, key: "#00ff00", heatmap: true, outName: "qa" }));
     expect(res.keySource).toBe("explicit");
     expect(res.key).toBe("#00ff00");
     expect(res.heatmapPath).toBe(path.join(tmp, "qa.png"));
@@ -152,7 +141,7 @@ describe("GptImg SDK surface", () => {
   });
 
   it("framecheck measures subject placement and verdicts off-centre end-to-end", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     // A 4×4 solid square pushed to the left (L=1, R=5) in a 10×10 canvas.
     const W = 10, H = 10;
     const rgba = new Uint8Array(W * H * 4);
@@ -164,7 +153,7 @@ describe("GptImg SDK surface", () => {
     const imgPath = path.join(tmp, "subject.png");
     await sharp(Buffer.from(rgba), { raw: { width: W, height: H, channels: 4 } }).png().toFile(imgPath);
 
-    const res = await sdk.framecheck({ in: imgPath });
+    const res = done(await sdk.framecheck({ in: imgPath }));
     expect(res.solidBBox).toEqual({ x: 1, y: 3, width: 4, height: 4 });
     expect(res.margins).toEqual({ left: 1, right: 5, top: 3, bottom: 3 });
     expect(res.deltas!.horizontal).toBe(4);
@@ -173,7 +162,7 @@ describe("GptImg SDK surface", () => {
   });
 
   it("grid tiles inputs into a sheet beside the first input", async () => {
-    const sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
     const paths: string[] = [];
     for (let i = 0; i < 3; i++) {
       const p = path.join(tmp, `tile-${i}.png`);
@@ -182,7 +171,7 @@ describe("GptImg SDK surface", () => {
         .toFile(p);
       paths.push(p);
     }
-    const res = await sdk.grid({ inputs: paths, cell: 32, gap: 4, outName: "sheet" });
+    const res = done(await sdk.grid({ inputs: paths, cell: 32, gap: 4, outName: "sheet" }));
     expect(res.placed).toBe(3);
     expect(res.skipped).toEqual([]);
     expect(res.output).toBe(path.join(tmp, "sheet.png"));

@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { loadProfile } from "../../src/profile/load.ts";
+import { SIDECAR_FORMAT_VERSION } from "../../src/format-versions.ts";
+import { done } from "../helpers/results.ts";
 import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -7,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg } from "../../src/gptimg.ts";
-import { obfuscate } from "../../src/profile/obfuscate.ts";
+import { obfuscate } from "../helpers/obf.ts";
 import type { Provider } from "../../src/providers/types.ts";
 
 const providerCalls = vi.hoisted(() => ({
@@ -55,7 +58,7 @@ describe("AI verb implementations with mocked provider", () => {
     providerCalls.vision.mockReset();
 
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-ai-verbs-"));
-    sdk = new GptImg({ profileDir: tmp, logDir: path.join(tmp, "logs") });
+    sdk = new GptImg({ apiKey: "sk-profile-only", logDir: path.join(tmp, "logs") });
     png = new Uint8Array(await readFile(fixture("green-disk.png")));
     const defaultProfile = path.join(tmp, "profile.json");
     await writeFile(
@@ -90,7 +93,7 @@ describe("AI verb implementations with mocked provider", () => {
     await expect(sdk.backplate({ from: "#000000", to: "#ffffff" })).rejects.toMatchObject({ code: "args.invalid", message: expect.stringContaining("outDir") });
     expect(existsSync(path.join(tmp, "logs"))).toBe(false);
     const stem = path.join(tmp, "chosen", "plate");
-    const result = await sdk.backplate({ from: "#000000", to: "#ffffff", size: 16, outName: stem });
+    const result = done(await sdk.backplate({ from: "#000000", to: "#ffffff", size: 16, outName: stem }));
     expect(result.output).toBe(`${stem}.png`);
     expect(existsSync(result.output)).toBe(true);
     expect(existsSync(path.join(tmp, "output"))).toBe(false);
@@ -107,9 +110,9 @@ describe("AI verb implementations with mocked provider", () => {
     await writeFile(other, png);
     providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }] });
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
-    const edit = await sdk.edit({ in: input, prompt: "blue", outName: "edited" });
+    const edit = done(await sdk.edit({ in: input, prompt: "blue", outName: "edited" }));
     expect(edit.files[0]!.path).toBe(path.join(sourceDir, "edited.png"));
-    const vision = await sdk.vision({ in: [input, other], check: "green", outName: "verdict" });
+    const vision = done(await sdk.vision({ in: [input, other], check: "green", outName: "verdict" }));
     expect(vision.sidecarPath).toBe(path.join(sourceDir, "verdict.json"));
     expect(await readFile(input)).toEqual(Buffer.from(png));
     expect(existsSync(path.join(tmp, "output"))).toBe(false);
@@ -124,8 +127,8 @@ describe("AI verb implementations with mocked provider", () => {
     await symlink(original, input);
     providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }] });
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
-    const edit = await sdk.edit({ in: input, prompt: "blue", outName: "edited" });
-    const vision = await sdk.vision({ in: input, check: "green", outName: "verdict" });
+    const edit = done(await sdk.edit({ in: input, prompt: "blue", outName: "edited" }));
+    const vision = done(await sdk.vision({ in: input, check: "green", outName: "verdict" }));
     expect(edit.files[0]!.path).toBe(path.join(links, "edited.png"));
     expect(vision.sidecarPath).toBe(path.join(links, "verdict.json"));
   });
@@ -149,19 +152,19 @@ describe("AI verb implementations with mocked provider", () => {
       });
 
       const outDir = path.join(tmp, "out");
-      const result = await sdk.generate({
+      const result = done(await sdk.generate({
         prompt: "a green disk",
         outDir,
         outName: "gen",
-        overrides: {
+        policy: {
           generate: { quality: "low", n: 2, model: "param-model" },
           chroma: { color: "#00ff00" },
         },
-      });
+      }));
 
       expect(stdout).not.toHaveBeenCalled();
       expect(stderr).not.toHaveBeenCalled();
-      expect(result.partial).toBe(true);
+      expect(result.failures.length).toBeGreaterThan(0);
       expect(result.files).toHaveLength(1);
       expect(result.files[0]).toMatchObject({
         index: 1,
@@ -179,7 +182,7 @@ describe("AI verb implementations with mocked provider", () => {
       expect(call).toMatchObject({
         profile: {
           apiKey: "sk-profile-only",
-          apiKeySource: "profile.apiKey",
+          apiKeySource: "constructor",
         },
         params: { quality: "low", n: 2, model: "param-model" },
       });
@@ -199,7 +202,7 @@ describe("AI verb implementations with mocked provider", () => {
       // Per-image sidecar: files[] holds just this image's entry.
       expect(sidecar.files).toEqual([expect.objectContaining({ name: "gen-1.png" })]);
 
-      const logEntries = lines(await readFile(result.logPath, "utf-8"));
+      const logEntries = lines(await readFile(result.logPath!, "utf-8"));
       expect(logEntries).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ stage: "resolve" }),
@@ -214,43 +217,30 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("generate layers recipe file and overrides with a custom profile path", async () => {
+  it("generate layers call policy over instance policy over a loaded profile's policy and key", async () => {
     const profilePath = path.join(tmp, "custom-profile.json");
-    const recipePath = path.join(tmp, "recipe.json");
     await writeFile(
       profilePath,
       JSON.stringify({
-        formatVersion: 1,
+        formatVersion: 2,
         provider: "openai",
         apiKey: obfuscate("sk-custom-profile"),
+        policy: { generate: { size: "1024x1024", quality: "low", n: 1 }, edit: { size: "1536x1024" } },
       }) + "\n",
     );
     if (process.platform !== "win32") await chmod(profilePath, 0o600);
-    await writeFile(
-      recipePath,
-      JSON.stringify({
-        formatVersion: 1,
-        generate: {
-          size: "1024x1024",
-          quality: "low",
-          n: 1,
-        },
-        edit: { size: "1536x1024" },
-      }) + "\n",
-    );
     providerCalls.generate.mockResolvedValue({
       raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
       images: [{ data: png }],
     });
 
-    const result = await sdk.generate({
+    const layered = new GptImg({ profile: await loadProfile(profilePath), policy: { generate: { quality: "medium", n: 3 } } });
+    const result = done(await layered.generate({
       prompt: "layered",
-      profile: profilePath,
-      recipe: recipePath,
       outDir: path.join(tmp, "layered-out"),
       outName: "layered",
-      overrides: { generate: { quality: "high", n: 3 }, edit: { size: "1024x1536" } },
-    });
+      policy: { generate: { quality: "high" }, edit: { size: "1024x1536" } },
+    }));
 
     expect(path.basename(result.files[0]?.path ?? "")).toBe("layered-1.png");
     const call = providerCalls.generate.mock.calls[0]?.[0];
@@ -268,6 +258,23 @@ describe("AI verb implementations with mocked provider", () => {
     expect(call?.params).not.toHaveProperty("edit");
   });
 
+  it("a constructor key wins over a profile's, and a paid verb without any key fails apiKey.missing", async () => {
+    providerCalls.generate.mockResolvedValue({ raw: {}, images: [{ data: png }] });
+    const profilePath = path.join(tmp, "key-profile.json");
+    await writeFile(profilePath, JSON.stringify({ provider: "openai", apiKey: "sk-from-profile" }));
+    if (process.platform !== "win32") await chmod(profilePath, 0o600);
+    const both = new GptImg({ profile: await loadProfile(profilePath), apiKey: "sk-explicit" });
+    done(await both.generate({ prompt: "x", outDir: path.join(tmp, "explicit-out") }));
+    expect(providerCalls.generate.mock.calls[0]?.[0]).toMatchObject({ profile: { apiKey: "sk-explicit", apiKeySource: "constructor" } });
+
+    await expect(new GptImg().generate({ prompt: "x", outDir: path.join(tmp, "nokey-out") })).rejects.toMatchObject({
+      code: "apiKey.missing",
+      kind: "invalid",
+      effect: "none",
+    });
+    expect(providerCalls.generate).toHaveBeenCalledTimes(1);
+  });
+
   it("generate marks invalid image bytes as partial and preserves later indexes", async () => {
     providerCalls.generate.mockResolvedValue({
       raw: {
@@ -279,14 +286,14 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: new Uint8Array([1, 2, 3]) }, { data: png }],
     });
 
-    const result = await sdk.generate({
+    const result = done(await sdk.generate({
       prompt: "partial",
       outDir: path.join(tmp, "partial-out"),
       outName: "partial",
-      overrides: { generate: { n: 2 } },
-    });
+      policy: { generate: { n: 2 } },
+    }));
 
-    expect(result.partial).toBe(true);
+    expect(result.failures.length).toBeGreaterThan(0);
     expect(result.files).toHaveLength(1);
     expect(result.files[0]).toMatchObject({
       index: 2,
@@ -328,15 +335,15 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: png }],
     });
 
-    const result = await sdk.edit({
+    const result = done(await sdk.edit({
       prompt: "make it blue",
       in: input,
       mask,
       outDir: path.join(tmp, "edits"),
       outName: "edit",
-    });
+    }));
 
-    expect(result.partial).toBe(false);
+    expect(result.failures).toEqual([]);
     expect(result.files[0]?.path).toBe(path.join(tmp, "edits", "edit.png"));
     const call = providerCalls.edit.mock.calls[0]?.[0];
     expect(call).toMatchObject({
@@ -356,7 +363,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(sidecar.request.mask).toBe("mask.png");
     expect(sidecar.request.maskSha256).toBe(createHash("sha256").update(await readFile(mask)).digest("hex"));
     expect(sidecar.response.data[0]?.b64_json).toBeNull();
-    expect(lines(await readFile(result.logPath, "utf-8"))).toEqual(
+    expect(lines(await readFile(result.logPath!, "utf-8"))).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ stage: "resolve" }),
         expect.objectContaining({ stage: "request" }),
@@ -374,43 +381,34 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: png }],
     });
 
-    await sdk.edit({
+    done(await sdk.edit({
       prompt: "make it blue",
       in: input,
       outDir: path.join(tmp, "edits"),
       outName: "edit-without-mask",
-    });
+    }));
 
     const call = providerCalls.edit.mock.calls[0]?.[0];
     expect(call).toMatchObject({ imagePath: input });
     expect(call?.maskPath).toBeUndefined();
   });
 
-  it("edit uses edit-scoped recipe values without leaking generate settings", async () => {
+  it("edit uses edit-scoped policy values without leaking generate settings", async () => {
     const input = path.join(tmp, "recipe-edit-input.png");
-    const recipe = path.join(tmp, "edit-recipe.json");
     await copyFile(fixture("green-disk.png"), input);
-    await writeFile(
-      recipe,
-      JSON.stringify({
-        formatVersion: 1,
-        generate: { quality: "medium" },
-        edit: { size: "1024x1024", n: 1 },
-      }) + "\n",
-    );
+    const scoped = new GptImg({ apiKey: "sk-profile-only", policy: { generate: { quality: "medium" }, edit: { size: "1024x1024", n: 1 } } });
     providerCalls.edit.mockResolvedValue({
       raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
       images: [{ data: png }],
     });
 
-    await sdk.edit({
+    done(await scoped.edit({
       prompt: "recipe edit",
       in: input,
-      recipe,
       outDir: path.join(tmp, "recipe-edit-out"),
       outName: "recipe-edit",
-      overrides: { edit: { size: "1536x1024", n: 2 } },
-    });
+      policy: { edit: { size: "1536x1024", n: 2 } },
+    }));
 
     const call = providerCalls.edit.mock.calls[0]?.[0];
     expect(call?.params).toMatchObject({
@@ -426,28 +424,28 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: png }],
     });
     const outDir = path.join(tmp, "collision-out");
-    await sdk.generate({ prompt: "first", outDir, outName: "same" });
+    done(await sdk.generate({ prompt: "first", outDir, outName: "same" }));
 
     await expect(
       sdk.generate({ prompt: "second", outDir, outName: "same" }),
-    ).rejects.toMatchObject({ code: "output.exists" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.exists" } });
 
     await expect(
       sdk.generate({ prompt: "third", outDir, outName: "same", overwrite: true }),
-    ).resolves.toMatchObject({ partial: false });
+    ).resolves.toMatchObject({ failures: [] });
   });
 
   it("generate --overwrite refuses a group holding a newer-format sidecar before a provider charge", async () => {
     const outDir = path.join(tmp, "newer-out");
     await mkdir(outDir);
-    const newer = JSON.stringify({ formatVersion: 2, request: {}, files: [] });
+    const newer = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: [] });
     await writeFile(path.join(outDir, "same-1.png"), png);
     await writeFile(path.join(outDir, "same-1.json"), "{}");
     await writeFile(path.join(outDir, "same-2.png"), png);
     await writeFile(path.join(outDir, "same-2.json"), newer);
 
     await expect(
-      sdk.generate({ prompt: "again", outDir, outName: "same", overwrite: true, overrides: { generate: { n: 2 } } }),
+      sdk.generate({ prompt: "again", outDir, outName: "same", overwrite: true, policy: { generate: { n: 2 } } }),
     ).rejects.toMatchObject({ code: "sidecar.newerFormat" });
     expect(providerCalls.generate).not.toHaveBeenCalled();
     expect((await readdir(outDir)).sort()).toEqual(["same-1.json", "same-1.png", "same-2.json", "same-2.png"]);
@@ -461,8 +459,8 @@ describe("AI verb implementations with mocked provider", () => {
     await writeFile(path.join(outDir, "Photo.png"), png);
     await writeFile(path.join(outDir, "Photo.json"), "{}");
 
-    await expect(sdk.generate({ prompt: "again", outDir, outName: "photo", overwrite: true })).rejects.toMatchObject({
-      code: "output.caseConflict",
+    await expect(sdk.generate({ prompt: "again", outDir, outName: "photo", overwrite: true })).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.caseConflict" },
     });
     expect(providerCalls.generate).not.toHaveBeenCalled();
     expect((await readdir(outDir)).sort()).toEqual(["Photo.json", "Photo.png"]);
@@ -473,7 +471,7 @@ describe("AI verb implementations with mocked provider", () => {
     const outDir = path.join(tmp, "vision-newer-out");
     await copyFile(fixture("green-disk.png"), input);
     await mkdir(outDir);
-    const newer = JSON.stringify({ formatVersion: 2, request: {}, files: [] });
+    const newer = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: [] });
     await writeFile(path.join(outDir, "same.json"), newer);
 
     await expect(
@@ -506,11 +504,11 @@ describe("AI verb implementations with mocked provider", () => {
 
     await expect(
       sdk.generate({ prompt: "second contender", outDir, outName: "nested/../same" }),
-    ).rejects.toMatchObject({ code: "output.busy" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.busy" } });
     expect(providerCalls.generate).toHaveBeenCalledOnce();
 
     releaseFirst();
-    await expect(first).resolves.toMatchObject({ partial: false });
+    await expect(first).resolves.toMatchObject({ failures: [] });
     const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
     expect(sidecar.request.prompt).toBe("first contender");
   });
@@ -526,7 +524,7 @@ describe("AI verb implementations with mocked provider", () => {
 
     await expect(
       sdk.generate({ prompt: "must not be charged", outDir, outName: "same" }),
-    ).rejects.toMatchObject({ code: "output.exists" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.exists" } });
     expect(providerCalls.generate).not.toHaveBeenCalled();
   });
 
@@ -556,11 +554,11 @@ describe("AI verb implementations with mocked provider", () => {
 
     await expect(
       sdk.generate({ prompt: "alias path", outDir: aliasDir, outName: "same", overwrite: true }),
-    ).rejects.toMatchObject({ code: "output.busy" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.busy" } });
     expect(providerCalls.generate).toHaveBeenCalledOnce();
 
     releaseFirst();
-    await expect(first).resolves.toMatchObject({ partial: false });
+    await expect(first).resolves.toMatchObject({ failures: [] });
     const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
     expect(sidecar.request.prompt).toBe("real path");
   });
@@ -585,21 +583,21 @@ describe("AI verb implementations with mocked provider", () => {
     });
     providerCalls.generate.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
     const outDir = path.join(tmp, "slot-overlap-out");
-    const first = sdk.generate({ prompt: "two images", outDir, outName: "foo", overrides: { generate: { n: 2 } } });
+    const first = sdk.generate({ prompt: "two images", outDir, outName: "foo", policy: { generate: { n: 2 } } });
     await firstAtProvider;
 
-    await expect(sdk.generate({ prompt: "overlapping slot", outDir, outName: "foo-1" })).rejects.toMatchObject({
-      code: "output.busy",
+    await expect(sdk.generate({ prompt: "overlapping slot", outDir, outName: "foo-1" })).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.busy" },
     });
-    await expect(sdk.vision({ in: fixture("green-disk.png"), check: "overlapping", outDir, outName: "FOO" })).rejects.toMatchObject({
-      code: "output.busy",
+    await expect(sdk.vision({ in: fixture("green-disk.png"), check: "overlapping", outDir, outName: "FOO" })).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.busy" },
     });
     expect(providerCalls.vision).not.toHaveBeenCalled();
-    await expect(sdk.generate({ prompt: "disjoint", outDir, outName: "bar" })).resolves.toMatchObject({ partial: false });
+    await expect(sdk.generate({ prompt: "disjoint", outDir, outName: "bar" })).resolves.toMatchObject({ failures: [] });
     expect(providerCalls.generate).toHaveBeenCalledTimes(2);
 
     releaseFirst();
-    await expect(first).resolves.toMatchObject({ partial: false });
+    await expect(first).resolves.toMatchObject({ failures: [] });
     expect((await readdir(outDir)).sort()).toEqual(["bar.json", "bar.png", "foo-1.json", "foo-1.png", "foo-2.json", "foo-2.png"]);
   });
 
@@ -616,8 +614,8 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: png }, { data: jpeg }],
     });
     await expect(
-      sdk.generate({ prompt: "mixed formats", outDir, outName: "same", overrides: { generate: { n: 2 } } }),
-    ).rejects.toMatchObject({ code: "output.mixedExtensions" });
+      sdk.generate({ prompt: "mixed formats", outDir, outName: "same", policy: { generate: { n: 2 } } }),
+    ).rejects.toMatchObject({ code: "provider.invalidResponse", effect: "unknown" });
 
     const ctrl = new AbortController();
     providerCalls.generate.mockImplementationOnce(
@@ -630,7 +628,7 @@ describe("AI verb implementations with mocked provider", () => {
     await expect(sdk.generate({ prompt: "cancelled", outDir, outName: "same" }, { signal: ctrl.signal })).rejects.toThrow();
 
     providerCalls.generate.mockResolvedValueOnce(one);
-    await expect(sdk.generate({ prompt: "after", outDir, outName: "same" })).resolves.toMatchObject({ partial: false });
+    await expect(sdk.generate({ prompt: "after", outDir, outName: "same" })).resolves.toMatchObject({ failures: [] });
     expect(providerCalls.generate).toHaveBeenCalledTimes(4);
   });
 
@@ -647,12 +645,12 @@ describe("AI verb implementations with mocked provider", () => {
     });
     const outDir = path.join(tmp, "stale-out");
 
-    await sdk.generate({
+    done(await sdk.generate({
       prompt: "wider run",
       outDir,
       outName: "same",
-      overrides: { generate: { n: 3 } },
-    });
+      policy: { generate: { n: 3 } },
+    }));
     expect(existsSync(path.join(outDir, "same-1.png"))).toBe(true);
     expect(existsSync(path.join(outDir, "same-2.png"))).toBe(true);
     expect(existsSync(path.join(outDir, "same-3.png"))).toBe(true);
@@ -669,10 +667,9 @@ describe("AI verb implementations with mocked provider", () => {
         outName: "same",
         overwrite: true,
       }),
-    ).rejects.toMatchObject({
-      code: "output.staleSiblings",
-      errorType: "localOp",
-    });
+    ).resolves.toMatchObject({
+      status: "refused", refusal: { code: "output.staleSiblings" },
+      });
 
     expect(existsSync(path.join(outDir, "same-1.png"))).toBe(true);
     expect(existsSync(path.join(outDir, "same-2.png"))).toBe(true);
@@ -691,22 +688,22 @@ describe("AI verb implementations with mocked provider", () => {
     });
     const outDir = path.join(tmp, "matching-overwrite");
 
-    await sdk.generate({
+    done(await sdk.generate({
       prompt: "first",
       outDir,
       outName: "same",
-      overrides: { generate: { n: 2 } },
-    });
+      policy: { generate: { n: 2 } },
+    }));
 
     await expect(
       sdk.generate({
         prompt: "second",
         outDir,
         outName: "same",
-        overrides: { generate: { n: 2 } },
+        policy: { generate: { n: 2 } },
         overwrite: true,
       }),
-    ).resolves.toMatchObject({ partial: false });
+    ).resolves.toMatchObject({ failures: [] });
   });
 
   it("generate --overwrite replaces an old image format without leaving its sibling", async () => {
@@ -716,19 +713,19 @@ describe("AI verb implementations with mocked provider", () => {
       raw: { data: [{ b64_json: Buffer.from(jpg).toString("base64") }] },
       images: [{ data: jpg }],
     });
-    await sdk.generate({ prompt: "jpeg first", outDir, outName: "same" });
+    done(await sdk.generate({ prompt: "jpeg first", outDir, outName: "same" }));
     expect(existsSync(path.join(outDir, "same.jpg"))).toBe(true);
 
     providerCalls.generate.mockResolvedValue({
       raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
       images: [{ data: png }],
     });
-    const result = await sdk.generate({
+    const result = done(await sdk.generate({
       prompt: "png replacement",
       outDir,
       outName: "same",
       overwrite: true,
-    });
+    }));
 
     expect(result.files[0]?.path).toBe(path.join(outDir, "same.png"));
     expect(existsSync(path.join(outDir, "same.png"))).toBe(true);
@@ -752,12 +749,12 @@ describe("AI verb implementations with mocked provider", () => {
     for (const short of shortResponses) {
       await rm(outDir, { recursive: true, force: true });
       providerCalls.generate.mockResolvedValue(two);
-      await sdk.generate({ prompt: "first", outDir, outName: "same", overrides: n2 });
+      done(await sdk.generate({ prompt: "first", outDir, outName: "same", policy: n2 }));
 
       providerCalls.generate.mockResolvedValue(short);
-      const result = await sdk.generate({ prompt: "second", outDir, outName: "same", overrides: n2, overwrite: true });
+      const result = done(await sdk.generate({ prompt: "second", outDir, outName: "same", policy: n2, overwrite: true }));
 
-      expect(result.partial).toBe(short.images.length === 2);
+      expect(result.failures.length > 0).toBe(short.images.length === 2);
       expect(result.files.map((file) => file.path)).toEqual([path.join(outDir, "same-1.png")]);
       expect((await readdir(outDir)).sort()).toEqual(["same-1.json", "same-1.png"]);
       const sidecar = JSON.parse(await readFile(path.join(outDir, "same-1.json"), "utf-8"));
@@ -768,12 +765,12 @@ describe("AI verb implementations with mocked provider", () => {
   it("generate --overwrite returns partial and keeps the earlier files when every item fails", async () => {
     const outDir = path.join(tmp, "all-failed-overwrite");
     providerCalls.generate.mockResolvedValue({ raw: { data: [{}] }, images: [{ data: png }] });
-    await sdk.generate({ prompt: "first", outDir, outName: "same" });
+    done(await sdk.generate({ prompt: "first", outDir, outName: "same" }));
 
     providerCalls.generate.mockResolvedValue({ raw: { data: [{}] }, images: [{ data: null, error: "no image" }] });
-    const result = await sdk.generate({ prompt: "second", outDir, outName: "same", overwrite: true });
+    const result = done(await sdk.generate({ prompt: "second", outDir, outName: "same", overwrite: true }));
 
-    expect(result).toMatchObject({ partial: true, files: [] });
+    expect(result).toMatchObject({ failures: [{ index: 1, code: "provider.noImage", effect: "unknown", message: "no image" }], files: [] });
     expect((await readdir(outDir)).sort()).toEqual(["same.json", "same.png"]);
     const sidecar = JSON.parse(await readFile(path.join(outDir, "same.json"), "utf-8"));
     expect(sidecar.request.prompt).toBe("first");
@@ -784,19 +781,19 @@ describe("AI verb implementations with mocked provider", () => {
     const outDir = path.join(tmp, "partial-edit-overwrite");
     await copyFile(fixture("green-disk.png"), input);
     providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }, { data: png }] });
-    await sdk.edit({ prompt: "first", in: input, outDir, outName: "same", overrides: { edit: { n: 2 } } });
+    done(await sdk.edit({ prompt: "first", in: input, outDir, outName: "same", policy: { edit: { n: 2 } } }));
 
     providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }, { data: null, error: "no image" }] });
-    const result = await sdk.edit({
+    const result = done(await sdk.edit({
       prompt: "second",
       in: input,
       outDir,
       outName: "same",
-      overrides: { edit: { n: 2 } },
+      policy: { edit: { n: 2 } },
       overwrite: true,
-    });
+    }));
 
-    expect(result.partial).toBe(true);
+    expect(result.failures.length).toBeGreaterThan(0);
     expect((await readdir(outDir)).sort()).toEqual(["same-1.json", "same-1.png"]);
   });
 
@@ -806,7 +803,7 @@ describe("AI verb implementations with mocked provider", () => {
     const results = await Promise.all(
       Array.from({ length: 8 }, (_, i) => sdk.generate({ prompt: `prompt ${i}`, outDir })),
     );
-    const stems = new Set(results.map((result) => path.basename(result.files[0]!.path, ".png")));
+    const stems = new Set(results.map((result) => path.basename(done(result).files[0]!.path, ".png")));
     expect(stems.size).toBe(8);
     expect((await readdir(outDir)).filter((name) => name.endsWith(".png"))).toHaveLength(8);
   });
@@ -817,7 +814,7 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: png }],
     });
     const outDir = path.join(tmp, "sidecar-collision-out");
-    await sdk.generate({ prompt: "first", outDir, outName: "same" });
+    done(await sdk.generate({ prompt: "first", outDir, outName: "same" }));
 
     providerCalls.generate.mockResolvedValue({
       raw: {
@@ -834,9 +831,9 @@ describe("AI verb implementations with mocked provider", () => {
         prompt: "second",
         outDir,
         outName: "same",
-        overrides: { generate: { n: 2 } },
+        policy: { generate: { n: 2 } },
       }),
-    ).rejects.toMatchObject({ code: "output.exists" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.exists" } });
     expect(existsSync(path.join(outDir, "same-1.png"))).toBe(false);
     expect(existsSync(path.join(outDir, "same-2.png"))).toBe(false);
   });
@@ -852,12 +849,12 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: png }, { data: png }],
     });
 
-    const result = await sdk.generate({
+    const result = done(await sdk.generate({
       prompt: "two images",
       outDir: path.join(tmp, "output"),
       outName: "two",
-      overrides: { generate: { n: 2 } },
-    });
+      policy: { generate: { n: 2 } },
+    }));
 
     expect(result.files.map((f) => path.relative(tmp, f.path))).toEqual([
       path.join("output", "two-1.png"),
@@ -883,13 +880,13 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: png }, { data: png }],
     });
 
-    const result = await sdk.edit({
+    const result = done(await sdk.edit({
       prompt: "make two",
       in: input,
       outDir: path.join(tmp, "edit-two"),
       outName: "edited",
-      overrides: { edit: { n: 2 } },
-    });
+      policy: { edit: { n: 2 } },
+    }));
 
     expect(result.files.map((f) => path.basename(f.path))).toEqual([
       "edited-1.png",
@@ -905,7 +902,7 @@ describe("AI verb implementations with mocked provider", () => {
       raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
       images: [{ data: png }],
     });
-    await sdk.edit({ prompt: "first", in: input, outDir, outName: "same" });
+    done(await sdk.edit({ prompt: "first", in: input, outDir, outName: "same" }));
 
     providerCalls.edit.mockResolvedValue({
       raw: {
@@ -923,9 +920,9 @@ describe("AI verb implementations with mocked provider", () => {
         in: input,
         outDir,
         outName: "same",
-        overrides: { edit: { n: 2 } },
+        policy: { edit: { n: 2 } },
       }),
-    ).rejects.toMatchObject({ code: "output.exists" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.exists" } });
     expect(existsSync(path.join(outDir, "same-1.png"))).toBe(false);
     expect(existsSync(path.join(outDir, "same-2.png"))).toBe(false);
   });
@@ -936,16 +933,16 @@ describe("AI verb implementations with mocked provider", () => {
     const jpg = new Uint8Array(await sharp(png).jpeg().toBuffer());
     await copyFile(fixture("green-disk.png"), input);
     providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: jpg }] });
-    await sdk.edit({ prompt: "jpeg first", in: input, outDir, outName: "same" });
+    done(await sdk.edit({ prompt: "jpeg first", in: input, outDir, outName: "same" }));
 
     providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }] });
-    await sdk.edit({
+    done(await sdk.edit({
       prompt: "png replacement",
       in: input,
       outDir,
       outName: "same",
       overwrite: true,
-    });
+    }));
 
     expect(existsSync(path.join(outDir, "same.png"))).toBe(true);
     expect(existsSync(path.join(outDir, "same.jpg"))).toBe(false);
@@ -964,15 +961,15 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: new Uint8Array([9, 8, 7]) }, { data: png }],
     });
 
-    const result = await sdk.edit({
+    const result = done(await sdk.edit({
       prompt: "partial edit",
       in: input,
       outDir: path.join(tmp, "edit-partial"),
       outName: "edited",
-      overrides: { edit: { n: 2 } },
-    });
+      policy: { edit: { n: 2 } },
+    }));
 
-    expect(result.partial).toBe(true);
+    expect(result.failures.length).toBeGreaterThan(0);
     expect(result.files).toHaveLength(1);
     expect(result.files[0]).toMatchObject({
       index: 2,
@@ -990,13 +987,13 @@ describe("AI verb implementations with mocked provider", () => {
       verdict: { ok: true, score: 0.9, reasons: ["looks correct"] },
     });
 
-    const result = await sdk.vision({
+    const result = done(await sdk.vision({
       in: [first, second],
       check: "both are green disks",
       outDir: path.join(tmp, "vision-out"),
       outName: "vision",
-      overrides: { vision: { shrink: { width: 64, height: 64 }, model: "gpt-6-luna", detail: "high" } },
-    });
+      policy: { vision: { shrink: { width: 64, height: 64 }, model: "gpt-6-luna", detail: "high" } },
+    }));
 
     expect(result).toMatchObject({
       ok: true,
@@ -1045,12 +1042,12 @@ describe("AI verb implementations with mocked provider", () => {
       verdict: { ok: false, score: 0.2, reasons: ["not enough"] },
     });
 
-    const result = await sdk.vision({
+    const result = done(await sdk.vision({
       in: input,
       check: "is this transparent?",
       outDir: path.join(tmp, "vision-single"),
       outName: "single",
-    });
+    }));
 
     expect(result.ok).toBe(false);
     expect(providerCalls.vision.mock.calls[0]?.[0].images).toHaveLength(1);
@@ -1076,7 +1073,7 @@ describe("AI verb implementations with mocked provider", () => {
 
     await expect(
       sdk.vision({ in: input, check: "must not be charged", outDir, outName: "same" }),
-    ).rejects.toMatchObject({ code: "output.exists" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.exists" } });
     expect(providerCalls.vision).not.toHaveBeenCalled();
   });
 
@@ -1113,10 +1110,10 @@ describe("AI verb implementations with mocked provider", () => {
 
     await expect(
       sdk.vision({ in: input, check: "direct contender", outDir, outName: "same", overwrite: true }),
-    ).rejects.toMatchObject({ code: "output.busy" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.busy" } });
     await expect(
       sdk.vision({ in: input, check: "alias contender", outDir: aliasDir, outName: "same", overwrite: true }),
-    ).rejects.toMatchObject({ code: "output.busy" });
+    ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.busy" } });
     expect(providerCalls.vision).toHaveBeenCalledOnce();
 
     releaseFirst();
@@ -1125,26 +1122,21 @@ describe("AI verb implementations with mocked provider", () => {
     expect(sidecar.request.check).toBe("first contender");
   });
 
-  it("vision applies custom shrink settings from a recipe file", async () => {
+  it("vision applies custom shrink settings from instance policy", async () => {
     const input = path.join(tmp, "recipe-vision.png");
-    const recipe = path.join(tmp, "vision-recipe.json");
     await copyFile(fixture("green-disk.png"), input);
-    await writeFile(
-      recipe,
-      JSON.stringify({ formatVersion: 1, vision: { shrink: { width: 32, height: 32 } } }) + "\n",
-    );
+    const shrinking = new GptImg({ apiKey: "sk-profile-only", policy: { vision: { shrink: { width: 32, height: 32 } } } });
     providerCalls.vision.mockResolvedValue({
       raw: {},
       verdict: { ok: true, score: 1, reasons: [] },
     });
 
-    const result = await sdk.vision({
+    const result = done(await shrinking.vision({
       in: input,
       check: "small enough",
-      recipe,
       outDir: path.join(tmp, "recipe-vision-out"),
       outName: "recipe-vision",
-    });
+    }));
 
     const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as {
       request: { inputs: Array<{ shrink: { applied: boolean; outputWidth: number } }> };
@@ -1169,12 +1161,12 @@ describe("AI verb implementations with mocked provider", () => {
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 0.9, reasons: ["green"] } });
 
     const outDir = path.join(tmp, "records");
-    const generated = await sdk.generate({
+    const generated = done(await sdk.generate({
       prompt: "a disk",
       outDir,
       outName: "gen",
-      overrides: { generate: { output_format: "webp" } },
-    });
+      policy: { generate: { output_format: "webp" } },
+    }));
     const [file] = generated.files;
     expect(file?.path).toBe(path.join(outDir, "gen.webp"));
     expect(file?.format).toBe("webp");
@@ -1191,17 +1183,17 @@ describe("AI verb implementations with mocked provider", () => {
     expect(sidecar.response.data[0]?.b64_json).toBeNull();
     expect(sidecar.response.usage).toEqual({ input_tokens: 9, output_tokens: 196, total_tokens: 205 });
     expect(sidecar.response.output_format).toBe("webp");
-    const requestLine = lines(await readFile(generated.logPath, "utf-8")).find((line) => line.stage === "request");
+    const requestLine = lines(await readFile(generated.logPath!, "utf-8")).find((line) => line.stage === "request");
     expect(JSON.stringify(requestLine)).toContain('"model":"gpt-image-2.5-flare"');
 
     const input = path.join(tmp, "edit-input.png");
     await copyFile(fixture("green-disk.png"), input);
-    const edited = await sdk.edit({ in: input, prompt: "make it blue", outDir, outName: "edited" });
+    const edited = done(await sdk.edit({ in: input, prompt: "make it blue", outDir, outName: "edited" }));
     const editSidecar = JSON.parse(await readFile(edited.files[0]!.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
     expect(editSidecar.request.model).toBe("gpt-image-2.5-sunburst");
     expect(providerCalls.edit.mock.calls[0]?.[0].params.model).toBe("gpt-image-2.5-sunburst");
 
-    const judged = await sdk.vision({ in: input, check: "is it green?", outDir, outName: "judged" });
+    const judged = done(await sdk.vision({ in: input, check: "is it green?", outDir, outName: "judged" }));
     const visionSidecar = JSON.parse(await readFile(judged.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
     expect(visionSidecar.request.model).toBe("gpt-6-luna");
     expect(providerCalls.vision.mock.calls[0]?.[0].params.model).toBe("gpt-6-luna");
@@ -1213,7 +1205,7 @@ describe("AI verb implementations with mocked provider", () => {
     for (const model of [undefined, "gpt-image-2.5-sunburst", "gpt-image-2"]) {
       providerCalls.generate.mockClear();
       const outName = `gen-${model ?? "default"}`;
-      const result = await sdk.generate({ prompt: "a disk", outDir, outName, overrides: { generate: { model } } });
+      const result = done(await sdk.generate({ prompt: "a disk", outDir, outName, policy: { generate: { model } } }));
       expect(providerCalls.generate.mock.calls[0]?.[0].params.moderation, outName).toBe("low");
       const sidecar = JSON.parse(await readFile(result.files[0]!.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
       expect(sidecar.request.moderation, outName).toBe("low");
@@ -1227,7 +1219,7 @@ describe("AI verb implementations with mocked provider", () => {
       providerCalls.generate.mockClear();
       const chosen = { model, quality: "xhigh", style: "vivid" };
       const outName = `gen-${model.replaceAll(/\W/g, "-")}`;
-      const result = await sdk.generate({ prompt: "a disk", outDir, outName, overrides: { generate: chosen } });
+      const result = done(await sdk.generate({ prompt: "a disk", outDir, outName, policy: { generate: chosen } }));
       expect(providerCalls.generate.mock.calls[0]?.[0].params, outName).toEqual(chosen);
       const sidecar = JSON.parse(await readFile(result.files[0]!.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
       expect(sidecar.request, outName).not.toHaveProperty("moderation");
@@ -1242,7 +1234,7 @@ describe("AI verb implementations with mocked provider", () => {
     for (const model of [undefined, "some-future-image-model"]) {
       providerCalls.edit.mockClear();
       const outName = `edit-${model ?? "default"}`;
-      await sdk.edit({ in: input, prompt: "make it blue", outDir, outName, overrides: { edit: { model } } });
+      done(await sdk.edit({ in: input, prompt: "make it blue", outDir, outName, policy: { edit: { model } } }));
       expect(providerCalls.edit.mock.calls[0]?.[0].params, outName).not.toHaveProperty("moderation");
     }
   });
@@ -1252,9 +1244,9 @@ describe("AI verb implementations with mocked provider", () => {
       sdk.generate({
         prompt: "a disk",
         outDir: path.join(tmp, "moderation-refused"),
-        overrides: { generate: { moderation: "auto" } as never },
+        policy: { generate: { moderation: "auto" } as never },
       }),
-    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("moderation") });
+    ).rejects.toMatchObject({ code: "policy.invalid", message: expect.stringContaining("moderation") });
     const input = path.join(tmp, "moderation-refused.png");
     await copyFile(fixture("green-disk.png"), input);
     await expect(
@@ -1262,9 +1254,9 @@ describe("AI verb implementations with mocked provider", () => {
         in: input,
         prompt: "make it blue",
         outDir: path.join(tmp, "moderation-refused"),
-        overrides: { edit: { moderation: "low" } as never },
+        policy: { edit: { moderation: "low" } as never },
       }),
-    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringMatching(/^edit section invalid: .*moderation/) });
+    ).rejects.toMatchObject({ code: "policy.invalid", message: expect.stringMatching(/^edit policy invalid: .*moderation/) });
     expect(providerCalls.generate).not.toHaveBeenCalled();
     expect(providerCalls.edit).not.toHaveBeenCalled();
   });
@@ -1272,8 +1264,8 @@ describe("AI verb implementations with mocked provider", () => {
   it("generate and edit refuse a value the chosen model does not take, before any provider call", async () => {
     const outDir = path.join(tmp, "refused");
     await expect(
-      sdk.generate({ prompt: "a disk", outDir, overrides: { generate: { model: "gpt-image-2", quality: "xhigh" } } }),
-    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("gpt-image-2 takes quality") });
+      sdk.generate({ prompt: "a disk", outDir, policy: { generate: { model: "gpt-image-2", quality: "xhigh" } } }),
+    ).rejects.toMatchObject({ code: "policy.invalid", message: expect.stringContaining("gpt-image-2 takes quality") });
     const input = path.join(tmp, "refused-input.png");
     await copyFile(fixture("green-disk.png"), input);
     await expect(
@@ -1281,9 +1273,9 @@ describe("AI verb implementations with mocked provider", () => {
         in: input,
         prompt: "make it blue",
         outDir,
-        overrides: { edit: { background: "transparent", output_format: "jpeg" } },
+        policy: { edit: { background: "transparent", output_format: "jpeg" } },
       }),
-    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("transparent background") });
+    ).rejects.toMatchObject({ code: "policy.invalid", message: expect.stringContaining("transparent background") });
     expect(providerCalls.generate).not.toHaveBeenCalled();
     expect(providerCalls.edit).not.toHaveBeenCalled();
   });
@@ -1291,7 +1283,7 @@ describe("AI verb implementations with mocked provider", () => {
   it("generate sends a supported model's chosen values as chosen, auto included", async () => {
     providerCalls.generate.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
     const chosen = { quality: "auto", background: "opaque", output_format: "jpeg", output_compression: 100, size: "auto" };
-    await sdk.generate({ prompt: "a disk", outDir: path.join(tmp, "chosen"), overrides: { generate: chosen } });
+    done(await sdk.generate({ prompt: "a disk", outDir: path.join(tmp, "chosen"), policy: { generate: chosen } }));
     expect(providerCalls.generate.mock.calls[0]?.[0].params).toEqual({
       ...chosen,
       model: "gpt-image-2.5-flare",
@@ -1314,7 +1306,7 @@ describe("AI verb implementations with mocked provider", () => {
     for (const [model, reasoning] of expected) {
       providerCalls.vision.mockClear();
       const outName = `effort-${model ?? "default"}`;
-      const result = await sdk.vision({ in: input, check: "green?", outDir, outName, overrides: { vision: { model } } });
+      const result = done(await sdk.vision({ in: input, check: "green?", outDir, outName, policy: { vision: { model } } }));
       const call = providerCalls.vision.mock.calls[0]?.[0];
       expect(call?.params.reasoning, outName).toBe(reasoning);
       expect(call?.images[0]?.detail, outName).toBe("auto");
@@ -1332,7 +1324,7 @@ describe("AI verb implementations with mocked provider", () => {
     for (const model of ["some-future-chat-model", "gpt-5.6-luna"]) {
       providerCalls.vision.mockClear();
       const outName = `unlisted-${model}`;
-      const result = await sdk.vision({ in: input, check: "green?", outDir, outName, overrides: { vision: { model } } });
+      const result = done(await sdk.vision({ in: input, check: "green?", outDir, outName, policy: { vision: { model } } }));
       const call = providerCalls.vision.mock.calls[0]?.[0];
       expect(call?.params, outName).toEqual({ model });
       expect(call?.images[0], outName).not.toHaveProperty("detail");
@@ -1350,13 +1342,13 @@ describe("AI verb implementations with mocked provider", () => {
     for (const model of ["some-future-chat-model", "gpt-5.6-luna"]) {
       providerCalls.vision.mockClear();
       const outName = `chosen-${model}`;
-      const result = await sdk.vision({
+      const result = done(await sdk.vision({
         in: input,
         check: "green?",
         outDir,
         outName,
-        overrides: { vision: { model, reasoning: "anything", detail: "low" } },
-      });
+        policy: { vision: { model, reasoning: "anything", detail: "low" } },
+      }));
       const call = providerCalls.vision.mock.calls[0]?.[0];
       expect(call?.params, outName).toEqual({ model, reasoning: "anything" });
       expect(call?.images[0]?.detail, outName).toBe("low");
@@ -1371,12 +1363,12 @@ describe("AI verb implementations with mocked provider", () => {
     const input = path.join(tmp, "chosen-effort.png");
     await copyFile(fixture("green-disk.png"), input);
     const outDir = path.join(tmp, "chosen-effort");
-    await sdk.vision({ in: input, check: "green?", outDir, outName: "high", overrides: { vision: { reasoning: "high" } } });
+    done(await sdk.vision({ in: input, check: "green?", outDir, outName: "high", policy: { vision: { reasoning: "high" } } }));
     expect(providerCalls.vision.mock.calls[0]?.[0].params).toMatchObject({ model: "gpt-6-luna", reasoning: "high" });
     providerCalls.vision.mockClear();
     await expect(
-      sdk.vision({ in: input, check: "green?", outDir, outName: "none", overrides: { vision: { model: "gpt-6-astra", reasoning: "none" } } }),
-    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("gpt-6-astra takes reasoning") });
+      sdk.vision({ in: input, check: "green?", outDir, outName: "none", policy: { vision: { model: "gpt-6-astra", reasoning: "none" } } }),
+    ).rejects.toMatchObject({ code: "policy.invalid", message: expect.stringContaining("gpt-6-astra takes reasoning") });
     expect(providerCalls.vision).not.toHaveBeenCalled();
   });
   it("vision refuses a recipe that sets reasoning_effort, which the chosen effort would overwrite", async () => {
@@ -1389,9 +1381,9 @@ describe("AI verb implementations with mocked provider", () => {
         in: input,
         check: "green?",
         outDir: path.join(tmp, "wire-effort"),
-        overrides: { vision: { reasoning_effort: "high" } as never },
+        policy: { vision: { reasoning_effort: "high" } as never },
       }),
-    ).rejects.toMatchObject({ code: "recipe.validationFailed", message: expect.stringContaining("reasoning_effort") });
+    ).rejects.toMatchObject({ code: "policy.invalid", message: expect.stringContaining("reasoning_effort") });
     expect(providerCalls.vision).not.toHaveBeenCalled();
   });
 });

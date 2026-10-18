@@ -23,25 +23,26 @@ describe("OpenAI client helpers", () => {
     expect(client.maxRetries).toBe(0);
   });
 
-  it("records the identity headers the client sends, the SDK's environment defaults included", () => {
+  it("records the identity headers the client sends and ignores every ambient OpenAI variable", () => {
     vi.stubEnv("OPENAI_ORG_ID", "org-env");
     vi.stubEnv("OPENAI_PROJECT_ID", "proj-env");
+    vi.stubEnv("OPENAI_BASE_URL", "https://ambient.invalid/v1");
+    vi.stubEnv("OPENAI_ADMIN_KEY", "sk-admin-ambient");
+    vi.stubEnv("OPENAI_API_KEY", "sk-ambient");
     try {
-      const fromEnv = buildOpenAIClient({ apiKey: "sk-local", apiKeySource: "profile.apiKey", redacted: { provider: "openai" } });
-      expect(clientHeaders(fromEnv)).toEqual({
-        Authorization: "Bearer sk-local",
-        "OpenAI-Organization": "org-env",
-        "OpenAI-Project": "proj-env",
-      });
-      const fromProfile = buildOpenAIClient({
+      const bare = buildOpenAIClient({ apiKey: "sk-local", apiKeySource: "constructor", redacted: { provider: "openai" } });
+      expect(clientHeaders(bare)).toEqual({ Authorization: "Bearer sk-local" });
+      expect(bare.baseURL).toBe("https://api.openai.com/v1");
+      expect(bare.adminAPIKey ?? null).toBeNull();
+      const given = buildOpenAIClient({
         apiKey: "sk-local",
         apiKeySource: "profile.apiKey",
-        redacted: { provider: "openai", organization: "org-local" },
+        redacted: { provider: "openai", organization: "org-local", project: "proj-local" },
       });
-      expect(clientHeaders(fromProfile)).toEqual({
+      expect(clientHeaders(given)).toEqual({
         Authorization: "Bearer sk-local",
         "OpenAI-Organization": "org-local",
-        "OpenAI-Project": "proj-env",
+        "OpenAI-Project": "proj-local",
       });
     } finally {
       vi.unstubAllEnvs();

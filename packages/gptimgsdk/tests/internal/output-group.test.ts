@@ -10,7 +10,6 @@ import {
   plannedSidecarPaths,
   refuseCaseOnlyRename,
   reserveOutputGroup,
-  settleOutputPublications,
   sidecarPathFor,
   siblingsOnDisk,
 } from "../../src/internal/output-group.ts";
@@ -191,7 +190,7 @@ describe("OutputGroup", () => {
     const planned = path.join(tmp, "caf\u00e9.png");
     // The directory snapshot can precede another writer removing the entry.
     expect(() => refuseCaseOnlyRename(existing, planned, [path.basename(existing)])).toThrow(
-      expect.objectContaining({ code: "output.scanFailed", cause: expect.objectContaining({ code: "ENOENT" }) }),
+      expect.objectContaining({ code: "fs.notFound", cause: expect.objectContaining({ code: "ENOENT" }) }),
     );
   });
 
@@ -256,33 +255,6 @@ describe("OutputGroup", () => {
     const reservation = await reserveOutputGroup(createOutputGroup(tmp, "quiet", "json"));
     expect(await readdir(tmp)).toEqual([]);
     reservation.release();
-  });
-
-  it("waits for every publisher and reports failures in plan order", async () => {
-    let releaseSecond!: () => void;
-    const secondHeld = new Promise<void>((resolve) => {
-      releaseSecond = resolve;
-    });
-    let settled = false;
-    const publication = settleOutputPublications([
-      async () => {
-        throw new Error("first failed");
-      },
-      async () => {
-        await secondHeld;
-        throw new Error("second failed");
-      },
-    ]).finally(() => {
-      settled = true;
-    });
-
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(settled).toBe(false);
-    releaseSecond();
-    await expect(publication).rejects.toMatchObject({
-      code: "output.publicationFailed",
-      message: expect.stringMatching(/item 1: first failed; item 2: second failed/),
-    });
   });
 
   describe("assertOutputGroupAvailable", () => {

@@ -13,12 +13,11 @@
  */
 
 import sharp from "sharp";
-import { AbortError, LocalOpError, throwIfAborted } from "../errors.ts";
+import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { fitLongerSide } from "../image/aspect.ts";
 import { loadRawRGBA, readImageSize, resizeSingleChannel, writeRGBA } from "../image/bridge.ts";
 import type { Logger } from "../log/index.ts";
-import type { NetworkBudget } from "../network/defaults.ts";
-import type { EncodingArgs, ResampleKernel } from "../types.ts";
+import type { EncodingArgs, OnnxPolicy, ResampleKernel } from "../types.ts";
 import {
   runSwin2srX4,
   SWIN2SR_DEFAULT_TILE,
@@ -47,7 +46,7 @@ export function assertUpscaleSourceSize(width: number, height: number): void {
   const modelPixels = width * SWIN2SR_SCALE * height * SWIN2SR_SCALE;
   if (modelPixels > SHARP_MAX_INPUT_PIXELS) {
     const maxSourcePixels = Math.floor(SHARP_MAX_INPUT_PIXELS / (SWIN2SR_SCALE * SWIN2SR_SCALE));
-    throw new LocalOpError(
+    throw new GptImgError(
       "image.tooLarge",
       `upscale: a ${width}×${height} source is too large; its ×4 result would be ` +
         `${width * SWIN2SR_SCALE}×${height * SWIN2SR_SCALE}. upscale takes sources up to ` +
@@ -107,10 +106,10 @@ function splitRGBA(
 
 export async function runUpscale(
   args: UpscaleRunArgs,
-  cacheDir: string,
+  modelsDir: string,
   opts: {
     signal?: AbortSignal | undefined;
-    budget?: NetworkBudget;
+    onnx?: OnnxPolicy | undefined;
     logger?: Logger;
     /** Override the ×4 model (tests inject a deterministic upscaler). */
     upscaler?: RgbUpscaler;
@@ -134,10 +133,10 @@ export async function runUpscale(
   const upscaler: RgbUpscaler =
     opts.upscaler ??
     ((r, w, h) =>
-      runSwin2srX4(r, w, h, cacheDir, {
+      runSwin2srX4(r, w, h, modelsDir, {
         tile,
         signal,
-        budget: opts.budget,
+        onnx: opts.onnx,
         logger: opts.logger,
       }));
 
@@ -175,12 +174,7 @@ export async function runUpscale(
     throwIfAborted(signal);
     await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite, source: args.in }, args);
   } catch (err) {
-    if (err instanceof LocalOpError || err instanceof AbortError) throw err;
-    throw new LocalOpError(
-      "image.writeFailed",
-      `upscale: failed to resample/write ${args.out}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw processingError(err, "upscale: failed to resample or write", args.out);
   }
 
   return {

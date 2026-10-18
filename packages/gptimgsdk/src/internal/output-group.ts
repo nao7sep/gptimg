@@ -1,7 +1,8 @@
 import { lstatSync, readdirSync } from "node:fs";
 import { realpath, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { LocalOpError } from "../errors.ts";
+import { GptImgError, fsError } from "../errors.ts";
+import { refuse } from "../refusal.ts";
 import { SUPPORTED_IMAGE_EXTENSIONS } from "../image/formats.ts";
 import { refuseNewerSidecar } from "../sidecar/read.ts";
 import { indexSuffix } from "./output-naming.ts";
@@ -85,19 +86,16 @@ export async function reserveOutputGroup(group: OutputGroup): Promise<OutputRese
     const identity = await stat(canonicalDir);
     directory = `${canonicalDir}\0${identity.dev}:${identity.ino}`;
   } catch (err) {
-    throw new LocalOpError(
-      "output.reserveFailed",
-      `Failed to resolve output directory ${normalized.dir}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw fsError(err, "Failed to resolve output directory", normalized.dir);
   }
   const stem = normalized.stem.normalize("NFC").toLowerCase();
   // Check and claim in one synchronous step, after the last await.
   for (const live of liveReservations) {
     if (live.directory === directory && (isGroupSlot(stem, live.stem) || isGroupSlot(live.stem, stem))) {
-      throw new LocalOpError(
+      refuse(
         "output.busy",
         `Another operation in this process is writing output ${JSON.stringify(normalized.stem)} or its numbered siblings. Try again when it finishes.`,
+        { subject: path.join(normalized.dir, normalized.stem) },
       );
     }
   }
@@ -110,18 +108,6 @@ export async function reserveOutputGroup(group: OutputGroup): Promise<OutputRese
 }
 
 /** Start every publisher, wait for all of them, then report failures in plan order. */
-export async function settleOutputPublications(publishers: ReadonlyArray<() => Promise<void>>): Promise<void> {
-  const settled = await Promise.allSettled(publishers.map((publish) => Promise.resolve().then(publish)));
-  const failures = settled.flatMap((result, index) => (result.status === "rejected" ? [{ index: index + 1, reason: result.reason }] : []));
-  if (failures.length === 0) return;
-  const details = failures
-    .map(({ index, reason }) => `item ${index}: ${reason instanceof Error ? reason.message : String(reason)}`)
-    .join("; ");
-  throw new LocalOpError("output.publicationFailed", `Failed to publish ${failures.length} output item(s): ${details}`, {
-    cause: new AggregateError(failures.map(({ reason }) => reason)),
-  });
-}
-
 const SIDECAR_EXT = "json";
 
 export function createOutputGroup(dir: string, stem: string, ext: string): OutputGroup {
@@ -156,9 +142,7 @@ export function siblingsOnDisk(group: OutputGroup): string[] {
   } catch (err) {
     const e = err as NodeJS.ErrnoException;
     if (e.code === "ENOENT") return [];
-    throw new LocalOpError("output.scanFailed", `Failed to scan output directory ${group.dir}: ${e.message}`, {
-      cause: err,
-    });
+    throw fsError(err, "Failed to scan output directory", group.dir);
   }
   const stem = escapeRegex(group.stem.normalize("NFC"));
   const sx = escapeRegex(group.sidecarExt);
@@ -222,23 +206,21 @@ export function refuseCaseOnlyRename(existing: string, planned: string, director
         const requested = lstatSync(requestedPath, { throwIfNoEntry: false });
         if (requested?.dev === actual.dev && requested.ino === actual.ino) return;
       } catch (err) {
-        throw new LocalOpError(
-          "output.scanFailed",
-          `Failed to inspect output filenames ${existing} and ${requestedPath}: ${(err as Error).message}`,
-          { cause: err },
-        );
+        throw fsError(err, `Failed to inspect output filenames ${requestedPath} and`, existing);
       }
     }
-    throw new LocalOpError(
+    refuse(
       "output.normalizationConflict",
       `Refusing to replace ${existing} with ${requestedName}: the Unicode spellings would create separate files. ` +
         `Use the existing name, or remove the file first.`,
+      { subject: existing },
     );
   }
-  throw new LocalOpError(
+  refuse(
     "output.caseConflict",
     `Refusing to replace ${existing} with ${plannedName}: the names differ only in case. ` +
       `Use the existing name, or remove the file first.`,
+    { subject: existing },
   );
 }
 
@@ -264,9 +246,9 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
   const plannedResolved = new Set<string>();
   const plannedArtifacts = new Map<string, string>();
   for (const p of plannedFiles) {
-    const r = path.resolve(p);
+    const r = path.normalize(p);
     if (plannedResolved.has(r)) {
-      throw new LocalOpError("output.duplicate", `Multiple planned outputs resolve to the same path: ${p}`);
+      throw new GptImgError("output.duplicate", `Multiple planned outputs resolve to the same path: ${p}`);
     }
     plannedResolved.add(r);
     plannedArtifacts.set(artifactIdentity(p, group.sidecarExt), p);
@@ -276,7 +258,7 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
   if (existing.length === 0) return;
 
   if (!allowOverwrite) {
-    throw new LocalOpError("output.exists", `Output exists: ${existing[0]}. Use overwrite to allow.`);
+    refuse("output.exists", `Output exists: ${existing[0]}. Use overwrite to allow.`, { subject: existing[0]! });
   }
   // An image in another supported format is the same logical artifact slot and
   // is replaceable under explicit overwrite. JSON remains a distinct kind, so
@@ -284,11 +266,12 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
   const stale = existing.filter((p) => !plannedArtifacts.has(artifactIdentity(p, group.sidecarExt)));
   if (stale.length > 0) {
     const names = stale.map((p) => path.basename(p)).join(", ");
-    throw new LocalOpError(
+    refuse(
       "output.staleSiblings",
       `Refusing to overwrite: the artifact group "${group.stem}.${group.ext}" in ${group.dir} ` +
         `has ${stale.length} file(s) from a prior run that this run will not replace: ${names}. ` +
         `Delete them or choose a fresh outName.`,
+      { subject: path.join(group.dir, group.stem) },
     );
   }
   // Replacement and slot cleanup may touch every existing member, so a newer
@@ -335,12 +318,13 @@ export function ownedSlotFiles(group: OutputGroup, requested: number, returned: 
  * this run owns but did not fill: an old image format beside its replacement,
  * or the image and sidecar of a slot whose new item failed. The group then
  * holds exactly this run's files, unless a newer sidecar now protects a slot.
+ * Returns the files it could not remove; the run's published results stand.
  */
 export async function removeUnpublishedSlots(
   group: OutputGroup,
   ownedFiles: readonly string[],
   publishedFiles: readonly string[],
-): Promise<void> {
+): Promise<string[]> {
   const owned = new Set(ownedFiles.map((filePath) => artifactIdentity(filePath, group.sidecarExt)));
   // Exact names: the pre-publication check refused case-only renames, so a
   // retained file has exactly a published name.
@@ -355,25 +339,19 @@ export async function removeUnpublishedSlots(
   // Keep the governing sidecars until every image cleanup has completed.
   leftovers.sort((a, b) => Number(artifactIdentity(a, group.sidecarExt).startsWith("sidecar:")) -
     Number(artifactIdentity(b, group.sidecarExt).startsWith("sidecar:")));
-  const failures: Error[] = [];
+  const kept: string[] = [];
   for (const filePath of leftovers) {
     const sidecarIdentity = artifactIdentity(filePath, group.sidecarExt).replace(/^image:/, "sidecar:");
     const sidecarPath = sidecars.get(sidecarIdentity) ??
       `${filePath.slice(0, -path.extname(filePath).length)}.${group.sidecarExt}`;
-    refuseNewerSidecar(sidecarPath);
     try {
+      refuseNewerSidecar(sidecarPath);
       await unlink(filePath);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") failures.push(err as Error);
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") kept.push(filePath);
     }
   }
-  if (failures.length > 0) {
-    throw new LocalOpError(
-      "output.cleanupFailed",
-      `Published this run's output but failed to remove ${failures.length} file(s) a prior run left in its slots.`,
-      { cause: new AggregateError(failures) },
-    );
-  }
+  return kept;
 }
 
 /**

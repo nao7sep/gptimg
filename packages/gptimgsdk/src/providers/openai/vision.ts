@@ -1,13 +1,15 @@
 import { Buffer } from "node:buffer";
-import { ProviderError } from "../../errors.ts";
+import { GptImgError } from "../../errors.ts";
+import { classifyRequestFailure, safeReasonText } from "../../network/classify.ts";
+import { RefusalSignal, refuse } from "../../refusal.ts";
 import { maskDiagnosticCopy } from "../../log/mask.ts";
-import { callWithRetry, isAbortError } from "../../network/retry.ts";
+import { callWithRetry } from "../../network/retry.ts";
 import type { VisionVerdict } from "../../types.ts";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.ts";
 import { buildOpenAIClient, clientHeaders, recordedResponse, resolveModel } from "./client.ts";
 import { defaultModelFor } from "../../ai-models.ts";
 import { OPENAI_VISION_SYSTEM_PROMPT } from "./defaults.ts";
-import { resolveVisionReasoning } from "../../recipe/model-check.ts";
+import { resolveVisionReasoning } from "../../policy/model-check.ts";
 import { buildVisionRequest } from "./request.ts";
 
 const VERDICT_SCHEMA = {
@@ -57,20 +59,16 @@ function imageContentParts(images: VisionProviderArgs["images"], withBytes: bool
  */
 function parseVerdict(raw: string | null | undefined): VisionVerdict {
   if (typeof raw !== "string" || raw.length === 0) {
-    throw new ProviderError(
-      "provider.invalidResponse",
-      "Vision model returned an empty response.",
-    );
+    throw new GptImgError("provider.invalidResponse", "Vision model returned an empty response.", { effect: "unknown" });
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    throw new ProviderError(
-      "provider.invalidResponse",
-      "Vision model response was not valid JSON.",
-      { cause: err },
-    );
+    throw new GptImgError("provider.invalidResponse", "Vision model response was not valid JSON.", {
+      cause: err,
+      effect: "unknown",
+    });
   }
   if (
     typeof parsed === "object" &&
@@ -89,10 +87,9 @@ function parseVerdict(raw: string | null | undefined): VisionVerdict {
       reasons: v.reasons,
     };
   }
-  throw new ProviderError(
-    "provider.invalidResponse",
-    "Vision model response did not match the verdict schema.",
-  );
+  throw new GptImgError("provider.invalidResponse", "Vision model response did not match the verdict schema.", {
+    effect: "unknown",
+  });
 }
 
 interface ChatResponse {
@@ -103,7 +100,7 @@ interface ChatResponse {
 }
 
 /** The verdict a chat response carries, or the provider's stated reason it carries none. */
-function verdictFrom(response: ChatResponse): VisionVerdict {
+function verdictFrom(response: ChatResponse, credentials: readonly string[]): VisionVerdict {
   // The provider's own account of a result that is not what was asked for, read BEFORE the
   // content (ai-model-routing-conventions: *never invent a cause the provider gave you*). A
   // refusal arrives as a `refusal` string with null content, so reading `content` alone reports
@@ -113,21 +110,18 @@ function verdictFrom(response: ChatResponse): VisionVerdict {
   // like a complete verdict.
   const choice = response.choices?.[0];
   if (choice?.message?.refusal) {
-    throw new ProviderError(
-      "provider.refused",
-      `The model declined to verify this image: ${choice.message.refusal}`,
-    );
+    refuse("provider.refused", "The model declined to verify this image.", {
+      safeReason: safeReasonText(choice.message.refusal, credentials),
+    });
   }
   if (choice?.finish_reason === "content_filter") {
-    throw new ProviderError(
-      "provider.contentFiltered",
-      "OpenAI's content filter rejected this image verification. The input was rejected, not lost.",
-    );
+    refuse("provider.contentFiltered", "OpenAI's content filter rejected this image verification. The input was rejected, not lost.");
   }
   if (choice?.finish_reason === "length") {
-    throw new ProviderError(
+    throw new GptImgError(
       "provider.truncated",
       "The model stopped at its output limit, so this verdict is truncated rather than complete.",
+      { effect: "unknown" },
     );
   }
 
@@ -192,21 +186,19 @@ export async function openaiVision(
       )
     ).data as never;
   } catch (err) {
-    if (isAbortError(err)) throw err;
-    const cause = maskDiagnosticCopy(err, [args.profile.apiKey]);
-    throw new ProviderError(
-      "provider.requestFailed",
-      `OpenAI chat.completions.create failed: ${(cause as Error).message}`,
-      { cause },
-    );
+    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.profile.apiKey]), "imageVision", "OpenAI chat.completions.create", [args.profile.apiKey]);
   }
 
   // A response the call cannot turn into a verdict is recorded with its request, so
   // the failure can be diagnosed (data-lifecycle-conventions, *Records*).
   let verdict: VisionVerdict;
   try {
-    verdict = verdictFrom(response);
+    verdict = verdictFrom(response, [args.profile.apiKey]);
   } catch (err) {
+    if (err instanceof RefusalSignal) {
+      await logger?.warn("response", "vision response is a refusal", { request, response, code: err.refusal.code });
+      throw err;
+    }
     const diagnosticError = maskDiagnosticCopy(err, [args.profile.apiKey]);
     await logger?.warn("response", "vision response yielded no verdict", {
       request,

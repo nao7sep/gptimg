@@ -1,4 +1,4 @@
-import { ProviderError } from "../errors.ts";
+import { GptImgError } from "../errors.ts";
 import { openaiProvider } from "./openai/index.ts";
 import type { Provider } from "./types.ts";
 
@@ -7,10 +7,9 @@ export function getProvider(name: string): Provider {
     case "openai":
       return openaiProvider;
     default:
-      throw new ProviderError(
-        "provider.unknown",
-        `Unknown provider: ${name}. v1 supports: openai`,
-      );
+      throw new GptImgError("profile.malformed", `Unknown provider: ${name}. gptimgsdk supports: openai`, {
+        details: { field: "provider" },
+      });
   }
 }
 

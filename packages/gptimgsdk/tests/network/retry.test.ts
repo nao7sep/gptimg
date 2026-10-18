@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AbortError } from "../../src/errors.ts";
+import { GptImgError } from "../../src/errors.ts";
 import { callWithRetry, isAbortError } from "../../src/network/retry.ts";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../src/network/defaults.ts";
 import type { Logger } from "../../src/log/index.ts";
@@ -146,10 +146,8 @@ describe("callWithRetry", () => {
       { budgetName: "imageGenerate", budget: fast },
       fn,
     ).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(AbortError);
+    expect(err).toBeInstanceOf(GptImgError);
     expect(err).toMatchObject({
-      name: "AbortError",
-      errorType: "abort",
       code: "cancelled",
     });
     expect(fn).toHaveBeenCalledOnce();
@@ -168,7 +166,6 @@ describe("callWithRetry", () => {
       fn,
     );
     const rejected = expect(operation).rejects.toMatchObject({
-      name: "AbortError",
       code: "cancelled",
       message: "stop sleeping",
     });
@@ -585,7 +582,7 @@ describe("callWithRetry", () => {
     });
     await expect(
       callWithRetry({ budgetName: "imageGenerate", budget: fast, signal: ctrl.signal, logger, request }, fn),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    ).rejects.toMatchObject({ code: "cancelled" });
     expect(info.mock.calls).toEqual([
       [
         "cancelled",
@@ -618,7 +615,6 @@ describe("callWithRetry", () => {
         fn,
       ),
     ).rejects.toMatchObject({
-      name: "AbortError",
       code: "cancelled",
       message: "aborted while logging",
     });

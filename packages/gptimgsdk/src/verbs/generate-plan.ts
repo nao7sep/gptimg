@@ -1,4 +1,4 @@
-import { LocalOpError } from "../errors.ts";
+import { GptImgError } from "../errors.ts";
 import type { DetectedFormat } from "../image/detectFormat.ts";
 import { imageFileName } from "../internal/output-naming.ts";
 
@@ -68,9 +68,11 @@ export function planGenerateOutputs(
 
   const extensions = new Set(images.map((img) => img.format.extension));
   if (extensions.size > 1) {
-    throw new LocalOpError(
-      "output.mixedExtensions",
+    // The paid response arrived but cannot form one artifact group.
+    throw new GptImgError(
+      "provider.invalidResponse",
       `Provider returned images with mixed extensions (${[...extensions].join(", ")}); the artifact group requires a single image format.`,
+      { effect: "unknown" },
     );
   }
 

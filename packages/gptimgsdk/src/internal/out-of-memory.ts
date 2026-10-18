@@ -1,4 +1,4 @@
-import { AbortError, LocalOpError } from "../errors.ts";
+import { GptImgError } from "../errors.ts";
 import type { LogVerb } from "../types.ts";
 
 /**
@@ -19,8 +19,8 @@ export function isOutOfMemory(err: unknown): boolean {
   const seen = new Set<unknown>();
   for (let e = err; e instanceof Error && !seen.has(e); e = e.cause) {
     seen.add(e);
-    if (e instanceof AbortError) return false;
-    if (e instanceof LocalOpError && e.code === "memory.exhausted") return true;
+    if (e instanceof GptImgError && e.code === "cancelled") return false;
+    if (e instanceof GptImgError && e.code === "memory.exhausted") return true;
     if (e instanceof RangeError && JS_ALLOCATION.test(e.message)) return true;
     if (NATIVE_ALLOCATION.test(e.message)) return true;
   }
@@ -36,11 +36,14 @@ const GENERAL_ADVICE = "Use smaller images or output sizes, or close other apps 
 /** `err` as `memory.exhausted` when it is an allocation failure; otherwise unchanged. */
 export function containOutOfMemory(verb: LogVerb, err: unknown): unknown {
   if (!isOutOfMemory(err)) return err;
-  if (err instanceof LocalOpError && err.code === "memory.exhausted") return err;
+  if (err instanceof GptImgError && err.code === "memory.exhausted") return err;
   const reason = err instanceof Error ? err.message : String(err);
-  return new LocalOpError(
+  // The effect a typed failure already established stands (a paid response
+  // that arrived, a write that began); a bare allocation failure changed nothing.
+  const effect = err instanceof GptImgError ? err.effect : "none";
+  return new GptImgError(
     "memory.exhausted",
     `${verb} ran out of memory (${reason}). ${ADVICE[verb] ?? GENERAL_ADVICE}`,
-    { cause: err },
+    { cause: err, effect },
   );
 }

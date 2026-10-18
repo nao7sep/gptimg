@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import path from "node:path";
 import {
   assertSingleFileAvailable,
@@ -11,20 +13,17 @@ import type { IconArgs, IconResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateIconArgs } from "./schemas.ts";
 
-export interface IconContext {
-  profileDir: string;
-  logDir: string;
-}
+export type IconContext = SdkContext;
 
 export async function iconImpl(
   ctx: IconContext,
   args: IconArgs,
   opts: VerbCallOptions = {},
-): Promise<IconResult> {
+): Promise<IconResult | RefusedResult> {
   validateIconArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "icon", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "icon", opts, async (logger) => {
     const outDir = args.outDir ?? path.dirname(args.in);
     await ensureOutputDir(outDir);
     const name = args.name ?? ICON_DEFAULTS.name;
@@ -45,7 +44,7 @@ export async function iconImpl(
 
     const result = await runIcon(
       { in: args.in, outDir, name, pngs, overwrite: args.overwrite ?? false, ...pngEncodingOf(args) },
-      { signal },
+      { signal, logger },
     );
 
     await logger.info("write", "wrote icon artifacts", {
@@ -64,6 +63,7 @@ export async function iconImpl(
       width: result.sourceWidth,
       height: result.sourceHeight,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

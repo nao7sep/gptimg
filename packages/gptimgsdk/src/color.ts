@@ -3,7 +3,7 @@
  * backplate, compose, mask, shadow, and the recipe schema. No I/O.
  */
 
-import { LocalOpError } from "./errors.ts";
+import { GptImgError } from "./errors.ts";
 
 /**
  * Matches a "#rrggbb" hex color — the leading "#" is required. Capture group 1
@@ -31,15 +31,16 @@ export function parseHex(hex: string): [number, number, number] {
 
 /**
  * Validate and canonicalize a hex color to lowercase "#rrggbb". `label` names
- * the offending value in the error message (e.g. "--from"). Throws LocalOpError
+ * the offending value in the error message (e.g. "--from"). Throws GptImgError
  * (args.invalid) on malformed input.
  */
 export function normalizeHex(hex: string, label = "color"): string {
   const m = HEX_RE.exec(hex);
   if (!m) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `${label} must be #rrggbb; got "${hex}".`,
+      { details: { field: label, constraint: "#rrggbb hex color" } },
     );
   }
   return `#${m[1]!.toLowerCase()}`;

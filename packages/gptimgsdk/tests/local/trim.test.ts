@@ -246,7 +246,6 @@ describe("runTrim", () => {
     await expect(
       runTrim({ in: inPath, out: outPath, margin: 0.1 }),
     ).rejects.toMatchObject({
-      errorType: "localOp",
       code: "image.noContent",
     });
   });

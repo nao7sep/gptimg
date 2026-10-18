@@ -9,15 +9,18 @@
 
 import path from "node:path";
 import { readdirSync } from "node:fs";
-import { LocalOpError } from "../errors.ts";
+import { GptImgError, fsError } from "../errors.ts";
 import { createLogger, safeLogError, type Logger } from "../log/index.ts";
 import { failedResponseFields } from "../network/retry.ts";
+import { RefusalSignal, refuse, type RefusedResult } from "../refusal.ts";
+import type { VerbCallOptions } from "../verbs/options.ts";
+import { assertAbsolutePath } from "./absolute-path.ts";
 import { ensureOutputDir } from "./output-files.ts";
 import { refuseCaseOnlyRename } from "./output-group.ts";
 import { containOutOfMemory } from "./out-of-memory.ts";
 import { imageFileName } from "./output-naming.ts";
-import { claimDefaultLogPath } from "./paths.ts";
-import type { EncodingArgs, LogEntry, LogVerb, PngEncodingArgs } from "../types.ts";
+import { claimLogPath } from "./paths.ts";
+import type { EncodingArgs, LogVerb, PngEncodingArgs } from "../types.ts";
 
 /** Stem (basename without extension) of a file path. `foo/bar.png` → `bar`. */
 export function inferStem(filePath: string): string {
@@ -50,16 +53,14 @@ export function assertSingleFileAvailable(
   } catch (err) {
     // A missing directory means nothing to collide with; other errors surface.
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw err;
+    throw fsError(err, "Failed to scan output directory", dir);
   }
   const clashes = entries.filter((name) => name.normalize("NFC").toLowerCase() === target);
   if (allowOverwrite) {
     for (const clash of clashes) refuseCaseOnlyRename(path.join(dir, clash), filePath, entries);
   } else if (clashes.length > 0) {
-    throw new LocalOpError(
-      "output.exists",
-      `Output exists: ${path.join(dir, clashes[0]!)}. Set overwrite: true to allow.`,
-    );
+    const existing = path.join(dir, clashes[0]!);
+    refuse("output.exists", `Output exists: ${existing}. Set overwrite: true to allow.`, { subject: existing });
   }
 }
 
@@ -74,7 +75,9 @@ export function assertSingleFileAvailable(
  * A no-input verb requires a caller-selected destination. An absolute outName
  * already supplies that destination; no app-root or implicit cwd fallback exists.
  *
- * `outName` is a STEM, not a filename: the verb owns its extension, which is
+ * `outName` is a bare STEM, or an absolute stem that also chooses the folder;
+ * a relative stem with folders is an invalid call, since the SDK reads no
+ * working directory. It is not a filename: the verb owns its extension, which is
  * appended here via the same primitive `generate` uses (`imageFileName`).
  * This is strict — a stem that already carries an extension yields
  * `<stem>.<ext>.<ext>` (mirroring `generate`, surfacing the misuse instead of
@@ -90,23 +93,31 @@ export async function resolveOutputPath(
   },
 ): Promise<string> {
   const stem = args.outName ?? defaults.stem;
+  assertOutputStem(stem);
   const fileName = imageFileName(stem, 1, 1, defaults.ext);
   const outDir = args.outDir ??
     (defaults.inputForDir !== undefined ? path.dirname(defaults.inputForDir) : undefined);
   if (!path.isAbsolute(fileName) && outDir === undefined) {
-    throw new LocalOpError("output.noBaseDir", "Set outDir to choose an output directory.");
+    throw new GptImgError("args.invalid", "Set outDir to choose an output directory.", {
+      details: { field: "outDir", constraint: "required" },
+    });
   }
   const output = path.isAbsolute(fileName) ? fileName : path.join(outDir!, fileName);
   await ensureOutputDir(path.dirname(output));
   return output;
 }
 
-export interface VerbLoggerOptions {
-  /** Explicit log path. Falls back to a per-session
-   * `yyyymmdd-hhmmss-utc-<id>.log` under ctx.logDir. */
-  log?: string | undefined;
-  /** Progress sink: each non-error stage event is forwarded here as it fires. */
-  onProgress?: ((entry: LogEntry) => void) | undefined;
+/**
+ * An output name is a bare stem or an absolute stem: a relative stem with
+ * folders would need the working directory to resolve.
+ */
+export function assertOutputStem(stem: string, field = "outName"): void {
+  if (path.isAbsolute(stem)) return;
+  if (stem.length === 0 || stem.includes("/") || stem.includes("\\") || stem === "." || stem === "..") {
+    throw new GptImgError("args.invalid", `${field} must be a bare name or an absolute stem; got ${JSON.stringify(stem)}.`, {
+      details: { field, constraint: "bare name or absolute stem" },
+    });
+  }
 }
 
 function serializeThrownError(
@@ -133,34 +144,61 @@ function serializeThrownError(
 }
 
 /**
- * The single logger envelope for every verb (local and provider-backed):
- *   - resolve log path (`opts.log ?? <yyyymmdd-hhmmss-utc-<id>>.log` under ctx.logDir)
- *   - open a logger that also forwards non-error events to `opts.onProgress`
- *   - run `body(logger)`
- *   - on throw, best-effort `safeLogError`, then rethrow
- *   - always close
+ * The single envelope for every verb:
+ *   - resolve the log target (the call's `log`, else the instance's `logDir`,
+ *     else none) and open a logger that forwards every event to `onEvent` and
+ *     countable work to `onProgress`;
+ *   - run `body(logger)`;
+ *   - turn a refusal signal into `{ status: "refused" }`, an allocation failure
+ *     into `memory.exhausted`, and any failure that escaped classification into
+ *     `internal.unexpected`, so everything that leaves the SDK is a
+ *     `GptImgError` or a result;
+ *   - always close the log.
  *
- * The body is responsible for putting `logger.handle.path` (or the resolved
- * log path) into the result it returns; this helper does not mutate the
- * result.
+ * The body puts `logger.handle.path` into the completed result it returns.
  */
 export async function withVerbLogger<T>(
-  ctx: { logDir: string },
+  ctx: { logDir: string | null },
   verbName: LogVerb,
-  opts: VerbLoggerOptions,
+  opts: Pick<VerbCallOptions, "log" | "onEvent" | "onProgress">,
   body: (logger: Logger) => Promise<T>,
-): Promise<T> {
-  // The session log is claimed under its own name so concurrent runs never
-  // interleave into one file. It is a per-session identity, independent of the
-  // verb's output names.
-  const logPath = opts.log ?? (await claimDefaultLogPath(ctx.logDir));
-  const logger = await createLogger(logPath, verbName, { onEvent: opts.onProgress });
+): Promise<T | RefusedResult> {
+  const target = opts.log;
+  let logPath: string | null = null;
+  let debug = false;
+  if (target !== false && target !== undefined) {
+    debug = target.debug ?? false;
+    if ("file" in target) {
+      assertAbsolutePath(target.file, "log.file");
+      logPath = target.file;
+    } else {
+      assertAbsolutePath(target.dir, "log.dir");
+      logPath = await claimLogPath(target.dir);
+    }
+  } else if (target === undefined && ctx.logDir !== null) {
+    logPath = await claimLogPath(ctx.logDir);
+  }
+  const logger = await createLogger(logPath, verbName, {
+    onEvent: opts.onEvent,
+    onProgress: opts.onProgress,
+    debug,
+  });
   try {
     return await body(logger);
   } catch (thrown) {
-    const err = containOutOfMemory(verbName, thrown);
-    await safeLogError(logger, err instanceof Error ? err.message : String(err), {
-      code: (err as { code?: string }).code ?? null,
+    if (thrown instanceof RefusalSignal) {
+      await logger.warn("response", `refused: ${thrown.refusal.message}`, {
+        code: thrown.refusal.code,
+        subject: thrown.refusal.subject ?? null,
+      });
+      return { status: "refused", refusal: thrown.refusal, logPath: logger.handle.path };
+    }
+    const err = toSdkError(verbName, thrown);
+    await safeLogError(logger, err.message, {
+      code: err.code,
+      kind: err.kind,
+      effect: err.effect,
+      subject: err.subject ?? null,
       error: serializeThrownError(err),
     });
     throw err;
@@ -169,6 +207,16 @@ export async function withVerbLogger<T>(
   }
 }
 
+/** Everything that leaves a verb as a failure is a `GptImgError`. */
+function toSdkError(verbName: LogVerb, thrown: unknown): GptImgError {
+  const contained = containOutOfMemory(verbName, thrown);
+  if (contained instanceof GptImgError) return contained;
+  return new GptImgError(
+    "internal.unexpected",
+    `${verbName} failed unexpectedly: ${contained instanceof Error ? contained.message : String(contained)}`,
+    { cause: contained, effect: "unknown" },
+  );
+}
 const PNG_ENCODING_KEYS = ["compressionLevel", "adaptiveFiltering"] as const;
 const ENCODING_KEYS = ["format", "quality", "lossless", "smartSubsample", ...PNG_ENCODING_KEYS, "opaque"] as const;
 

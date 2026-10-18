@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer";
-import { ProviderError } from "../../errors.ts";
+
+import { cancelledError } from "../../errors.ts";
 import { maskDiagnosticCopy } from "../../log/mask.ts";
+import { classifyRequestFailure } from "../../network/classify.ts";
 import { fetchWithBudget } from "../../network/fetch.ts";
 import { callWithRetry, isAbortError } from "../../network/retry.ts";
 import type { GenerateProviderArgs, ProviderImageResult } from "../types.ts";
@@ -50,13 +52,7 @@ export async function openaiGenerate(
       )
     ).data as never;
   } catch (err) {
-    if (isAbortError(err)) throw err;
-    const cause = maskDiagnosticCopy(err, [args.profile.apiKey]);
-    throw new ProviderError(
-      "provider.requestFailed",
-      `OpenAI images.generate failed: ${(cause as Error).message}`,
-      { cause },
-    );
+    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.profile.apiKey]), "imageGenerate", "OpenAI images.generate", [args.profile.apiKey]);
   }
 
   const data = response.data ?? [];
@@ -73,7 +69,8 @@ export async function openaiGenerate(
           });
           return { data: bytes };
         } catch (err) {
-          if (isAbortError(err)) throw err;
+          // The images were paid for; stopping now may lose them.
+          if (isAbortError(err)) throw cancelledError(err, "unknown");
           return {
             data: null,
             error: `Failed to fetch image from URL: ${(err as Error).message}`,

@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RecipeError } from "../../src/errors.ts";
+import { GptImgError } from "../../src/errors.ts";
 import { NETWORK_DEFAULTS, fetchWithBudget, resolveNetworkForCall } from "../../src/network/index.ts";
 import { formatZodError } from "../../src/internal/zodError.ts";
 import { NetworkSchema } from "../../src/network/schema.ts";
@@ -47,7 +47,7 @@ describe("resolveNetworkForCall", () => {
       ],
     ];
     for (const [name, recipe] of cases) {
-      expect(() => resolveNetworkForCall(recipe as Parameters<typeof resolveNetworkForCall>[0]), name).toThrow(RecipeError);
+      expect(() => resolveNetworkForCall(recipe as Parameters<typeof resolveNetworkForCall>[0]), name).toThrow(GptImgError);
     }
   });
 
@@ -242,7 +242,6 @@ describe("fetchWithBudget", () => {
         { signal: ctrl.signal },
       ),
     ).rejects.toMatchObject({
-      name: "AbortError",
       code: "cancelled",
     });
   });

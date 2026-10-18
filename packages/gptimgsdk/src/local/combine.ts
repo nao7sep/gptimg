@@ -11,7 +11,8 @@
  *   feather   a       → separable 3×3 box blur, `radius` passes
  */
 
-import { LocalOpError, throwIfAborted } from "../errors.ts";
+import { GptImgError, throwIfAborted } from "../errors.ts";
+import type { Logger } from "../log/index.ts";
 import { loadMaskPNG, writeMaskPNG } from "../image/bridge.ts";
 import type { CombineOp } from "../enums.ts";
 import type { PngEncodingArgs } from "../types.ts";
@@ -35,7 +36,7 @@ async function loadSameSize(paths: string[]): Promise<{
   const first = masks[0]!;
   for (let i = 1; i < masks.length; i++) {
     if (masks[i]!.width !== first.width || masks[i]!.height !== first.height) {
-      throw new LocalOpError(
+      throw new GptImgError(
         "image.sizeMismatch",
         `combine inputs differ in size: ${paths[0]} is ${first.width}x${first.height}, ${paths[i]} is ${masks[i]!.width}x${masks[i]!.height}.`,
       );
@@ -54,13 +55,17 @@ async function boxBlurInPlace(
   height: number,
   passes: number,
   signal: AbortSignal | undefined,
+  logger: Logger | undefined,
 ): Promise<void> {
   if (passes <= 0) return;
   const tmp = new Uint8Array(buf.length);
   for (let pass = 0; pass < passes; pass++) {
     // The radius has no upper bound, so a long feather yields between passes
     // and stops at the next one once cancelled.
-    if (pass > 0) await new Promise((resolve) => setImmediate(resolve));
+    if (pass > 0) {
+      logger?.progress("infer", pass, passes, "passes");
+      await new Promise((resolve) => setImmediate(resolve));
+    }
     throwIfAborted(signal);
     for (let y = 0; y < height; y++) {
       const row = y * width;
@@ -108,7 +113,7 @@ export interface CombineResult {
 
 export async function runCombine(
   args: CombineArgs,
-  opts: { signal?: AbortSignal | undefined } = {},
+  opts: { signal?: AbortSignal | undefined; logger?: Logger } = {},
 ): Promise<CombineResult> {
   const { signal } = opts;
   throwIfAborted(signal);
@@ -150,7 +155,8 @@ export async function runCombine(
     width = loaded.width;
     height = loaded.height;
     out = new Uint8Array(loaded.buffers[0]!);
-    await boxBlurInPlace(out, width, height, Math.floor(radius), signal);
+    await boxBlurInPlace(out, width, height, Math.floor(radius), signal, opts.logger);
+    opts.logger?.progress("infer", Math.floor(radius), Math.floor(radius), "passes");
   }
 
   throwIfAborted(signal);

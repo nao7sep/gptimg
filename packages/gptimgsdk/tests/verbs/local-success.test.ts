@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { done } from "../helpers/results.ts";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -96,7 +97,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
   let sdk: GptImg;
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-local-success-"));
-    sdk = new GptImg({ profileDir: tmp, logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
   });
   afterEach(async () => {
     await rm(tmp, { recursive: true, force: true });
@@ -106,7 +107,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 100, 50, diskish(100, 50));
 
-    const res = await sdk.resize({ in: input, toSize: 50, outName: "out" });
+    const res = done(await sdk.resize({ in: input, toSize: 50, outName: "out" }));
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -124,12 +125,12 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 40, 20, diskish(40, 20));
 
-    const webp = await sdk.encode({ in: input, format: "webp", outName: "out" });
+    const webp = done(await sdk.encode({ in: input, format: "webp", outName: "out" }));
     expect(webp.output).toBe(path.join(tmp, "out.webp"));
     expect(webp).toMatchObject({ format: "webp", width: 40, height: 20, lossless: false });
     expect((await sharp(webp.output).metadata()).format).toBe("webp");
 
-    const png = await sdk.encode({ in: input, format: "png" });
+    const png = done(await sdk.encode({ in: input, format: "png" }));
     expect(png.output).toBe(path.join(tmp, "in-encode.png"));
     expect(png.bytes).toBeGreaterThan(0);
     expect((await sharp(png.output).metadata()).format).toBe("png");
@@ -139,7 +140,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 128, 128, diskish(128, 128));
 
-    const res = await sdk.shadow({ in: input, outName: "out", keepCanvas: true });
+    const res = done(await sdk.shadow({ in: input, outName: "out", keepCanvas: true }));
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -157,8 +158,8 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, diskish(16, 16));
 
-    const failed = sdk.shadow({ in: input, outName: "huge", spread: 2 ** 30, log: path.join(tmp, "huge.log") });
-    await expect(failed).rejects.toMatchObject({ code: "memory.exhausted", errorType: "localOp" });
+    const failed = sdk.shadow({ in: input, outName: "huge", spread: 2 ** 30 }, { log: { file: path.join(tmp, "huge.log") } });
+    await expect(failed).rejects.toMatchObject({ code: "memory.exhausted" });
     await expect(failed).rejects.toThrow(/^shadow ran out of memory .*Use smaller images or output sizes/);
     expect(existsSync(path.join(tmp, "huge.png"))).toBe(false);
     const lines = (await readFile(path.join(tmp, "huge.log"), "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
@@ -171,7 +172,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     await writeMaskPng(a, 2, 1, [10, 200]);
     await writeMaskPng(b, 2, 1, [50, 100]);
 
-    const res = await sdk.combine({ op: "union", inputs: [a, b], outName: "out" });
+    const res = done(await sdk.combine({ op: "union", inputs: [a, b], outName: "out" }));
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -198,7 +199,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     await writeRawPng(inPath, W, H, rgba);
     await writeMaskPng(maskPath, W, H, Array.from(mask));
 
-    const res = await sdk.compose({ in: inPath, mask: maskPath, outName: "out" });
+    const res = done(await sdk.compose({ in: inPath, mask: maskPath, outName: "out" }));
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -218,7 +219,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const master = path.join(tmp, "master.png");
     await writeSquare(master, 1024);
 
-    const res = await sdk.icon({ in: master, outDir: tmp, name: "app" });
+    const res = done(await sdk.icon({ in: master, outDir: tmp, name: "app" }));
 
     expect(res.outputs).toEqual([res.icns, res.ico, res.png]);
     expect(res.icns).toBe(path.join(tmp, "app.icns"));
@@ -239,7 +240,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, W, H, greenWithSubject(W, H));
 
-    const res = await sdk.mask({ in: input, method: "chroma", key: "#00ff00", outName: "out" });
+    const res = done(await sdk.mask({ in: input, method: "chroma", key: "#00ff00", outName: "out" }));
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);
@@ -266,7 +267,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, W, H, greenWithSubject(W, H));
 
-    const res = await sdk.mask({ in: input, key: "#00ff00", outName: "out", compressionLevel: 9, adaptiveFiltering: true });
+    const res = done(await sdk.mask({ in: input, key: "#00ff00", outName: "out", compressionLevel: 9, adaptiveFiltering: true }));
     expect(res.output).toBe(path.join(tmp, "out.png"));
     expect((await sharp(path.join(tmp, "out.png")).metadata()).format).toBe("png");
 
@@ -290,7 +291,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, W, H, rgba);
 
-    const res = await sdk.despeckle({ in: input, minArea: 10, outName: "out" });
+    const res = done(await sdk.despeckle({ in: input, minArea: 10, outName: "out" }));
 
     const out = path.join(tmp, "out.png");
     expect(res.output).toBe(out);

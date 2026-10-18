@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { LocalOpError } from "../errors.ts";
+import { GptImgError } from "../errors.ts";
 
 export interface ShrinkBox {
   width: number;
@@ -28,8 +28,8 @@ export async function shrinkForVision(
     if (meta.width === undefined || meta.height === undefined) {
       // No readable dimensions means the bytes aren't a decodable raster; fail at
       // the boundary instead of carrying a degenerate 0x0 size into the result.
-      throw new LocalOpError(
-        "image.decodeFailed",
+      throw new GptImgError(
+        "image.undecodable",
         "Failed to prepare image for vision: the image reports no width/height.",
       );
     }
@@ -71,9 +71,9 @@ export async function shrinkForVision(
       format: resized.info.format,
     };
   } catch (err) {
-    if (err instanceof LocalOpError) throw err;
-    throw new LocalOpError(
-      "image.decodeFailed",
+    if (err instanceof GptImgError) throw err;
+    throw new GptImgError(
+      "image.undecodable",
       `Failed to prepare image for vision: ${(err as Error).message}`,
       { cause: err },
     );

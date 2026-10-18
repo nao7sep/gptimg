@@ -1,50 +1,85 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { LocalOpError, type GptImgError } from "../errors.ts";
+import { GptImgError, fsError } from "../errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
-import { takeFormatVersion } from "../internal/format-version.ts";
+import { assertAbsolutePath } from "../internal/absolute-path.ts";
 import { formatZodError } from "../internal/zodError.ts";
-import type { Sidecar } from "../types.ts";
-import { SidecarSchema } from "./schema.ts";
+import type { Sidecar, SidecarKind } from "../types.ts";
+import { SidecarV1Schema, SidecarV2Schema } from "./schema.ts";
 
-export async function readSidecar(stem: string): Promise<Sidecar> {
-  const sidecarPath = `${stem}.json`;
+/** The version an unmarked sidecar reads as: v0.1.0's format, which version 1 kept. */
+const UNVERSIONED = 1;
+
+/**
+ * Read the sidecar at the absolute `sidecarPath` (`<image stem>.json`), any
+ * supported format, as its typed record. Format 1 files carry no kind or
+ * writer: the kind is told apart by shape (vision: `response.verdict`; edit:
+ * `request.input`; otherwise generate) and `writer` is null. A newer format is
+ * refused and the file left unchanged.
+ */
+export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
+  assertAbsolutePath(sidecarPath, "sidecar path");
   let text: string;
   try {
     text = await readFile(sidecarPath, "utf-8");
   } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
-      `Failed to read sidecar at ${sidecarPath}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw fsError(err, "Failed to read sidecar", sidecarPath);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
-      `Invalid JSON in sidecar at ${sidecarPath}`,
-      { cause: err },
-    );
+    throw new GptImgError("sidecar.malformed", `Invalid JSON in sidecar at ${sidecarPath}`, {
+      cause: err,
+      subject: sidecarPath,
+    });
   }
-  const body = takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, {
-    name: "sidecar",
-    path: sidecarPath,
-    ErrorClass: LocalOpError,
-    invalidCode: "image.decodeFailed",
-  });
-  return validSidecar(body, `Sidecar at ${sidecarPath} is invalid and was left unchanged`);
+  return parseSidecar(parsed, sidecarPath);
 }
 
-/** `value` as a sidecar of the current shape, or `sidecar.malformed` prefixed by `failure`. */
-export function validSidecar(value: unknown, failure: string): Sidecar {
-  const result = SidecarSchema.safeParse(value);
-  if (!result.success) {
-    throw new LocalOpError("sidecar.malformed", `${failure}: ${formatZodError(result.error)}`);
+/** A parsed sidecar body of any supported format as its typed record, or `sidecar.malformed`/`sidecar.newerFormat`. */
+export function parseSidecar(parsed: unknown, subject: string): Sidecar {
+  const version = formatVersionOf(parsed, subject);
+  const { formatVersion: _omit, ...body } = parsed as Record<string, unknown>;
+  if (version === 1) {
+    const r = SidecarV1Schema.safeParse(body);
+    if (!r.success) throw malformed(subject, formatZodError(r.error));
+    return { formatVersion: 1, kind: kindOfV1(r.data), writer: null, ...r.data } as Sidecar;
   }
-  return result.data as Sidecar;
+  const r = SidecarV2Schema.safeParse(body);
+  if (!r.success) throw malformed(subject, formatZodError(r.error));
+  return { formatVersion: 2, ...r.data } as Sidecar;
+}
+
+function formatVersionOf(parsed: unknown, subject: string): number {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw malformed(subject, "must be a JSON object");
+  }
+  const version = (parsed as { formatVersion?: unknown }).formatVersion ?? UNVERSIONED;
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 1) {
+    throw malformed(subject, "formatVersion is not a positive integer");
+  }
+  if (version > SIDECAR_FORMAT_VERSION) {
+    throw new GptImgError(
+      "sidecar.newerFormat",
+      `${subject} has format version ${version}, newer than the ${SIDECAR_FORMAT_VERSION} this gptimgsdk reads; it was left unchanged.`,
+      { subject, details: { expected: SIDECAR_FORMAT_VERSION, actual: version } },
+    );
+  }
+  return version;
+}
+
+function kindOfV1(body: { request: Record<string, unknown>; response: unknown }): SidecarKind {
+  const response = body.response as { verdict?: unknown } | null;
+  if (response && typeof response === "object" && "verdict" in response) return "vision";
+  if ("input" in body.request) return "edit";
+  return "generate";
+}
+
+function malformed(subject: string, detail: string): GptImgError {
+  return new GptImgError("sidecar.malformed", `Sidecar at ${subject} is invalid and was left unchanged: ${detail}`, {
+    subject,
+  });
 }
 
 /**
@@ -61,12 +96,7 @@ export function refuseNewerSidecar(sidecarPath: string): void {
     return;
   }
   try {
-    takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, {
-      name: "sidecar",
-      path: sidecarPath,
-      ErrorClass: LocalOpError,
-      invalidCode: "image.decodeFailed",
-    });
+    formatVersionOf(parsed, sidecarPath);
   } catch (err) {
     if ((err as GptImgError).code === "sidecar.newerFormat") throw err;
   }

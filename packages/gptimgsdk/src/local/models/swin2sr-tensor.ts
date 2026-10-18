@@ -5,7 +5,7 @@
  * `tileAndStitch` with an injected runner); this is the per-tensor packing.
  */
 
-import { LocalOpError } from "../../errors.ts";
+import { GptImgError } from "../../errors.ts";
 
 /** Interleaved-RGB u8 (`w × h`) → planar NCHW float32 rescaled to [0,1] (no mean
  *  subtraction — the Swin2SR processor contract). Layout `[R…][G…][B…]`. */
@@ -32,7 +32,7 @@ export function unpackChwToU8(
   oh: number,
 ): Uint8Array {
   if (dims.length !== 4 || dims[0] !== 1 || dims[1] !== 3 || Number(dims[2]) !== oh || Number(dims[3]) !== ow) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "model.outputShape",
       `Swin2SR output shape unexpected: got [${dims.join(",")}], expected [1,3,${oh},${ow}].`,
     );

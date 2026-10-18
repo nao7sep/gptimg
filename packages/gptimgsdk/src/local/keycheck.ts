@@ -25,7 +25,7 @@
  * calling here, so this module receives a concrete "#rrggbb".
  */
 
-import { LocalOpError, throwIfAborted } from "../errors.ts";
+import { GptImgError, throwIfAborted } from "../errors.ts";
 import { loadRawRGBA, writeRGBA } from "../image/bridge.ts";
 import { parseHex } from "../color.ts";
 import type { AlphaBBox, EncodingArgs } from "../types.ts";
@@ -131,9 +131,10 @@ export async function runKeycheck(
   if (!Number.isFinite(keyHsv.h)) {
     // An achromatic "key" (gray/black/white) has no hue to scan toward; this is a
     // misuse, not a measurement we can fudge.
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `keycheck: key ${args.key} is achromatic (no hue); a chroma key must be a saturated colour.`,
+      { details: { field: "key", constraint: "saturated colour" } },
     );
   }
   const keyHue = keyHsv.h;

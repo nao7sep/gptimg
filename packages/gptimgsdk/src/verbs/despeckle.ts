@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -11,10 +13,7 @@ import type { DespeckleArgs, DespeckleResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateDespeckleArgs } from "./schemas.ts";
 
-export interface DespeckleContext {
-  profileDir: string;
-  logDir: string;
-}
+export type DespeckleContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-despeckle`;
@@ -24,11 +23,11 @@ export async function despeckleImpl(
   ctx: DespeckleContext,
   args: DespeckleArgs,
   opts: VerbCallOptions = {},
-): Promise<DespeckleResult> {
+): Promise<DespeckleResult | RefusedResult> {
   validateDespeckleArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "despeckle", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "despeckle", opts, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
@@ -86,6 +85,7 @@ export async function despeckleImpl(
       width: result.width,
       height: result.height,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

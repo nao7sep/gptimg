@@ -4,9 +4,8 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultModelsDir } from "../../src/internal/paths.ts";
 import {
   ensureModel,
   fileSha256,
@@ -49,60 +48,6 @@ function silenceStderr(): void {
 function restoreStderr(): void {
   process.stderr.write = stderrWriteOriginal;
 }
-
-describe("defaultModelsDir", () => {
-  it("returns <profileDir>/models by default", () => {
-    const prev = process.env.GPTIMG_MODELS_DIR;
-    delete process.env.GPTIMG_MODELS_DIR;
-    try {
-      const profileDir = path.resolve("some", "dir");
-      expect(defaultModelsDir(profileDir)).toBe(path.join(profileDir, "models"));
-    } finally {
-      if (prev !== undefined) process.env.GPTIMG_MODELS_DIR = prev;
-    }
-  });
-
-  it("honors GPTIMG_MODELS_DIR when set", () => {
-    const prev = process.env.GPTIMG_MODELS_DIR;
-    process.env.GPTIMG_MODELS_DIR = "/elsewhere/models";
-    try {
-      expect(defaultModelsDir("/some/dir")).toBe("/elsewhere/models");
-    } finally {
-      if (prev === undefined) delete process.env.GPTIMG_MODELS_DIR;
-      else process.env.GPTIMG_MODELS_DIR = prev;
-    }
-  });
-
-  it("expands and home-anchors relocatable model directory overrides", () => {
-    const prev = process.env.GPTIMG_MODELS_DIR;
-    const prevRoot = process.env.GPTIMG_TEST_MODEL_ROOT;
-    try {
-      process.env.GPTIMG_TEST_MODEL_ROOT = "model-root";
-      process.env.GPTIMG_MODELS_DIR = "${GPTIMG_TEST_MODEL_ROOT}/cache";
-      expect(defaultModelsDir("/some/dir")).toBe(path.join(homedir(), "model-root", "cache"));
-
-      process.env.GPTIMG_MODELS_DIR = "~/custom-models";
-      expect(defaultModelsDir("/some/dir")).toBe(path.join(homedir(), "custom-models"));
-    } finally {
-      if (prev === undefined) delete process.env.GPTIMG_MODELS_DIR;
-      else process.env.GPTIMG_MODELS_DIR = prev;
-      if (prevRoot === undefined) delete process.env.GPTIMG_TEST_MODEL_ROOT;
-      else process.env.GPTIMG_TEST_MODEL_ROOT = prevRoot;
-    }
-  });
-
-  it("rejects a model directory override that expands to empty", () => {
-    const prev = process.env.GPTIMG_MODELS_DIR;
-    try {
-      delete process.env.GPTIMG_DEFINITELY_UNSET_MODEL_ROOT;
-      process.env.GPTIMG_MODELS_DIR = "${GPTIMG_DEFINITELY_UNSET_MODEL_ROOT}";
-      expect(() => defaultModelsDir("/some/dir")).toThrowError(/expands to an empty path/);
-    } finally {
-      if (prev === undefined) delete process.env.GPTIMG_MODELS_DIR;
-      else process.env.GPTIMG_MODELS_DIR = prev;
-    }
-  });
-});
 
 describe("stagingPathFor", () => {
   it("names the staged file <stem>-<hostTag>-<pid>-<random>.tmp inside temp/, derived from the model's stem", () => {
@@ -173,6 +118,7 @@ describe("ensureModel", () => {
       warn: async () => {},
       error: async () => {},
       debug: async () => {},
+      progress: () => {},
       addCredential: () => {},
       close: async () => {},
     };
@@ -343,7 +289,7 @@ describe("ensureModel", () => {
         inputSize: 0,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
-        code: "model.downloadFailed",
+        code: "model.httpStatus",
       });
       expect(existsSync(path.join(tmp, entry.name))).toBe(false);
       // The staged copy in temp/ is cleaned up on failure, not left behind.
@@ -365,7 +311,7 @@ describe("ensureModel", () => {
         () => expect.fail("the download should fail"),
         (e: unknown) => e,
       )) as Error & { cause?: Error };
-      expect(err).toMatchObject({ code: "model.downloadFailed" });
+      expect(err).toMatchObject({ code: "model.httpStatus", details: { status: 404 } });
       expect(err.message).toContain(`HTTP 404: ${detail}`);
       expect(err.cause?.message).toBe(`HTTP 404: ${detail}`);
     } finally {
@@ -387,7 +333,7 @@ describe("ensureModel", () => {
         sha256: "0000000000000000000000000000000000000000000000000000000000000000",
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
-        code: "model.checksumMismatch",
+        code: "model.integrity",
       });
       expect(existsSync(path.join(tmp, entry.name))).toBe(false);
     } finally {
@@ -431,7 +377,7 @@ describe("ensureModel", () => {
         byteSize: body.length + 1,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
-        code: "model.sizeMismatch",
+        code: "model.integrity",
       });
       expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
     } finally {
@@ -452,7 +398,7 @@ describe("ensureModel", () => {
         byteSize: 4,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
-        code: "model.sizeExceeded",
+        code: "model.integrity",
       });
       expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
     } finally {
@@ -473,7 +419,7 @@ describe("ensureModel", () => {
         byteSize: 4,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
-        code: "model.sizeMismatch",
+        code: "model.integrity",
       });
       expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
     } finally {
@@ -515,7 +461,7 @@ describe("ensureModel", () => {
       inputSize: 0,
       byteSize: 4,
     };
-    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.sizeExceeded" });
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.integrity" });
     expect(existsSync(path.join(tmp, entry.name))).toBe(false);
     expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
   });
@@ -530,7 +476,7 @@ describe("ensureModel", () => {
       url: "https://example.com/model.bin",
       inputSize: 0,
     };
-    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.invalidSize" });
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.integrity" });
     expect(existsSync(path.join(tmp, entry.name))).toBe(false);
   });
 
@@ -541,7 +487,7 @@ describe("ensureModel", () => {
       url: "https://example.com/model.bin",
       inputSize: 0,
     };
-    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.redirectFailed" });
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.badRedirect" });
   });
 
   it("stops after ten redirects", async () => {
@@ -557,7 +503,7 @@ describe("ensureModel", () => {
       inputSize: 0,
     };
     await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
-      code: "model.redirectFailed",
+      code: "model.badRedirect",
       message: expect.stringContaining("Too many redirects"),
     });
     expect(fetcher).toHaveBeenCalledTimes(11);
@@ -572,7 +518,7 @@ describe("ensureModel", () => {
       inputSize: 0,
       byteSize,
     };
-    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.invalidSize" });
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "internal.invariant" });
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -584,7 +530,7 @@ describe("ensureModel", () => {
     };
     await expect(
       ensureModel(entry, tmp, { budget: { timeout: 1_000, maxRetries, retryIntervals: [] } }),
-    ).rejects.toMatchObject({ code: "model.invalidBudget" });
+    ).rejects.toMatchObject({ code: "policy.invalid" });
   });
 
   it("rejects a disabled model timeout", async () => {
@@ -597,7 +543,7 @@ describe("ensureModel", () => {
       ensureModel(entry, tmp, {
         budget: { timeout: 0, maxRetries: 0, retryIntervals: [] },
       }),
-    ).rejects.toMatchObject({ code: "model.invalidBudget" });
+    ).rejects.toMatchObject({ code: "policy.invalid" });
   });
 
   it("honors cancellation after download and removes the staged file", async () => {
@@ -616,6 +562,7 @@ describe("ensureModel", () => {
       warn: async () => {},
       error: async () => {},
       debug: async () => {},
+      progress: () => {},
       addCredential: () => {},
       close: async () => {},
     };
@@ -649,8 +596,9 @@ describe("ensureModel", () => {
       info: async () => {},
       warn: async () => {},
       error: async () => {},
-      debug: async (_stage, _msg, data) => {
-        if (Number(data?.received ?? 0) > 0) ctrl.abort(new Error("stop"));
+      debug: async () => {},
+      progress: (_stage, done) => {
+        if (done > 0) ctrl.abort(new Error("stop"));
       },
       addCredential: () => {},
       close: async () => {},
@@ -703,8 +651,11 @@ describe("ensureModel", () => {
     const entry: ModelEntry = { name: "blocked.bin", url: baseURL, inputSize: 0 };
     await mkdir(path.join(tmp, entry.name));
     try {
+      // Renaming over a folder fails with the filesystem's own cause.
       await expect(ensureModel(entry, tmp, { force: true })).rejects.toMatchObject({
-        code: "model.downloadFailed",
+        kind: "unavailable",
+        code: expect.stringMatching(/^fs\./),
+        subject: path.join(tmp, entry.name),
       });
       expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
     } finally {
@@ -737,6 +688,7 @@ describe("superseded model retirement", () => {
       const logger = {
         info: async (_stage: string, message: string) => void events.push(message),
         warn: async (_stage: string, message: string) => void events.push(message),
+        progress: () => undefined,
       } as unknown as Logger;
       const entry: ModelEntry = {
         name: "model-v2.onnx",
@@ -783,7 +735,7 @@ describe("superseded model retirement", () => {
         inputSize: 0,
         sha256: "0".repeat(64),
       };
-      await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.checksumMismatch" });
+      await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.integrity" });
       expect(await readFile(path.join(tmp, "model-v1.onnx"), "utf8")).toBe("old");
     } finally {
       await closeServer(server);
@@ -800,7 +752,8 @@ describe("superseded model retirement", () => {
     const logger = {
       info: async () => undefined,
       warn: async (_stage: string, message: string) => void warnings.push(message),
-    } as unknown as Logger;
+      progress: () => undefined,
+      } as unknown as Logger;
     const entry: ModelEntry = {
       name: "model-v2.onnx",
       supersedes: ["model-v1.onnx", "model-v0.onnx"],

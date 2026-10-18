@@ -3,10 +3,10 @@
  * layer can dispatch on `method` without caring about the producer details.
  */
 
+import type { OnnxPolicy } from "../types.ts";
 import { throwIfAborted } from "../errors.ts";
 import { loadRawRGBA } from "../image/bridge.ts";
 import type { Logger } from "../log/index.ts";
-import type { NetworkBudget } from "../network/defaults.ts";
 import { runBirefnet } from "./models/birefnet.ts";
 
 export interface AiMaskRunArgs {
@@ -31,10 +31,10 @@ export interface AiMaskResult {
 
 export async function aiMaskFromFile(
   args: AiMaskRunArgs,
-  cacheDir: string,
+  modelsDir: string,
   opts: {
     signal?: AbortSignal | undefined;
-    budget?: NetworkBudget;
+    onnx?: OnnxPolicy | undefined;
     logger?: Logger;
   } = {},
 ): Promise<AiMaskResult> {
@@ -44,7 +44,7 @@ export async function aiMaskFromFile(
   const image = await loadRawRGBA(args.in);
   throwIfAborted(signal);
 
-  const result = await runBirefnet(image.data, image.width, image.height, cacheDir, opts);
+  const result = await runBirefnet(image.data, image.width, image.height, modelsDir, opts);
 
   let removedPixels = 0;
   const n = result.width * result.height;

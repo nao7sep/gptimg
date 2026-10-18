@@ -1,13 +1,13 @@
-import type { MaskArgs, MaskRecipe } from "../types.ts";
+import type { MaskArgs, MaskPolicy } from "../types.ts";
 
 /**
- * Fill the unset chroma-mask args from the recipe's `chroma` section. An arg the
+ * Fill the unset chroma-mask args from the policy's `chroma` section. An arg the
  * caller passed explicitly always wins — only `undefined` fields fall back — and
- * `key` falls back to a non-empty `color` string only, so a blank recipe color
+ * `key` falls back to a non-empty `color` string only, so a blank policy color
  * leaves `key` unset (i.e. "auto"). Pure: returns a new args object, never
  * mutating the input.
  */
-export function applyChromaRecipeDefaults(args: MaskArgs, section: MaskRecipe): MaskArgs {
+export function applyChromaPolicyDefaults(args: MaskArgs, section: MaskPolicy): MaskArgs {
   const merged: MaskArgs = { ...args };
   if (merged.preserveInterior === undefined && section.preserveInterior !== undefined) {
     merged.preserveInterior = section.preserveInterior;

@@ -67,7 +67,7 @@ describe("detectFormat", () => {
 
   it("rejects corrupt image data", async () => {
     await expect(detectFormat(Buffer.from("not an image"))).rejects.toMatchObject({
-      code: "image.decodeFailed",
+      code: "image.undecodable",
     });
   });
 });
@@ -113,10 +113,9 @@ describe("shrinkForVision", () => {
     });
   });
 
-  it("reports decode failures as LocalOpError", async () => {
+  it("reports decode failures as GptImgError", async () => {
     await expect(shrinkForVision(Buffer.from("bad"))).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "image.decodeFailed",
+      code: "image.undecodable",
     });
   });
 });

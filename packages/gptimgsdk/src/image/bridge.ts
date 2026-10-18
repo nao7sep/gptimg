@@ -1,5 +1,6 @@
 import sharp, { type Sharp } from "sharp";
-import { LocalOpError } from "../errors.ts";
+import { GptImgError, fsError, processingError } from "../errors.ts";
+import { refuse } from "../refusal.ts";
 import { writeFileAtomic } from "../internal/atomic-file.ts";
 import type { EncodingArgs, PngEncodingArgs, ResampleKernel } from "../types.ts";
 import { readCaptureMetadata, withCaptureMetadata, type CaptureMetadata } from "./capture.ts";
@@ -13,24 +14,37 @@ export interface RawImage {
 
 /**
  * The pixel size of an image file, for the verb that needs it. A file sharp cannot read is
- * `image.decodeFailed`; one without positive dimensions is `image.noContent`.
+ * `image.undecodable`; one without positive dimensions is `image.noContent`.
  */
 export async function readImageSize(path: string, verb: string): Promise<{ width: number; height: number }> {
   let meta;
   try {
     meta = await sharp(path).metadata();
   } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
-      `${verb}: failed to read ${path}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw inputImageError(err, `${verb}: failed to read`, path);
   }
   const { width, height } = meta;
   if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) {
-    throw new LocalOpError("image.noContent", `${verb}: could not determine dimensions of ${path}.`);
+    throw new GptImgError("image.noContent", `${verb}: could not determine dimensions of ${path}.`);
   }
   return { width, height };
+}
+
+/**
+ * A failure reading or decoding an input image with sharp, as the error naming
+ * its cause: a missing or unreadable file is the filesystem's (sharp reports a
+ * missing file without an errno), anything else is an image sharp cannot
+ * decode. Nothing has taken effect.
+ */
+export function inputImageError(err: unknown, what: string, subject: string): Error {
+  if (err instanceof GptImgError || (err as { name?: unknown } | null)?.name === "RefusalSignal") return err as Error;
+  const message = (err as Error)?.message ?? String(err);
+  if (/^Input file is missing/.test(message)) {
+    return new GptImgError("fs.notFound", `${what} ${subject}: ${message}`, { cause: err, subject, details: { errno: "ENOENT" } });
+  }
+  const errno = (err as NodeJS.ErrnoException | null)?.code;
+  if (typeof errno === "string" && /^E[A-Z]+$/.test(errno)) return fsError(err, what, subject);
+  return new GptImgError("image.undecodable", `${what} ${subject}: ${message}`, { cause: err, subject });
 }
 
 /**
@@ -49,8 +63,7 @@ export interface ImageTarget {
  * truncated file under the final name or destroys the file it was replacing.
  * Without `overwrite` the publication is no-clobber, so a file that appeared
  * after the verb's up-front check is refused as `output.exists` rather than
- * replaced. Any other failure is `image.writeFailed` with `failure` as its
- * message prefix.
+ * replaced. Any other failure names the filesystem's cause.
  */
 async function publishImage(target: ImageTarget, bytes: Buffer, failure: string): Promise<void> {
   const overwrite = target.overwrite ?? false;
@@ -58,11 +71,9 @@ async function publishImage(target: ImageTarget, bytes: Buffer, failure: string)
     await writeFileAtomic(target.path, bytes, { overwrite });
   } catch (err) {
     if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new LocalOpError("output.exists", `Output exists: ${target.path}. Set overwrite: true to allow.`, {
-        cause: err,
-      });
+      refuse("output.exists", `Output exists: ${target.path}. Set overwrite: true to allow.`, { subject: target.path });
     }
-    throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
+    throw fsError(err, failure, target.path, "unknown");
   }
 }
 
@@ -92,7 +103,7 @@ export async function encodeImage(
       if (data[i]! < 255) translucent += 1;
     }
     if (translucent > 0) {
-      throw new LocalOpError(
+      throw new GptImgError(
         "image.notOpaque",
         `${failure}: ${translucent} pixel(s) are not fully opaque; an opaque encoding would turn them solid.`,
       );
@@ -118,7 +129,7 @@ export async function encodeImage(
 /**
  * Builds the sharp pipeline, encodes it with the capture facts of `target.source` (see
  * `encodeImage`) and publishes it at `target` (see `publishImage`). Anything that fails while
- * building or encoding is `image.writeFailed` with `failure` as its message prefix; a refusal
+ * building or encoding names its cause, with `failure` as its message prefix; a refusal
  * the encoding itself raises keeps its code.
  */
 async function encodeAndPublish(
@@ -132,8 +143,8 @@ async function encodeAndPublish(
     const capture = target.source === undefined ? undefined : await readCaptureMetadata(target.source);
     bytes = await encodeImage(build(), encoding, failure, capture);
   } catch (err) {
-    if (err instanceof LocalOpError) throw err;
-    throw new LocalOpError("image.writeFailed", `${failure}: ${(err as Error).message}`, { cause: err });
+    // Encoding happens before any write, so nothing has taken effect yet.
+    throw processingError(err, failure, target.path, "none");
   }
   await publishImage(target, bytes, failure);
 }
@@ -156,8 +167,8 @@ export async function loadRawRGBA(path: string): Promise<RawImage> {
   try {
     out = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
+    throw new GptImgError(
+      "image.undecodable",
       `Failed to decode image at ${path}: ${(err as Error).message}`,
       { cause: err },
     );
@@ -231,8 +242,8 @@ export async function loadMaskPNG(path: string): Promise<RawImage> {
       resolveWithObject: true,
     });
   } catch (err) {
-    throw new LocalOpError(
-      "image.decodeFailed",
+    throw new GptImgError(
+      "image.undecodable",
       `Failed to decode mask at ${path}: ${(err as Error).message}`,
       { cause: err },
     );

@@ -1,8 +1,11 @@
+import type { RefusedResult } from "../refusal.ts";
+import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
+import { sidecarWriter } from "../sidecar/writer.ts";
 import { defaultModelFor } from "../ai-models.ts";
 import { resolveModel } from "../providers/openai/client.ts";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { LocalOpError } from "../errors.ts";
+import { fsError } from "../errors.ts";
 import { hash } from "../image/hash.ts";
 import { ensureOutputDir } from "../internal/output-files.ts";
 import {
@@ -13,26 +16,16 @@ import {
 import { withVerbLogger } from "../internal/local-verb.ts";
 import { multiline } from "../internal/textCleanup.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
-import { loadProfile } from "../profile/load.ts";
-import { resolveProfile } from "../profile/resolve.ts";
-import { mergeRecipes } from "../recipe/merge.ts";
-import { loadRecipeForCall } from "../recipe/load.ts";
-import { checkImageParams } from "../recipe/model-check.ts";
-import { validateEditSection } from "../recipe/schemas.ts";
+import { checkImageParams } from "../policy/model-check.ts";
+import { validateEditSection } from "../policy/schemas.ts";
 import { getProvider } from "../providers/index.ts";
 import type { EditArgs, EditResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { publishProviderImages } from "./image-outputs.ts";
 import { validateEditArgs } from "./schemas.ts";
-import {
-  defaultProfilePath,
-  defaultStem,
-} from "../internal/paths.ts";
+import { defaultStem } from "../internal/paths.ts";
 
-export interface EditContext {
-  profileDir: string;
-  logDir: string;
-}
+export type EditContext = SdkContext;
 
 /**
  * Read an input image before the paid call, failing early when it is
@@ -43,11 +36,7 @@ async function readImageSha256(filePath: string, label: string): Promise<string>
   try {
     return hash(await readFile(filePath));
   } catch (err) {
-    throw new LocalOpError(
-      "image.readFailed",
-      `Failed to read ${label} image at ${filePath}: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw fsError(err, `Failed to read ${label} image`, filePath);
   }
 }
 
@@ -55,9 +44,8 @@ export async function editImpl(
   ctx: EditContext,
   args: EditArgs,
   opts: VerbCallOptions = {},
-): Promise<EditResult> {
+): Promise<EditResult | RefusedResult> {
   validateEditArgs(args);
-  const profilePath = args.profile ?? defaultProfilePath(ctx.profileDir);
   const signal = opts.signal;
   // Normalize the free-text prompt once, at the input boundary, so the same
   // cleaned value is both sent to the provider and stored in the sidecar.
@@ -65,18 +53,16 @@ export async function editImpl(
   // trailing whitespace), so it is safe for the outgoing request.
   const prompt = multiline(args.prompt);
 
-  return withVerbLogger(ctx, "edit", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
-    const profile = await loadProfile(profilePath);
-    const resolved = resolveProfile(profile);
+  return withVerbLogger(ctx, "edit", opts, async (logger) => {
+    const resolved = requireCredentials(ctx);
     await logger.info("resolve", "apiKey resolved", {
       apiKeySource: resolved.apiKeySource,
-      provider: profile.provider,
+      provider: resolved.redacted.provider,
     });
 
-    let recipe = await loadRecipeForCall(args.recipe, ctx.profileDir);
-    if (args.overrides) recipe = mergeRecipes(recipe, args.overrides);
-    const network = resolveNetworkForCall(recipe);
-    const section = validateEditSection(recipe.edit);
+    const policy = callPolicy(ctx, args.policy);
+    const network = resolveNetworkForCall(policy);
+    const section = validateEditSection(policy.edit);
     // The model is settled and its values checked before the call, so the log and the sidecar
     // name what is sent.
     const params: Record<string, unknown> = {
@@ -102,14 +88,14 @@ export async function editImpl(
     assertStemAvailable(outDir, stem, n, overwrite);
 
     await logger.info("request", "calling provider.edit", {
-      provider: profile.provider,
+      provider: resolved.redacted.provider,
       model: params.model ?? null,
       input: path.basename(args.in),
       mask: args.mask ? path.basename(args.mask) : null,
       n,
     });
 
-    const provider = getProvider(profile.provider);
+    const provider = getProvider(resolved.redacted.provider);
     const providerResult = await provider.edit({
       prompt,
       imagePath: args.in,
@@ -136,21 +122,25 @@ export async function editImpl(
       maskSha256,
       n,
     };
-    const { files, partial } = await publishProviderImages({
+    const { files, failures, leftovers } = await publishProviderImages({
+      kind: "edit",
       outDir,
       stem,
       n,
       overwrite,
       providerResult,
       requestRecord,
+      writer: sidecarWriter(ctx),
       credentials: [resolved.apiKey],
       logger,
     });
 
     return {
+      status: "completed" as const,
       files,
+      failures,
+      leftovers,
       logPath: logger.handle.path,
-      partial,
     };
   });
 }

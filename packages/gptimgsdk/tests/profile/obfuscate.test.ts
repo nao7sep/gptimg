@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { deobfuscate, obfuscate } from "../../src/profile/obfuscate.ts";
+import { deobfuscate } from "../../src/profile/obfuscate.ts";
+
+/** The api-key-storage-conventions' `obf:` encoding, as an app writing a profile applies it. */
+function obfuscate(raw: string): string {
+  return "obf:" + Buffer.from(raw, "utf-8").reverse().toString("base64");
+}
 
 describe("obfuscate / deobfuscate", () => {
   it("round-trips a typical API key", () => {
@@ -36,7 +41,7 @@ describe("obfuscate / deobfuscate", () => {
     "rejects malformed encoded storage (%s) with the typed profile error",
     (stored) => {
       expect(() => deobfuscate(stored)).toThrowError(
-        expect.objectContaining({ code: "apiKey.invalidObf", errorType: "profile" }),
+        expect.objectContaining({ code: "apiKey.malformed" }),
       );
     },
   );

@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -10,10 +12,7 @@ import type { BackplateArgs, BackplateResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateBackplateArgs } from "./schemas.ts";
 
-export interface BackplateContext {
-  profileDir: string;
-  logDir: string;
-}
+export type BackplateContext = SdkContext;
 
 function defaultStem(size: number): string {
   return `backplate-${size}`;
@@ -23,11 +22,11 @@ export async function backplateImpl(
   ctx: BackplateContext,
   args: BackplateArgs,
   opts: VerbCallOptions = {},
-): Promise<BackplateResult> {
+): Promise<BackplateResult | RefusedResult> {
   validateBackplateArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "backplate", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "backplate", opts, async (logger) => {
     // Resolve size only — runBackplate resolves the rest. The output name
     // depends on the final size; everything else just goes into the log via
     // result fields after the call.
@@ -85,6 +84,7 @@ export async function backplateImpl(
       to: result.to,
       angle: result.angle,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

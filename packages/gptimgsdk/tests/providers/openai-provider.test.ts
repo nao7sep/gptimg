@@ -224,7 +224,6 @@ describe("OpenAI provider implementations", () => {
         network: { ...network, signal: ctrl.signal },
       }),
     ).rejects.toMatchObject({
-      name: "AbortError",
       code: "cancelled",
     });
     expect(openaiMock.generate).not.toHaveBeenCalled();
@@ -301,13 +300,12 @@ describe("OpenAI provider implementations", () => {
         network: { ...network, signal: ctrl.signal },
       }),
     ).rejects.toMatchObject({
-      name: "AbortError",
       code: "cancelled",
     });
     expect(openaiMock.edit).not.toHaveBeenCalled();
   });
 
-  it("edit wraps a non-abort SDK failure as a provider.requestFailed error", async () => {
+  it("edit reports an SDK failure it cannot classify as internal.unexpected, the paid request's effect unknown", async () => {
     openaiMock.edit.mockRejectedValue(new Error("upstream 503"));
 
     await expect(
@@ -319,8 +317,8 @@ describe("OpenAI provider implementations", () => {
         network,
       }),
     ).rejects.toMatchObject({
-      errorType: "provider",
-      code: "provider.requestFailed",
+      code: "internal.unexpected",
+      effect: "unknown",
       message: /OpenAI images\.edit failed: upstream 503/,
     });
   });
@@ -385,7 +383,7 @@ describe("OpenAI provider implementations", () => {
     ]);
   });
 
-  it("edit rethrows the LocalOpError when the input image cannot be read", async () => {
+  it("edit rethrows the GptImgError when the input image cannot be read", async () => {
     const missing = path.join(FIXTURES, "does-not-exist.png");
 
     await expect(
@@ -397,10 +395,9 @@ describe("OpenAI provider implementations", () => {
         network,
       }),
     ).rejects.toMatchObject({
-      errorType: "localOp",
       // Surfaced verbatim from imageFileForEditUpload (upload.ts), not rewrapped.
-      code: "image.readFailed",
-      message: /Failed to read input image at .*does-not-exist\.png/,
+      code: "fs.notFound",
+      message: /Failed to read input image .*does-not-exist\.png/,
     });
     expect(openaiMock.edit).not.toHaveBeenCalled();
   });
@@ -430,8 +427,7 @@ describe("OpenAI provider implementations", () => {
           network,
         }),
       ).rejects.toMatchObject({
-        errorType: "localOp",
-        code: "image.formatUnknown",
+        code: "image.unsupportedFormat",
         message: /Unsupported input image format for OpenAI edit upload: gif/,
       });
       expect(openaiMock.edit).not.toHaveBeenCalled();
@@ -440,10 +436,10 @@ describe("OpenAI provider implementations", () => {
     }
   });
 
-  it("edit wraps a non-LocalOpError upload failure as image.readFailed", async () => {
+  it("edit reports an upload preparation failure it cannot classify as internal.unexpected", async () => {
     // toFile (the SDK upload step) is mocked; make it reject with a plain Error
-    // so imageFileForEditUpload throws something that is *not* a LocalOpError.
-    // edit.ts must wrap that into a LocalOpError("image.readFailed").
+    // so imageFileForEditUpload throws something that is *not* a GptImgError.
+    // edit.ts must wrap that into a GptImgError("image.readFailed").
     openaiMock.toFile.mockRejectedValueOnce(new Error("toFile blew up"));
 
     await expect(
@@ -455,9 +451,9 @@ describe("OpenAI provider implementations", () => {
         network,
       }),
     ).rejects.toMatchObject({
-      errorType: "localOp",
-      code: "image.readFailed",
-      message: /Failed to read edit input image: toFile blew up/,
+      code: "internal.unexpected",
+      effect: "none",
+      message: /Failed to prepare edit input image .*toFile blew up/,
     });
     expect(openaiMock.edit).not.toHaveBeenCalled();
   });
@@ -468,7 +464,7 @@ describe("OpenAI provider implementations", () => {
   // to act on. `length` is quieter still: the content is present and reads like a full verdict.
   // (ai-model-routing-conventions: never invent a cause the provider gave you.)
   it.each([
-    ["a refusal", { finish_reason: "stop", message: { content: null, refusal: "I can't assess that." } }, /declined to verify this image: I can't assess that\./, "provider.refused"],
+    ["a refusal", { finish_reason: "stop", message: { content: null, refusal: "I can't assess that." } }, /declined to verify this image/, "provider.refused"],
     ["a content filter", { finish_reason: "content_filter", message: { content: null } }, /content filter rejected/, "provider.contentFiltered"],
     ["a truncated verdict", { finish_reason: "length", message: { content: '{"ok":true,"score":1,' } }, /truncated/, "provider.truncated"],
   ])("reports %s with the provider's own reason and a distinct code", async (_label, choice, expected, expectedCode) => {
@@ -485,6 +481,10 @@ describe("OpenAI provider implementations", () => {
     // input" vs. "raise max tokens" without parsing message text; all three
     // sharing the provider's name ("openai") would make that impossible.
     await expect(call).rejects.toMatchObject({ code: expectedCode });
+    if (expectedCode === "provider.refused") {
+      // The provider's own reason travels in the refusal's safe field.
+      await expect(call).rejects.toMatchObject({ refusal: { safeReason: "I can't assess that." } });
+    }
   });
 
   it("vision sends data URLs and parses structured verdicts", async () => {
@@ -703,7 +703,6 @@ describe("OpenAI provider implementations", () => {
         network: { ...network, signal: ctrl.signal },
       }),
     ).rejects.toMatchObject({
-      name: "AbortError",
       code: "cancelled",
     });
     expect(openaiMock.create).not.toHaveBeenCalled();
@@ -733,7 +732,6 @@ describe("OpenAI provider implementations", () => {
         }),
         JSON.stringify(content),
       ).rejects.toMatchObject({
-        errorType: "provider",
         code: "provider.invalidResponse",
       });
     }
@@ -844,7 +842,7 @@ describe("OpenAI provider failure records", () => {
         profile,
         network: net,
       }),
-    ).rejects.toMatchObject({ code: "provider.requestFailed" });
+    ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
 
     const { lines } = await records(logPath);
     const request = {
@@ -887,7 +885,7 @@ describe("OpenAI provider failure records", () => {
         profile: { ...profile, redacted: { provider: "openai", organization: "org-1", project: "proj-1" } },
         network: net,
       }),
-    ).rejects.toMatchObject({ code: "provider.requestFailed" });
+    ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
     const { lines } = await records(logPath);
     expect(lines[0]!.data.request.headers).toEqual({
       Authorization: "Bearer [REDACTED]",
@@ -973,7 +971,7 @@ describe("OpenAI provider failure records", () => {
     const { network: net, logPath } = await failingNetwork();
 
     await expect(openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net })).rejects.toMatchObject({
-      code: "provider.requestFailed",
+      code: "provider.rejected",
     });
 
     const { lines } = await records(logPath);
@@ -989,9 +987,10 @@ describe("OpenAI provider failure records", () => {
     openaiMock.generate.mockRejectedValue(refused);
     const { network: net, logPath } = await failingNetwork();
 
+    // A refused connection proves the request never started work: nothing was spent.
     await expect(
       openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net }),
-    ).rejects.toMatchObject({ code: "provider.requestFailed" });
+    ).rejects.toMatchObject({ code: "provider.unreachable", effect: "none" });
 
     const { lines } = await records(logPath);
     expect(lines).toHaveLength(NETWORK_DEFAULTS.imageGenerate.maxRetries + 1);
@@ -1019,7 +1018,7 @@ describe("OpenAI provider failure records", () => {
         profile,
         network: net,
       }),
-    ).rejects.toMatchObject({ code: "provider.requestFailed" });
+    ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
 
     const { lines } = await records(logPath);
     expect(lines).toHaveLength(1);
@@ -1047,7 +1046,7 @@ describe("OpenAI provider failure records", () => {
         profile,
         network: net,
       }),
-    ).rejects.toMatchObject({ code: "provider.requestFailed" });
+    ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
 
     const { text, lines } = await records(logPath);
     expect(lines).toHaveLength(1);
@@ -1077,7 +1076,7 @@ describe("OpenAI provider failure records", () => {
         profile,
         network: { ...network, logger },
       }),
-    ).rejects.toMatchObject({ code: "provider.requestFailed" });
+    ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
 
     const { lines } = await records(logPath);
     expect(lines).toHaveLength(1);
@@ -1104,7 +1103,7 @@ describe("OpenAI provider failure records", () => {
           profile,
           network: { ...network, logger },
         }),
-      ).rejects.toMatchObject({ errorType: "provider" });
+      ).rejects.toMatchObject({ code: expect.stringMatching(/^provider\./) });
 
       const { text, lines } = await records(logPath);
       expect(lines).toHaveLength(2);
@@ -1112,7 +1111,7 @@ describe("OpenAI provider failure records", () => {
       expect(lines[1]).toMatchObject({ level: "warn", stage: "response", data: { response: answer } });
       expect(lines[1]!.data.request.headers).toEqual(headers);
       expect(lines[1]!.data.request.body.messages[1].content[1]).toEqual({ type: "image_url", image_url: { url: null } });
-      expect(lines[1]!.data.error.code).toMatch(/^provider\./);
+      expect(lines[1]!.data.error?.code ?? lines[1]!.data.code).toMatch(/^provider\./);
       expect(text).not.toContain("base64");
     }
   });
@@ -1132,7 +1131,7 @@ describe("OpenAI provider failure records", () => {
         profile,
         network: { ...net, signal: ctrl.signal },
       }),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    ).rejects.toMatchObject({ code: "cancelled" });
 
     const { lines } = await records(logPath);
     expect(lines).toEqual([

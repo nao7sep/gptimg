@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -10,20 +12,17 @@ import type { GridArgs, GridResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateGridArgs } from "./schemas.ts";
 
-export interface GridContext {
-  profileDir: string;
-  logDir: string;
-}
+export type GridContext = SdkContext;
 
 export async function gridImpl(
   ctx: GridContext,
   args: GridArgs,
   opts: VerbCallOptions = {},
-): Promise<GridResult> {
+): Promise<GridResult | RefusedResult> {
   validateGridArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "grid", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "grid", opts, async (logger) => {
     // The sheet lands beside its first input by default — the inputs are the
     // natural base directory for a comparison of them. The schema guarantees at
     // least one input.
@@ -55,7 +54,7 @@ export async function gridImpl(
         gap: args.gap,
         background: args.background,
       },
-      { signal },
+      { signal, logger },
     );
 
     await logger.info("write", "wrote grid sheet", {
@@ -80,6 +79,7 @@ export async function gridImpl(
       width: result.width,
       height: result.height,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

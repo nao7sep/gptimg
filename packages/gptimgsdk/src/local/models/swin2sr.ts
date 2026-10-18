@@ -26,10 +26,10 @@
 
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
-import { LocalOpError, throwIfAborted } from "../../errors.ts";
+import { GptImgError, throwIfAborted } from "../../errors.ts";
 import type { Logger } from "../../log/index.ts";
-import type { NetworkBudget } from "../../network/defaults.ts";
-import { ensureModel } from "./fetch.ts";
+import { requireInstalledModel } from "./fetch.ts";
+import type { OnnxPolicy } from "../../types.ts";
 import { SWIN2SR_X4 } from "./registry.ts";
 import { loadSession, runSession } from "./session.ts";
 import { packNchw01, unpackChwToU8 } from "./swin2sr-tensor.ts";
@@ -145,7 +145,7 @@ function makeOnnxRun(
     });
     const tensor = outputs[outputName];
     if (!tensor) {
-      throw new LocalOpError(
+      throw new GptImgError(
         "model.loadFailed",
         `Swin2SR session produced no output named ${outputName}.`,
       );
@@ -231,10 +231,7 @@ export async function tileAndStitch(
       out.set(up.subarray(srcStart, srcStart + rowBytes), dstStart);
     }
     done++;
-    await logger?.debug("infer", `upscaled tile ${done}/${specs.length}`, {
-      tile: done,
-      tiles: specs.length,
-    });
+    logger?.progress("infer", done, specs.length, "tiles");
   }
 
   return { rgb: out, width: outW, height: outH, tiles: specs.length };
@@ -242,7 +239,7 @@ export async function tileAndStitch(
 
 /**
  * Upscale interleaved-RGB `rgb` (width × height) by ×4, tiling as needed. The
- * model is downloaded + cached on first use. `tile` bounds the per-pass fed
+ * model must be installed in `modelsDir`. `tile` bounds the per-pass fed
  * edge in source px (the memory knob); a fed region is reflect-padded up to the
  * model's window (8 px), so the actual model input may be slightly larger. The
  * seam-cropped overlap is fixed.
@@ -251,11 +248,11 @@ export async function runSwin2srX4(
   rgb: Uint8Array,
   width: number,
   height: number,
-  cacheDir: string,
+  modelsDir: string,
   opts: {
     tile?: number;
     signal?: AbortSignal | undefined;
-    budget?: NetworkBudget;
+    onnx?: OnnxPolicy | undefined;
     logger?: Logger;
   } = {},
 ): Promise<Swin2srOutput> {
@@ -265,14 +262,14 @@ export async function runSwin2srX4(
   // `tile` is validated at the verb boundary (>= SWIN2SR_MIN_TILE).
   const tile = opts.tile ?? SWIN2SR_DEFAULT_TILE;
 
-  const modelPath = await ensureModel(SWIN2SR_X4, cacheDir, opts);
+  const modelPath = requireInstalledModel(SWIN2SR_X4, "swin2sr", modelsDir);
   throwIfAborted(signal);
-  const session = await loadSession(modelPath);
+  const session = await loadSession(modelPath, opts.onnx);
   throwIfAborted(signal);
   const inputName = session.inputNames[0];
   const outputName = session.outputNames[0];
   if (!inputName || !outputName) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "model.loadFailed",
       "Swin2SR ONNX session is missing an input or output. Model file may be malformed.",
     );

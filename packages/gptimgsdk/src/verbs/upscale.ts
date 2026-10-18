@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import { callModelsDir, callPolicy, type SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -6,18 +8,13 @@ import {
   resolveOutputPath,
   withVerbLogger,
 } from "../internal/local-verb.ts";
-import { defaultModelsDir } from "../internal/paths.ts";
 import { runUpscale } from "../local/upscale.ts";
-import { resolveNetworkForCall } from "../network/index.ts";
-import { loadRecipeForCall } from "../recipe/load.ts";
+import { validateOnnxSection } from "../policy/schemas.ts";
 import type { UpscaleArgs, UpscaleResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateUpscaleArgs } from "./schemas.ts";
 
-export interface UpscaleContext {
-  profileDir: string;
-  logDir: string;
-}
+export type UpscaleContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-upscale`;
@@ -27,11 +24,11 @@ export async function upscaleImpl(
   ctx: UpscaleContext,
   args: UpscaleArgs,
   opts: VerbCallOptions = {},
-): Promise<UpscaleResult> {
+): Promise<UpscaleResult | RefusedResult> {
   validateUpscaleArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "upscale", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "upscale", opts, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
@@ -39,8 +36,8 @@ export async function upscaleImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    const network = resolveNetworkForCall(await loadRecipeForCall(args.recipe, ctx.profileDir));
-    const cacheDir = defaultModelsDir(ctx.profileDir);
+    const onnx = validateOnnxSection(callPolicy(ctx, args.policy).onnx);
+    const modelsDir = callModelsDir(ctx, args.modelsDir);
 
     await logger.info("resolve", "upscale start", {
       input: args.in,
@@ -61,8 +58,8 @@ export async function upscaleImpl(
         kernel: args.kernel,
         tile: args.tile,
       },
-      cacheDir,
-      { signal, budget: network.modelDownload, logger },
+      modelsDir,
+      { signal, onnx, logger },
     );
 
     await logger.info("write", "wrote upscaled image", {
@@ -90,6 +87,7 @@ export async function upscaleImpl(
       tile: result.tile,
       tiles: result.tiles,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

@@ -10,9 +10,11 @@
  * filesystem — "the master must be square", "the top must fit the base",
  * a name collision — stay in the compute layer, where the data is available.
  *
- * Every failure is raised as `LocalOpError("args.invalid", …)` — one code a
- * caller can branch on for any static argument fault. Mirrors the recipe-section
- * validators in recipe/schemas.ts.
+ * Every failure is raised as `GptImgError("args.invalid", …)` — one code a
+ * caller can branch on for any static argument fault — with the faulty field
+ * and its constraint in `details`. Every path argument must be absolute: the
+ * SDK reads no working directory. Mirrors the policy-section validators in
+ * policy/schemas.ts.
  *
  * Messages are constraint-only ("must be in (0..1]"); `formatZodError` prefixes
  * the field path, so the rendered form reads "<verb>: <field>: <constraint>".
@@ -31,8 +33,9 @@ import {
   MASK_METHODS,
   RESAMPLE_KERNELS,
 } from "../enums.ts";
-import { LocalOpError } from "../errors.ts";
-import { formatZodError } from "../internal/zodError.ts";
+import { GptImgError } from "../errors.ts";
+import { assertAbsolutePath } from "../internal/absolute-path.ts";
+import { firstZodIssue, formatZodError } from "../internal/zodError.ts";
 import { MODELS } from "../local/models/registry.ts";
 import { SWIN2SR_MIN_TILE } from "../local/models/swin2sr-constants.ts";
 import type {
@@ -150,7 +153,6 @@ const MaskArgsSchema = z.object({
   borderSample: positiveInt("must be a positive integer").optional(),
   saturationRatio: z.number().refine((v) => v > 0 && v <= 1, "must be in (0..1]").optional(),
   preserveInterior: z.boolean().optional(),
-  dryRun: z.boolean().optional(),
   overwrite: z.boolean().optional(),
 });
 
@@ -371,11 +373,45 @@ const IconArgsSchema = z.object({
 
 // ----- runner + public validators -----
 
+// Arguments earlier versions took, refused rather than silently ignored, so a
+// caller still passing one learns where its value now goes.
+const RETIRED_ARGS: Record<string, string> = {
+  recipe: "recipe files are retired; pass policy per call, per instance or in a profile",
+  overrides: "overrides is now policy",
+  profile: "pass a profile from loadProfile to the GptImg constructor",
+  log: "log is a call option: verb(args, { log: { file } | { dir } })",
+  dryRun: "mask no longer has dryRun",
+};
+
+// Every argument that names a file or folder; each must be absolute.
+const PATH_FIELDS = ["in", "mask", "outDir", "base", "top", "modelsDir"] as const;
+
 function check<T>(schema: z.ZodType, args: T, verb: string): T {
+  if (typeof args !== "object" || args === null) {
+    throw new GptImgError("args.invalid", `${verb}: args must be an object.`, {
+      details: { field: "args", constraint: "object" },
+    });
+  }
+  const given = args as Record<string, unknown>;
+  for (const [key, why] of Object.entries(RETIRED_ARGS)) {
+    if (given[key] !== undefined) {
+      throw new GptImgError("args.invalid", `${verb}: ${key} is not accepted; ${why}.`, {
+        details: { field: key, constraint: "retired" },
+      });
+    }
+  }
   const r = schema.safeParse(args);
   if (!r.success) {
-    throw new LocalOpError("args.invalid", `${verb}: ${formatZodError(r.error)}`);
+    const { field, constraint } = firstZodIssue(r.error);
+    throw new GptImgError("args.invalid", `${verb}: ${formatZodError(r.error)}`, { details: { field, constraint } });
   }
+  for (const field of PATH_FIELDS) {
+    const value = given[field];
+    if (value === undefined) continue;
+    if (Array.isArray(value)) value.forEach((v, i) => assertAbsolutePath(v, `${verb}: ${field}[${i}]`));
+    else assertAbsolutePath(value, `${verb}: ${field}`);
+  }
+  if (Array.isArray(given.inputs)) given.inputs.forEach((v, i) => assertAbsolutePath(v, `${verb}: inputs[${i}]`));
   return args;
 }
 
@@ -384,21 +420,24 @@ function checkEncoding<T extends EncodingArgs>(schema: z.ZodType, args: T, verb:
   check(schema, args, verb);
   const format = args.format ?? "png";
   if (format === "png" && (args.quality !== undefined || args.lossless !== undefined || args.smartSubsample !== undefined)) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `${verb}: quality, lossless and smartSubsample apply to webp only; png is always lossless.`,
+      { details: { field: "format", constraint: "webp-only options" } },
     );
   }
   if (format === "webp" && (args.compressionLevel !== undefined || args.adaptiveFiltering !== undefined)) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `${verb}: compressionLevel and adaptiveFiltering apply to png only.`,
+      { details: { field: "format", constraint: "png-only options" } },
     );
   }
   if (args.quality !== undefined && args.lossless === true) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `${verb}: quality applies to lossy webp only; omit it with lossless.`,
+      { details: { field: "quality", constraint: "lossy webp only" } },
     );
   }
   return args;
@@ -412,9 +451,10 @@ function checkPngEncoding<T extends PngEncodingArgs>(schema: z.ZodType, args: T,
   const given = args as Record<string, unknown>;
   const refused = NON_PNG_ENCODING_KEYS.find((key) => given[key] !== undefined);
   if (refused !== undefined) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `${verb}: ${refused} is not accepted; ${verb} writes png and takes compressionLevel and adaptiveFiltering only.`,
+      { details: { field: refused, constraint: "png options only" } },
     );
   }
   return args;
@@ -445,9 +485,10 @@ export function validateCombineArgs(args: CombineArgs): CombineArgs {
   // Arity depends on the op, so it is checked here rather than in the schema.
   const want = args.op === "invert" || args.op === "feather" ? 1 : 2;
   if (args.inputs.length !== want) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `combine: ${args.op} expects exactly ${want} input(s); got ${args.inputs.length}.`,
+      { details: { field: "inputs", constraint: "count for the op" } },
     );
   }
   return args;
@@ -506,9 +547,10 @@ export function validateModelKey(key: string): void {
   // Own-property check: `key in MODELS` would accept inherited keys like
   // "toString" / "constructor", which then read a function as the model entry.
   if (!Object.hasOwn(MODELS, key)) {
-    throw new LocalOpError(
+    throw new GptImgError(
       "args.invalid",
       `unknown model "${key}"; known: ${Object.keys(MODELS).join(", ")}.`,
+      { details: { field: "key", constraint: "a known model" } },
     );
   }
 }

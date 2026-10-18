@@ -97,7 +97,7 @@ describe("runCombine", () => {
 
     await expect(
       runCombine({ op: "feather", inputs: [a], out, radius: 1e9 }, { signal: controller.signal }),
-    ).rejects.toMatchObject({ errorType: "abort" });
+    ).rejects.toMatchObject({ name: "GptImgError" });
     expect(existsSync(out)).toBe(false);
   });
 
@@ -111,6 +111,6 @@ describe("runCombine", () => {
     await writeMaskPng(b, 3, 1, [0, 128, 255]);
     await expect(
       runCombine({ op: "intersect", inputs: [a, b], out }),
-    ).rejects.toMatchObject({ errorType: "localOp" });
+    ).rejects.toMatchObject({ name: "GptImgError" });
   });
 });

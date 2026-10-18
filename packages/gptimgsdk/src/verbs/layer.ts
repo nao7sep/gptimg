@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -11,10 +13,7 @@ import type { LayerArgs, LayerResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateLayerArgs } from "./schemas.ts";
 
-export interface LayerContext {
-  profileDir: string;
-  logDir: string;
-}
+export type LayerContext = SdkContext;
 
 function defaultStem(base: string): string {
   return `${inferStem(base)}-layered`;
@@ -24,11 +23,11 @@ export async function layerImpl(
   ctx: LayerContext,
   args: LayerArgs,
   opts: VerbCallOptions = {},
-): Promise<LayerResult> {
+): Promise<LayerResult | RefusedResult> {
   validateLayerArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "layer", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "layer", opts, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.base,
       stem: defaultStem(args.base),
@@ -81,6 +80,7 @@ export async function layerImpl(
       gravity: result.gravity,
       topOffset: result.topOffset,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }

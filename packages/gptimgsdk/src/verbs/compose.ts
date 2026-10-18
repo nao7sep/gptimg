@@ -1,3 +1,5 @@
+import type { RefusedResult } from "../refusal.ts";
+import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
   encodingLogFields,
@@ -15,10 +17,7 @@ import type { ComposeArgs, ComposeResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateComposeArgs } from "./schemas.ts";
 
-export interface ComposeContext {
-  profileDir: string;
-  logDir: string;
-}
+export type ComposeContext = SdkContext;
 
 function defaultStem(input: string): string {
   return `${inferStem(input)}-composed`;
@@ -28,11 +27,11 @@ export async function composeImpl(
   ctx: ComposeContext,
   args: ComposeArgs,
   opts: VerbCallOptions = {},
-): Promise<ComposeResult> {
+): Promise<ComposeResult | RefusedResult> {
   validateComposeArgs(args);
   const signal = opts.signal;
 
-  return withVerbLogger(ctx, "compose", { log: args.log, onProgress: opts.onProgress }, async (logger) => {
+  return withVerbLogger(ctx, "compose", opts, async (logger) => {
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
@@ -80,6 +79,7 @@ export async function composeImpl(
       height: result.height,
       over: result.over,
       logPath: logger.handle.path,
+      status: "completed" as const,
     };
   });
 }
