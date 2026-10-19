@@ -197,6 +197,8 @@ export async function openaiVision(
   } catch (err) {
     if (err instanceof RefusalSignal) {
       await logger?.warn("response", "vision response is a refusal", { request, response, code: err.refusal.code });
+      // The answer was paid for: its usage stays with the refused result.
+      err.response = maskDiagnosticCopy(response, [args.profile.apiKey]) as Record<string, unknown>;
       throw err;
     }
     const diagnosticError = maskDiagnosticCopy(err, [args.profile.apiKey]);

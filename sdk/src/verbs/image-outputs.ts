@@ -49,6 +49,8 @@ export interface PublishedImages {
   files: OutputFile[];
   failures: ItemFailure[];
   leftovers: string[];
+  /** The paid response as each record holds it, for the result whether or not any image published. */
+  response: Record<string, unknown>;
 }
 
 /** An item failure from whatever a step threw, after the paid response arrived. */
@@ -87,6 +89,17 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
   const items = providerResult.images;
   const limit = pLimit(4);
   const failures: ItemFailure[] = [];
+  const snapshot = maskDiagnosticCopy(
+    { request: requestRecord, response: nullBase64InResponse(providerResult.raw) },
+    args.credentials ?? [],
+  ) as { request: GenerateRequestRecord | EditRequestRecord; response: Record<string, unknown> };
+
+  // A requested image the provider did not return at all is an item failure too,
+  // so a short or empty response is reported rather than silently yielding fewer files.
+  for (let index = items.length + 1; index <= n; index++) {
+    failures.push({ index, code: "provider.noImage", effect: "unknown", message: `The provider returned ${items.length} of the ${n} images requested.` });
+  }
+  if (items.length < n) await logger.warn("response", "the provider returned fewer images than requested", { requested: n, returned: items.length });
 
   // Detect each returned image's format (the I/O step). A null format marks a
   // failed item: no data, or bytes that would not decode.
@@ -128,13 +141,9 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
     // nothing was written.
     for (const item of planned) failures.push(itemFailure(item.index, err));
     failures.sort((a, b) => a.index - b.index);
-    return { files: [], failures, leftovers: [] };
+    return { files: [], failures, leftovers: [], response: snapshot.response };
   }
 
-  const snapshot = maskDiagnosticCopy(
-    { request: requestRecord, response: nullBase64InResponse(providerResult.raw) },
-    args.credentials ?? [],
-  ) as { request: GenerateRequestRecord | EditRequestRecord; response: Record<string, unknown> };
   const files: OutputFile[] = [];
 
   await Promise.all(
@@ -198,5 +207,5 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
   }
   files.sort((a, b) => a.index - b.index);
   failures.sort((a, b) => a.index - b.index);
-  return { files, failures, leftovers };
+  return { files, failures, leftovers, response: snapshot.response };
 }

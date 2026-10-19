@@ -121,7 +121,7 @@ export async function editImpl(
       maskSha256,
       n,
     };
-    const { files, failures, leftovers } = await publishProviderImages({
+    const { files, failures, leftovers, response } = await publishProviderImages({
       kind: "edit",
       outDir,
       stem,
@@ -139,6 +139,7 @@ export async function editImpl(
       files,
       failures,
       leftovers,
+      response,
       logPath: logger.handle.path,
     };
   });

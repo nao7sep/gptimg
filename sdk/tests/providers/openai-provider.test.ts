@@ -468,7 +468,7 @@ describe("OpenAI provider implementations", () => {
     ["a content filter", { finish_reason: "content_filter", message: { content: null } }, /content filter rejected/, "provider.contentFiltered"],
     ["a truncated verdict", { finish_reason: "length", message: { content: '{"ok":true,"score":1,' } }, /truncated/, "provider.truncated"],
   ])("reports %s with the provider's own reason and a distinct code", async (_label, choice, expected, expectedCode) => {
-    openaiMock.create.mockResolvedValue({ choices: [choice] });
+    openaiMock.create.mockResolvedValue({ choices: [choice], usage: { prompt_tokens: 85, completion_tokens: 9 } });
     const call = openaiVision({
       check: "is it green?",
       images: [{ data: png, format: "png", detail: "auto" }],
@@ -484,6 +484,10 @@ describe("OpenAI provider implementations", () => {
     if (expectedCode === "provider.refused") {
       // The provider's own reason travels in the refusal's safe field.
       await expect(call).rejects.toMatchObject({ refusal: { safeReason: "I can't assess that." } });
+    }
+    if (expectedCode !== "provider.truncated") {
+      // A refusal arrives in a paid answer, so it carries that answer and its usage to the refused result.
+      await expect(call).rejects.toMatchObject({ response: { usage: { prompt_tokens: 85, completion_tokens: 9 } } });
     }
   });
 

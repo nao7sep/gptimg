@@ -209,7 +209,12 @@ export async function withVerbLogger<T>(
         code: thrown.refusal.code,
         subject: thrown.refusal.subject ?? null,
       });
-      return { status: "refused", refusal: thrown.refusal, logPath: logger.handle.path };
+      return {
+        status: "refused",
+        refusal: thrown.refusal,
+        ...(thrown.response !== undefined && { response: thrown.response }),
+        logPath: logger.handle.path,
+      };
     }
     const err = toSdkError(verbName, thrown);
     // Logging never throws (a failed line is announced once and dropped), so the original error survives.

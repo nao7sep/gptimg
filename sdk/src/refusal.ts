@@ -46,6 +46,8 @@ export interface Refusal {
 /** The internal signal `refuse()` throws; never leaves the SDK. */
 export class RefusalSignal extends Error {
   readonly refusal: Refusal;
+  /** The paid answer the refusal arrived in, when the provider answered with one; set where it is caught. */
+  response?: Record<string, unknown>;
 
   constructor(refusal: Refusal) {
     super(refusal.message);
@@ -76,6 +78,12 @@ export function refuse(
 export interface RefusedResult {
   status: "refused";
   refusal: Refusal;
+  /**
+   * The provider's response when the refusal came in a paid answer (a vision
+   * model's refusal or content filter), with its token `usage`, credentials
+   * masked; absent when the call was refused before or without one.
+   */
+  response?: Record<string, unknown>;
   /** The call's log, or null when no log was written. */
   logPath: string | null;
 }

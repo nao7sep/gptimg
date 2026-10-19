@@ -375,6 +375,12 @@ export interface GenerateResult {
   failures: ItemFailure[];
   /** Earlier-run slot files an overwrite could not remove; empty normally. */
   leftovers: string[];
+  /**
+   * The provider's response as recorded in each sidecar (image data removed,
+   * credentials masked), with its token `usage`. Present on every completed
+   * call, also when no image was published, so what the call spent is never lost.
+   */
+  response: Record<string, unknown>;
   logPath: string | null;
 }
 

@@ -754,7 +754,9 @@ describe("AI verb implementations with mocked provider", () => {
       providerCalls.generate.mockResolvedValue(short);
       const result = done(await sdk.generate({ prompt: "second", outDir, outName: "same", policy: n2, overwrite: true }));
 
-      expect(result.failures.length > 0).toBe(short.images.length === 2);
+      // Image 2 is a failure whether it came back broken or never came back.
+      expect(result.failures.map((failure) => failure.index)).toEqual([2]);
+      if (short.images.length === 1) expect(result.failures[0]).toMatchObject({ code: "provider.noImage", effect: "unknown" });
       expect(result.files.map((file) => file.path)).toEqual([path.join(outDir, "same-1.png")]);
       expect((await readdir(outDir)).sort()).toEqual(["same-1.json", "same-1.png"]);
       const sidecar = JSON.parse(await readFile(path.join(outDir, "same-1.json"), "utf-8"));
