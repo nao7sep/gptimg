@@ -39,7 +39,6 @@ describe("inspect", () => {
       pages: 1,
       orientation: null,
       record: null,
-      logPath: null,
     });
     expect(result.fileBytes).toBeGreaterThan(0);
   });

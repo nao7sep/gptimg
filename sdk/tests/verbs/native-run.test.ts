@@ -50,7 +50,7 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
     vi.stubEnv("GPTIMG_ONNX_EP", undefined);
     vi.stubEnv("GPTIMG_MODELS_DIR", undefined);
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-native-run-"));
-    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     input = path.join(tmp, "input.png");
     await sharp({ create: { width: 8, height: 8, channels: 4, background: "#446688" } }).png().toFile(input);
     native.create.mockReset().mockImplementation(async () => ({

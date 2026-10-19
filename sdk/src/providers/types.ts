@@ -1,4 +1,4 @@
-import type { Logger } from "../log/index.ts";
+import type { Logger } from "../events/index.ts";
 import type { NetworkBudget } from "../network/defaults.ts";
 import type { Credentials, VisionDetail, VisionVerdict } from "../types.ts";
 

@@ -11,8 +11,8 @@ import { ensureOutputDir } from "../internal/output-files.ts";
 import { assertStemAvailable, createOutputGroup, reserveOutputGroup } from "../internal/output-group.ts";
 import { defaultStem } from "../internal/paths.ts";
 import { multiline } from "../internal/textCleanup.ts";
-import type { Logger } from "../log/index.ts";
-import { maskDiagnosticCopy } from "../log/mask.ts";
+import type { Logger } from "../events/index.ts";
+import { maskDiagnosticCopy } from "../events/mask.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { checkImageParams, resolveChatModeration, resolveVisionReasoning } from "../policy/model-check.ts";
 import { validateChatSection } from "../policy/schemas.ts";
@@ -52,13 +52,12 @@ async function readHistoryImage(filePath: string, logger: Logger): Promise<ChatI
   try {
     const image = sharp(filePath).resize({ width: HISTORY_IMAGE_MAX_SIDE, height: HISTORY_IMAGE_MAX_SIDE, fit: "inside", withoutEnlargement: true });
     const hasAlpha = (await sharp(filePath).metadata()).hasAlpha;
-    const data = await (hasAlpha ? image.png() : image.jpeg({ quality: 90 })).toBuffer();
-    return { name: path.basename(filePath), data: new Uint8Array(data), format: hasAlpha ? "png" : "jpeg" };
+    const { data, info } = await (hasAlpha ? image.png() : image.jpeg({ quality: 90 })).toBuffer({ resolveWithObject: true });
+    const format = hasAlpha ? "png" : "jpeg";
+    logger.emit("debug", "request", { event: "chat.historyImage", path: filePath, width: info.width, height: info.height, format });
+    return { name: path.basename(filePath), data: new Uint8Array(data), format };
   } catch (err) {
-    await logger.warn("request", "an earlier turn's image could not be read and was left out", {
-      path: filePath,
-      error: (err as Error).message,
-    });
+    logger.emit("warn", "request", { event: "chat.historyImageSkipped", path: filePath, error: (err as Error).message });
     return null;
   }
 }
@@ -96,7 +95,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     const section = validateChatSection(policy.chat);
 
     // The assistant, its effort and the image tool's values are settled and checked before the
-    // call, so the log and the records name what is sent.
+    // call, so the events and the records name what is sent.
     const model = resolveModel(section.model, defaultModelFor("openai", "chat"));
     const reasoning = resolveVisionReasoning(model, section.reasoning, "chat");
     const instructions = section.instructions ?? OPENAI_CHAT_INSTRUCTIONS;
@@ -122,13 +121,13 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     using _outputReservation = await reserveOutputGroup(createOutputGroup(outDir, stem, "json"));
     assertStemAvailable(outDir, stem, 1, overwrite);
 
-    await logger.info("request", "calling provider.chat", {
-      model,
-      imageModel,
-      attachments: attachments.length,
-      historyTurns: args.history?.length ?? 0,
-      chained: args.previousResponseId !== undefined,
+    logger.emit("info", "resolve", {
+      event: "verb.start",
+      input: args.images ?? [],
+      output: path.join(outDir, stem),
+      settings: { historyTurns: args.history?.length ?? 0, previousResponseId: args.previousResponseId ?? null, overwrite },
     });
+    logger.emit("info", "request", { event: "provider.call", operation: "chat", model, settings: { reasoning: reasoning ?? null, tool } });
     const result = await getProvider().chat({
       message,
       images: attachments,
@@ -138,11 +137,10 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
       credentials,
       network: { primary: network.imageGenerate, download: network.imageDownload, logger, signal: opts.signal },
     });
-    await logger.info("response", "provider.chat returned", {
-      responseId: result.responseId,
-      resumed: result.resumed,
-      images: result.images.length,
-      incomplete: result.incomplete,
+    logger.emit("info", "response", {
+      event: "provider.returned",
+      operation: "chat",
+      summary: { responseId: result.responseId, resumed: result.resumed, images: result.images.length, incomplete: result.incomplete },
     });
 
     const requestRecord: ChatRequestRecord = {
@@ -184,12 +182,14 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
         await writeSidecar(target, record, { overwrite });
         recordPath = target;
       } catch (err) {
-        await logger.warn("write", "the turn's record could not be written; the result still carries its response", {
-          path: target,
-          error: (err as Error).message,
-        });
+        logger.emit("warn", "write", { event: "sidecar.unpublished", index: null, path: target, error: (err as Error).message });
       }
     }
+    logger.emit("info", "write", {
+      event: "verb.done",
+      output: path.join(outDir, stem),
+      stats: { files: published.files.length, failures: published.failures.length, record: recordPath !== null },
+    });
 
     return {
       status: "completed" as const,
@@ -202,7 +202,6 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
       resumed: result.resumed,
       incomplete: result.incomplete,
       response: published.response,
-      logPath: logger.handle.path,
     };
   });
 }

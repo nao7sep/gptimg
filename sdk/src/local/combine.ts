@@ -12,7 +12,7 @@
  */
 
 import { GptImgError, throwIfAborted } from "../errors.ts";
-import type { Logger } from "../log/index.ts";
+import type { Logger } from "../events/index.ts";
 import { loadMaskPNG, writeMaskPNG } from "../image/bridge.ts";
 import type { CombineOp } from "../enums.ts";
 import type { PngEncodingArgs } from "../types.ts";

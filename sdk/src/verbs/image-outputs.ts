@@ -11,8 +11,8 @@ import {
   removeUnpublishedSlots,
   sidecarPathFor,
 } from "../internal/output-group.ts";
-import type { Logger } from "../log/index.ts";
-import { maskDiagnosticCopy } from "../log/mask.ts";
+import type { Logger } from "../events/index.ts";
+import { maskDiagnosticCopy } from "../events/mask.ts";
 import type { ProviderImageResult } from "../providers/types.ts";
 import { RefusalSignal } from "../refusal.ts";
 import { nullBase64InResponse } from "../sidecar/nullBase64.ts";
@@ -101,7 +101,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
   for (let index = items.length + 1; index <= n; index++) {
     failures.push({ index, code: "provider.noImage", effect: "unknown", message: `The provider returned ${items.length} of the ${n} images requested.` });
   }
-  if (items.length < n) await logger.warn("response", "the provider returned fewer images than requested", { requested: n, returned: items.length });
+  if (items.length < n) logger.emit("warn", "response", { event: "image.short", requested: n, returned: items.length });
 
   // Detect each returned image's format (the I/O step). A null format marks a
   // failed item: no data, or bytes that would not decode.
@@ -111,14 +111,14 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
         const index = i + 1;
         if (!item.data) {
           failures.push({ index, code: "provider.noImage", effect: "unknown", message: item.error ?? `The provider returned no image for item ${index}.` });
-          await logger.warn("write", `image ${index} failed`, { index, error: item.error ?? null });
+          logger.emit("warn", "write", { event: "image.missing", index, error: item.error ?? null });
           return { data: null, format: null };
         }
         try {
           return { data: item.data, format: await detectFormat(item.data) };
         } catch (err) {
           failures.push({ index, code: "image.undecodable", effect: "unknown", message: (err as Error).message });
-          await logger.warn("write", `image ${index} format detection failed`, { index, error: (err as Error).message });
+          logger.emit("warn", "write", { event: "image.undecodable", index, error: (err as Error).message });
           return { data: item.data, format: null };
         }
       }),
@@ -155,7 +155,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
           await writeOutputBytes(item.filePath, item.data, overwrite);
         } catch (err) {
           failures.push(itemFailure(item.index, err));
-          await logger.warn("write", `image ${item.index} could not be published`, { index: item.index, error: (err as Error).message });
+          logger.emit("warn", "write", { event: "image.unpublished", index: item.index, error: (err as Error).message });
           return;
         }
         const sha256 = hash(item.data);
@@ -176,14 +176,11 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
           await writeSidecar(sidecarPath, record, { overwrite });
         } catch (err) {
           sidecar = failedPublication(err);
-          await logger.warn("write", `sidecar for image ${item.index} could not be published; the image is kept`, {
-            index: item.index,
-            sidecar: path.basename(sidecarPath),
-            error: (err as Error).message,
-          });
+          logger.emit("warn", "write", { event: "sidecar.unpublished", index: item.index, path: sidecarPath, error: (err as Error).message });
         }
         files.push({ index: item.index, path: item.filePath, sha256, format: item.fmt.format, sidecarPath, sidecar, record });
-        await logger.info("write", `wrote image ${item.index}`, {
+        logger.emit("info", "write", {
+          event: "image.published",
           index: item.index,
           name: path.basename(item.filePath),
           sha256,
@@ -204,7 +201,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
       files.flatMap((file) => (file.sidecar.status === "published" ? [file.path, file.sidecarPath] : [file.path])),
     );
     if (leftovers.length > 0) {
-      await logger.warn("write", "could not remove files an earlier run left in this run's slots", { leftovers });
+      logger.emit("warn", "write", { event: "slots.leftover", leftovers });
     }
   }
   files.sort((a, b) => a.index - b.index);

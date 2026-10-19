@@ -86,11 +86,7 @@ export async function verifyImpl(
       }
     }
 
-    await logger.info("response", findings.length === 0 ? "verified" : "verification findings", {
-      input: imagePath,
-      sidecar: sidecarPath,
-      findings: findings.map((f) => f.code),
-    });
+    logger.emit("info", "stats", { event: "verb.done", output: null, stats: { input: imagePath, sidecar: sidecarPath, findings: findings.map((f) => f.code) } });
     return {
       status: "completed" as const,
       input: imagePath,
@@ -98,7 +94,6 @@ export async function verifyImpl(
       ok: findings.length === 0,
       findings,
       record,
-      logPath: logger.handle.path,
     };
   });
 }

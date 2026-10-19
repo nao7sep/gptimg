@@ -92,9 +92,9 @@ export class GptImg {
   };
 
   /**
-   * Nothing is required: local verbs need no key, models or log. Paid verbs
+   * Nothing is required: local verbs need no key or models. Paid verbs
    * need `apiKey`; models default to
-   * `~/.gptimgsdk/models`; nothing is logged unless a call or `logDir` asks.
+   * `~/.gptimgsdk/models`; the SDK writes no log, and each call's events go to its `onEvent`.
    * The constructor touches no disk and reads nothing ambient.
    */
   constructor(opts: GptImgOptions = {}) {

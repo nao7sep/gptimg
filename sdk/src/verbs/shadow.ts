@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -35,7 +36,7 @@ export async function shadowImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "shadow start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       out: outPath,
       blur: args.blur ?? null,
@@ -44,8 +45,8 @@ export async function shadowImpl(
       opacity: args.opacity ?? null,
       spread: args.spread ?? null,
       keepCanvas: args.keepCanvas ?? null,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runShadow(
       {
@@ -63,13 +64,13 @@ export async function shadowImpl(
       { signal },
     );
 
-    await logger.info("write", "wrote shadowed image", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       width: result.width,
       height: result.height,
       color: result.color,
       blur: result.blur,
-    });
+    }));
 
     return {
       input: args.in,
@@ -84,7 +85,6 @@ export async function shadowImpl(
       opacity: result.opacity,
       spread: result.spread,
       keepCanvas: result.keepCanvas,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

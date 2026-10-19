@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -35,15 +36,15 @@ export async function layerImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "layer start", {
+    logger.emit("info", "resolve", verbStart({
       base: args.base,
       top: args.top,
       out: outPath,
       scale: args.scale ?? null,
       gravity: args.gravity ?? null,
       topOffset: args.topOffset ?? null,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runLayer(
       {
@@ -59,7 +60,7 @@ export async function layerImpl(
       { signal },
     );
 
-    await logger.info("write", "wrote layered image", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       width: result.width,
       height: result.height,
@@ -67,7 +68,7 @@ export async function layerImpl(
       topHeight: result.topHeight,
       gravity: result.gravity,
       topOffset: result.topOffset,
-    });
+    }));
 
     return {
       base: args.base,
@@ -79,7 +80,6 @@ export async function layerImpl(
       topHeight: result.topHeight,
       gravity: result.gravity,
       topOffset: result.topOffset,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

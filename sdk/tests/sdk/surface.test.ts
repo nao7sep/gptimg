@@ -98,15 +98,13 @@ describe("GptImg SDK surface", () => {
   });
 
   it("touches no disk when constructed, and refuses relative locations", () => {
-    new GptImg({ modelsDir: path.join(tmp, "models"), logDir: path.join(tmp, "logs") });
+    new GptImg({ modelsDir: path.join(tmp, "models") });
     expect(existsSync(path.join(tmp, "models"))).toBe(false);
-    expect(existsSync(path.join(tmp, "logs"))).toBe(false);
     expect(() => new GptImg({ modelsDir: "models" })).toThrow(expect.objectContaining({ code: "args.invalid" }));
-    expect(() => new GptImg({ logDir: "logs" })).toThrow(expect.objectContaining({ code: "args.invalid" }));
   });
 
   it("keycheck resolves the key from the sidecar and measures residue end-to-end", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     // A blue island over transparent, with a generate-style sidecar recording a
     // green chroma key beside it — the from-sidecar path mask uses.
     const W = 8, H = 8;
@@ -131,7 +129,7 @@ describe("GptImg SDK surface", () => {
   });
 
   it("keycheck accepts an explicit key and writes a heatmap", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const W = 8, H = 8;
     const rgba = new Uint8Array(W * H * 4);
     for (let y = 2; y <= 5; y++)
@@ -152,7 +150,7 @@ describe("GptImg SDK surface", () => {
   });
 
   it("framecheck measures subject placement and verdicts off-centre end-to-end", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     // A 4×4 solid square pushed to the left (L=1, R=5) in a 10×10 canvas.
     const W = 10, H = 10;
     const rgba = new Uint8Array(W * H * 4);
@@ -169,11 +167,10 @@ describe("GptImg SDK surface", () => {
     expect(res.margins).toEqual({ left: 1, right: 5, top: 3, bottom: 3 });
     expect(res.deltas!.horizontal).toBe(4);
     expect(res.verdict).toBe("offset");
-    expect(typeof res.logPath).toBe("string");
   });
 
   it("grid tiles inputs into a sheet beside the first input", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const paths: string[] = [];
     for (let i = 0; i < 3; i++) {
       const p = path.join(tmp, `tile-${i}.png`);

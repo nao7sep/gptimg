@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -35,13 +36,13 @@ export async function trimImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "trim start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       out: outPath,
       margin: args.margin ?? null,
       square: args.square ?? false,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runTrim(
       {
@@ -55,13 +56,13 @@ export async function trimImpl(
       { signal },
     );
 
-    await logger.info("write", "wrote trimmed image", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       width: result.width,
       height: result.height,
       bbox: result.bbox,
       marginPx: result.marginPx,
-    });
+    }));
 
     return {
       input: args.in,
@@ -72,7 +73,6 @@ export async function trimImpl(
       width: result.width,
       height: result.height,
       square: result.square,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

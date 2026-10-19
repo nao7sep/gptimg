@@ -41,7 +41,7 @@ describe("mask (ai) cancellation around inference", () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-mask-ai-abort-"));
-    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     model.loadSession.mockReset();
     model.run.mockReset();
     model.run.mockImplementation(async () => ({
@@ -83,17 +83,16 @@ describe("mask (ai) cancellation around inference", () => {
   });
 
   it.each([
-    ["running BiRefNet inference"],
-    ["BiRefNet inference complete"],
-    ["mask complete"],
-  ] as const)("honors cancellation at %s, before publication", async (message) => {
+    ["model.infer.start"],
+    ["model.infer.done"],
+  ] as const)("honors cancellation at %s, before publication", async (name) => {
     const ctrl = new AbortController();
     model.loadSession.mockResolvedValue(fakeSession());
     await expect(sdk.mask(
       { in: INPUT, method: "ai", outDir: tmp, outName: "cut" },
-      { signal: ctrl.signal, onEvent: (event) => { if (event.message === message) ctrl.abort(); } },
+      { signal: ctrl.signal, onEvent: (event) => { if (event.event === name) ctrl.abort(); } },
     )).rejects.toMatchObject({ code: "cancelled" });
-    expect(model.run).toHaveBeenCalledTimes(message === "running BiRefNet inference" ? 0 : 1);
+    expect(model.run).toHaveBeenCalledTimes(name === "model.infer.start" ? 0 : 1);
     expect((await readdir(tmp)).filter((name) => name.startsWith("cut"))).toEqual([]);
   });
 

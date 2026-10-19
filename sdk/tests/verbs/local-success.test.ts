@@ -5,6 +5,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { SdkEvent } from "../../src/types.ts";
 import { GptImg } from "../../src/index.ts";
 
 /**
@@ -97,7 +98,7 @@ describe("local verbs success path (via GptImg SDK)", () => {
   let sdk: GptImg;
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-local-success-"));
-    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
   });
   afterEach(async () => {
     await rm(tmp, { recursive: true, force: true });
@@ -154,16 +155,16 @@ describe("local verbs success path (via GptImg SDK)", () => {
     expect(meta.hasAlpha).toBe(true);
   });
 
-  it("shadow: a canvas too large for the machine fails as memory.exhausted, writes nothing and logs the code", async () => {
+  it("shadow: a canvas too large for the machine fails as memory.exhausted, writes nothing and reports the code", async () => {
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, diskish(16, 16));
 
-    const failed = sdk.shadow({ in: input, outName: "huge", spread: 2 ** 30 }, { log: { file: path.join(tmp, "huge.log") } });
+    const events: SdkEvent[] = [];
+    const failed = sdk.shadow({ in: input, outName: "huge", spread: 2 ** 30 }, { onEvent: (e) => events.push(e) });
     await expect(failed).rejects.toMatchObject({ code: "memory.exhausted" });
     await expect(failed).rejects.toThrow(/^shadow ran out of memory .*Use smaller images or output sizes/);
     expect(existsSync(path.join(tmp, "huge.png"))).toBe(false);
-    const lines = (await readFile(path.join(tmp, "huge.log"), "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
-    expect(lines.at(-1)).toMatchObject({ level: "error", data: { code: "memory.exhausted" } });
+    expect(events.at(-1)).toMatchObject({ level: "error", event: "verb.failed", error: { code: "memory.exhausted" } });
   });
 
   it("grid reports one progress count per input through onProgress", async () => {

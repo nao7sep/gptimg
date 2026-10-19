@@ -37,7 +37,7 @@ export function buildOpenAIClient(credentials: Credentials): OpenAI {
 
 /**
  * The headers that identify the caller, as the built client sends them: its key as the bearer
- * token, and the organization and project the caller gave, if any. Each attempt's log line records them,
+ * token, and the organization and project the caller gave, if any. Each attempt's event records them,
  * the key masked by the call's logger (data-lifecycle-conventions).
  */
 export function clientHeaders(client: OpenAI): Record<string, string> {
@@ -49,7 +49,7 @@ export function clientHeaders(client: OpenAI): Record<string, string> {
 }
 
 /**
- * What a successful attempt's log line records of the SDK's response: its status, headers,
+ * What a successful attempt's event records of the SDK's response: its status, headers,
  * request id and body as the provider sent them, with each base64 image nulled, since the
  * record never holds image bytes (data-lifecycle-conventions, *Records*).
  */

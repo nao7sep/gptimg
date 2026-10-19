@@ -83,7 +83,7 @@ describe("the runtime boundary", () => {
     const stderr = await captureStderr(async () => {
       const img = new GptImg({ apiKey: "sk-explicit" });
       const resized = done(await img.resize({ in: FIXTURE, toSize: 32, outDir: out, outName: "small" }));
-      expect(resized.logPath).toBeNull();
+      expect(resized).not.toHaveProperty("logPath");
       const generated = done(await img.generate({ prompt: "a disc", outDir: out, outName: "paid" }));
       expect(generated.files).toHaveLength(1);
       const listed = img.model.list();

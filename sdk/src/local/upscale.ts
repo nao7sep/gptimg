@@ -16,7 +16,7 @@ import sharp from "sharp";
 import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { fitLongerSide } from "../image/aspect.ts";
 import { loadRawRGBA, readImageSize, resizeSingleChannel, writeRGBA } from "../image/bridge.ts";
-import type { Logger } from "../log/index.ts";
+import type { Logger } from "../events/index.ts";
 import type { EncodingArgs, OnnxPolicy, ResampleKernel } from "../types.ts";
 import {
   runSwin2srX4,

@@ -188,16 +188,12 @@ describe("runIcon", () => {
     await mkdir(outDir);
     const ctrl = new AbortController();
     const logger = {
-      handle: { path: null, verb: "icon" as const },
-      info: async () => {},
-      warn: async () => {},
-      error: async () => {},
-      debug: async () => {},
+      verb: "icon" as const,
+      emit: () => {},
       progress: (_stage: string, done: number) => {
         if (done === 1) ctrl.abort(new Error("stop"));
       },
       addCredential: () => {},
-      close: async () => {},
     };
     await expect(runIcon({ in: master, outDir, name: "app" }, { signal: ctrl.signal, logger })).rejects.toMatchObject({
       code: "cancelled",

@@ -33,7 +33,7 @@ describe("SDK abort errors", () => {
   });
 
   it("rejects with the exported AbortError shape", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const ctrl = new AbortController();
     ctrl.abort(new Error("stop"));
 
@@ -98,7 +98,7 @@ describe("AI verb abort propagation", () => {
     providerCalls.vision.mockReset();
 
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-ai-abort-"));
-    sdk = new GptImg({ apiKey: "sk-test-key", modelsDir: path.join(tmp, "models"), logDir: path.join(tmp, "logs") });
+    sdk = new GptImg({ apiKey: "sk-test-key", modelsDir: path.join(tmp, "models") });
   });
 
   afterEach(async () => {

@@ -1,11 +1,4 @@
-import type { LogEntry, ProgressUpdate } from "../types.ts";
-
-/**
- * Where a call writes its log (JSON Lines, logging-conventions): a named file,
- * or a fresh `yyyymmdd-hhmmss-utc-<id>.log` in a folder. Both paths are
- * absolute. `debug: true` also writes debug-level lines to the file.
- */
-export type LogTarget = { file: string; debug?: boolean } | { dir: string; debug?: boolean };
+import type { ProgressUpdate, SdkEvent } from "../types.ts";
 
 export interface VerbCallOptions {
   /**
@@ -17,11 +10,14 @@ export interface VerbCallOptions {
   signal?: AbortSignal | undefined;
 
   /**
-   * Receive every structured event the SDK also logs (every level), masked,
-   * as it happens. The SDK never writes to a stream itself; a throwing or
-   * rejecting hook never affects the call.
+   * Receive every event of the call as it happens: a complete record (time,
+   * level, stage, verb, event name, typed fields, message), credentials
+   * masked. The SDK writes no log; this is its record of the call, for the
+   * caller to store with its own. Debug events arrive only when the instance
+   * was built with `debug: true`. A throwing or rejecting hook never affects
+   * the call.
    */
-  onEvent?: ((event: LogEntry) => void) | undefined;
+  onEvent?: ((event: SdkEvent) => void) | undefined;
 
   /**
    * Receive counts of countable work (download and hash bytes, upscale tiles,
@@ -29,11 +25,4 @@ export interface VerbCallOptions {
    * the final count.
    */
   onProgress?: ((update: ProgressUpdate) => void) | undefined;
-
-  /**
-   * Write a log for this call. Without it, the instance's `logDir` is
-   * used when set; otherwise no log is written and events reach
-   * only `onEvent`. `false` writes none even when a `logDir` is set.
-   */
-  log?: LogTarget | false | undefined;
 }

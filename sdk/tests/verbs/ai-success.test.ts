@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg } from "../../src/gptimg.ts";
+import type { SdkEvent } from "../../src/types.ts";
 import type { Provider } from "../../src/providers/types.ts";
 
 const providerCalls = vi.hoisted(() => ({
@@ -36,14 +37,6 @@ function fixture(name: string): string {
   return path.join(FIXTURES, name);
 }
 
-function lines(text: string): Array<Record<string, unknown>> {
-  return text
-    .trimEnd()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
-}
-
 describe("AI verb implementations with mocked provider", () => {
   let tmp: string;
   let sdk: GptImg;
@@ -57,7 +50,7 @@ describe("AI verb implementations with mocked provider", () => {
     providerCalls.vision.mockReset();
 
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-ai-verbs-"));
-    sdk = new GptImg({ apiKey: "sk-test-key", logDir: path.join(tmp, "logs") });
+    sdk = new GptImg({ apiKey: "sk-test-key" });
     png = new Uint8Array(await readFile(fixture("green-disk.png")));
   });
 
@@ -141,6 +134,7 @@ describe("AI verb implementations with mocked provider", () => {
       });
 
       const outDir = path.join(tmp, "out");
+      const events: SdkEvent[] = [];
       const result = done(await sdk.generate({
         prompt: "a green disk",
         outDir,
@@ -149,7 +143,7 @@ describe("AI verb implementations with mocked provider", () => {
           generate: { quality: "low", n: 2, model: "param-model" },
           chroma: { color: "#00ff00" },
         },
-      }));
+      }, { onEvent: (e) => events.push(e) }));
 
       expect(stdout).not.toHaveBeenCalled();
       expect(stderr).not.toHaveBeenCalled();
@@ -188,8 +182,7 @@ describe("AI verb implementations with mocked provider", () => {
       // Per-image sidecar: files[] holds just this image's entry.
       expect(sidecar.files).toEqual([expect.objectContaining({ name: "gen-1.png" })]);
 
-      const logEntries = lines(await readFile(result.logPath!, "utf-8"));
-      expect(logEntries).toEqual(
+      expect(events).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ stage: "request" }),
           expect.objectContaining({ stage: "response" }),
@@ -301,13 +294,14 @@ describe("AI verb implementations with mocked provider", () => {
       images: [{ data: png }],
     });
 
+    const events: SdkEvent[] = [];
     const result = done(await sdk.edit({
       prompt: "make it blue",
       in: input,
       mask,
       outDir: path.join(tmp, "edits"),
       outName: "edit",
-    }));
+    }, { onEvent: (e) => events.push(e) }));
 
     expect(result.failures).toEqual([]);
     expect(result.files[0]?.path).toBe(path.join(tmp, "edits", "edit.png"));
@@ -329,7 +323,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(sidecar.request.mask).toBe("mask.png");
     expect(sidecar.request.maskSha256).toBe(createHash("sha256").update(await readFile(mask)).digest("hex"));
     expect(sidecar.response.data[0]?.b64_json).toBeNull();
-    expect(lines(await readFile(result.logPath!, "utf-8"))).toEqual(
+    expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ stage: "request" }),
         expect.objectContaining({ stage: "response" }),
@@ -1128,12 +1122,13 @@ describe("AI verb implementations with mocked provider", () => {
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 0.9, reasons: ["green"] } });
 
     const outDir = path.join(tmp, "records");
+    const events: SdkEvent[] = [];
     const generated = done(await sdk.generate({
       prompt: "a disk",
       outDir,
       outName: "gen",
       policy: { generate: { output_format: "webp" } },
-    }));
+    }, { onEvent: (e) => events.push(e) }));
     const [file] = generated.files;
     expect(file?.path).toBe(path.join(outDir, "gen.webp"));
     expect(file?.format).toBe("webp");
@@ -1150,7 +1145,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(sidecar.response.data[0]?.b64_json).toBeNull();
     expect(sidecar.response.usage).toEqual({ input_tokens: 9, output_tokens: 196, total_tokens: 205 });
     expect(sidecar.response.output_format).toBe("webp");
-    const requestLine = lines(await readFile(generated.logPath!, "utf-8")).find((line) => line.stage === "request");
+    const requestLine = events.find((event) => event.stage === "request");
     expect(JSON.stringify(requestLine)).toContain('"model":"gpt-image-2.5-flare"');
 
     const input = path.join(tmp, "edit-input.png");

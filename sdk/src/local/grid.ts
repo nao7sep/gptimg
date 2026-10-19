@@ -16,7 +16,7 @@
 import sharp from "sharp";
 import { GptImgError, throwIfAborted } from "../errors.ts";
 import { inputImageError, writeImageFile } from "../image/bridge.ts";
-import type { Logger } from "../log/index.ts";
+import type { Logger } from "../events/index.ts";
 import { parseHex } from "../color.ts";
 import type { EncodingArgs, GridSkip } from "../types.ts";
 

@@ -6,7 +6,7 @@
 import type { OnnxPolicy } from "../types.ts";
 import { throwIfAborted } from "../errors.ts";
 import { loadRawRGBA } from "../image/bridge.ts";
-import type { Logger } from "../log/index.ts";
+import type { Logger } from "../events/index.ts";
 import { runBirefnet } from "./models/birefnet.ts";
 
 export interface AiMaskRunArgs {

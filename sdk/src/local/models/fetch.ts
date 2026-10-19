@@ -41,7 +41,7 @@ import { createHash } from "node:crypto";
 import { finished } from "node:stream/promises";
 import { nanoid } from "nanoid";
 import { GptImgError, cancelledError, fsError, throwIfAborted } from "../../errors.ts";
-import type { Logger } from "../../log/index.ts";
+import type { Logger } from "../../events/index.ts";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.ts";
 import { combineSignals, HttpStatusError } from "../../network/http.ts";
 import { callWithRetry, isAbortError } from "../../network/retry.ts";
@@ -233,7 +233,7 @@ async function downloadAttempt(
     };
     signal.addEventListener("abort", abortWrite, { once: true });
 
-    await logger?.info("download", `downloading ${name}`, { name });
+    logger?.emit("info", "download", { event: "model.download.start", name });
 
     const reader = response.body.getReader();
     try {
@@ -274,10 +274,7 @@ async function downloadAttempt(
         details: { expected: expectedBytes, actual: received },
       });
     }
-    await logger?.info("download", `downloaded ${name} (${received} bytes)`, {
-      name,
-      bytes: received,
-    });
+    logger?.emit("info", "download", { event: "model.download.done", name, bytes: received });
   } finally {
     idle.dispose();
   }
@@ -499,19 +496,11 @@ async function retireSupersededModels(
     const filePath = path.join(cacheDir, name);
     try {
       await unlink(filePath);
-      await logger?.info("download", `deleted ${name}, replaced by ${entry.name}`, {
-        name,
-        replacedBy: entry.name,
-        path: filePath,
-      });
+      logger?.emit("info", "download", { event: "model.superseded.deleted", name, replacement: entry.name });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "ENOENT") continue;
-      await logger?.warn("download", `could not delete ${name}, replaced by ${entry.name}`, {
-        name,
-        path: filePath,
-        error: (err as Error).message,
-      });
+      logger?.emit("warn", "download", { event: "model.superseded.kept", name, replacement: entry.name, error: (err as Error).message });
     }
   }
 }
@@ -540,11 +529,7 @@ async function acquireModel(
   const replaceExisting = initialCache.present;
   // Announce the one-time download and its size before any request, so a
   // caller watching progress learns why the first AI mask or upscale waits.
-  await logger?.info("download", `${entry.name} is not on disk yet; downloading it once`, {
-    name: entry.name,
-    bytes: entry.byteSize ?? null,
-    cacheDir,
-  });
+  logger?.emit("info", "download", { event: "model.download.needed", name: entry.name });
 
   await mkdir(path.join(cacheDir, TEMP_DIR), { recursive: true });
   let partialPath: string;

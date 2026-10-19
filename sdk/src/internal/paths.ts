@@ -1,5 +1,3 @@
-import { mkdir, open } from "node:fs/promises";
-import path from "node:path";
 import { customAlphabet } from "nanoid";
 
 // Lowercase letters and digits, per the timestamp-conventions' filename form.
@@ -13,32 +11,6 @@ export function utcTimestamp(now: Date = new Date()): string {
     `${now.getUTCFullYear()}${p(now.getUTCMonth() + 1)}${p(now.getUTCDate())}` +
     `-${p(now.getUTCHours())}${p(now.getUTCMinutes())}${p(now.getUTCSeconds())}-utc`
   );
-}
-
-// A session log file in a caller-given folder: `yyyymmdd-hhmmss-utc-<id>.log`.
-// Calls into the SDK run concurrently and may share one log folder, so the stamp
-// carries an ID (logging-conventions).
-export function logPathIn(logDir: string, ts: string, id: string): string {
-  return path.join(logDir, `${ts}-${id}.log`);
-}
-
-// Claims this call's log in a caller-given folder by creating it exclusively and
-// owner-only (it records prompts and provider responses), drawing a new ID in
-// the unlikely event the name already exists, so every call keeps its own file.
-// A failure other than "already exists" returns the name unclaimed: logging
-// never fails the verb, and the logger reports the same failure on its first line.
-export async function claimLogPath(logDir: string, now: Date = new Date()): Promise<string> {
-  await mkdir(logDir, { recursive: true }).catch(() => undefined);
-  const ts = utcTimestamp(now);
-  for (;;) {
-    const candidate = logPathIn(logDir, ts, fileNameId());
-    try {
-      await (await open(candidate, "wx", 0o600)).close();
-      return candidate;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") return candidate;
-    }
-  }
 }
 
 /**

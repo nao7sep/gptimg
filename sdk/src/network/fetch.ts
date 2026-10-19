@@ -1,8 +1,8 @@
-import type { Logger } from "../log/index.ts";
+import type { Logger } from "../events/index.ts";
 import type { NetworkBudget } from "./defaults.ts";
 import { combineSignals, HttpStatusError } from "./http.ts";
 import { callWithRetry } from "./retry.ts";
-import { urlQueryValues } from "../log/mask.ts";
+import { urlQueryValues } from "../events/mask.ts";
 
 async function fetchOnce(
   url: string,

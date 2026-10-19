@@ -21,7 +21,7 @@ import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { encodeImage, inputImageError, readImageSize } from "../image/bridge.ts";
 import { readCaptureMetadata, type CaptureMetadata } from "../image/capture.ts";
 import { writeOutputBytes } from "../internal/output-files.ts";
-import type { Logger } from "../log/index.ts";
+import type { Logger } from "../events/index.ts";
 import type { PngEncodingArgs } from "../types.ts";
 
 export const ICON_DEFAULTS = {

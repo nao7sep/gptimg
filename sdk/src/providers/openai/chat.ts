@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { GptImgError } from "../../errors.ts";
-import { maskDiagnosticCopy } from "../../log/mask.ts";
+import { maskDiagnosticCopy } from "../../events/mask.ts";
 import { classifyRequestFailure, providerCode, safeReasonText } from "../../network/classify.ts";
 import { callWithRetry } from "../../network/retry.ts";
 import { RefusalSignal, refuse } from "../../refusal.ts";
@@ -127,9 +127,7 @@ export async function openaiChat(args: ChatProviderArgs): Promise<ProviderChatRe
       response = await send(null);
     } catch (err) {
       if (!previousResponseGone(err)) fail(err);
-      await logger?.warn("request", "the previous response is gone; resending the conversation", {
-        previousResponseId: args.previousResponseId,
-      });
+      logger?.emit("warn", "request", { event: "chat.resend", previousResponseId: args.previousResponseId });
       resumed = "resent";
       const history = await args.loadHistory();
       historyTurns = history.length;

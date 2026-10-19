@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -35,11 +36,11 @@ export async function encodeImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "encode start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       out: outPath,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runEncode(
       {
@@ -52,7 +53,7 @@ export async function encodeImpl(
       { signal },
     );
 
-    await logger.info("write", "wrote encoded image", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       format: result.format,
       width: result.width,
@@ -61,7 +62,7 @@ export async function encodeImpl(
       lossless: result.lossless,
       sourceBytes: result.sourceBytes,
       bytes: result.bytes,
-    });
+    }));
 
     return {
       input: args.in,
@@ -73,7 +74,6 @@ export async function encodeImpl(
       lossless: result.lossless,
       sourceBytes: result.sourceBytes,
       bytes: result.bytes,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

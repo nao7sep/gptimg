@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { RefusedResult } from "../refusal.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
 import { sidecarWriter } from "../sidecar/writer.ts";
@@ -45,7 +46,7 @@ export async function generateImpl(
     const section = validateGenerateSection(policy.generate);
     const chromaSection = validateChromaSection(policy.chroma);
 
-    // The model, its moderation and its values are settled before the call, so the log and
+    // The model, its moderation and its values are settled before the call, so the events and
     // the sidecar name what is sent.
     const model = resolveModel(section.model, defaultModelFor("openai", "image-generate"));
     const moderation = resolveGenerateModeration(model);
@@ -71,11 +72,8 @@ export async function generateImpl(
     // Sidecars identify the group independently of the eventual image format.
     assertStemAvailable(outDir, stem, n, overwrite);
 
-    await logger.info("request", "calling provider.generate", {
-      provider: "openai",
-      model: params.model ?? null,
-      n,
-    });
+    logger.emit("info", "resolve", { event: "verb.start", input: null, output: path.join(outDir, stem), settings: { n, overwrite } });
+    logger.emit("info", "request", { event: "provider.call", operation: "generate", model: (params.model as string | undefined) ?? null, settings: { ...params, n } });
 
     const provider = getProvider();
     const providerResult = await provider.generate({
@@ -89,9 +87,7 @@ export async function generateImpl(
         signal,
       },
     });
-    await logger.info("response", "provider.generate returned", {
-      itemCount: providerResult.images.length,
-    });
+    logger.emit("info", "response", { event: "provider.returned", operation: "generate", summary: { images: providerResult.images.length } });
 
     const requestRecord: GenerateRequestRecord = {
       ...params,
@@ -112,13 +108,13 @@ export async function generateImpl(
       logger,
     });
 
+    logger.emit("info", "write", { event: "verb.done", output: path.join(outDir, stem), stats: { files: files.length, failures: failures.length, leftovers: leftovers.length } });
     return {
       status: "completed" as const,
       files,
       failures,
       leftovers,
       response,
-      logPath: logger.handle.path,
     };
   });
 }

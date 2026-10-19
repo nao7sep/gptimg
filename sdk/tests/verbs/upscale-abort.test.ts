@@ -49,7 +49,7 @@ describe("public upscale cancellation at model boundaries", () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-upscale-abort-"));
-    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     input = path.join(tmp, "input.png");
     const rgba = new Uint8Array(8 * 8 * 4);
     for (let p = 0; p < 8 * 8; p++) {

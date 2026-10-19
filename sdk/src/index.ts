@@ -5,7 +5,7 @@
  */
 export { GptImg } from "./gptimg.ts";
 export type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.ts";
-export type { LogTarget, VerbCallOptions } from "./verbs/options.ts";
+export type { VerbCallOptions } from "./verbs/options.ts";
 export { VERSION } from "./version.ts";
 export type { ModelKey } from "./local/models/registry.ts";
 export { readSidecar } from "./sidecar/read.ts";
@@ -50,6 +50,14 @@ export {
 } from "./types.ts";
 export type {
   AiMaskStats,
+  AttemptFields,
+  EventLevel,
+  EventStage,
+  FailedAttemptFields,
+  SdkEvent,
+  SdkEventBody,
+  SdkEventName,
+  VerbName,
   AlphaBBox,
   BackplateArgs,
   BackplateResult,
@@ -105,10 +113,6 @@ export type {
   LayerArgs,
   LayerOffset,
   LayerResult,
-  LogEntry,
-  LogLevel,
-  LogStage,
-  LogVerb,
   MaskArgs,
   MaskResult,
   MaskStats,

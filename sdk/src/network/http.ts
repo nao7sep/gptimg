@@ -9,7 +9,7 @@
  * Thrown on a non-2xx response. Carries `status` and `headers` so the retry
  * layer can decide retryability and honor `Retry-After`.
  *
- * The message carries the complete response body: an error GptImg logs or hands
+ * The message carries the complete response body: an error GptImg reports in an event or hands
  * to its caller keeps the provider's whole explanation, and only a caller's own
  * display may shorten it (text-cleanup-conventions, rule 4).
  */

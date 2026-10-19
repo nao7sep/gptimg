@@ -27,7 +27,7 @@
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
 import { GptImgError, throwIfAborted } from "../../errors.ts";
-import type { Logger } from "../../log/index.ts";
+import type { Logger } from "../../events/index.ts";
 import { requireInstalledModel } from "./fetch.ts";
 import type { OnnxPolicy } from "../../types.ts";
 import { SWIN2SR_X4 } from "./registry.ts";

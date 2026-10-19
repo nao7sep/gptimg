@@ -10,19 +10,15 @@ import {
   SWIN2SR_SCALE,
   type PaddedModelRun,
 } from "../../src/local/models/swin2sr.ts";
-import type { Logger } from "../../src/log/index.ts";
+import type { Logger } from "../../src/events/index.ts";
 
 /** Minimal Logger that records the progress counts forwarded to it. */
 function recordingLogger(events: { stage: string; done: number; total: number; unit: string }[]): Logger {
   return {
-    handle: { path: null, verb: "upscale" },
-    info: async () => {},
-    warn: async () => {},
-    error: async () => {},
-    debug: async () => {},
+    verb: "upscale",
+    emit: () => {},
     progress: (stage, done, total, unit) => void events.push({ stage, done, total, unit }),
     addCredential: () => {},
-    close: async () => {},
   };
 }
 

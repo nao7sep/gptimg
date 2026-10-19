@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { completed, isGptImgErrorData } from "../../src/index.ts";
 import type { RefusedResult } from "../../src/index.ts";
 
-type TrimLike = { status: "completed"; output: string; logPath: string | null } | RefusedResult;
+type TrimLike = { status: "completed"; output: string } | RefusedResult;
 
 describe("completed", () => {
   it("returns a completed result unchanged, narrowed to its completed type", () => {
-    const result: TrimLike = { status: "completed", output: "/out.png", logPath: null };
+    const result: TrimLike = { status: "completed", output: "/out.png" };
     const narrowed = completed(result);
     expect(narrowed).toBe(result);
     expect(narrowed.output).toBe("/out.png");
@@ -16,7 +16,6 @@ describe("completed", () => {
     const refused: TrimLike = {
       status: "refused",
       refusal: { code: "output.exists", message: "Output exists: /out.png.", subject: "/out.png", safeReason: null },
-      logPath: null,
     };
     let thrown: unknown;
     try {
@@ -40,7 +39,6 @@ describe("completed", () => {
       status: "refused",
       refusal: { code: "provider.refused", message: "declined", safeReason: "no" },
       response: { usage: { prompt_tokens: 85 } },
-      logPath: null,
     };
     expect(() => completed(refused)).toThrow(expect.objectContaining({ code: "refused", effect: "unknown" }));
   });

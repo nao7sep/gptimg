@@ -55,7 +55,7 @@ describe("public grid cancellation after its final tile", () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-grid-abort-"));
-    sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     first = path.join(tmp, "first.png");
     last = path.join(tmp, "last.png");
     missing = path.join(tmp, "missing.png");

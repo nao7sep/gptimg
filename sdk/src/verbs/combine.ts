@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  pngEncodingLogFields,
+  pngEncodingEventFields,
   pngEncodingOf,
   inferStem,
   resolveOutputPath,
@@ -36,13 +37,13 @@ export async function combineImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "combine start", {
+    logger.emit("info", "resolve", verbStart({
       op: args.op,
       inputs: args.inputs,
       out: outPath,
       radius: args.radius ?? null,
-      ...pngEncodingLogFields(args),
-    });
+      ...pngEncodingEventFields(args),
+    }));
 
     const result = await runCombine(
       {
@@ -55,11 +56,11 @@ export async function combineImpl(
       },
       { signal, logger },
     );
-    await logger.info("write", "wrote combined mask", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       width: result.width,
       height: result.height,
-    });
+    }));
 
     return {
       inputs: args.inputs,
@@ -67,7 +68,6 @@ export async function combineImpl(
       width: result.width,
       height: result.height,
       op: result.op,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

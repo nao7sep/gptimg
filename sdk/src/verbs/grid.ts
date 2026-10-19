@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   resolveOutputPath,
   withVerbLogger,
@@ -33,15 +34,15 @@ export async function gridImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "grid start", {
+    logger.emit("info", "resolve", verbStart({
       out: outPath,
       inputs: args.inputs.length,
       cols: args.cols ?? null,
       cell: args.cell ?? null,
       gap: args.gap ?? null,
       background: args.background ?? null,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runGrid(
       {
@@ -57,7 +58,7 @@ export async function gridImpl(
       { signal, logger },
     );
 
-    await logger.info("write", "wrote grid sheet", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       placed: result.placed,
       skipped: result.skipped,
@@ -65,7 +66,7 @@ export async function gridImpl(
       rows: result.rows,
       width: result.width,
       height: result.height,
-    });
+    }));
 
     return {
       output: result.output,
@@ -78,7 +79,6 @@ export async function gridImpl(
       gap: result.gap,
       width: result.width,
       height: result.height,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

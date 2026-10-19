@@ -35,7 +35,7 @@ describe("Unicode output names through public verbs", () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-normalization-"));
     outDir = path.join(tmp, "out");
     await mkdir(outDir);
-    sdk = new GptImg({ apiKey: "sk-disposable-test", modelsDir: path.join(tmp, "models"), logDir: path.join(tmp, "logs") });
+    sdk = new GptImg({ apiKey: "sk-disposable-test", modelsDir: path.join(tmp, "models") });
     png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#336699" } }).png().toBuffer();
     generate.mockResolvedValue({ raw: {}, images: [{ data: png }] });
   });

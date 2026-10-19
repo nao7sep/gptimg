@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maskCredentials, maskDiagnosticCopy, maskUrlQuery, urlQueryValues } from "../../src/log/mask.ts";
+import { maskCredentials, maskDiagnosticCopy, maskUrlQuery, urlQueryValues } from "../../src/events/mask.ts";
 
 describe("credential masking helpers", () => {
   it("replaces every occurrence of each credential with the fixed marker, keeping the scheme", () => {

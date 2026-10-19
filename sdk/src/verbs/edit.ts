@@ -59,7 +59,7 @@ export async function editImpl(
     const policy = callPolicy(ctx, args.policy);
     const network = resolveNetworkForCall(policy);
     const section = validateEditSection(policy.edit);
-    // The model is settled and its values checked before the call, so the log and the sidecar
+    // The model is settled and its values checked before the call, so the events and the sidecar
     // name what is sent.
     const params: Record<string, unknown> = {
       ...section,
@@ -82,13 +82,8 @@ export async function editImpl(
     // Fail before the paid provider call when this stem already conflicts.
     assertStemAvailable(outDir, stem, n, overwrite);
 
-    await logger.info("request", "calling provider.edit", {
-      provider: "openai",
-      model: params.model ?? null,
-      input: path.basename(args.in),
-      mask: args.mask ? path.basename(args.mask) : null,
-      n,
-    });
+    logger.emit("info", "resolve", { event: "verb.start", input: args.in, output: path.join(outDir, stem), settings: { mask: args.mask ?? null, n, overwrite } });
+    logger.emit("info", "request", { event: "provider.call", operation: "edit", model: (params.model as string | undefined) ?? null, settings: { ...params, n } });
 
     const provider = getProvider();
     const providerResult = await provider.edit({
@@ -104,9 +99,7 @@ export async function editImpl(
         signal,
       },
     });
-    await logger.info("response", "provider.edit returned", {
-      itemCount: providerResult.images.length,
-    });
+    logger.emit("info", "response", { event: "provider.returned", operation: "edit", summary: { images: providerResult.images.length } });
 
     const requestRecord = {
       ...params,
@@ -130,13 +123,13 @@ export async function editImpl(
       logger,
     });
 
+    logger.emit("info", "write", { event: "verb.done", output: path.join(outDir, stem), stats: { files: files.length, failures: failures.length, leftovers: leftovers.length } });
     return {
       status: "completed" as const,
       files,
       failures,
       leftovers,
       response,
-      logPath: logger.handle.path,
     };
   });
 }

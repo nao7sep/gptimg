@@ -34,57 +34,29 @@ describe("installModelImpl logging", () => {
     await truncate(modelPath, MODELS[key].byteSize);
   }
 
-  it("routes the log to an explicit path and leaves the default log dir untouched", async () => {
-    const homeDir = path.join(tmp, "home");
-    const logDir = path.join(tmp, "logs");
-    await seedCachedModel(homeDir);
-    const customLog = path.join(tmp, "custom", "install.jsonl");
-
-    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir });
-    const result = await sdk.model.install(key, { log: { file: customLog } });
-
-    expect(result.installed[0]!.name).toBe(MODELS[key].name);
-    expect(result.installed[0]!.forced).toBe(false);
-    expect(result.logPath).toBe(customLog);
-    // openLog mkdir'd the custom path's parent — proof the redirect was used...
-    expect(existsSync(path.dirname(customLog))).toBe(true);
-    // ...and the default log dir was never opened.
-    const defaultEntries = existsSync(logDir) ? await readdir(logDir) : [];
-    expect(defaultEntries).toEqual([]);
-  });
-
-  it("a default log dir that can't be opened never fails install, and the SDK never prints", async () => {
+  it("installs an already cached model without downloading, writes nothing else, and never prints", async () => {
     const homeDir = path.join(tmp, "home");
     await seedCachedModel(homeDir);
-    // Point the default log dir under a *file*, so opening its log (mkdir of the
-    // parent) fails with ENOTDIR — the unwritable-default-path scenario.
-    const blocker = path.join(tmp, "blocker");
-    await writeFile(blocker, "not a dir");
-    const logDir = path.join(blocker, "logs");
-
-    let result: { installed: Array<{ name: string }> } | undefined;
+    let result: { installed: Array<{ name: string; forced: boolean }> } | undefined;
     const chunks = await captureStderr(async () => {
-      // The logger can't open its file, but that must not fail the install — the
-      // cache and network are fine, so the work goes on regardless.
-      const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir });
-      result = await sdk.model.install(key);
+      result = await new GptImg({ modelsDir: path.join(homeDir, "models") }).model.install(key);
     });
-
-    expect(result?.installed[0]?.name).toBe(MODELS[key].name);
-    // The log file is unavailable, but an SDK never falls back to a standard stream
-    // (sdk-conventions, Logging); with no event hook supplied here, it is silent.
+    expect(result?.installed[0]).toMatchObject({ name: MODELS[key].name, forced: false });
     expect(chunks.join("")).toBe("");
+    expect(await readdir(tmp)).toEqual(["home"]);
   });
 
-  it("rejects a truthy string force flag before logging or downloading", async () => {
+  it("rejects a truthy string force flag and the retired log option before downloading", async () => {
     const homeDir = path.join(tmp, "home");
-    const logDir = path.join(tmp, "logs");
-    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
 
     await expect(sdk.model.install(key, { force: "false" } as never)).rejects.toMatchObject({
       code: "args.invalid",
     });
-    expect(existsSync(logDir)).toBe(false);
+    await expect(sdk.model.install(key, { log: { file: path.join(tmp, "x.log") } } as never)).rejects.toMatchObject({
+      code: "args.invalid",
+      details: { field: "log", constraint: "retired" },
+    });
     expect(existsSync(path.join(homeDir, "models"))).toBe(false);
   });
 });
@@ -115,7 +87,7 @@ describe("model verb result shapes", () => {
       await truncate(modelPath, MODELS[key].byteSize);
     }
 
-    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
     const result = await sdk.model.installAll();
 
     expect(Array.isArray(result)).toBe(false);
@@ -133,7 +105,7 @@ describe("model verb result shapes", () => {
     await writeFile(cachedPath, Buffer.alloc(0));
     await truncate(cachedPath, cachedEntry.byteSize);
 
-    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
     const result = sdk.model.list();
 
     expect(Array.isArray(result)).toBe(false);
@@ -163,7 +135,7 @@ describe("model.verify integrity check", () => {
 
   it("reports a missing model when nothing is cached", async () => {
     const homeDir = path.join(tmp, "home");
-    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
 
     const result = await sdk.model.verify();
 
@@ -204,7 +176,7 @@ describe("model.verify integrity check", () => {
     // compared, not trusted from presence alone.
     await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
 
-    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
     const result = await sdk.model.verify();
 
     const entry = result.models.find((m) => m.key === key)!;
@@ -213,32 +185,21 @@ describe("model.verify integrity check", () => {
     expect(entry.actualSha256).not.toBe(MODELS[key].sha256);
   });
 
-  it("returns a log path and streams bounded progress for a tiny fixture", async () => {
+  it("reports verification as events and streams bounded progress for a tiny fixture", async () => {
     const homeDir = path.join(tmp, "home");
     const modelsDir = path.join(homeDir, "models");
     await mkdir(modelsDir, { recursive: true });
     await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
     const onEvent = vi.fn();
     const onProgress = vi.fn();
-    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
 
     const result = await sdk.model.verify({ onEvent, onProgress });
 
-    expect(result.logPath).toMatch(/\.log$/);
-    expect(existsSync(result.logPath!)).toBe(true);
-    expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: "verifying installed model",
-        stage: "resolve",
-      }),
-    );
+    expect(result.models.length).toBeGreaterThan(0);
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ event: "model.verify.start", stage: "resolve" }));
     expect(onProgress).toHaveBeenLastCalledWith({ verb: "model", stage: "hash", done: 3, total: 3, unit: "bytes", subject: expect.any(String) });
-    expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: "model verification result",
-        stage: "response",
-      }),
-    );
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ event: "model.verify.done", stage: "response" }));
   });
 
   it("wraps cached-model filesystem failures in the stable typed error", async () => {
@@ -247,7 +208,6 @@ describe("model.verify integrity check", () => {
     await mkdir(modelPath, { recursive: true });
     const sdk = new GptImg({
       modelsDir: path.join(homeDir, "models"),
-      logDir: path.join(tmp, "verify-failure-logs"),
     });
 
     // A folder where the model file belongs cannot be hashed: the filesystem's cause, with the path.

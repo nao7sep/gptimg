@@ -14,7 +14,7 @@ import {
   stagingPathFor,
 } from "../../src/local/models/fetch.ts";
 import { MODELS, type ModelEntry } from "../../src/local/models/registry.ts";
-import type { Logger } from "../../src/log/index.ts";
+import type { Logger } from "../../src/events/index.ts";
 
 function listen(handler: http.RequestListener): Promise<{
   server: http.Server;
@@ -109,18 +109,12 @@ describe("ensureModel", () => {
       });
       res.end(body);
     });
-    const events: { stage: string; msg: string }[] = [];
+    const events: { stage: string; event: string }[] = [];
     const logger: Logger = {
-      handle: { path: path.join(tmp, "dl.jsonl"), verb: "model" },
-      info: async (stage, msg) => {
-        events.push({ stage, msg });
-      },
-      warn: async () => {},
-      error: async () => {},
-      debug: async () => {},
+      verb: "model",
+      emit: (_level, stage, body) => void events.push({ stage, event: body.event }),
       progress: () => {},
       addCredential: () => {},
-      close: async () => {},
     };
     // Spy stderr for the duration of the download; the SDK must not touch it.
     const stderrSpy = vi.fn(() => true);
@@ -134,9 +128,7 @@ describe("ensureModel", () => {
     expect(stderrSpy).not.toHaveBeenCalled();
     expect(events.every((e) => e.stage === "download")).toBe(true);
     // The one-time download is announced before any request, then progresses.
-    expect(events[0]!.msg).toBe("prog.bin is not on disk yet; downloading it once");
-    expect(events.some((e) => e.msg.startsWith("downloading prog.bin"))).toBe(true);
-    expect(events.some((e) => e.msg.startsWith("downloaded prog.bin"))).toBe(true);
+    expect(events.map((e) => e.event)).toEqual(["model.download.needed", "model.download.start", "model.download.done"]);
   });
 
   it("removes staged downloads whose process is gone and keeps those still in flight", async () => {
@@ -518,16 +510,12 @@ describe("ensureModel", () => {
     });
     const ctrl = new AbortController();
     const logger: Logger = {
-      handle: { path: path.join(tmp, "cancel.log"), verb: "model" },
-      info: async (_stage, msg) => {
-        if (msg.startsWith("downloaded")) ctrl.abort(new Error("stop"));
+      verb: "model",
+      emit: (_level, _stage, body) => {
+        if (body.event === "model.download.done") ctrl.abort(new Error("stop"));
       },
-      warn: async () => {},
-      error: async () => {},
-      debug: async () => {},
       progress: () => {},
       addCredential: () => {},
-      close: async () => {},
     };
     try {
       const entry: ModelEntry = {
@@ -555,16 +543,12 @@ describe("ensureModel", () => {
     });
     const ctrl = new AbortController();
     const logger: Logger = {
-      handle: { path: path.join(tmp, "cancel-progress.log"), verb: "model" },
-      info: async () => {},
-      warn: async () => {},
-      error: async () => {},
-      debug: async () => {},
+      verb: "model",
+      emit: () => {},
       progress: (_stage, done) => {
         if (done > 0) ctrl.abort(new Error("stop"));
       },
       addCredential: () => {},
-      close: async () => {},
     };
     const entry: ModelEntry = {
       name: "cancel-progress.bin",
@@ -647,12 +631,8 @@ describe("superseded model retirement", () => {
     try {
       await writeFile(path.join(tmp, "model-v1.onnx"), "old");
       await writeFile(path.join(tmp, "other-model-v1.onnx"), "unrelated");
-      const events: string[] = [];
-      const logger = {
-        info: async (_stage: string, message: string) => void events.push(message),
-        warn: async (_stage: string, message: string) => void events.push(message),
-        progress: () => undefined,
-      } as unknown as Logger;
+      const events: Array<Record<string, unknown>> = [];
+      const logger: Logger = { verb: "model", emit: (_level, _stage, body) => void events.push(body as unknown as Record<string, unknown>), progress: () => {}, addCredential: () => {} };
       const entry: ModelEntry = {
         name: "model-v2.onnx",
         supersedes: ["model-v1.onnx"],
@@ -663,7 +643,7 @@ describe("superseded model retirement", () => {
       };
       await ensureModel(entry, tmp, { logger });
       expect((await readdir(tmp)).sort()).toEqual(["model-v2.onnx", "other-model-v1.onnx", "temp"]);
-      expect(events).toContain("deleted model-v1.onnx, replaced by model-v2.onnx");
+      expect(events).toContainEqual({ event: "model.superseded.deleted", name: "model-v1.onnx", replacement: "model-v2.onnx" });
     } finally {
       await closeServer(server);
     }
@@ -711,12 +691,13 @@ describe("superseded model retirement", () => {
     await mkdir(path.join(tmp, "model-v1.onnx"));
     await writeFile(path.join(tmp, "model-v0.onnx"), "old");
     await writeFile(path.join(tmp, "model-v2.onnx"), Buffer.from([1, 2]));
-    const warnings: string[] = [];
-    const logger = {
-      info: async () => undefined,
-      warn: async (_stage: string, message: string) => void warnings.push(message),
-      progress: () => undefined,
-      } as unknown as Logger;
+    const warnings: Array<Record<string, unknown>> = [];
+    const logger: Logger = {
+      verb: "model",
+      emit: (level, _stage, body) => void (level === "warn" && warnings.push(body as unknown as Record<string, unknown>)),
+      progress: () => {},
+      addCredential: () => {},
+    };
     const entry: ModelEntry = {
       name: "model-v2.onnx",
       supersedes: ["model-v1.onnx", "model-v0.onnx"],
@@ -726,7 +707,7 @@ describe("superseded model retirement", () => {
     };
 
     await expect(ensureModel(entry, tmp, { logger })).resolves.toBe(path.join(tmp, "model-v2.onnx"));
-    expect(warnings).toEqual(["could not delete model-v1.onnx, replaced by model-v2.onnx"]);
+    expect(warnings).toEqual([expect.objectContaining({ event: "model.superseded.kept", name: "model-v1.onnx", replacement: "model-v2.onnx" })]);
     expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(true);
     expect(existsSync(path.join(tmp, "model-v0.onnx"))).toBe(false);
 

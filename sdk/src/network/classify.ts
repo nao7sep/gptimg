@@ -1,5 +1,5 @@
 import { GptImgError, type ErrorEffect, cancelledError, isCancelled } from "../errors.ts";
-import { maskCredentials } from "../log/mask.ts";
+import { maskCredentials } from "../events/mask.ts";
 import { refuse } from "../refusal.ts";
 import { BUDGET_RESEND_POLICY, type NetworkBudgetName } from "./defaults.ts";
 import { DROPPED_CODES, UNREACHABLE_CODES, isConnectionError, isTimeout, networkCode } from "./failure.ts";

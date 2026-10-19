@@ -1,3 +1,4 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import { callModelsDir, callPolicy, type SdkContext } from "../context.ts";
 import { GptImgError, throwIfAborted } from "../errors.ts";
@@ -5,7 +6,7 @@ import { writeMaskPNG } from "../image/bridge.ts";
 import {
   assertSingleFileAvailable,
   inferStem,
-  pngEncodingLogFields,
+  pngEncodingEventFields,
   pngEncodingOf,
   resolveOutputPath,
   withVerbLogger,
@@ -60,13 +61,13 @@ export async function maskImpl(
       const chromaSection = validateChromaSection(policy.chroma);
       const resolved = applyChromaPolicyDefaults(args, chromaSection);
 
-      await logger.info("resolve", "mask start", {
+      logger.emit("info", "resolve", verbStart({
         input: resolved.in,
         method,
         key: resolved.key ?? "auto",
         preserveInterior: resolved.preserveInterior ?? false,
-        ...pngEncodingLogFields(args),
-      });
+        ...pngEncodingEventFields(args),
+      }));
 
       const result = await chromaMaskFromFile(
         {
@@ -84,11 +85,11 @@ export async function maskImpl(
       stats = result.stats;
     } else if (method === "ai") {
       const onnx = validateOnnxSection(policy.onnx);
-      await logger.info("resolve", "mask start", {
+      logger.emit("info", "resolve", verbStart({
         input: args.in,
         method,
-        ...pngEncodingLogFields(args),
-      });
+        ...pngEncodingEventFields(args),
+      }));
 
       const result = await aiMaskFromFile(
         { in: args.in },
@@ -105,18 +106,15 @@ export async function maskImpl(
       });
     }
 
-    await logger.info("stats", "mask complete", { stats });
-
     throwIfAborted(signal);
 
     await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false, source: args.in }, pngEncodingOf(args));
-    await logger.info("write", "wrote mask", { path: outPath });
+    logger.emit("info", "write", verbDone({ path: outPath, stats }));
 
     return {
       input: args.in,
       output: outPath,
       stats,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

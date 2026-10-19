@@ -13,7 +13,7 @@ import { runCombine } from "../../src/local/combine.ts";
 import { chromaMask } from "../../src/local/chroma/mask.ts";
 import { analyzeKey, SRGB_TO_LINEAR_LUT } from "../../src/local/chroma/spill.ts";
 import { nullBase64InResponse } from "../../src/sidecar/nullBase64.ts";
-import { maskUrlQuery } from "../../src/log/mask.ts";
+import { maskUrlQuery } from "../../src/events/mask.ts";
 
 /**
  * Invariants of the SDK's pure rules, checked against generated inputs

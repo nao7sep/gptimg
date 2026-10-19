@@ -1,4 +1,4 @@
-import { link, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { RefusalSignal, refuse } from "../../src/refusal.ts";
 import { statSync } from "node:fs";
 import path from "node:path";
@@ -12,6 +12,8 @@ import {
 } from "../../src/internal/local-verb.ts";
 import { APIError } from "openai";
 import { GptImgError } from "../../src/errors.ts";
+import type { SdkContext } from "../../src/context.ts";
+import type { SdkEvent, VerbName } from "../../src/types.ts";
 
 describe("inferStem", () => {
   it("strips the final extension from a basename", () => {
@@ -209,153 +211,99 @@ describe("resolveOutputPath", () => {
 });
 
 describe("withVerbLogger", () => {
-  let tmp: string;
-  beforeEach(async () => {
-    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-lv-logger-"));
-  });
-  afterEach(async () => {
-    await rm(tmp, { recursive: true, force: true });
+  const ctx = (over: Partial<SdkContext> = {}): SdkContext => ({
+    apiKey: null,
+    modelsDir: "/models",
+    debug: false,
+    startup: { emitted: true },
+    policy: {},
+    ...over,
   });
 
-  it("returns the body's result on success and the body sees the logger", async () => {
-    const logPath = path.join(tmp, "verb.jsonl");
-    const result = await withVerbLogger(
-      { logDir: tmp },
-      "compose",
-      { log: { file: logPath } },
-      async (logger) => {
-        await logger.info("resolve", "hello", { x: 1 });
-        return { ok: true as const, logPath: logger.handle.path };
-      },
-    );
-    expect(result).toEqual({ ok: true, logPath });
-    const lines = (await readFile(logPath, "utf-8")).trim().split("\n");
-    expect(lines).toHaveLength(1);
-    const entry = JSON.parse(lines[0]!);
-    expect(entry).toMatchObject({
-      verb: "compose",
-      level: "info",
-      stage: "resolve",
-      message: "hello",
-      data: { x: 1 },
+  /** Run `body` through the wrapper and collect the events it emits. */
+  async function run<T>(verb: VerbName, body: Parameters<typeof withVerbLogger<T>>[3], c = ctx()) {
+    const events: SdkEvent[] = [];
+    const outcome = withVerbLogger(c, verb, { onEvent: (e) => events.push(e) }, body);
+    return { outcome, events };
+  }
+
+  it("returns the body's result and hands the body's events to onEvent", async () => {
+    const { outcome, events } = await run("compose", async (logger) => {
+      logger.emit("info", "resolve", { event: "verb.start", input: "/in.png", output: "/out.png", settings: { x: 1 } });
+      return { ok: true as const };
     });
+    expect(await outcome).toEqual({ ok: true });
+    expect(events).toEqual([
+      expect.objectContaining({ verb: "compose", level: "info", stage: "resolve", event: "verb.start", message: "verb started", input: "/in.png", settings: { x: 1 } }),
+    ]);
   });
 
-  it("logs the thrown error and rethrows it", async () => {
-    const logPath = path.join(tmp, "verb.jsonl");
-    const err = new GptImgError("fs.noSpace", "boom");
-    await expect(
-      withVerbLogger({ logDir: tmp }, "mask", { log: { file: logPath } }, async () => {
-        throw err;
-      }),
-    ).rejects.toBe(err);
-    const lines = (await readFile(logPath, "utf-8")).trim().split("\n");
-    expect(lines).toHaveLength(1);
-    const entry = JSON.parse(lines[0]!);
-    expect(entry).toMatchObject({
-      verb: "mask",
+  it("reports the thrown error as verb.failed with its data and a bounded cause chain, and rethrows it", async () => {
+    const err = new GptImgError("fs.failed", "outer failure", { cause: new TypeError("inner failure") });
+    const { outcome, events } = await run("mask", async () => {
+      throw err;
+    });
+    await expect(outcome).rejects.toBe(err);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
       level: "error",
       stage: "error",
-      message: "boom",
-      data: { code: "fs.noSpace", kind: "unavailable", effect: "none" },
-    });
-    expect(entry.data.error).toMatchObject({
-      type: "GptImgError",
-      message: "boom",
-      stack: expect.stringContaining("GptImgError: boom"),
+      event: "verb.failed",
+      error: { code: "fs.failed", kind: "unavailable", effect: "none", message: "outer failure" },
+      thrown: { type: "GptImgError", message: "outer failure", cause: { type: "TypeError", message: "inner failure" } },
     });
   });
 
-  it("keeps the provider's own failed response in the logged cause", async () => {
-    const logPath = path.join(tmp, "provider.jsonl");
+  it("keeps the provider's own failed response in the reported cause", async () => {
     const body = { message: "Invalid size", type: "invalid_request_error", param: "size", code: "invalid_value" };
     const cause = new APIError(400, body, undefined, new Headers({ "x-request-id": "req_123" }));
-    const err = new GptImgError("provider.rejected", "OpenAI images.generate failed", { cause });
-    await expect(
-      withVerbLogger({ logDir: tmp }, "generate", { log: { file: logPath } }, async () => {
-        throw err;
-      }),
-    ).rejects.toBe(err);
-    const entry = JSON.parse((await readFile(logPath, "utf-8")).trim());
-    expect(entry.data.error.response).toBeUndefined();
-    expect(entry.data.error.cause.response).toEqual({
-      status: 400,
-      headers: { "x-request-id": "req_123" },
-      requestId: "req_123",
-      body,
+    const { outcome, events } = await run("generate", async () => {
+      throw new GptImgError("provider.rejected", "OpenAI images.generate failed", { cause });
     });
+    await expect(outcome).rejects.toMatchObject({ code: "provider.rejected" });
+    const thrown = (events[0] as Extract<SdkEvent, { event: "verb.failed" }>).thrown as { cause: { response: unknown } };
+    expect(thrown.cause.response).toEqual({ status: 400, headers: { "x-request-id": "req_123" }, requestId: "req_123", body });
   });
 
-  it("records a bounded cause chain for failure diagnosis", async () => {
-    const logPath = path.join(tmp, "caused.jsonl");
-    const cause = new TypeError("inner failure");
-    const err = new GptImgError("fs.failed", "outer failure", { cause });
-    await expect(
-      withVerbLogger({ logDir: tmp }, "mask", { log: { file: logPath } }, async () => {
-        throw err;
-      }),
-    ).rejects.toBe(err);
-    const entry = JSON.parse((await readFile(logPath, "utf-8")).trim());
-    expect(entry.data.error).toMatchObject({
-      type: "GptImgError",
-      message: "outer failure",
-      cause: { type: "TypeError", message: "inner failure" },
-    });
-  });
-
-  it("writes no log without a log option or a logDir, and events still reach onEvent", async () => {
-    const events: string[] = [];
-    const result = await withVerbLogger({ logDir: null }, "combine", { onEvent: (e) => void events.push(e.message) }, async (logger) => {
-      await logger.info("resolve", "ok");
-      return logger.handle.path;
-    });
-    expect(result).toBeNull();
-    expect(events).toEqual(["ok"]);
-  });
-
-  it("turns a refusal into a refused result, logged at warn", async () => {
-    const logPath = path.join(tmp, "refused.jsonl");
-    const result = await withVerbLogger({ logDir: null }, "mask", { log: { file: logPath } }, async () => {
+  it("turns a refusal into a refused result, reported as verb.refused", async () => {
+    const { outcome, events } = await run("mask", async () => {
       refuse("output.exists", "Output exists: x", { subject: "/x" });
     });
-    expect(result).toEqual({
+    expect(await outcome).toEqual({
       status: "refused",
       refusal: { code: "output.exists", message: "Output exists: x", subject: "/x", safeReason: null },
-      logPath,
     });
-    const entry = JSON.parse((await readFile(logPath, "utf-8")).trim());
-    expect(entry).toMatchObject({ level: "warn", data: { code: "output.exists" } });
+    expect(events).toEqual([expect.objectContaining({ level: "warn", event: "verb.refused", code: "output.exists", subject: "/x" })]);
   });
 
   it("wraps a failure that escaped classification as internal.unexpected with its cause", async () => {
     const cause = new TypeError("surprise");
     await expect(
-      withVerbLogger({ logDir: null }, "mask", {}, async () => {
+      withVerbLogger(ctx(), "mask", {}, async () => {
         throw cause;
       }),
     ).rejects.toMatchObject({ name: "GptImgError", code: "internal.unexpected", kind: "internal", cause });
   });
 
-  it("refuses a relative log target", async () => {
-    await expect(withVerbLogger({ logDir: null }, "mask", { log: { file: "x.log" } }, async () => 1)).rejects.toMatchObject({
+  it("refuses an unknown call option, with a hint for the retired log option", async () => {
+    await expect(withVerbLogger(ctx(), "mask", { log: { file: "/x.log" } } as never, async () => 1)).rejects.toMatchObject({
       code: "args.invalid",
-      details: { field: "log.file" },
+      details: { field: "log", constraint: "retired" },
+    });
+    await expect(withVerbLogger(ctx(), "mask", { onevent: () => {} } as never, async () => 1)).rejects.toMatchObject({
+      details: { field: "onevent", constraint: "known call option" },
     });
   });
 
-  it("derives a second-stamped session log path with an ID in the instance's logDir", async () => {
-    const result = await withVerbLogger(
-      { logDir: tmp },
-      "combine",
-      {},
-      async (logger) => {
-        await logger.info("resolve", "ok");
-        return logger.handle.path!;
-      },
-    ) as string;
-    expect(result.startsWith(tmp + path.sep)).toBe(true);
-    // Concurrent runs share the log directory, so the name carries an ID:
-    // yyyymmdd-hhmmss-utc-<id>.log.
-    expect(path.basename(result)).toMatch(/^\d{8}-\d{6}-utc-[0-9a-z]{6}\.log$/);
+  it("emits the startup event once, to the first call that listens", async () => {
+    const shared = ctx({ startup: { emitted: false } });
+    await withVerbLogger(shared, "trim", {}, async () => 1);
+    const first = await run("trim", async () => 1, shared);
+    await first.outcome;
+    const second = await run("trim", async () => 1, shared);
+    await second.outcome;
+    expect(first.events.map((e) => e.event)).toEqual(["sdk.start"]);
+    expect(second.events).toEqual([]);
   });
 });
+

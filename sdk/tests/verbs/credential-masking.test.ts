@@ -1,5 +1,5 @@
 import http from "node:http";
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,7 @@ vi.mock("../../src/providers/openai/client.ts", async (importOriginal) => {
   };
 });
 import { GptImgError } from "../../src/errors.ts";
-import type { EditResult, GenerateResult, LogEntry, VisionResult } from "../../src/types.ts";
+import type { EditResult, GenerateResult, SdkEvent, VisionResult } from "../../src/types.ts";
 import type { RefusedResult } from "../../src/refusal.ts";
 
 // End to end against a local stand-in for the OpenAI API, with a fake key: the
@@ -103,7 +103,7 @@ describe("credential masking across every sink", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
     const { port } = server.address() as { port: number };
     local.baseURL = `http://127.0.0.1:${port}/v1`;
-    sdk = new GptImg({ apiKey: FAKE, logDir: path.join(tmp, "logs") });
+    sdk = new GptImg({ apiKey: FAKE });
   });
 
   afterEach(async () => {
@@ -121,14 +121,14 @@ describe("credential masking across every sink", () => {
     refused: RefusedResult | undefined;
   }> {
     mode = m;
-    const events: LogEntry[] = [];
+    const events: SdkEvent[] = [];
     let thrown = "";
     let error: unknown;
     let result: GenerateResult | EditResult | VisionResult | undefined;
     let refused: RefusedResult | undefined;
     try {
       const output = { outDir: path.join(tmp, "out"), outName: `${m}-${verb}` };
-      const options = { onEvent: (e: LogEntry) => events.push(e), ...(signal && { signal }) };
+      const options = { onEvent: (e: SdkEvent) => events.push(e), ...(signal && { signal }) };
       const policy = m === "timeout"
         ? { network: { imageGenerate: { timeout: 100, maxRetries: 0 }, imageVision: { timeout: 100, maxRetries: 0 } } }
         : undefined;
@@ -143,17 +143,16 @@ describe("credential masking across every sink", () => {
       error = err;
       thrown = diagnosticStrings(err).join("\n");
     }
+    lastEvents = events;
     return { events: JSON.stringify(events), thrown, error, result, refused };
   }
 
+  // The SDK writes no log; its events are its record of a call, the one place a credential could leak to.
+  let lastEvents: SdkEvent[] = [];
   async function logs(): Promise<string> {
-    const dir = path.join(tmp, "logs");
-    const files = await readdir(dir);
-    if (process.platform !== "win32") {
-      for (const f of files) expect((await stat(path.join(dir, f))).mode & 0o777).toBe(0o600);
-    }
-    return (await Promise.all(files.map((f) => readFile(path.join(dir, f), "utf-8")))).join("\n");
+    return JSON.stringify(lastEvents);
   }
+
 
   it.each<Verb>(["generate", "edit", "vision"])("masks an echoed key throughout %s's real SDK error, preserving its diagnostics", async (verb) => {
     const { events, thrown, error } = await run("echo401", undefined, verb);
@@ -265,9 +264,7 @@ describe("credential masking across every sink", () => {
     expect(thrown).toBe("");
     expect(await readFile(path.join(tmp, "out", "shortQuery-generate.png"))).toEqual(Buffer.from(PNG_B64, "base64"));
     const text = await logs();
-    const entries = text.trim().split("\n").map((line) => JSON.parse(line) as LogEntry);
-    expect(entries.length).toBeGreaterThan(0);
-    expect(entries.some((entry) => entry.data?.itemCount === 1)).toBe(true);
+    expect(lastEvents.some((entry) => entry.event === "provider.returned" && entry.summary.images === 1)).toBe(true);
     expect(JSON.parse(events)).toEqual(expect.any(Array));
     expect(text).not.toContain(SIG);
     expect(events).not.toContain(SIG);

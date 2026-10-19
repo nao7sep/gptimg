@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -35,15 +36,15 @@ export async function despeckleImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "despeckle start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       out: outPath,
       threshold: args.threshold ?? null,
       minArea: args.minArea ?? null,
       connectivity: args.connectivity ?? null,
       keep: args.keep ?? null,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runDespeckle(
       {
@@ -59,7 +60,7 @@ export async function despeckleImpl(
       { signal },
     );
 
-    await logger.info("write", "wrote despeckled image", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       flooredPixels: result.flooredPixels,
       components: result.components,
@@ -67,7 +68,7 @@ export async function despeckleImpl(
       removedPixels: result.removedPixels,
       bboxBefore: result.bboxBefore,
       bboxAfter: result.bboxAfter,
-    });
+    }));
 
     return {
       input: args.in,
@@ -84,7 +85,6 @@ export async function despeckleImpl(
       bboxAfter: result.bboxAfter,
       width: result.width,
       height: result.height,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

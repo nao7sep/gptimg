@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import { callModelsDir, callPolicy, type SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -39,14 +40,14 @@ export async function upscaleImpl(
     const onnx = validateOnnxSection(callPolicy(ctx, args.policy).onnx);
     const modelsDir = callModelsDir(ctx, args.modelsDir);
 
-    await logger.info("resolve", "upscale start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       out: outPath,
       toSize: args.toSize ?? null,
       kernel: args.kernel ?? null,
       tile: args.tile ?? null,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runUpscale(
       {
@@ -62,7 +63,7 @@ export async function upscaleImpl(
       { signal, onnx, logger },
     );
 
-    await logger.info("write", "wrote upscaled image", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       sourceWidth: result.sourceWidth,
       sourceHeight: result.sourceHeight,
@@ -71,7 +72,7 @@ export async function upscaleImpl(
       width: result.width,
       height: result.height,
       tiles: result.tiles,
-    });
+    }));
 
     return {
       input: args.in,
@@ -86,7 +87,6 @@ export async function upscaleImpl(
       kernel: result.kernel,
       tile: result.tile,
       tiles: result.tiles,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

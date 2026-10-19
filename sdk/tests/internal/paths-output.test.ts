@@ -5,14 +5,10 @@ import { homedir, tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ensureOutputDir, writeOutputBytes } from "../../src/internal/output-files.ts";
 import { defaultModelsDir } from "../../src/internal/resource-home.ts";
-import { defaultStem, logPathIn, utcTimestamp } from "../../src/internal/paths.ts";
+import { defaultStem, utcTimestamp } from "../../src/internal/paths.ts";
 
 describe("internal paths", () => {
-  it("names a log in a caller-given folder and default stems by second and ID", () => {
-    const logDir = path.join(tmpdir(), "logs");
-    expect(logPathIn(logDir, "20260102-030405-utc", "a1b2c3")).toBe(
-      path.join(logDir, "20260102-030405-utc-a1b2c3.log"),
-    );
+  it("names default stems by second and ID", () => {
     expect(defaultStem("20260102-030405-utc", "a1b2c3")).toBe("20260102-030405-utc-a1b2c3-gptimg");
   });
 

@@ -1,9 +1,10 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import path from "node:path";
 import {
   assertSingleFileAvailable,
-  pngEncodingLogFields,
+  pngEncodingEventFields,
   pngEncodingOf,
   withVerbLogger,
 } from "../internal/local-verb.ts";
@@ -34,24 +35,24 @@ export async function iconImpl(
       assertSingleFileAvailable(filePath, args.overwrite ?? false);
     }
 
-    await logger.info("resolve", "icon start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       outDir,
       name,
       pngs,
-      ...pngEncodingLogFields(args),
-    });
+      ...pngEncodingEventFields(args),
+    }));
 
     const result = await runIcon(
       { in: args.in, outDir, name, pngs, overwrite: args.overwrite ?? false, ...pngEncodingOf(args) },
       { signal, logger },
     );
 
-    await logger.info("write", "wrote icon artifacts", {
+    logger.emit("info", "write", verbDone({
       outputs: result.outputs,
       sourceWidth: result.sourceWidth,
       sourceHeight: result.sourceHeight,
-    });
+    }));
 
     return {
       input: args.in,
@@ -62,7 +63,6 @@ export async function iconImpl(
       pngs: result.pngSet.map((p) => p.path),
       width: result.sourceWidth,
       height: result.sourceHeight,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

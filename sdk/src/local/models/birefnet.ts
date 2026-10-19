@@ -16,7 +16,7 @@ import * as ort from "onnxruntime-node";
 import sharp from "sharp";
 import { GptImgError, throwIfAborted } from "../../errors.ts";
 import { resizeSingleChannel } from "../../image/bridge.ts";
-import type { Logger } from "../../log/index.ts";
+import type { Logger } from "../../events/index.ts";
 import { requireInstalledModel } from "./fetch.ts";
 import type { OnnxPolicy } from "../../types.ts";
 import { BIREFNET } from "./registry.ts";
@@ -91,10 +91,10 @@ export async function runBirefnet(
       "BiRefNet ONNX session has no input. Model file may be malformed.",
     );
   }
-  await opts.logger?.info("infer", "running BiRefNet inference", { width, height });
+  opts.logger?.emit("info", "infer", { event: "model.infer.start", model: "birefnet", settings: { width, height } });
   throwIfAborted(opts.signal);
   const outputs = await runSession(session, { [inputName]: tensor });
-  await opts.logger?.info("infer", "BiRefNet inference complete");
+  opts.logger?.emit("info", "infer", { event: "model.infer.done", model: "birefnet", stats: {} });
   throwIfAborted(opts.signal);
   const outputName = session.outputNames[session.outputNames.length - 1]!;
   const output = outputs[outputName];

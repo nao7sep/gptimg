@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import path from "node:path";
 import { cancelledError, processingError } from "../../errors.ts";
-import { maskDiagnosticCopy } from "../../log/mask.ts";
+import { maskDiagnosticCopy } from "../../events/mask.ts";
 import { classifyRequestFailure } from "../../network/classify.ts";
 import { fetchWithBudget } from "../../network/fetch.ts";
 import { callWithRetry, isAbortError } from "../../network/retry.ts";

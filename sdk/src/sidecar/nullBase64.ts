@@ -1,4 +1,4 @@
-import { maskUrlQuery } from "../log/mask.ts";
+import { maskUrlQuery } from "../events/mask.ts";
 
 const BASE64_FIELDS = new Set([
   "b64_json",
@@ -7,7 +7,7 @@ const BASE64_FIELDS = new Set([
 ]);
 
 /**
- * A provider response as gptimg records it, in the log and the sidecar: a copy
+ * A provider response as gptimg records it, in its events and the sidecar: a copy
  * with base64 image payloads replaced by `null`, since the saved files hold
  * them, and each image `url`'s query values masked, since a signed download URL
  * carries its credential there (data-lifecycle-conventions). Field-name-based

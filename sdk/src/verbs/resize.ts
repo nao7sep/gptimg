@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -35,13 +36,13 @@ export async function resizeImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "resize start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       out: outPath,
       toSize: args.toSize,
       kernel: args.kernel ?? null,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runResize(
       {
@@ -55,13 +56,13 @@ export async function resizeImpl(
       { signal },
     );
 
-    await logger.info("write", "wrote resized image", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       sourceWidth: result.sourceWidth,
       sourceHeight: result.sourceHeight,
       width: result.width,
       height: result.height,
-    });
+    }));
 
     return {
       input: args.in,
@@ -72,7 +73,6 @@ export async function resizeImpl(
       height: result.height,
       toSize: result.toSize,
       kernel: result.kernel,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

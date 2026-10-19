@@ -12,8 +12,8 @@ import { ensureOutputDir } from "../internal/output-files.ts";
 import { reserveOutputGroup, assertOutputGroupAvailable, createOutputGroup } from "../internal/output-group.ts";
 import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
 import { singleLine } from "../internal/textCleanup.ts";
-import type { Logger } from "../log/index.ts";
-import { maskDiagnosticCopy } from "../log/mask.ts";
+import type { Logger } from "../events/index.ts";
+import { maskDiagnosticCopy } from "../events/mask.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { resolveVisionDetail, resolveVisionReasoning } from "../policy/model-check.ts";
 import { validateVisionSection } from "../policy/schemas.ts";
@@ -65,8 +65,9 @@ async function prepareImage(
     throw fsError(err, "Failed to read image", imagePath);
   }
   const shrink = await shrinkForVision(raw, fit);
-  await logger.info("write", "prepared vision input", {
-    path: path.basename(imagePath),
+  logger.emit("info", "write", {
+    event: "vision.input",
+    name: path.basename(imagePath),
     shrink: {
       applied: shrink.applied,
       originalWidth: shrink.originalWidth,
@@ -112,7 +113,7 @@ export async function visionImpl(
     const section = validateVisionSection(policy.vision);
     const { shrink: configuredShrink, detail: configuredDetail, reasoning: configuredReasoning, ...sectionParams } = section;
     // The model, its effort and its detail are settled, and the effort checked against the
-    // model's row, before the call, so the log and the sidecar name what is sent.
+    // model's row, before the call, so the events and the sidecar name what is sent.
     const model = resolveModel(sectionParams.model, defaultModelFor("openai", "vision"));
     const reasoning = resolveVisionReasoning(model, configuredReasoning);
     const params = { ...sectionParams, model, ...(reasoning !== undefined && { reasoning }) };
@@ -136,11 +137,8 @@ export async function visionImpl(
       inputs.map((p) => prepareImage(p, shrink, detail, logger)),
     );
 
-    await logger.info("request", "calling provider.vision", {
-      provider: "openai",
-      model: params.model ?? null,
-      images: prepared.length,
-    });
+    logger.emit("info", "resolve", { event: "verb.start", input: inputs, output: `${stemPath}.json`, settings: { check, overwrite: args.overwrite ?? false } });
+    logger.emit("info", "request", { event: "provider.call", operation: "vision", model: (params.model as string | undefined) ?? null, settings: { ...params, images: prepared.length } });
 
     const provider = getProvider();
     const providerResult = await provider.vision({
@@ -159,10 +157,7 @@ export async function visionImpl(
         signal,
       },
     });
-    await logger.info("response", "provider.vision returned", {
-      ok: providerResult.verdict.ok,
-      score: providerResult.verdict.score,
-    });
+    logger.emit("info", "response", { event: "provider.returned", operation: "vision", summary: { ok: providerResult.verdict.ok, score: providerResult.verdict.score } });
 
     const record = maskDiagnosticCopy({
       formatVersion: 2,
@@ -190,7 +185,7 @@ export async function visionImpl(
     let sidecar: FilePublication = { status: "published" };
     try {
       await writeSidecar(sidecarPath, record, { overwrite: args.overwrite ?? false });
-      await logger.info("write", "wrote sidecar", { name: path.basename(sidecarPath) });
+      logger.emit("info", "write", { event: "sidecar.published", path: sidecarPath });
     } catch (err) {
       const failure = err instanceof RefusalSignal
         ? { code: err.refusal.code, message: err.refusal.message }
@@ -198,8 +193,9 @@ export async function visionImpl(
           ? { code: err.code, message: err.message }
           : { code: "internal.unexpected" as const, message: (err as Error)?.message ?? String(err) };
       sidecar = { status: "failed", ...failure, effect: "unknown" };
-      await logger.warn("write", "vision sidecar could not be published", { name: path.basename(sidecarPath), error: failure.message });
+      logger.emit("warn", "write", { event: "sidecar.unpublished", index: null, path: sidecarPath, error: failure.message });
     }
+    logger.emit("info", "stats", { event: "verb.done", output: sidecar.status === "published" ? sidecarPath : null, stats: { ok: providerResult.verdict.ok, score: providerResult.verdict.score } });
 
     return {
       ok: providerResult.verdict.ok,
@@ -209,7 +205,6 @@ export async function visionImpl(
       sidecarPath,
       sidecar,
       record,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

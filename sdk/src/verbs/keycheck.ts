@@ -1,9 +1,10 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import { normalizeHex } from "../color.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -67,7 +68,7 @@ export async function keycheckImpl(
       assertSingleFileAvailable(heatmapOut, args.overwrite ?? false);
     }
 
-    await logger.info("resolve", "keycheck start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       key,
       keySource,
@@ -75,8 +76,8 @@ export async function keycheckImpl(
       minSaturation: args.minSaturation ?? null,
       minValue: args.minValue ?? null,
       heatmap: args.heatmap ?? false,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runKeycheck(
       {
@@ -94,7 +95,7 @@ export async function keycheckImpl(
       { signal },
     );
 
-    await logger.info("stats", "keycheck complete", {
+    logger.emit("info", "stats", verbDone({
       verdict: result.verdict,
       presentPixels: result.presentPixels,
       edgePixels: result.edgePixels,
@@ -105,7 +106,7 @@ export async function keycheckImpl(
       residueFraction: result.residueFraction,
       worstBBox: result.worstBBox,
       heatmapPath: result.heatmapPath,
-    });
+    }));
 
     return {
       input: args.in,
@@ -126,7 +127,6 @@ export async function keycheckImpl(
       minValue: result.minValue,
       verdict: result.verdict,
       heatmapPath: result.heatmapPath,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

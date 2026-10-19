@@ -1,5 +1,5 @@
 import { GptImgError } from "../errors.ts";
-import type { LogVerb } from "../types.ts";
+import type { VerbName } from "../types.ts";
 
 /**
  * Out-of-memory containment (volume-handling-conventions). No verb checks free
@@ -27,14 +27,14 @@ export function isOutOfMemory(err: unknown): boolean {
   return false;
 }
 
-const ADVICE: Partial<Record<LogVerb, string>> = {
+const ADVICE: Partial<Record<VerbName, string>> = {
   upscale: "Pass a smaller tile, upscale a smaller image, or close other apps and retry.",
   mask: 'The AI method needs far more memory than "chroma"; close other apps and retry, or use method "chroma".',
 };
 const GENERAL_ADVICE = "Use smaller images or output sizes, or close other apps and retry.";
 
 /** `err` as `memory.exhausted` when it is an allocation failure; otherwise unchanged. */
-export function containOutOfMemory(verb: LogVerb, err: unknown): unknown {
+export function containOutOfMemory(verb: VerbName, err: unknown): unknown {
   if (!isOutOfMemory(err)) return err;
   if (err instanceof GptImgError && err.code === "memory.exhausted") return err;
   const reason = err instanceof Error ? err.message : String(err);

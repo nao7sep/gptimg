@@ -54,7 +54,7 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateGenerateArgs({ outDir: "/x", prompt: "x", overrides: {} } as never), "overrides is now policy");
     badArgs(() => validateGenerateArgs({ outDir: "/x", prompt: "x", recipe: "/r.json" } as never), "recipe files are retired");
     badArgs(() => validateMaskArgs({ in: "/x/a.png", dryRun: true } as never), "no longer has dryRun");
-    badArgs(() => validateResizeArgs({ in: "/x/a.png", toSize: 8, log: "/l.log" } as never), "log is a call option");
+    badArgs(() => validateResizeArgs({ in: "/x/a.png", toSize: 8, log: "/l.log" } as never), "the SDK writes no log");
   });
 
   it("generate / edit / vision: required fields", () => {
@@ -297,7 +297,7 @@ describe("verb argument validation (single source of truth)", () => {
     // own validator, not merely in a caller's type annotations.
     const tmp = await mkdtemp(path.join(tmpdir(), "gptimg-schemas-"));
     try {
-      const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: path.join(tmp, "logs") });
+      const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
       await expect(
         sdk.backplate({ from: "#000000", to: "#ffffff", shape: "blob" as never }),
       ).rejects.toMatchObject({ code: "args.invalid" });

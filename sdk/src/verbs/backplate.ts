@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   resolveOutputPath,
   withVerbLogger,
@@ -28,7 +29,7 @@ export async function backplateImpl(
 
   return withVerbLogger(ctx, "backplate", opts, async (logger) => {
     // Resolve size only — runBackplate resolves the rest. The output name
-    // depends on the final size; everything else just goes into the log via
+    // depends on the final size; everything else just goes into the start event via
     // result fields after the call.
     const size = args.size ?? BACKPLATE_DEFAULTS.size;
     const outPath = await resolveOutputPath(args, {
@@ -37,7 +38,7 @@ export async function backplateImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    await logger.info("resolve", "backplate start", {
+    logger.emit("info", "resolve", verbStart({
       out: outPath,
       size: args.size ?? null,
       content: args.content ?? null,
@@ -46,8 +47,8 @@ export async function backplateImpl(
       shape: args.shape ?? null,
       from: args.from,
       to: args.to,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runBackplate(
       {
@@ -65,14 +66,14 @@ export async function backplateImpl(
       { signal },
     );
 
-    await logger.info("write", "wrote backplate", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       size: result.size,
       content: result.content,
       radius: result.radius,
       angle: result.angle,
       shape: result.shape,
-    });
+    }));
 
     return {
       output: result.output,
@@ -83,7 +84,6 @@ export async function backplateImpl(
       from: result.from,
       to: result.to,
       angle: result.angle,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

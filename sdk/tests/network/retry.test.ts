@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GptImgError } from "../../src/errors.ts";
 import { callWithRetry, isAbortError } from "../../src/network/retry.ts";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../src/network/defaults.ts";
-import type { Logger } from "../../src/log/index.ts";
+import type { Logger } from "../../src/events/index.ts";
 
 const fast: NetworkBudget = {
   timeout: 60_000,
@@ -28,18 +28,16 @@ function named(name: string): Error {
   return e;
 }
 
-/** Minimal Logger whose warn() is a spy; other methods are inert. */
-function fakeLogger(): Logger & { warn: ReturnType<typeof vi.fn> } {
-  const noop = vi.fn(async () => {});
-  const warn = vi.fn(async () => {});
-  return {
-    handle: { path: "/dev/null", verb: "generate" },
-    info: noop,
-    warn,
-    error: noop,
-    debug: noop,
-    close: noop,
-  } as unknown as Logger & { warn: ReturnType<typeof vi.fn> };
+type EmitMock = ReturnType<typeof vi.fn<Logger["emit"]>>;
+
+/** A Logger whose emit() is a spy; progress and masking are inert. */
+function fakeLogger(): Logger & { emit: EmitMock } {
+  return { verb: "generate", emit: vi.fn<Logger["emit"]>(), progress: vi.fn(), addCredential: vi.fn() };
+}
+
+/** The [stage, body] of each event emitted at `level`. */
+function emitted(logger: { emit: EmitMock }, level: "info" | "warn"): Array<[string, Record<string, unknown>]> {
+  return logger.emit.mock.calls.filter(([l]) => l === level).map(([, stage, body]) => [stage, body as unknown as Record<string, unknown>]);
 }
 
 describe("callWithRetry", () => {
@@ -259,7 +257,7 @@ describe("callWithRetry", () => {
       );
       await vi.advanceTimersByTimeAsync(25);
       await expect(pending).resolves.toBe("ok");
-      expect(logger.warn.mock.calls[0]?.[2]).toMatchObject({
+      expect(emitted(logger, "warn")[0]?.[1]).toMatchObject({
         waitMs: 25,
         retryAfterHeader: true,
         retryAfterCapped: true,
@@ -289,7 +287,7 @@ describe("callWithRetry", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(fn).toHaveBeenCalledTimes(2);
       await expect(operation).resolves.toBe("ok");
-      expect(logger.warn.mock.calls[0]?.[2]).toMatchObject({
+      expect(emitted(logger, "warn")[0]?.[1]).toMatchObject({
         waitMs: 30_000,
         retryAfterHeader: true,
         retryAfterCapped: true,
@@ -316,7 +314,7 @@ describe("callWithRetry", () => {
       expect(fn).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(1);
       await expect(operation).resolves.toBe("ok");
-      expect(logger.warn.mock.calls[0]?.[2]).toMatchObject({
+      expect(emitted(logger, "warn")[0]?.[1]).toMatchObject({
         waitMs: 20,
         retryAfterHeader: true,
         retryAfterCapped: false,
@@ -488,7 +486,7 @@ describe("callWithRetry", () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
-  it("logs a structured warn record before each retry", async () => {
+  it("reports each retry as an attempt.retrying event", async () => {
     const logger = fakeLogger();
     const headers = new Headers({ "retry-after-ms": "0" });
     const fn = vi
@@ -502,11 +500,11 @@ describe("callWithRetry", () => {
       fn,
     );
     expect(out).toBe("ok");
-    expect(logger.warn).toHaveBeenCalledOnce();
-    const [stage, message, data] = logger.warn.mock.calls[0]!;
+    expect(emitted(logger, "warn")).toHaveLength(1);
+    const [stage, data] = emitted(logger, "warn")[0]!;
     expect(stage).toBe("retry");
-    expect(message).toContain("retrying imageGenerate");
     expect(data).toMatchObject({
+      event: "attempt.retrying",
       budget: "imageGenerate",
       attempt: 1,
       maxRetries: fast.maxRetries,
@@ -518,7 +516,7 @@ describe("callWithRetry", () => {
   });
 
   // With no status, the error's name, message and network code say what failed.
-  it("logs the error when there is no status", async () => {
+  it("reports the error when there is no status", async () => {
     const logger = fakeLogger();
     const fn = vi
       .fn()
@@ -528,7 +526,7 @@ describe("callWithRetry", () => {
       { budgetName: "imageDownload", budget: fast, logger },
       fn,
     );
-    const [, , data] = logger.warn.mock.calls[0]!;
+    const [, data] = emitted(logger, "warn")[0]!;
     expect(data).toMatchObject({
       status: null,
       error: { name: "Error", code: "ECONNRESET" },
@@ -544,11 +542,10 @@ describe("callWithRetry", () => {
     await expect(
       callWithRetry({ budgetName: "imageGenerate", budget: fast, logger, request }, fn),
     ).rejects.toBe(final);
-    expect(logger.warn.mock.calls.map(([stage, , data]) => [stage, data.attempt, data.status, data.request])).toEqual([
-      ["retry", 1, 429, request],
-      ["response", 2, 400, request],
+    expect(emitted(logger, "warn").map(([stage, data]) => [stage, data.event, data.attempt, data.status, data.request])).toEqual([
+      ["retry", "attempt.retrying", 1, 429, request],
+      ["response", "attempt.failed", 2, 400, request],
     ]);
-    expect(logger.warn.mock.calls[1]?.[1]).toBe("imageGenerate attempt 2 failed");
   });
 
   it("records the last attempt once the retries run out", async () => {
@@ -557,41 +554,37 @@ describe("callWithRetry", () => {
     await expect(
       callWithRetry({ budgetName: "imageGenerate", budget: fast, logger }, fn),
     ).rejects.toMatchObject({ status: 503 });
-    const stages = logger.warn.mock.calls.map(([stage]) => stage);
+    const stages = emitted(logger, "warn").map(([stage]) => stage);
     expect(stages).toEqual([...Array(fast.maxRetries).fill("retry"), "response"]);
   });
 
   it("records a successful attempt that names its response, after a retried one, and returns the result", async () => {
-    const info = vi.fn(async () => {});
-    const logger = { ...fakeLogger(), info } as unknown as Logger;
+    const logger = fakeLogger();
     const request = { model: "m" };
     const fn = vi.fn().mockRejectedValueOnce(http(429)).mockResolvedValueOnce({ body: "ok", bytes: "x" });
 
     const result = await callWithRetry(
-      { budgetName: "imageGenerate", budget: fast, logger, request, response: (r: { body: string }) => r.body },
+      { budgetName: "imageGenerate", budget: fast, logger, request, response: (r: { body: string }) => ({ body: r.body }) },
       fn,
     );
 
     expect(result).toEqual({ body: "ok", bytes: "x" });
-    expect(info.mock.calls).toEqual([
+    expect(emitted(logger, "info")).toEqual([
       [
         "response",
-        "imageGenerate attempt 2 succeeded",
-        { budget: "imageGenerate", attempt: 2, maxRetries: fast.maxRetries, durationMs: expect.any(Number), request, outcome: "succeeded", response: "ok" },
+        { event: "attempt.succeeded", budget: "imageGenerate", attempt: 2, maxRetries: fast.maxRetries, durationMs: expect.any(Number), request, response: { body: "ok" } },
       ],
     ]);
   });
 
-  it("logs no success line for a call that records no response", async () => {
-    const info = vi.fn(async () => {});
-    const logger = { ...fakeLogger(), info } as unknown as Logger;
+  it("emits no success event for a call that records no response", async () => {
+    const logger = fakeLogger();
     await callWithRetry({ budgetName: "imageDownload", budget: fast, logger, request: { url: "u" } }, async () => "bytes");
-    expect(info).not.toHaveBeenCalled();
+    expect(emitted(logger, "info")).toEqual([]);
   });
 
   it("records a cancelled attempt with its request and the cancelled outcome", async () => {
-    const info = vi.fn(async () => {});
-    const logger = { ...fakeLogger(), info } as unknown as Logger;
+    const logger = fakeLogger();
     const ctrl = new AbortController();
     const request = { model: "m", prompt: "p" };
     const fn = vi.fn(async () => {
@@ -601,25 +594,21 @@ describe("callWithRetry", () => {
     await expect(
       callWithRetry({ budgetName: "imageGenerate", budget: fast, signal: ctrl.signal, logger, request }, fn),
     ).rejects.toMatchObject({ code: "cancelled" });
-    expect(info.mock.calls).toEqual([
-      [
-        "cancelled",
-        "imageGenerate attempt 1 cancelled",
-        { budget: "imageGenerate", attempt: 1, maxRetries: fast.maxRetries, durationMs: expect.any(Number), request, outcome: "cancelled" },
-      ],
+    expect(emitted(logger, "info")).toEqual([
+      ["cancelled", { event: "attempt.cancelled", budget: "imageGenerate", attempt: 1, maxRetries: fast.maxRetries, durationMs: expect.any(Number), request }],
     ]);
   });
 
   // Covers abortableSleep's aborted-at-entry guard: the signal aborts while the
-  // pre-sleep logger.warn await is pending, so the sleep is entered already
+  // pre-sleep retry event is being handed out, so the sleep is entered already
   // aborted and rejects synchronously rather than scheduling a timer.
-  it("aborts at sleep entry when the signal fires during pre-sleep logging", async () => {
+  it("aborts at sleep entry when the signal fires during the pre-sleep event", async () => {
     const ctrl = new AbortController();
     const logger = fakeLogger();
-    // Abort from inside warn(), i.e. between the abort re-check after fn() and
+    // Abort from inside the retry event, i.e. between the abort re-check after fn() and
     // the abortableSleep() call.
-    logger.warn.mockImplementation(async () => {
-      ctrl.abort(new Error("aborted while logging"));
+    logger.emit.mockImplementation((level) => {
+      if (level === "warn") ctrl.abort(new Error("aborted while logging"));
     });
     const fn = vi.fn().mockRejectedValue(http(503));
     await expect(
@@ -637,7 +626,7 @@ describe("callWithRetry", () => {
       message: "aborted while logging",
     });
     expect(fn).toHaveBeenCalledOnce();
-    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(emitted(logger, "warn")).toHaveLength(1);
   });
 });
 

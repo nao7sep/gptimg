@@ -1,4 +1,4 @@
-import type { ErrorCode, ErrorEffect } from "./errors.ts";
+import type { ErrorCode, ErrorEffect, GptImgErrorData } from "./errors.ts";
 import type { RefusalCode } from "./refusal.ts";
 export type {
   BackplateShape,
@@ -272,8 +272,9 @@ export interface ChatSidecar extends SidecarBase {
 
 export type Sidecar = GenerateSidecar | EditSidecar | VisionSidecar | ChatSidecar;
 
-export type LogLevel = "debug" | "info" | "warn" | "error";
-export type LogStage =
+export type EventLevel = "debug" | "info" | "warn" | "error";
+export type EventStage =
+  | "startup"
   | "resolve"
   | "request"
   | "response"
@@ -286,10 +287,8 @@ export type LogStage =
   | "infer"
   | "hash"
   | "cancelled"
-  | "error"
-  // The logging subsystem reporting on itself (e.g. the session file is unavailable).
-  | "log";
-export type LogVerb =
+  | "error";
+export type VerbName =
   | "generate"
   | "edit"
   | "vision"
@@ -313,28 +312,101 @@ export type LogVerb =
   | "inspect"
   | "chat";
 
-export interface LogEntry {
-  /** Event instant: UTC ISO-8601 with milliseconds and `Z` (logging-conventions envelope). */
-  time: string;
-  level: LogLevel;
-  /** Short, stable, human-readable description of the event. */
-  message: string;
-  /** Typed structured fields carried alongside the three envelope keys. */
-  verb: LogVerb;
-  stage: LogStage;
-  data?: Record<string, unknown>;
+/** One provider request attempt, as each attempt event records it (data-lifecycle-conventions: one record per attempt). */
+export interface AttemptFields {
+  /** The network budget the attempt ran under. */
+  budget: string;
+  attempt: number;
+  maxRetries: number;
+  durationMs: number;
+  /** The request as sent, with image bytes replaced and credentials masked. */
+  request?: Record<string, unknown>;
 }
 
-export interface LogHandle {
-  /** The log file, or null when the call asked for no log. */
-  path: string | null;
-  verb: LogVerb;
+/** A failed attempt: its status, the error, and the provider's own answer when one came back. */
+export interface FailedAttemptFields extends AttemptFields {
+  status: number | null;
+  error: { name: string; message: string; code: string | null };
+  response?: Record<string, unknown>;
 }
+
+/**
+ * The typed body of every event, named by `event`. A caller stores events as
+ * received; open-ended content (a provider's request and response, a verb's
+ * resolved settings and stats) sits in named object fields.
+ */
+export type SdkEventBody =
+  // Once per instance, on the first call that passes `onEvent`.
+  | {
+      event: "sdk.start";
+      version: string;
+      node: string;
+      platform: string;
+      arch: string;
+      modelsDir: string;
+      debug: boolean;
+      app: { name: string; version: string } | null;
+      /** Whether a key was given; never the key. */
+      apiKey: boolean;
+      organization: string | null;
+      project: string | null;
+      policy: Policy;
+    }
+  | { event: "verb.start"; input: string | string[] | null; output: string | null; settings: Record<string, unknown> }
+  | { event: "verb.done"; output: string | null; stats: Record<string, unknown> }
+  | { event: "verb.refused"; code: RefusalCode; subject: string | null }
+  | { event: "verb.failed"; error: GptImgErrorData; thrown: Record<string, unknown> }
+  | { event: "provider.call"; operation: "generate" | "edit" | "vision" | "chat"; model: string | null; settings: Record<string, unknown> }
+  | { event: "provider.returned"; operation: "generate" | "edit" | "vision" | "chat"; summary: Record<string, unknown> }
+  | ({ event: "attempt.succeeded"; response: Record<string, unknown> } & AttemptFields)
+  | ({ event: "attempt.failed" } & FailedAttemptFields)
+  | ({ event: "attempt.retrying"; waitMs: number; retryAfterHeader: boolean; retryAfterCapped: boolean } & FailedAttemptFields)
+  | ({ event: "attempt.cancelled" } & AttemptFields)
+  | { event: "image.short"; requested: number; returned: number }
+  | { event: "image.missing"; index: number; error: string | null }
+  | { event: "image.undecodable"; index: number; error: string }
+  | { event: "image.unpublished"; index: number; error: string }
+  | { event: "image.published"; index: number; name: string; sha256: string; format: string; sidecar: string | null }
+  | { event: "sidecar.published"; path: string }
+  | { event: "sidecar.unpublished"; index: number | null; path: string; error: string }
+  | { event: "slots.leftover"; leftovers: string[] }
+  | { event: "vision.input"; name: string; shrink: Record<string, unknown> }
+  | { event: "vision.refusal"; code: RefusalCode; request: Record<string, unknown>; response: unknown }
+  | { event: "vision.noVerdict"; request: Record<string, unknown>; response: unknown; error: { name: string; code: unknown; message: string } }
+  | { event: "chat.resend"; previousResponseId: string }
+  | { event: "chat.historyImage"; path: string; width: number; height: number; format: string }
+  | { event: "chat.historyImageSkipped"; path: string; error: string }
+  | { event: "model.download.needed"; name: string }
+  | { event: "model.download.start"; name: string }
+  | { event: "model.download.done"; name: string; bytes: number }
+  | { event: "model.superseded.deleted"; name: string; replacement: string }
+  | { event: "model.superseded.kept"; name: string; replacement: string; error: string }
+  | { event: "model.infer.start"; model: string; settings: Record<string, unknown> }
+  | { event: "model.infer.done"; model: string; stats: Record<string, unknown> }
+  | { event: "model.verify.start"; key: string; name: string; sizeBytes: number | null }
+  | { event: "model.verify.done"; key: string; name: string; integrity: string };
+
+export type SdkEventName = SdkEventBody["event"];
+
+/**
+ * A complete event record (sdk-conventions, *Logging*): the time, level,
+ * stage, the verb it belongs to, a short English message fixed per event name,
+ * and the typed fields of its body. The SDK writes no log; a caller stores
+ * these as received.
+ */
+export type SdkEvent = {
+  /** UTC ISO-8601 with milliseconds and `Z`. */
+  time: string;
+  level: EventLevel;
+  stage: EventStage;
+  verb: VerbName;
+  message: string;
+} & SdkEventBody;
 
 /** Countable work done so far, for a progress bar (`onProgress`). */
 export interface ProgressUpdate {
-  verb: LogVerb;
-  stage: LogStage;
+  verb: VerbName;
+  stage: EventStage;
   done: number;
   total: number;
   unit: "bytes" | "tiles" | "inputs" | "renditions" | "passes";
@@ -397,7 +469,6 @@ export interface GenerateResult {
    * call, also when no image was published, so what the call spent is never lost.
    */
   response: Record<string, unknown>;
-  logPath: string | null;
 }
 
 export interface EditArgs extends Omit<GenerateArgs, "outDir"> {
@@ -434,7 +505,6 @@ export interface VisionResult extends VisionVerdict {
   sidecar: FilePublication;
   /** The record the sidecar holds, also here so a caller keeps it when the sidecar could not be written. */
   record: VisionSidecar;
-  logPath: string | null;
 }
 
 // ----- mask / compose / combine -----
@@ -491,7 +561,6 @@ export interface MaskResult {
   input: string;
   output: string;
   stats: MaskStats;
-  logPath: string | null;
 }
 
 export interface ComposeArgs extends EncodingArgs {
@@ -524,7 +593,6 @@ export interface ComposeResult {
   width: number;
   height: number;
   over: "transparent" | "color" | "image";
-  logPath: string | null;
 }
 
 // ----- trim -----
@@ -565,7 +633,6 @@ export interface TrimResult {
   /** Final output height. */
   height: number;
   square: boolean;
-  logPath: string | null;
 }
 
 // ----- backplate -----
@@ -605,7 +672,6 @@ export interface BackplateResult {
   /** Resolved gradient end color, "#rrggbb". */
   to: string;
   angle: number;
-  logPath: string | null;
 }
 
 // ----- layer -----
@@ -655,7 +721,6 @@ export interface LayerResult {
   /** Resolved placement. One of `gravity` or `topOffset` is null. */
   gravity: LayerGravity | null;
   topOffset: LayerOffset | null;
-  logPath: string | null;
 }
 
 // ----- shadow -----
@@ -706,7 +771,6 @@ export interface ShadowResult {
   opacity: number;
   spread: number;
   keepCanvas: boolean;
-  logPath: string | null;
 }
 
 // ----- resample (shared by upscale + resize) -----
@@ -753,7 +817,6 @@ export interface UpscaleResult {
   tile: number;
   /** Number of model passes (tiles) the source was split into. */
   tiles: number;
-  logPath: string | null;
 }
 
 // ----- resize -----
@@ -781,7 +844,6 @@ export interface ResizeResult {
   height: number;
   toSize: number;
   kernel: ResampleKernel;
-  logPath: string | null;
 }
 
 // ----- encode -----
@@ -855,7 +917,6 @@ export interface EncodeResult {
   sourceBytes: number;
   /** Output file size in bytes. */
   bytes: number;
-  logPath: string | null;
 }
 
 // ----- icon -----
@@ -888,7 +949,6 @@ export interface IconResult {
   /** Source master dimensions. */
   width: number;
   height: number;
-  logPath: string | null;
 }
 
 export interface CombineArgs extends PngEncodingArgs {
@@ -909,7 +969,6 @@ export interface CombineResult {
   width: number;
   height: number;
   op: CombineOp;
-  logPath: string | null;
 }
 
 // ----- despeckle -----
@@ -955,7 +1014,6 @@ export interface DespeckleResult {
   bboxAfter: AlphaBBox | null;
   width: number;
   height: number;
-  logPath: string | null;
 }
 
 // ----- keycheck -----
@@ -1030,7 +1088,6 @@ export interface KeycheckResult {
   verdict: KeyResidueVerdict;
   /** Debug heatmap path when `heatmap` was set, else null. */
   heatmapPath: string | null;
-  logPath: string | null;
 }
 
 // ----- framecheck -----
@@ -1106,7 +1163,6 @@ export interface FramecheckResult {
   edgeContact: FrameEdgeContact | null;
   /** "centered" when the enforced axes are within tolerance (empty is vacuously centered). */
   verdict: FramecheckVerdict;
-  logPath: string | null;
 }
 
 // ----- grid -----
@@ -1152,7 +1208,6 @@ export interface GridResult {
   gap: number;
   width: number;
   height: number;
-  logPath: string | null;
 }
 
 // ----- model management -----
@@ -1170,7 +1225,6 @@ export interface InstalledModel {
 export interface ModelInstallResult {
   status: "completed";
   installed: InstalledModel[];
-  logPath: string | null;
 }
 
 /** One known model and its cache state, from `model list`. */
@@ -1218,8 +1272,6 @@ export interface ModelVerifyEntry {
 export interface ModelVerifyResult {
   status: "completed";
   models: ModelVerifyEntry[];
-  /** JSONL log for this verification session. */
-  logPath: string | null;
 }
 
 /** What `verify` can find wrong with a published paid image and its sidecar. */
@@ -1253,7 +1305,6 @@ export interface VerifyResult {
   findings: VerifyFinding[];
   /** The sidecar as read, or null when it is missing or unreadable. */
   record: Sidecar | null;
-  logPath: string | null;
 }
 
 /** One earlier turn of a conversation as the caller holds it; images by absolute path. */
@@ -1303,7 +1354,6 @@ export interface ChatResult {
   incomplete: string | null;
   /** The provider's response as recorded (image data removed, credentials masked), with its token `usage`. */
   response: Record<string, unknown>;
-  logPath: string | null;
 }
 
 export interface InspectArgs {
@@ -1357,7 +1407,6 @@ export interface InspectResult {
   pages: number;
   /** The sidecar beside the image, or null when there is none. */
   record: InspectRecord | null;
-  logPath: string | null;
 }
 
 export interface GptImgOptions {
@@ -1367,8 +1416,8 @@ export interface GptImgOptions {
   project?: string;
   /** The models folder (absolute). Default `~/.gptimgsdk/models`. */
   modelsDir?: string;
-  /** The folder calls log into when they ask for no other (absolute). No default: without one, nothing is logged. */
-  logDir?: string;
+  /** Hand debug events to `onEvent` too. Default false. */
+  debug?: boolean;
   /** Policy merged over the built-in defaults; each call's policy merges over this. */
   policy?: Policy;
   /** The calling app, recorded in each sidecar's `writer` beside the SDK's own name and version. */

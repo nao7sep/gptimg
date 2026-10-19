@@ -11,7 +11,10 @@ export interface SdkContext {
   organization?: string;
   project?: string;
   modelsDir: string;
-  logDir: string | null;
+  /** Whether debug events reach `onEvent`. */
+  debug: boolean;
+  /** Whether this instance's startup event has been handed to a caller yet. */
+  startup: { emitted: boolean };
   /** The instance's policy, checked whole. */
   policy: Policy;
   /** The calling app, recorded in sidecars beside the SDK's own name and version. */
@@ -19,12 +22,13 @@ export interface SdkContext {
 }
 
 // The constructor's options, so an unknown one is refused as a verb refuses an unknown argument.
-const OPTION_NAMES = ["apiKey", "organization", "project", "modelsDir", "logDir", "policy", "app"];
+const OPTION_NAMES = ["apiKey", "organization", "project", "modelsDir", "debug", "policy", "app"];
 
 // Options earlier versions took, with where their value now goes.
 const RETIRED_OPTIONS: Record<string, string> = {
   profile: "profiles are retired; pass apiKey and the other settings here directly",
-  profileDir: "there is no profile folder; pass modelsDir and logDir",
+  profileDir: "there is no profile folder; pass modelsDir",
+  logDir: "the SDK writes no log; store the events onEvent receives",
 };
 
 function optionalString(value: unknown, field: string): string | undefined {
@@ -58,7 +62,9 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
   const organization = optionalString(opts.organization, "organization");
   const project = optionalString(opts.project, "project");
   if (opts.modelsDir !== undefined) assertAbsolutePath(opts.modelsDir, "modelsDir");
-  if (opts.logDir !== undefined) assertAbsolutePath(opts.logDir, "logDir");
+  if (opts.debug !== undefined && typeof opts.debug !== "boolean") {
+    throw new GptImgError("args.invalid", "debug must be a boolean.", { details: { field: "debug", constraint: "boolean" } });
+  }
   if (opts.policy !== undefined) validatePolicy(opts.policy);
   let app: SdkContext["app"];
   if (opts.app !== undefined) {
@@ -76,7 +82,8 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
     ...(organization !== undefined && { organization }),
     ...(project !== undefined && { project }),
     modelsDir: opts.modelsDir ?? defaultModelsDir(),
-    logDir: opts.logDir ?? null,
+    debug: opts.debug ?? false,
+    startup: { emitted: false },
     policy: opts.policy ?? {},
     ...(app !== undefined && { app }),
   };

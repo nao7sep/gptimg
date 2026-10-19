@@ -41,6 +41,24 @@ function completed<T>(result: T | RefusedResult): T {
 }
 
 /**
+ * The call options within a model operation's options, after refusing any key
+ * it does not take: its own arguments and the call options share one object.
+ */
+function callOptionsOf(operation: string, opts: object, own: readonly string[]): VerbCallOptions {
+  const given = opts as Record<string, unknown>;
+  const known = [...own, "signal", "onEvent", "onProgress"];
+  const unknown = Object.keys(given).find((key) => given[key] !== undefined && !known.includes(key));
+  if (unknown !== undefined) {
+    const hint = unknown === "log" ? "the SDK writes no log; store the events onEvent receives" : `it takes ${known.join(", ")}`;
+    throw new GptImgError("args.invalid", `${operation}: ${unknown} is not accepted; ${hint}.`, {
+      details: { field: unknown, constraint: unknown === "log" ? "retired" : "known option" },
+    });
+  }
+  const { signal, onEvent, onProgress } = opts as VerbCallOptions;
+  return { signal, onEvent, onProgress };
+}
+
+/**
  * Install models explicitly: the only way a model reaches its folder
  * (sdk-conventions, *Nothing installs implicitly*). Each download is staged,
  * size- and SHA-256-verified and published whole; a superseded pin's file is
@@ -52,6 +70,7 @@ export async function installModelsImpl(
   opts: ModelInstallOptions = {},
 ): Promise<ModelInstallResult> {
   for (const key of keys) validateModelKey(key);
+  const callOptions = callOptionsOf("model install", opts, ["force", "modelsDir", "policy"]);
   if (opts.force !== undefined && typeof opts.force !== "boolean") {
     throw new GptImgError("args.invalid", "model install: force must be a boolean.", {
       details: { field: "force", constraint: "boolean" },
@@ -59,7 +78,7 @@ export async function installModelsImpl(
   }
   const modelsDir = callModelsDir(ctx, opts.modelsDir);
   const budget = resolveNetworkForCall(callPolicy(ctx, opts.policy)).modelDownload;
-  return completed(await withVerbLogger(ctx, "model", opts, async (logger) => {
+  return completed(await withVerbLogger(ctx, "model", callOptions, async (logger) => {
     const installed: InstalledModel[] = [];
     for (const key of keys) {
       throwIfAborted(opts.signal);
@@ -72,7 +91,7 @@ export async function installModelsImpl(
       });
       installed.push({ key, name: entry.name, path: installedPath, forced: opts.force ?? false });
     }
-    return { status: "completed" as const, installed, logPath: logger.handle.path };
+    return { status: "completed" as const, installed };
   }));
 }
 
@@ -105,8 +124,9 @@ export async function verifyModelsImpl(
   ctx: SdkContext,
   opts: ModelVerifyOptions = {},
 ): Promise<ModelVerifyResult> {
+  const callOptions = callOptionsOf("model verify", opts, ["modelsDir"]);
   const modelsDir = callModelsDir(ctx, opts.modelsDir);
-  return completed(await withVerbLogger(ctx, "model", opts, async (logger) => {
+  return completed(await withVerbLogger(ctx, "model", callOptions, async (logger) => {
     const models: ModelVerifyEntry[] = [];
     for (const key of Object.keys(MODELS) as ModelKey[]) {
       throwIfAborted(opts.signal);
@@ -120,11 +140,7 @@ export async function verifyModelsImpl(
       } else if (!entry.sha256) {
         integrity = "unverifiable";
       } else {
-        await logger.info("resolve", "verifying installed model", {
-          key,
-          name: entry.name,
-          sizeBytes: cache.sizeBytes ?? null,
-        });
+        logger.emit("info", "resolve", { event: "model.verify.start", key, name: entry.name, sizeBytes: cache.sizeBytes ?? null });
         actualSha256 = await fileSha256(filePath, opts.signal, (done) =>
           logger.progress("hash", done, cache.sizeBytes ?? done, "bytes", entry.name),
         );
@@ -138,8 +154,8 @@ export async function verifyModelsImpl(
         expectedSha256: entry.sha256,
         actualSha256,
       });
-      await logger.info("response", "model verification result", { key, name: entry.name, integrity });
+      logger.emit("info", "response", { event: "model.verify.done", key, name: entry.name, integrity });
     }
-    return { status: "completed" as const, models, logPath: logger.handle.path };
+    return { status: "completed" as const, models };
   }));
 }

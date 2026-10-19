@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { GptImgError } from "../../errors.ts";
 import { classifyRequestFailure, safeReasonText } from "../../network/classify.ts";
 import { RefusalSignal, refuse } from "../../refusal.ts";
-import { maskDiagnosticCopy } from "../../log/mask.ts";
+import { maskDiagnosticCopy } from "../../events/mask.ts";
 import { callWithRetry } from "../../network/retry.ts";
 import type { VisionVerdict } from "../../types.ts";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.ts";
@@ -145,7 +145,7 @@ export async function openaiVision(
       : OPENAI_VISION_SYSTEM_PROMPT;
 
   // The request as sent, or as recorded: the record nulls each image's data URL, since the
-  // input file holds the image and the log's prepared-input line records how it was shrunk.
+  // input file holds the image and the `vision.input` event records how it was shrunk.
   const buildRequest = (withBytes: boolean) =>
     buildVisionRequest(model, {
       ...passthroughParams,
@@ -196,13 +196,14 @@ export async function openaiVision(
     verdict = verdictFrom(response, [args.credentials.apiKey]);
   } catch (err) {
     if (err instanceof RefusalSignal) {
-      await logger?.warn("response", "vision response is a refusal", { request, response, code: err.refusal.code });
+      logger?.emit("warn", "response", { event: "vision.refusal", code: err.refusal.code, request, response });
       // The answer was paid for: its usage stays with the refused result.
       err.response = maskDiagnosticCopy(response, [args.credentials.apiKey]) as Record<string, unknown>;
       throw err;
     }
     const diagnosticError = maskDiagnosticCopy(err, [args.credentials.apiKey]);
-    await logger?.warn("response", "vision response yielded no verdict", {
+    logger?.emit("warn", "response", {
+      event: "vision.noVerdict",
       request,
       response,
       error: {

@@ -1,3 +1,4 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
@@ -53,7 +54,7 @@ export async function inspectImpl(
 
   return withVerbLogger(ctx, "inspect", opts, async (logger) => {
     throwIfAborted(opts.signal);
-    await logger.info("resolve", "inspect start", { input });
+    logger.emit("info", "resolve", verbStart({ input }));
     let fileBytes: number;
     try {
       fileBytes = (await stat(input)).size;
@@ -103,16 +104,15 @@ export async function inspectImpl(
       orientation: meta.orientation ?? null,
       pages: meta.pages ?? 1,
       record,
-      logPath: logger.handle.path,
     };
-    await logger.info("stats", "inspected", {
+    logger.emit("info", "stats", verbDone({
       format: result.format,
       extensionMatches,
       width: result.width,
       height: result.height,
       opaque,
       record: record?.status ?? null,
-    });
+    }));
     return result;
   });
 }

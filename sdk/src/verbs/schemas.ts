@@ -428,7 +428,7 @@ const RETIRED_ARGS: Record<string, string> = {
   recipe: "recipe files are retired; pass policy per call or per instance",
   overrides: "overrides is now policy",
   profile: "profiles are retired; pass apiKey and the other settings to the GptImg constructor",
-  log: "log is a call option: verb(args, { log: { file } | { dir } })",
+  log: "the SDK writes no log; store the events onEvent receives",
   dryRun: "mask no longer has dryRun",
 };
 

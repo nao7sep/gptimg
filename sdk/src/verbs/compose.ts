@@ -1,8 +1,9 @@
+import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import {
   assertSingleFileAvailable,
-  encodingLogFields,
+  encodingEventFields,
   encodingOf,
   inferStem,
   resolveOutputPath,
@@ -43,14 +44,14 @@ export async function composeImpl(
       ? parseOverColor(args.over)
       : undefined;
 
-    await logger.info("resolve", "compose start", {
+    logger.emit("info", "resolve", verbStart({
       input: args.in,
       mask: args.mask,
       out: outPath,
       over: over?.kind ?? "transparent",
       removeBleed: args.removeBleed ?? null,
-      ...encodingLogFields(args),
-    });
+      ...encodingEventFields(args),
+    }));
 
     const result = await runCompose(
       {
@@ -64,12 +65,12 @@ export async function composeImpl(
       },
       { signal },
     );
-    await logger.info("write", "wrote composed image", {
+    logger.emit("info", "write", verbDone({
       path: result.output,
       width: result.width,
       height: result.height,
       over: result.over,
-    });
+    }));
 
     return {
       input: args.in,
@@ -78,7 +79,6 @@ export async function composeImpl(
       width: result.width,
       height: result.height,
       over: result.over,
-      logPath: logger.handle.path,
       status: "completed" as const,
     };
   });

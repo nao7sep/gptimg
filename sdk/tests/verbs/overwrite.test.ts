@@ -55,7 +55,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
   });
 
   it("trim rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
     const out = path.join(tmp, "out.png");
@@ -72,7 +72,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
   });
 
   it("encode rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
     const out = path.join(tmp, "out.webp");
@@ -89,7 +89,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
   });
 
   it("backplate rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const out = path.join(tmp, "plate.png");
     await writeFile(out, "blocker");
 
@@ -117,7 +117,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
   });
 
   it("layer rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const basePath = path.join(tmp, "base.png");
     const topPath = path.join(tmp, "top.png");
     await writeRawPng(basePath, 32, 32, makeOpaque(32, 32, 0, 0, 0));
@@ -141,7 +141,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
   });
 
   it("despeckle rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
     const out = path.join(tmp, "out.png");
@@ -158,7 +158,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
   });
 
   it("mask (chroma) rejects an existing output without --overwrite, accepts with it", async () => {
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 0, 255, 0));
     const out = path.join(tmp, "out-mask.png");
@@ -176,7 +176,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
 
   it("mask (ai) checks the output before running the mask, never loading the model for a refused overwrite", async () => {
     aiMaskFromFile.mockReset();
-    const sdk = new GptImg({ modelsDir: path.join(tmp, "models"), logDir: tmp });
+    const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 0, 255, 0));
     const out = path.join(tmp, "out-ai-mask.png");

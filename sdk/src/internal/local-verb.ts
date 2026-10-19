@@ -10,17 +10,17 @@
 import path from "node:path";
 import { readdirSync } from "node:fs";
 import { GptImgError, fsError } from "../errors.ts";
-import { createLogger, type Logger } from "../log/index.ts";
+import { createLogger, type Logger } from "../events/index.ts";
+import type { SdkContext } from "../context.ts";
+import { VERSION } from "../version.ts";
 import { failedResponseFields } from "../network/retry.ts";
 import { RefusalSignal, refuse, type RefusedResult } from "../refusal.ts";
 import type { VerbCallOptions } from "../verbs/options.ts";
-import { assertAbsolutePath } from "./absolute-path.ts";
 import { ensureOutputDir } from "./output-files.ts";
 import { refuseCaseOnlyRename } from "./output-group.ts";
 import { containOutOfMemory } from "./out-of-memory.ts";
 import { imageFileName } from "./output-naming.ts";
-import { claimLogPath } from "./paths.ts";
-import type { EncodingArgs, LogVerb, PngEncodingArgs } from "../types.ts";
+import type { EncodingArgs, PngEncodingArgs, VerbName } from "../types.ts";
 
 /** Stem (basename without extension) of a file path. `foo/bar.png` → `bar`. */
 export function inferStem(filePath: string): string {
@@ -159,80 +159,73 @@ function serializeThrownError(
   return serialized;
 }
 
+// The call options; an unknown one is refused, as an unknown argument is.
+const CALL_OPTION_NAMES = ["signal", "onEvent", "onProgress"];
+
 /**
  * The single envelope for every verb:
- *   - resolve the log target (the call's `log`, else the instance's `logDir`,
- *     else none) and open a logger that forwards every event to `onEvent` and
- *     countable work to `onProgress`;
+ *   - check the call options, and open the verb's event sink: every event to
+ *     `onEvent`, countable work to `onProgress`, debug events only when the
+ *     instance asked for them;
+ *   - hand the instance's startup event to the first call that listens;
  *   - run `body(logger)`;
  *   - turn a refusal signal into `{ status: "refused" }`, an allocation failure
  *     into `memory.exhausted`, and any failure that escaped classification into
  *     `internal.unexpected`, so everything that leaves the SDK is a
- *     `GptImgError` or a result;
- *   - always close the log.
- *
- * The body puts `logger.handle.path` into the completed result it returns.
- * Claiming a log in a caller's folder waits on local storage without a bound,
- * as every storage wait in this SDK does (see `writeFileAtomic`).
+ *     `GptImgError` or a result, each reported as the call's last event.
  */
 export async function withVerbLogger<T>(
-  ctx: { logDir: string | null },
-  verbName: LogVerb,
-  opts: Pick<VerbCallOptions, "log" | "onEvent" | "onProgress">,
+  ctx: SdkContext,
+  verbName: VerbName,
+  opts: VerbCallOptions,
   body: (logger: Logger) => Promise<T>,
 ): Promise<T | RefusedResult> {
-  const target = opts.log;
-  let logPath: string | null = null;
-  let debug = false;
-  if (target !== false && target !== undefined) {
-    debug = target.debug ?? false;
-    if ("file" in target) {
-      assertAbsolutePath(target.file, "log.file");
-      logPath = target.file;
-    } else {
-      assertAbsolutePath(target.dir, "log.dir");
-      logPath = await claimLogPath(target.dir);
-    }
-  } else if (target === undefined && ctx.logDir !== null) {
-    logPath = await claimLogPath(ctx.logDir);
+  const unknown = Object.keys(opts ?? {}).find((key) => (opts as Record<string, unknown>)[key] !== undefined && !CALL_OPTION_NAMES.includes(key));
+  if (unknown !== undefined) {
+    const hint = unknown === "log" ? "the SDK writes no log; store the events onEvent receives" : `the call options are ${CALL_OPTION_NAMES.join(", ")}`;
+    throw new GptImgError("args.invalid", `${verbName}: ${unknown} is not a call option; ${hint}.`, {
+      details: { field: unknown, constraint: unknown === "log" ? "retired" : "known call option" },
+    });
   }
-  const logger = await createLogger(logPath, verbName, {
-    onEvent: opts.onEvent,
-    onProgress: opts.onProgress,
-    debug,
-  });
+  const logger = createLogger(verbName, { onEvent: opts.onEvent, onProgress: opts.onProgress, debug: ctx.debug });
+  // The instance's key is masked from the call's first event, before any provider registers it.
+  if (ctx.apiKey) logger.addCredential(ctx.apiKey);
+  if (opts.onEvent && !ctx.startup.emitted) {
+    ctx.startup.emitted = true;
+    logger.emit("info", "startup", {
+      event: "sdk.start",
+      version: VERSION,
+      node: process.versions.node,
+      platform: process.platform,
+      arch: process.arch,
+      modelsDir: ctx.modelsDir,
+      debug: ctx.debug,
+      app: ctx.app ?? null,
+      apiKey: ctx.apiKey !== null,
+      organization: ctx.organization ?? null,
+      project: ctx.project ?? null,
+      policy: ctx.policy,
+    });
+  }
   try {
     return await body(logger);
   } catch (thrown) {
     if (thrown instanceof RefusalSignal) {
-      await logger.warn("response", `refused: ${thrown.refusal.message}`, {
-        code: thrown.refusal.code,
-        subject: thrown.refusal.subject ?? null,
-      });
+      logger.emit("warn", "response", { event: "verb.refused", code: thrown.refusal.code, subject: thrown.refusal.subject ?? null });
       return {
         status: "refused",
         refusal: thrown.refusal,
         ...(thrown.response !== undefined && { response: thrown.response }),
-        logPath: logger.handle.path,
       };
     }
     const err = toSdkError(verbName, thrown);
-    // Logging never throws (a failed line is announced once and dropped), so the original error survives.
-    await logger.error("error", err.message, {
-      code: err.code,
-      kind: err.kind,
-      effect: err.effect,
-      subject: err.subject ?? null,
-      error: serializeThrownError(err),
-    });
+    logger.emit("error", "error", { event: "verb.failed", error: err.toJSON(), thrown: serializeThrownError(err) });
     throw err;
-  } finally {
-    await logger.close();
   }
 }
 
 /** Everything that leaves a verb as a failure is a `GptImgError`. */
-function toSdkError(verbName: LogVerb, thrown: unknown): GptImgError {
+function toSdkError(verbName: VerbName, thrown: unknown): GptImgError {
   const contained = containOutOfMemory(verbName, thrown);
   if (contained instanceof GptImgError) return contained;
   return new GptImgError(
@@ -262,8 +255,8 @@ export function pngEncodingOf(args: PngEncodingArgs): PngEncodingArgs {
   return pickDefined(args, PNG_ENCODING_KEYS);
 }
 
-/** The encoding fields a verb's start log line carries; an option left unset is logged as null. */
-export function encodingLogFields(args: EncodingArgs): Record<string, unknown> {
+/** The encoding fields a verb's start event carries; an option left unset is reported as null. */
+export function encodingEventFields(args: EncodingArgs): Record<string, unknown> {
   return {
     format: args.format ?? "png",
     quality: args.quality ?? null,
@@ -276,7 +269,7 @@ export function encodingLogFields(args: EncodingArgs): Record<string, unknown> {
 }
 
 /** The same for a verb that fixes its format to PNG. */
-export function pngEncodingLogFields(args: PngEncodingArgs): Record<string, unknown> {
+export function pngEncodingEventFields(args: PngEncodingArgs): Record<string, unknown> {
   return {
     compressionLevel: args.compressionLevel ?? null,
     adaptiveFiltering: args.adaptiveFiltering ?? null,

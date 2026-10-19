@@ -86,8 +86,6 @@ export interface RefusedResult {
    * masked; absent when the call was refused before or without one.
    */
   response?: Record<string, unknown>;
-  /** The call's log, or null when no log was written. */
-  logPath: string | null;
 }
 
 /**

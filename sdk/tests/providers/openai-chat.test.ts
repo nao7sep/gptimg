@@ -2,12 +2,12 @@
 // it carries a conversation (OpenAI's stored copy, or the caller's history when
 // that copy is gone), and how it reads replies, images, refusals and early stops.
 import { Buffer } from "node:buffer";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createLogger, type Logger } from "../../src/log/index.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createLogger, type Logger } from "../../src/events/index.ts";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.ts";
 import { openaiChat } from "../../src/providers/openai/chat.ts";
 import type { ChatHistoryTurn, ChatProviderArgs } from "../../src/providers/types.ts";
-import type { LogEntry } from "../../src/types.ts";
+import type { SdkEvent } from "../../src/types.ts";
 
 const openaiMock = vi.hoisted(() => ({ create: vi.fn() }));
 
@@ -61,19 +61,15 @@ const history: ChatHistoryTurn[] = [
 ];
 
 describe("openaiChat", () => {
-  let events: LogEntry[];
+  let events: SdkEvent[];
   let logger: Logger;
   let loadHistory: ReturnType<typeof vi.fn<() => Promise<ChatHistoryTurn[]>>>;
 
   beforeEach(async () => {
     openaiMock.create.mockReset();
     events = [];
-    logger = await createLogger(null, "chat", { onEvent: (e) => events.push(e) });
+    logger = createLogger("chat", { onEvent: (e) => events.push(e) });
     loadHistory = vi.fn<() => Promise<ChatHistoryTurn[]>>(async () => history);
-  });
-
-  afterEach(async () => {
-    await logger.close();
   });
 
   const call = (over: Partial<ChatProviderArgs> = {}) =>
@@ -134,7 +130,7 @@ describe("openaiChat", () => {
       expect.objectContaining({ role: "user" }),
     ]);
     expect(result).toMatchObject({ resumed: "resent", historyTurns: 2 });
-    expect(events.some((e) => e.message.includes("resending the conversation"))).toBe(true);
+    expect(events.some((e) => e.event === "chat.resend")).toBe(true);
   });
 
   it("sends the history when there is no previous response", async () => {
