@@ -1,11 +1,10 @@
-import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg, GptImgError } from "../../src/index.ts";
 import { callWithRetry } from "../../src/network/retry.ts";
-import { obfuscate } from "../helpers/obf.ts";
 import type { Provider } from "../../src/providers/types.ts";
 import type {
   GenerateProviderArgs,
@@ -98,17 +97,7 @@ describe("AI verb abort propagation", () => {
     providerCalls.vision.mockReset();
 
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-ai-abort-"));
-    sdk = new GptImg({ apiKey: "sk-profile-only", modelsDir: path.join(tmp, "models"), logDir: path.join(tmp, "logs") });
-    const defaultProfile = path.join(tmp, "profile.json");
-    await writeFile(
-      defaultProfile,
-      JSON.stringify({
-        formatVersion: 1,
-        provider: "openai",
-        apiKey: obfuscate("sk-profile-only"),
-      }) + "\n",
-    );
-    if (process.platform !== "win32") await chmod(defaultProfile, 0o600);
+    sdk = new GptImg({ apiKey: "sk-test-key", modelsDir: path.join(tmp, "models"), logDir: path.join(tmp, "logs") });
   });
 
   afterEach(async () => {

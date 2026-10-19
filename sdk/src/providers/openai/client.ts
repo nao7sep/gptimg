@@ -1,11 +1,10 @@
 import OpenAI from "openai";
 import { nullBase64InResponse } from "../../sidecar/nullBase64.ts";
-import type { ResolvedProfile } from "../../types.ts";
+import type { Credentials } from "../../types.ts";
 
 // Retry policy is owned by callWithRetry; maxRetries=0 disables the SDK's
 // built-in retries. Per-request `{ timeout }` is passed at the call site,
 // driven by the network category budgets in src/network/defaults.ts.
-const CLIENT_PASSTHROUGH_KEYS = new Set(["organization", "project"]);
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
@@ -18,9 +17,9 @@ const DEFAULT_BASE_URL = "https://api.openai.com/v1";
  * which applies here; that residual read is accepted, and a test pins that
  * every other ambient value is ignored.
  */
-export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
+export function buildOpenAIClient(credentials: Credentials): OpenAI {
   const opts: Record<string, unknown> = {
-    apiKey: profile.apiKey,
+    apiKey: credentials.apiKey,
     baseURL: DEFAULT_BASE_URL,
     organization: null,
     project: null,
@@ -31,11 +30,8 @@ export function buildOpenAIClient(profile: ResolvedProfile): OpenAI {
     // what the client would warn about.
     logLevel: "off",
   };
-  for (const k of CLIENT_PASSTHROUGH_KEYS) {
-    if (k in profile.redacted) {
-      opts[k] = profile.redacted[k as keyof typeof profile.redacted];
-    }
-  }
+  if (credentials.organization !== undefined) opts.organization = credentials.organization;
+  if (credentials.project !== undefined) opts.project = credentials.project;
   return new OpenAI(opts as ConstructorParameters<typeof OpenAI>[0]);
 }
 

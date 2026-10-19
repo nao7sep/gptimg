@@ -3,17 +3,17 @@
 // installer, and the real OpenAI API. Run only by npm run test:full, through
 // vitest.live.config.ts.
 //
-// The models live in a folder that persists between runs, named in each profile's
-// modelsDir, and follow the SDK's rule: install explicitly what is missing, and
-// replace a model only when a new pin names a new file. Each test runs on a
-// throwaway profile that names OPENAI_API_KEY and stores no key; the key reaches
-// the SDK only through the environment map passed to loadProfile. A failed test
-// keeps its folder (profile, outputs, sidecars, log) for diagnosis until the next
-// live run starts; a passed test's folder is removed.
+// The models live in a folder that persists between runs, passed as each
+// instance's modelsDir, and follow the SDK's rule: install explicitly what is
+// missing, and replace a model only when a new pin names a new file. The key
+// comes from OPENAI_API_KEY, which the test reads and passes as apiKey; the SDK
+// reads no environment itself. A failed test keeps its folder (outputs,
+// sidecars, log) for diagnosis until the next live run starts; a passed test's
+// folder is removed.
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,7 +21,7 @@ import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from "vitest";
 
 import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../../src/ai-models.ts";
-import { GptImg, loadProfile } from "../../src/index.ts";
+import { GptImg } from "../../src/index.ts";
 import { done } from "../helpers/results.ts";
 
 const PACKAGE = fileURLToPath(new URL("../../", import.meta.url));
@@ -55,15 +55,14 @@ const DETAIL_CHECKED_VISION_MODELS = ["gpt-6-luna", "gpt-6.1-sol"] as const;
 const homes: string[] = [];
 const keptHomes = new Set<string>();
 
-/** A GptImg on a throwaway profile that resolves its key from OPENAI_API_KEY only. */
+/** A GptImg with the key from OPENAI_API_KEY, the lane's models folder and a throwaway log folder. */
 async function freshSdk(label: string): Promise<{ img: GptImg; home: string }> {
   const home = await mkdtemp(join(CACHE, `${label}-`));
   homes.push(home);
   // Inside a test, a failure keeps this folder; the install step in beforeAll has no test.
   if (expect.getState().currentTestName !== undefined) onTestFailed(() => void keptHomes.add(home));
-  const profilePath = join(home, "profile.json");
-  await writeFile(profilePath, `${JSON.stringify({ formatVersion: 2, provider: "openai", apiKeyEnv: "OPENAI_API_KEY", modelsDir: MODELS, logDir: home })}\n`);
-  return { img: new GptImg({ profile: await loadProfile(profilePath, { env: process.env }), app: { name: "gptimgsdk-live", version: "1" } }), home };
+  const apiKey = process.env.OPENAI_API_KEY?.trim() || undefined;
+  return { img: new GptImg({ apiKey, modelsDir: MODELS, logDir: home, app: { name: "gptimgsdk-live", version: "1" } }), home };
 }
 
 function requireKey(): void {

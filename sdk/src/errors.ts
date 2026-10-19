@@ -23,11 +23,7 @@ export type ErrorEffect = (typeof ERROR_EFFECTS)[number];
 export const ERROR_CODES = {
   // The call or its inputs are wrong: fix them, do not retry.
   "args.invalid": "invalid",
-  "profile.malformed": "invalid",
-  "profile.newerFormat": "invalid",
-  "profile.insecureMode": "invalid",
   "apiKey.missing": "invalid",
-  "apiKey.malformed": "invalid",
   "policy.invalid": "invalid",
   // A refusal a script chose to treat as a failure, through `completed()`; the
   // refusal itself, with its own code, is in `details.refusal`.
@@ -85,10 +81,8 @@ export type ErrorCode = keyof typeof ERROR_CODES;
  * Fields specific to a code. Each is present only where its code sets it:
  * `field`/`constraint` on `args.invalid`; `section`/`field` on `policy.invalid`;
  * `status`/`providerCode`/`requestId` on provider codes and `model.httpStatus`;
- * `expected`/`actual` on `model.integrity`; `errno`/`syscall` on `fs.*`; `mode`
- * on `profile.insecureMode`; `variable` on `apiKey.missing` and
- * `profile.malformed` when a named environment variable is involved; `refusal`
- * on `refused`.
+ * `expected`/`actual` on `model.integrity` and `sidecar.newerFormat`;
+ * `errno`/`syscall` on `fs.*`; `refusal` on `refused`.
  */
 export interface ErrorDetails {
   field?: string;
@@ -101,8 +95,6 @@ export interface ErrorDetails {
   actual?: string | number;
   errno?: string;
   syscall?: string;
-  mode?: string;
-  variable?: string;
   refusal?: Refusal;
 }
 

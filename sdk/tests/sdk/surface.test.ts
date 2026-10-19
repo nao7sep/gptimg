@@ -10,7 +10,6 @@ import { GptImg } from "../../src/index.ts";
 import type {
   EncodeFormat,
   EncodingArgs,
-  LoadedProfile,
   MaskArgs,
   ModelVerifyResult,
   PngEncodingArgs,
@@ -33,8 +32,6 @@ describe("GptImg SDK surface", () => {
   });
 
   it("exports the named types used by public signatures", () => {
-    expectTypeOf<Parameters<typeof sdkEntry.loadProfile>[0]>().toEqualTypeOf<string>();
-    expectTypeOf<Awaited<ReturnType<typeof sdkEntry.loadProfile>>>().toEqualTypeOf<LoadedProfile>();
     expectTypeOf<Awaited<ReturnType<GptImg["model"]["verify"]>>>().toEqualTypeOf<ModelVerifyResult>();
     expectTypeOf<Awaited<ReturnType<GptImg["resize"]>>>().toEqualTypeOf<ResizeResult | RefusedResult>();
     expectTypeOf<VisionPolicy["detail"]>().toEqualTypeOf<VisionDetail | undefined>();
@@ -45,7 +42,7 @@ describe("GptImg SDK surface", () => {
     expectTypeOf<MaskArgs>().not.toHaveProperty("dryRun");
   });
 
-  it("exports the verbs' class, the profile reader, the sidecar reader, the error and code tables, and the constant lists", () => {
+  it("exports the verbs' class, the sidecar reader, the error and code tables, and the constant lists", () => {
     expect(Object.keys(sdkEntry).sort()).toEqual([
       "BACKPLATE_SHAPES",
       "COMBINE_OPS",
@@ -76,11 +73,9 @@ describe("GptImg SDK surface", () => {
       "completed",
       "defaultModelFor",
       "isGptImgErrorData",
-      "loadProfile",
       "modelsFor",
       "readSidecar",
       "validatePolicy",
-      "validateProfile",
     ].sort());
   });
 
@@ -91,6 +86,15 @@ describe("GptImg SDK surface", () => {
     }
     expect(typeof sdk.model).toBe("object");
     expect(typeof sdk.verify).toBe("function");
+  });
+
+  it("refuses an option it does not take, with a hint for a retired one", () => {
+    expect(() => new GptImg({ profile: {} } as never)).toThrow(
+      expect.objectContaining({ code: "args.invalid", details: { field: "profile", constraint: "retired" } }),
+    );
+    expect(() => new GptImg({ apikey: "sk" } as never)).toThrow(
+      expect.objectContaining({ code: "args.invalid", details: { field: "apikey", constraint: "known option" } }),
+    );
   });
 
   it("touches no disk when constructed, and refuses relative locations", () => {

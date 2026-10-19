@@ -1,6 +1,0 @@
-{
-  "formatVersion": 1,
-  "provider": "openai",
-  "apiKeyEnv": "OPENAI_API_KEY",
-  "organization": "org-fixture"
-}

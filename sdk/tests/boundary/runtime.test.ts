@@ -22,8 +22,8 @@ vi.mock("../../src/providers/openai/client.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/providers/openai/client.ts")>();
   return {
     ...actual,
-    buildOpenAIClient: (profile: Parameters<typeof actual.buildOpenAIClient>[0]) => {
-      const client = actual.buildOpenAIClient(profile);
+    buildOpenAIClient: (credentials: Parameters<typeof actual.buildOpenAIClient>[0]) => {
+      const client = actual.buildOpenAIClient(credentials);
       // The SDK pins the default endpoint; the test redirects only the transport.
       expect(client.baseURL).toBe("https://api.openai.com/v1");
       client.baseURL = local.baseURL;

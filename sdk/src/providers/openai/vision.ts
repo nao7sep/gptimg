@@ -132,7 +132,7 @@ export async function openaiVision(
   args: VisionProviderArgs,
 ): Promise<ProviderVisionResult> {
   const model = resolveModel(args.params.model, defaultModelFor("openai", "vision"));
-  const client = buildOpenAIClient(args.profile);
+  const client = buildOpenAIClient(args.credentials);
 
   const { systemPrompt: paramsSystemPrompt, reasoning: paramsReasoning, ...passthroughParams } = args.params;
   const reasoning = resolveVisionReasoning(
@@ -170,7 +170,7 @@ export async function openaiVision(
 
   const { primary, logger, signal } = args.network;
   // Every record of this call, and any echo in an error, masks the key.
-  logger?.addCredential(args.profile.apiKey);
+  logger?.addCredential(args.credentials.apiKey);
 
   let response: ChatResponse;
   try {
@@ -186,22 +186,22 @@ export async function openaiVision(
       )
     ).data as never;
   } catch (err) {
-    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.profile.apiKey]), "imageVision", "OpenAI chat.completions.create", [args.profile.apiKey]);
+    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.credentials.apiKey]), "imageVision", "OpenAI chat.completions.create", [args.credentials.apiKey]);
   }
 
   // A response the call cannot turn into a verdict is recorded with its request, so
   // the failure can be diagnosed (data-lifecycle-conventions, *Records*).
   let verdict: VisionVerdict;
   try {
-    verdict = verdictFrom(response, [args.profile.apiKey]);
+    verdict = verdictFrom(response, [args.credentials.apiKey]);
   } catch (err) {
     if (err instanceof RefusalSignal) {
       await logger?.warn("response", "vision response is a refusal", { request, response, code: err.refusal.code });
       // The answer was paid for: its usage stays with the refused result.
-      err.response = maskDiagnosticCopy(response, [args.profile.apiKey]) as Record<string, unknown>;
+      err.response = maskDiagnosticCopy(response, [args.credentials.apiKey]) as Record<string, unknown>;
       throw err;
     }
-    const diagnosticError = maskDiagnosticCopy(err, [args.profile.apiKey]);
+    const diagnosticError = maskDiagnosticCopy(err, [args.credentials.apiKey]);
     await logger?.warn("response", "vision response yielded no verdict", {
       request,
       response,

@@ -26,8 +26,8 @@ describe("installModelImpl logging", () => {
   });
 
   /** Pre-seed the model cache so `ensureModel` short-circuits — no network. */
-  async function seedCachedModel(profileDir: string): Promise<void> {
-    const modelsDir = path.join(profileDir, "models");
+  async function seedCachedModel(homeDir: string): Promise<void> {
+    const modelsDir = path.join(homeDir, "models");
     await mkdir(modelsDir, { recursive: true });
     const modelPath = path.join(modelsDir, MODELS[key].name);
     await writeFile(modelPath, Buffer.alloc(0));
@@ -35,12 +35,12 @@ describe("installModelImpl logging", () => {
   }
 
   it("routes the log to an explicit path and leaves the default log dir untouched", async () => {
-    const profileDir = path.join(tmp, "profile");
+    const homeDir = path.join(tmp, "home");
     const logDir = path.join(tmp, "logs");
-    await seedCachedModel(profileDir);
+    await seedCachedModel(homeDir);
     const customLog = path.join(tmp, "custom", "install.jsonl");
 
-    const sdk = new GptImg({ modelsDir: path.join(profileDir, "models"), logDir });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir });
     const result = await sdk.model.install(key, { log: { file: customLog } });
 
     expect(result.installed[0]!.name).toBe(MODELS[key].name);
@@ -54,8 +54,8 @@ describe("installModelImpl logging", () => {
   });
 
   it("a default log dir that can't be opened never fails install, and the SDK never prints", async () => {
-    const profileDir = path.join(tmp, "profile");
-    await seedCachedModel(profileDir);
+    const homeDir = path.join(tmp, "home");
+    await seedCachedModel(homeDir);
     // Point the default log dir under a *file*, so opening its log (mkdir of the
     // parent) fails with ENOTDIR — the unwritable-default-path scenario.
     const blocker = path.join(tmp, "blocker");
@@ -66,7 +66,7 @@ describe("installModelImpl logging", () => {
     const chunks = await captureStderr(async () => {
       // The logger can't open its file, but that must not fail the install — the
       // cache and network are fine, so the work goes on regardless.
-      const sdk = new GptImg({ modelsDir: path.join(profileDir, "models"), logDir });
+      const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir });
       result = await sdk.model.install(key);
     });
 
@@ -77,15 +77,15 @@ describe("installModelImpl logging", () => {
   });
 
   it("rejects a truthy string force flag before logging or downloading", async () => {
-    const profileDir = path.join(tmp, "profile");
+    const homeDir = path.join(tmp, "home");
     const logDir = path.join(tmp, "logs");
-    const sdk = new GptImg({ modelsDir: path.join(profileDir, "models"), logDir });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir });
 
     await expect(sdk.model.install(key, { force: "false" } as never)).rejects.toMatchObject({
       code: "args.invalid",
     });
     expect(existsSync(logDir)).toBe(false);
-    expect(existsSync(path.join(profileDir, "models"))).toBe(false);
+    expect(existsSync(path.join(homeDir, "models"))).toBe(false);
   });
 });
 
@@ -105,9 +105,9 @@ describe("model verb result shapes", () => {
   });
 
   it("installAll wraps the per-model results in a single { installed } object", async () => {
-    const profileDir = path.join(tmp, "profile");
+    const homeDir = path.join(tmp, "home");
     // Seed every model so each ensureModel is a cache hit — no network.
-    const modelsDir = path.join(profileDir, "models");
+    const modelsDir = path.join(homeDir, "models");
     await mkdir(modelsDir, { recursive: true });
     for (const key of keys) {
       const modelPath = path.join(modelsDir, MODELS[key].name);
@@ -115,7 +115,7 @@ describe("model verb result shapes", () => {
       await truncate(modelPath, MODELS[key].byteSize);
     }
 
-    const sdk = new GptImg({ modelsDir: path.join(profileDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
     const result = await sdk.model.installAll();
 
     expect(Array.isArray(result)).toBe(false);
@@ -124,8 +124,8 @@ describe("model verb result shapes", () => {
   });
 
   it("list wraps entries in a single { models } object carrying cache state", async () => {
-    const profileDir = path.join(tmp, "profile");
-    const modelsDir = path.join(profileDir, "models");
+    const homeDir = path.join(tmp, "home");
+    const modelsDir = path.join(homeDir, "models");
     await mkdir(modelsDir, { recursive: true });
     // Seed only the first model so both a cached and an uncached entry appear.
     const cachedEntry = MODELS[keys[0]!];
@@ -133,7 +133,7 @@ describe("model verb result shapes", () => {
     await writeFile(cachedPath, Buffer.alloc(0));
     await truncate(cachedPath, cachedEntry.byteSize);
 
-    const sdk = new GptImg({ modelsDir: path.join(profileDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
     const result = sdk.model.list();
 
     expect(Array.isArray(result)).toBe(false);
@@ -162,8 +162,8 @@ describe("model.verify integrity check", () => {
   });
 
   it("reports a missing model when nothing is cached", async () => {
-    const profileDir = path.join(tmp, "profile");
-    const sdk = new GptImg({ modelsDir: path.join(profileDir, "models"), logDir: path.join(tmp, "logs") });
+    const homeDir = path.join(tmp, "home");
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
 
     const result = await sdk.model.verify();
 
@@ -174,12 +174,12 @@ describe("model.verify integrity check", () => {
   });
 
   it("does not report a wrong-sized pinned artifact as cached", async () => {
-    const profileDir = path.join(tmp, "profile");
-    const modelsDir = path.join(profileDir, "models");
+    const homeDir = path.join(tmp, "home");
+    const modelsDir = path.join(homeDir, "models");
     await mkdir(modelsDir, { recursive: true });
     await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
 
-    const result = new GptImg({ modelsDir: path.join(profileDir, "models") }).model.list();
+    const result = new GptImg({ modelsDir: path.join(homeDir, "models") }).model.list();
     const entry = result.models.find((model) => model.key === key);
     expect(entry?.cached).toBe(false);
     expect(entry?.sizeBytes).toBe(3);
@@ -188,8 +188,8 @@ describe("model.verify integrity check", () => {
   it("honors an already-aborted signal", async () => {
     const ctrl = new AbortController();
     ctrl.abort(new Error("stop"));
-    const profileDir = path.join(tmp, "profile");
-    const sdk = new GptImg({ modelsDir: path.join(profileDir, "models") });
+    const homeDir = path.join(tmp, "home");
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
 
     await expect(sdk.model.verify({ signal: ctrl.signal })).rejects.toMatchObject({
       code: "cancelled",
@@ -197,14 +197,14 @@ describe("model.verify integrity check", () => {
   });
 
   it("reports a mismatch when a cached file's bytes do not match the pinned sha256", async () => {
-    const profileDir = path.join(tmp, "profile");
-    const modelsDir = path.join(profileDir, "models");
+    const homeDir = path.join(tmp, "home");
+    const modelsDir = path.join(homeDir, "models");
     await mkdir(modelsDir, { recursive: true });
     // A real model is ~0.5 GB; a few wrong bytes prove the hash is recomputed and
     // compared, not trusted from presence alone.
     await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
 
-    const sdk = new GptImg({ modelsDir: path.join(profileDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
     const result = await sdk.model.verify();
 
     const entry = result.models.find((m) => m.key === key)!;
@@ -214,13 +214,13 @@ describe("model.verify integrity check", () => {
   });
 
   it("returns a log path and streams bounded progress for a tiny fixture", async () => {
-    const profileDir = path.join(tmp, "profile");
-    const modelsDir = path.join(profileDir, "models");
+    const homeDir = path.join(tmp, "home");
+    const modelsDir = path.join(homeDir, "models");
     await mkdir(modelsDir, { recursive: true });
     await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
     const onEvent = vi.fn();
     const onProgress = vi.fn();
-    const sdk = new GptImg({ modelsDir: path.join(profileDir, "models"), logDir: path.join(tmp, "logs") });
+    const sdk = new GptImg({ modelsDir: path.join(homeDir, "models"), logDir: path.join(tmp, "logs") });
 
     const result = await sdk.model.verify({ onEvent, onProgress });
 
@@ -242,11 +242,11 @@ describe("model.verify integrity check", () => {
   });
 
   it("wraps cached-model filesystem failures in the stable typed error", async () => {
-    const profileDir = path.join(tmp, "verify-failure-profile");
-    const modelPath = path.join(path.join(profileDir, "models"), MODELS[key].name);
+    const homeDir = path.join(tmp, "verify-failure-home");
+    const modelPath = path.join(path.join(homeDir, "models"), MODELS[key].name);
     await mkdir(modelPath, { recursive: true });
     const sdk = new GptImg({
-      modelsDir: path.join(profileDir, "models"),
+      modelsDir: path.join(homeDir, "models"),
       logDir: path.join(tmp, "verify-failure-logs"),
     });
 

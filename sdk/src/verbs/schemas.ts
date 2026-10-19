@@ -402,9 +402,9 @@ const IconArgsSchema = z.object({
 // Arguments earlier versions took: refused like any unknown argument, with a
 // hint at where the value now goes.
 const RETIRED_ARGS: Record<string, string> = {
-  recipe: "recipe files are retired; pass policy per call, per instance or in a profile",
+  recipe: "recipe files are retired; pass policy per call or per instance",
   overrides: "overrides is now policy",
-  profile: "pass a profile from loadProfile to the GptImg constructor",
+  profile: "profiles are retired; pass apiKey and the other settings to the GptImg constructor",
   log: "log is a call option: verb(args, { log: { file } | { dir } })",
   dryRun: "mask no longer has dryRun",
 };

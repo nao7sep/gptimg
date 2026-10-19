@@ -106,10 +106,6 @@ export async function visionImpl(
 
   return withVerbLogger(ctx, "vision", opts, async (logger) => {
     const resolved = requireCredentials(ctx);
-    await logger.info("resolve", "apiKey resolved", {
-      apiKeySource: resolved.apiKeySource,
-      provider: resolved.redacted.provider,
-    });
 
     const policy = callPolicy(ctx, args.policy);
     const network = resolveNetworkForCall(policy);
@@ -141,12 +137,12 @@ export async function visionImpl(
     );
 
     await logger.info("request", "calling provider.vision", {
-      provider: resolved.redacted.provider,
+      provider: "openai",
       model: params.model ?? null,
       images: prepared.length,
     });
 
-    const provider = getProvider(resolved.redacted.provider);
+    const provider = getProvider();
     const providerResult = await provider.vision({
       check,
       images: prepared.map((p) => ({
@@ -155,7 +151,7 @@ export async function visionImpl(
         ...(p.detail !== undefined && { detail: p.detail }),
       })),
       params,
-      profile: resolved,
+      credentials: resolved,
       network: {
         primary: network.imageVision,
         download: network.imageDownload,

@@ -87,7 +87,7 @@ export class GptImg {
 
   /**
    * Nothing is required: local verbs need no key, models or log. Paid verbs
-   * need a key (`apiKey` or a profile that supplies one); models default to
+   * need `apiKey`; models default to
    * `~/.gptimgsdk/models`; nothing is logged unless a call or `logDir` asks.
    * The constructor touches no disk and reads nothing ambient.
    */

@@ -13,7 +13,7 @@ import { openaiEdit } from "../../src/providers/openai/edit.ts";
 import { openaiGenerate } from "../../src/providers/openai/generate.ts";
 import { OPENAI_VISION_SYSTEM_PROMPT } from "../../src/providers/openai/defaults.ts";
 import { openaiVision } from "../../src/providers/openai/vision.ts";
-import type { LogVerb, ResolvedProfile } from "../../src/types.ts";
+import type { LogVerb, Credentials } from "../../src/types.ts";
 
 const openaiMock = vi.hoisted(() => ({
   generate: vi.fn(),
@@ -63,11 +63,7 @@ vi.mock("openai", () => ({
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.resolve(HERE, "..", "fixtures");
 
-const profile: ResolvedProfile = {
-  apiKey: "sk-local",
-  apiKeySource: "profile.apiKey",
-  redacted: { provider: "openai" },
-};
+const credentials: Credentials = { apiKey: "sk-local" };
 
 const network = {
   primary: { ...NETWORK_DEFAULTS.imageGenerate, retryIntervals: [] },
@@ -122,7 +118,7 @@ describe("OpenAI provider implementations", () => {
     const result = await openaiGenerate({
       prompt: "prompt",
       params: { model: "gpt-image-2" },
-      profile,
+      credentials,
       network,
     });
 
@@ -145,7 +141,7 @@ describe("OpenAI provider implementations", () => {
     await openaiGenerate({
       prompt: "prompt",
       params: { model: "gpt-image-2", response_format: "url" },
-      profile,
+      credentials,
       network,
     });
     expect(openaiMock.generate.mock.calls[0]?.[0]).toMatchObject({
@@ -157,7 +153,7 @@ describe("OpenAI provider implementations", () => {
     await openaiGenerate({
       prompt: "prompt",
       params: { model: "some-other-image-model" },
-      profile,
+      credentials,
       network,
     });
     expect(openaiMock.generate.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
@@ -169,7 +165,7 @@ describe("OpenAI provider implementations", () => {
     await openaiGenerate({
       prompt: "prompt",
       params: { model: "custom-image-model" },
-      profile,
+      credentials,
       network,
     });
     expect(openaiMock.generate.mock.calls[0]?.[0]).toMatchObject({
@@ -180,7 +176,7 @@ describe("OpenAI provider implementations", () => {
     await openaiGenerate({
       prompt: "prompt",
       params: {},
-      profile,
+      credentials,
       network,
     });
     expect(openaiMock.generate.mock.calls[0]?.[0]).toMatchObject({
@@ -205,7 +201,7 @@ describe("OpenAI provider implementations", () => {
     const result = await openaiGenerate({
       prompt: "prompt",
       params: {},
-      profile,
+      credentials,
       network,
     });
 
@@ -220,7 +216,7 @@ describe("OpenAI provider implementations", () => {
       openaiGenerate({
         prompt: "prompt",
         params: {},
-        profile,
+        credentials,
         network: { ...network, signal: ctrl.signal },
       }),
     ).rejects.toMatchObject({
@@ -239,7 +235,7 @@ describe("OpenAI provider implementations", () => {
       imagePath: path.join(FIXTURES, "green-disk.png"),
       maskPath: path.join(FIXTURES, "green-disk.png"),
       params: { model: "gpt-image-2" },
-      profile,
+      credentials,
       network,
     });
 
@@ -267,7 +263,7 @@ describe("OpenAI provider implementations", () => {
       prompt: "edit it",
       imagePath: path.join(FIXTURES, "green-disk.png"),
       params: { model: "custom-edit-model" },
-      profile,
+      credentials,
       network,
     });
     expect(openaiMock.edit.mock.calls[0]?.[0]).toMatchObject({
@@ -279,7 +275,7 @@ describe("OpenAI provider implementations", () => {
       prompt: "edit it",
       imagePath: path.join(FIXTURES, "green-disk.png"),
       params: {},
-      profile,
+      credentials,
       network,
     });
     expect(openaiMock.edit.mock.calls[0]?.[0]).toMatchObject({
@@ -296,7 +292,7 @@ describe("OpenAI provider implementations", () => {
         prompt: "edit it",
         imagePath: path.join(FIXTURES, "green-disk.png"),
         params: {},
-        profile,
+        credentials,
         network: { ...network, signal: ctrl.signal },
       }),
     ).rejects.toMatchObject({
@@ -313,7 +309,7 @@ describe("OpenAI provider implementations", () => {
         prompt: "edit it",
         imagePath: path.join(FIXTURES, "green-disk.png"),
         params: { model: "gpt-image-2" },
-        profile,
+        credentials,
         network,
       }),
     ).rejects.toMatchObject({
@@ -335,7 +331,7 @@ describe("OpenAI provider implementations", () => {
       prompt: "edit it",
       imagePath: path.join(FIXTURES, "green-disk.png"),
       params: { model: "dall-e-2" },
-      profile,
+      credentials,
       network,
     });
 
@@ -355,7 +351,7 @@ describe("OpenAI provider implementations", () => {
       prompt: "edit it",
       imagePath: path.join(FIXTURES, "green-disk.png"),
       params: { model: "dall-e-2" },
-      profile,
+      credentials,
       network,
     });
 
@@ -373,7 +369,7 @@ describe("OpenAI provider implementations", () => {
       prompt: "edit it",
       imagePath: path.join(FIXTURES, "green-disk.png"),
       params: { model: "gpt-image-2" },
-      profile,
+      credentials,
       network,
     });
 
@@ -391,7 +387,7 @@ describe("OpenAI provider implementations", () => {
         prompt: "edit it",
         imagePath: missing,
         params: { model: "gpt-image-2" },
-        profile,
+        credentials,
         network,
       }),
     ).rejects.toMatchObject({
@@ -423,7 +419,7 @@ describe("OpenAI provider implementations", () => {
           prompt: "edit it",
           imagePath: gifPath,
           params: { model: "gpt-image-2" },
-          profile,
+          credentials,
           network,
         }),
       ).rejects.toMatchObject({
@@ -447,7 +443,7 @@ describe("OpenAI provider implementations", () => {
         prompt: "edit it",
         imagePath: path.join(FIXTURES, "green-disk.png"),
         params: { model: "gpt-image-2" },
-        profile,
+        credentials,
         network,
       }),
     ).rejects.toMatchObject({
@@ -473,7 +469,7 @@ describe("OpenAI provider implementations", () => {
       check: "is it green?",
       images: [{ data: png, format: "png", detail: "auto" }],
       params: { model: "gpt-6-luna" },
-      profile,
+      credentials,
       network,
     });
     await expect(call).rejects.toThrow(expected);
@@ -510,7 +506,7 @@ describe("OpenAI provider implementations", () => {
       check: "is it green?",
       images: [{ data: png, format: "png", detail: "high" }],
       params: { model: "gpt-6-luna" },
-      profile,
+      credentials,
       network,
     });
 
@@ -546,7 +542,7 @@ describe("OpenAI provider implementations", () => {
           check: "is it green?",
           images: [{ data: png, format: "png", detail }],
           params: { model },
-          profile,
+          credentials,
           network,
         });
 
@@ -568,7 +564,7 @@ describe("OpenAI provider implementations", () => {
       check: "is it green?",
       images: [{ data: png, format: "png" }],
       params: { model: "custom-vision-model" },
-      profile,
+      credentials,
       network,
     });
     expect(openaiMock.create.mock.calls[0]?.[0]).toMatchObject({
@@ -580,7 +576,7 @@ describe("OpenAI provider implementations", () => {
       check: "is it green?",
       images: [{ data: png, format: "png" }],
       params: {},
-      profile,
+      credentials,
       network,
     });
     expect(openaiMock.create.mock.calls[0]?.[0]).toMatchObject({
@@ -603,7 +599,7 @@ describe("OpenAI provider implementations", () => {
     ];
     for (const [params, effort] of cases) {
       openaiMock.create.mockClear();
-      await openaiVision({ check: "is it green?", images: [{ data: png, format: "png" }], params, profile, network });
+      await openaiVision({ check: "is it green?", images: [{ data: png, format: "png" }], params, credentials, network });
       const request = openaiMock.create.mock.calls[0]?.[0];
       expect(request.reasoning_effort, JSON.stringify(params)).toBe(effort);
       expect(request, JSON.stringify(params)).not.toHaveProperty("reasoning");
@@ -619,7 +615,7 @@ describe("OpenAI provider implementations", () => {
       check: "is it green?",
       images: [{ data: png, format: "png" }],
       params: { model: "some-future-chat-model" },
-      profile,
+      credentials,
       network,
     });
     const request = openaiMock.create.mock.calls[0]?.[0];
@@ -647,7 +643,7 @@ describe("OpenAI provider implementations", () => {
       check: "is it green?",
       images: [{ data: png, format: "png", detail: "low" }],
       params: { model: "some-future-chat-model", reasoning: "high" },
-      profile,
+      credentials,
       network,
     });
     const request = openaiMock.create.mock.calls[0]?.[0];
@@ -664,7 +660,7 @@ describe("OpenAI provider implementations", () => {
       check: "is it green?",
       images: [{ data: png, format: "png", detail: "auto" }],
       params: { model: "gpt-6-luna", reasoning: "none" },
-      profile,
+      credentials,
       network,
     });
     const request = openaiMock.create.mock.calls[0]?.[0];
@@ -687,7 +683,7 @@ describe("OpenAI provider implementations", () => {
       [{ systemPrompt: "Answer as a print inspector." }, "Answer as a print inspector."],
     ] as const) {
       openaiMock.create.mockClear();
-      await openaiVision({ check: "is it green?", images: [{ data: png, format: "png" }], params, profile, network });
+      await openaiVision({ check: "is it green?", images: [{ data: png, format: "png" }], params, credentials, network });
       const request = openaiMock.create.mock.calls[0]?.[0];
       expect(request.messages[0]).toEqual({ role: "system", content: expected });
       expect(request).not.toHaveProperty("systemPrompt");
@@ -703,7 +699,7 @@ describe("OpenAI provider implementations", () => {
         check: "is it green?",
         images: [{ data: png, format: "png" }],
         params: {},
-        profile,
+        credentials,
         network: { ...network, signal: ctrl.signal },
       }),
     ).rejects.toMatchObject({
@@ -731,7 +727,7 @@ describe("OpenAI provider implementations", () => {
           check: "is it green?",
           images: [{ data: png, format: "png" }],
           params: {},
-          profile,
+          credentials,
           network,
         }),
         JSON.stringify(content),
@@ -760,7 +756,7 @@ describe("OpenAI provider implementations", () => {
         check: "is it green?",
         images: [{ data: png, format: "png" }],
         params: {},
-        profile,
+        credentials,
         network,
       }),
     ).resolves.toMatchObject({
@@ -782,7 +778,7 @@ describe("OpenAI provider implementations", () => {
       check: "is it green?",
       images: [{ data: png, format: "png" }],
       params: {},
-      profile,
+      credentials,
       network,
     });
     expect(result.verdict).toEqual({ ok: true, score: 1, reasons: [] });
@@ -843,7 +839,7 @@ describe("OpenAI provider failure records", () => {
       openaiGenerate({
         prompt: "a green disk",
         params: { model: "gpt-image-2", size: "1024x1024", quality: "low", background: "transparent" },
-        profile,
+        credentials,
         network: net,
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
@@ -879,14 +875,14 @@ describe("OpenAI provider failure records", () => {
     ]);
   });
 
-  it("records the profile's organization and project headers beside the key", async () => {
+  it("records the caller's organization and project headers beside the key", async () => {
     openaiMock.generate.mockRejectedValue(apiError(400));
     const { network: net, logPath } = await failingNetwork();
     await expect(
       openaiGenerate({
         prompt: "p",
         params: { model: "gpt-image-2" },
-        profile: { ...profile, redacted: { provider: "openai", organization: "org-1", project: "proj-1" } },
+        credentials: { ...credentials, organization: "org-1", project: "proj-1" },
         network: net,
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
@@ -906,7 +902,7 @@ describe("OpenAI provider failure records", () => {
     openaiMock.generate.mockResolvedValue({ created: 1, data: [{ b64_json: pngBase64(png) }, { url }], usage });
     const { network: net, logPath } = await failingNetwork();
 
-    await openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net }).finally(
+    await openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, credentials, network: net }).finally(
       () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
     );
 
@@ -940,7 +936,7 @@ describe("OpenAI provider failure records", () => {
     openaiMock.generate.mockResolvedValue({ data: [{ url: signedUrl }] });
     const { network: net, logPath } = await failingNetwork();
 
-    const result = await openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net }).finally(
+    const result = await openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, credentials, network: net }).finally(
       () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
     );
 
@@ -974,7 +970,7 @@ describe("OpenAI provider failure records", () => {
     );
     const { network: net, logPath } = await failingNetwork();
 
-    await expect(openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net })).rejects.toMatchObject({
+    await expect(openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, credentials, network: net })).rejects.toMatchObject({
       code: "provider.rejected",
     });
 
@@ -993,7 +989,7 @@ describe("OpenAI provider failure records", () => {
 
     // A refused connection proves the request never started work: nothing was spent.
     await expect(
-      openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, profile, network: net }),
+      openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, credentials, network: net }),
     ).rejects.toMatchObject({ code: "provider.unreachable", effect: "none" });
 
     const { lines } = await records(logPath);
@@ -1019,7 +1015,7 @@ describe("OpenAI provider failure records", () => {
         imagePath: path.join(FIXTURES, "green-disk.png"),
         maskPath: path.join(FIXTURES, "donut.png"),
         params: { model: "gpt-image-2", quality: "low" },
-        profile,
+        credentials,
         network: net,
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
@@ -1047,7 +1043,7 @@ describe("OpenAI provider failure records", () => {
         check: "is it green?",
         images: [{ data: png, format: "png", detail: "high" }],
         params: { model: "gpt-6-luna" },
-        profile,
+        credentials,
         network: net,
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
@@ -1077,7 +1073,7 @@ describe("OpenAI provider failure records", () => {
         check: "is it green?",
         images: [{ data: png, format: "png", detail: "low" }],
         params: { model: "some-future-chat-model", reasoning: "high" },
-        profile,
+        credentials,
         network: { ...network, logger },
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
@@ -1104,7 +1100,7 @@ describe("OpenAI provider failure records", () => {
           check: "is it green?",
           images: [{ data: png, format: "png" }],
           params: { model: "gpt-6-luna" },
-          profile,
+          credentials,
           network: { ...network, logger },
         }),
       ).rejects.toMatchObject({ code: expect.stringMatching(/^provider\./) });
@@ -1132,7 +1128,7 @@ describe("OpenAI provider failure records", () => {
       openaiGenerate({
         prompt: "a green disk",
         params: { model: "gpt-image-2", quality: "low" },
-        profile,
+        credentials,
         network: { ...net, signal: ctrl.signal },
       }),
     ).rejects.toMatchObject({ code: "cancelled" });

@@ -39,10 +39,6 @@ export async function generateImpl(
 
   return withVerbLogger(ctx, "generate", opts, async (logger) => {
     const resolved = requireCredentials(ctx);
-    await logger.info("resolve", "apiKey resolved", {
-      apiKeySource: resolved.apiKeySource,
-      provider: resolved.redacted.provider,
-    });
 
     const policy = callPolicy(ctx, args.policy);
     const network = resolveNetworkForCall(policy);
@@ -76,16 +72,16 @@ export async function generateImpl(
     assertStemAvailable(outDir, stem, n, overwrite);
 
     await logger.info("request", "calling provider.generate", {
-      provider: resolved.redacted.provider,
+      provider: "openai",
       model: params.model ?? null,
       n,
     });
 
-    const provider = getProvider(resolved.redacted.provider);
+    const provider = getProvider();
     const providerResult = await provider.generate({
       prompt,
       params,
-      profile: resolved,
+      credentials: resolved,
       network: {
         primary: network.imageGenerate,
         download: network.imageDownload,

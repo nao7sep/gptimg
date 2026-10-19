@@ -1,6 +1,6 @@
 import type { Logger } from "../log/index.ts";
 import type { NetworkBudget } from "../network/defaults.ts";
-import type { ResolvedProfile, VisionDetail, VisionVerdict } from "../types.ts";
+import type { Credentials, VisionDetail, VisionVerdict } from "../types.ts";
 
 export interface ProviderImageResult {
   /** Raw response from the provider, suitable for sidecar capture. */
@@ -31,7 +31,7 @@ export interface ProviderNetworkCtx {
 export interface GenerateProviderArgs {
   prompt: string;
   params: Record<string, unknown>;
-  profile: ResolvedProfile;
+  credentials: Credentials;
   network: ProviderNetworkCtx;
 }
 
@@ -40,7 +40,7 @@ export interface EditProviderArgs {
   imagePath: string;
   maskPath?: string | undefined;
   params: Record<string, unknown>;
-  profile: ResolvedProfile;
+  credentials: Credentials;
   network: ProviderNetworkCtx;
 }
 
@@ -48,7 +48,7 @@ export interface VisionProviderArgs {
   check: string;
   images: Array<{ data: Uint8Array; format: string; detail?: VisionDetail }>;
   params: Record<string, unknown>;
-  profile: ResolvedProfile;
+  credentials: Credentials;
   network: ProviderNetworkCtx;
 }
 

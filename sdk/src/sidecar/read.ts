@@ -37,7 +37,7 @@ export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
 
 /** A parsed sidecar body of any supported format as its typed record, or `sidecar.malformed`/`sidecar.newerFormat`. */
 function parseSidecar(parsed: unknown, subject: string): Sidecar {
-  const { version, body } = takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, "sidecar", subject);
+  const { version, body } = takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, subject);
   // The schemas validate; the record returned is the file's own body, so its
   // key order and any unknown keys survive a read-then-write unchanged.
   if (version === 1) {
@@ -77,7 +77,7 @@ export function refuseNewerSidecar(sidecarPath: string): void {
     return;
   }
   try {
-    takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, "sidecar", sidecarPath);
+    takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, sidecarPath);
   } catch (err) {
     if ((err as GptImgError).code === "sidecar.newerFormat") throw err;
   }

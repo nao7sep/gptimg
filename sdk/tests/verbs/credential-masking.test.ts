@@ -1,11 +1,11 @@
 import http from "node:http";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { APIConnectionTimeoutError, APIError, AuthenticationError } from "openai";
-import { GptImg, loadProfile } from "../../src/index.ts";
+import { GptImg } from "../../src/index.ts";
 
 // The SDK builds its OpenAI client with an explicit base URL and ignores the
 // process environment, so these tests point the real client at the local
@@ -15,8 +15,8 @@ vi.mock("../../src/providers/openai/client.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/providers/openai/client.ts")>();
   return {
     ...actual,
-    buildOpenAIClient: (profile: Parameters<typeof actual.buildOpenAIClient>[0]) => {
-      const client = actual.buildOpenAIClient(profile);
+    buildOpenAIClient: (credentials: Parameters<typeof actual.buildOpenAIClient>[0]) => {
+      const client = actual.buildOpenAIClient(credentials);
       client.baseURL = local.baseURL;
       return client;
     },
@@ -103,16 +103,7 @@ describe("credential masking across every sink", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
     const { port } = server.address() as { port: number };
     local.baseURL = `http://127.0.0.1:${port}/v1`;
-    await mkdir(path.join(tmp, "data"));
-    await writeFile(
-      path.join(tmp, "data", "profile.json"),
-      JSON.stringify({ formatVersion: 1, provider: "openai", apiKeyEnv: "GPTIMG_TEST_FAKE_KEY" }),
-      { mode: 0o600 },
-    );
-    sdk = new GptImg({
-      profile: await loadProfile(path.join(tmp, "data", "profile.json"), { env: { GPTIMG_TEST_FAKE_KEY: FAKE } }),
-      logDir: path.join(tmp, "logs"),
-    });
+    sdk = new GptImg({ apiKey: FAKE, logDir: path.join(tmp, "logs") });
   });
 
   afterEach(async () => {

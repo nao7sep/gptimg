@@ -3,21 +3,29 @@ import { assertAbsolutePath } from "./internal/absolute-path.ts";
 import { defaultModelsDir } from "./internal/resource-home.ts";
 import { validatePolicy } from "./policy/schemas.ts";
 import { mergePolicies } from "./policy/merge.ts";
-import type { GptImgOptions, Policy, ResolvedProfile } from "./types.ts";
+import type { Credentials, GptImgOptions, Policy } from "./types.ts";
 
-/** What one `GptImg` instance resolved from its options and profile; in memory only. */
+/** What one `GptImg` instance resolved from its options; in memory only. */
 export interface SdkContext {
   apiKey: string | null;
-  apiKeySource: string | null;
   organization?: string;
   project?: string;
   modelsDir: string;
   logDir: string | null;
-  /** The profile's policy with the instance's merged over it. */
+  /** The instance's policy, checked whole. */
   policy: Policy;
   /** The calling app, recorded in sidecars beside the SDK's own name and version. */
   app?: { name: string; version: string };
 }
+
+// The constructor's options, so an unknown one is refused as a verb refuses an unknown argument.
+const OPTION_NAMES = ["apiKey", "organization", "project", "modelsDir", "logDir", "policy", "app"];
+
+// Options earlier versions took, with where their value now goes.
+const RETIRED_OPTIONS: Record<string, string> = {
+  profile: "profiles are retired; pass apiKey and the other settings here directly",
+  profileDir: "there is no profile folder; pass modelsDir and logDir",
+};
 
 function optionalString(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
@@ -30,10 +38,9 @@ function optionalString(value: unknown, field: string): string | undefined {
 }
 
 /**
- * Resolve an instance's context. Precedence per value: the constructor's
- * option, then the profile, then the SDK's default (for the models folder
- * only; consumer data has no default). Touches no disk and reads nothing
- * ambient.
+ * Resolve an instance's context from the constructor's options, with the
+ * SDK's default for the models folder only (consumer data has no default).
+ * Touches no disk and reads nothing ambient.
  */
 export function createContext(opts: GptImgOptions = {}): SdkContext {
   if (typeof opts !== "object" || opts === null) {
@@ -41,10 +48,15 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
       details: { field: "options", constraint: "object" },
     });
   }
-  const profile = opts.profile;
+  const unknown = Object.keys(opts).find((key) => (opts as Record<string, unknown>)[key] !== undefined && !OPTION_NAMES.includes(key));
+  if (unknown !== undefined) {
+    throw new GptImgError("args.invalid", `GptImg: ${unknown} is not an option; ${RETIRED_OPTIONS[unknown] ?? `the options are ${OPTION_NAMES.join(", ")}`}.`, {
+      details: { field: unknown, constraint: Object.hasOwn(RETIRED_OPTIONS, unknown) ? "retired" : "known option" },
+    });
+  }
   const apiKey = optionalString(opts.apiKey, "apiKey")?.trim();
-  const organization = optionalString(opts.organization, "organization") ?? profile?.organization;
-  const project = optionalString(opts.project, "project") ?? profile?.project;
+  const organization = optionalString(opts.organization, "organization");
+  const project = optionalString(opts.project, "project");
   if (opts.modelsDir !== undefined) assertAbsolutePath(opts.modelsDir, "modelsDir");
   if (opts.logDir !== undefined) assertAbsolutePath(opts.logDir, "logDir");
   if (opts.policy !== undefined) validatePolicy(opts.policy);
@@ -60,33 +72,25 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
     app = { name, version };
   }
   return {
-    apiKey: apiKey ?? profile?.apiKey ?? null,
-    apiKeySource: apiKey ? "constructor" : (profile?.apiKeySource ?? null),
+    apiKey: apiKey ?? null,
     ...(organization !== undefined && { organization }),
     ...(project !== undefined && { project }),
-    modelsDir: opts.modelsDir ?? profile?.modelsDir ?? defaultModelsDir(),
-    logDir: opts.logDir ?? profile?.logDir ?? null,
-    policy: mergePolicies(profile?.policy ?? {}, opts.policy ?? {}),
+    modelsDir: opts.modelsDir ?? defaultModelsDir(),
+    logDir: opts.logDir ?? null,
+    policy: opts.policy ?? {},
     ...(app !== undefined && { app }),
   };
 }
 
 /** The credentials a paid call spends with, or `apiKey.missing` when none was given. */
-export function requireCredentials(ctx: SdkContext): ResolvedProfile {
+export function requireCredentials(ctx: SdkContext): Credentials {
   if (!ctx.apiKey) {
-    throw new GptImgError(
-      "apiKey.missing",
-      "No API key: pass apiKey to the GptImg constructor, or a profile that stores one or names its variable in apiKeyEnv with the environment passed to loadProfile.",
-    );
+    throw new GptImgError("apiKey.missing", "No API key: pass apiKey to the GptImg constructor.");
   }
   return {
-    redacted: {
-      provider: "openai",
-      ...(ctx.organization !== undefined && { organization: ctx.organization }),
-      ...(ctx.project !== undefined && { project: ctx.project }),
-    },
     apiKey: ctx.apiKey,
-    apiKeySource: ctx.apiKeySource ?? "constructor",
+    ...(ctx.organization !== undefined && { organization: ctx.organization }),
+    ...(ctx.project !== undefined && { project: ctx.project }),
   };
 }
 

@@ -8,8 +8,6 @@ export type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.ts";
 export type { LogTarget, VerbCallOptions } from "./verbs/options.ts";
 export { VERSION } from "./version.ts";
 export type { ModelKey } from "./local/models/registry.ts";
-export { loadProfile, validateProfile } from "./profile/load.ts";
-export type { EnvironmentMap, LoadProfileOptions } from "./profile/load.ts";
 export { readSidecar } from "./sidecar/read.ts";
 export { validatePolicy } from "./policy/schemas.ts";
 export { SUPPORTED_IMAGE_EXTENSIONS } from "./image/formats.ts";
@@ -98,7 +96,6 @@ export type {
   LayerArgs,
   LayerOffset,
   LayerResult,
-  LoadedProfile,
   LogEntry,
   LogLevel,
   LogStage,
@@ -117,7 +114,6 @@ export type {
   OutputFile,
   PngEncodingArgs,
   Policy,
-  Profile,
   ProgressUpdate,
   ResizeArgs,
   ResizeResult,

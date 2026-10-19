@@ -6,7 +6,7 @@ import path from "node:path";
  * home of its own*): models default to `~/.gptimgsdk/models`, named after the
  * package and never inside an app's data folder, so a script needs no
  * configuration and no app's reset removes what others rely on. Every caller
- * can point elsewhere per call, per instance or through a profile. This module
+ * can point elsewhere per call or per instance. This module
  * is the one place in the SDK allowed to use the home folder; the boundary
  * test holds that.
  */

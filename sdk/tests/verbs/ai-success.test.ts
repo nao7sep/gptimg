@@ -1,16 +1,14 @@
 import { createHash } from "node:crypto";
-import { loadProfile } from "../../src/profile/load.ts";
 import { SIDECAR_FORMAT_VERSION } from "../../src/format-versions.ts";
 import { done } from "../helpers/results.ts";
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg } from "../../src/gptimg.ts";
-import { obfuscate } from "../helpers/obf.ts";
 import type { Provider } from "../../src/providers/types.ts";
 
 const providerCalls = vi.hoisted(() => ({
@@ -58,18 +56,8 @@ describe("AI verb implementations with mocked provider", () => {
     providerCalls.vision.mockReset();
 
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-ai-verbs-"));
-    sdk = new GptImg({ apiKey: "sk-profile-only", logDir: path.join(tmp, "logs") });
+    sdk = new GptImg({ apiKey: "sk-test-key", logDir: path.join(tmp, "logs") });
     png = new Uint8Array(await readFile(fixture("green-disk.png")));
-    const defaultProfile = path.join(tmp, "profile.json");
-    await writeFile(
-      defaultProfile,
-      JSON.stringify({
-        formatVersion: 1,
-        provider: "openai",
-        apiKey: obfuscate("sk-profile-only"),
-      }) + "\n",
-    );
-    if (process.platform !== "win32") await chmod(defaultProfile, 0o600);
   });
 
   afterEach(async () => {
@@ -133,7 +121,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(vision.sidecarPath).toBe(path.join(links, "verdict.json"));
   });
 
-  it("generate uses the stored profile key, writes outputs, sidecar, and logs", async () => {
+  it("generate spends the constructor's key, writes outputs, sidecar, and logs", async () => {
     const stdoutWrite = process.stdout.write;
     const stderrWrite = process.stderr.write;
     const stdout = vi.fn(() => true);
@@ -180,10 +168,7 @@ describe("AI verb implementations with mocked provider", () => {
 
       const call = providerCalls.generate.mock.calls[0]?.[0];
       expect(call).toMatchObject({
-        profile: {
-          apiKey: "sk-profile-only",
-          apiKeySource: "constructor",
-        },
+        credentials: { apiKey: "sk-test-key" },
         params: { quality: "low", n: 2, model: "param-model" },
       });
       expect(call?.params).not.toHaveProperty("chromaKey");
@@ -205,7 +190,6 @@ describe("AI verb implementations with mocked provider", () => {
       const logEntries = lines(await readFile(result.logPath!, "utf-8"));
       expect(logEntries).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ stage: "resolve" }),
           expect.objectContaining({ stage: "request" }),
           expect.objectContaining({ stage: "response" }),
           expect.objectContaining({ stage: "write" }),
@@ -217,24 +201,16 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("generate layers call policy over instance policy over a loaded profile's policy and key", async () => {
-    const profilePath = path.join(tmp, "custom-profile.json");
-    await writeFile(
-      profilePath,
-      JSON.stringify({
-        formatVersion: 2,
-        provider: "openai",
-        apiKey: obfuscate("sk-custom-profile"),
-        policy: { generate: { size: "1024x1024", quality: "low", n: 1 }, edit: { size: "1536x1024" } },
-      }) + "\n",
-    );
-    if (process.platform !== "win32") await chmod(profilePath, 0o600);
+  it("generate layers call policy over instance policy and spends the constructor's key", async () => {
     providerCalls.generate.mockResolvedValue({
       raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
       images: [{ data: png }],
     });
 
-    const layered = new GptImg({ profile: await loadProfile(profilePath), policy: { generate: { quality: "medium", n: 3 } } });
+    const layered = new GptImg({
+      apiKey: "sk-explicit",
+      policy: { generate: { size: "1024x1024", quality: "medium", n: 3 }, edit: { size: "1536x1024" } },
+    });
     const result = done(await layered.generate({
       prompt: "layered",
       outDir: path.join(tmp, "layered-out"),
@@ -245,10 +221,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(path.basename(result.files[0]?.path ?? "")).toBe("layered-1.png");
     const call = providerCalls.generate.mock.calls[0]?.[0];
     expect(call).toMatchObject({
-      profile: {
-        apiKey: "sk-custom-profile",
-        apiKeySource: "profile.apiKey",
-      },
+      credentials: { apiKey: "sk-explicit" },
       params: {
         size: "1024x1024",
         quality: "high",
@@ -258,21 +231,13 @@ describe("AI verb implementations with mocked provider", () => {
     expect(call?.params).not.toHaveProperty("edit");
   });
 
-  it("a constructor key wins over a profile's, and a paid verb without any key fails apiKey.missing", async () => {
-    providerCalls.generate.mockResolvedValue({ raw: {}, images: [{ data: png }] });
-    const profilePath = path.join(tmp, "key-profile.json");
-    await writeFile(profilePath, JSON.stringify({ provider: "openai", apiKey: "sk-from-profile" }));
-    if (process.platform !== "win32") await chmod(profilePath, 0o600);
-    const both = new GptImg({ profile: await loadProfile(profilePath), apiKey: "sk-explicit" });
-    done(await both.generate({ prompt: "x", outDir: path.join(tmp, "explicit-out") }));
-    expect(providerCalls.generate.mock.calls[0]?.[0]).toMatchObject({ profile: { apiKey: "sk-explicit", apiKeySource: "constructor" } });
-
+  it("a paid verb without a key fails apiKey.missing before any provider call", async () => {
     await expect(new GptImg().generate({ prompt: "x", outDir: path.join(tmp, "nokey-out") })).rejects.toMatchObject({
       code: "apiKey.missing",
       kind: "invalid",
       effect: "none",
     });
-    expect(providerCalls.generate).toHaveBeenCalledTimes(1);
+    expect(providerCalls.generate).not.toHaveBeenCalled();
   });
 
   it("generate marks invalid image bytes as partial and preserves later indexes", async () => {
@@ -365,7 +330,6 @@ describe("AI verb implementations with mocked provider", () => {
     expect(sidecar.response.data[0]?.b64_json).toBeNull();
     expect(lines(await readFile(result.logPath!, "utf-8"))).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ stage: "resolve" }),
         expect.objectContaining({ stage: "request" }),
         expect.objectContaining({ stage: "response" }),
         expect.objectContaining({ stage: "write" }),
@@ -396,7 +360,7 @@ describe("AI verb implementations with mocked provider", () => {
   it("edit uses edit-scoped policy values without leaking generate settings", async () => {
     const input = path.join(tmp, "recipe-edit-input.png");
     await copyFile(fixture("green-disk.png"), input);
-    const scoped = new GptImg({ apiKey: "sk-profile-only", policy: { generate: { quality: "medium" }, edit: { size: "1024x1024", n: 1 } } });
+    const scoped = new GptImg({ apiKey: "sk-test-key", policy: { generate: { quality: "medium" }, edit: { size: "1024x1024", n: 1 } } });
     providerCalls.edit.mockResolvedValue({
       raw: { data: [{ b64_json: Buffer.from(png).toString("base64") }] },
       images: [{ data: png }],
@@ -1127,7 +1091,7 @@ describe("AI verb implementations with mocked provider", () => {
   it("vision applies custom shrink settings from instance policy", async () => {
     const input = path.join(tmp, "recipe-vision.png");
     await copyFile(fixture("green-disk.png"), input);
-    const shrinking = new GptImg({ apiKey: "sk-profile-only", policy: { vision: { shrink: { width: 32, height: 32 } } } });
+    const shrinking = new GptImg({ apiKey: "sk-test-key", policy: { vision: { shrink: { width: 32, height: 32 } } } });
     providerCalls.vision.mockResolvedValue({
       raw: {},
       verdict: { ok: true, score: 1, reasons: [] },

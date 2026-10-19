@@ -31,8 +31,8 @@ export interface VerbCallOptions {
   onProgress?: ((update: ProgressUpdate) => void) | undefined;
 
   /**
-   * Write a log for this call. Without it, the instance's or profile's
-   * `logDir` is used when set; otherwise no log is written and events reach
+   * Write a log for this call. Without it, the instance's `logDir` is
+   * used when set; otherwise no log is written and events reach
    * only `onEvent`. `false` writes none even when a `logDir` is set.
    */
   log?: LogTarget | false | undefined;

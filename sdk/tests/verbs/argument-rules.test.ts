@@ -1,12 +1,12 @@
 // The rules every verb shares, checked across verbs so they cannot drift apart:
 // an unknown argument is refused, a path error names the bare field, a missing
 // input is the filesystem's cause, and a policy is checked whole where it is given.
-import { writeFile, mkdtemp, rm, chmod } from "node:fs/promises";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { GptImg, isGptImgErrorData, loadProfile } from "../../src/index.ts";
+import { GptImg, isGptImgErrorData } from "../../src/index.ts";
 import { done } from "../helpers/results.ts";
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "green-disk.png");
@@ -62,7 +62,7 @@ describe("arguments every verb shares", () => {
     await expect(call(missing)).rejects.toMatchObject({ code: "fs.notFound", kind: "unavailable", subject: missing });
   });
 
-  it("checks a policy whole where it is given: constructor, call and profile", async () => {
+  it("checks a policy whole where it is given: constructor and call", async () => {
     const invalid = { code: "policy.invalid", details: { section: "chrome" } };
     expect(() => new GptImg({ policy: { chrome: {} } as never })).toThrow(
       expect.objectContaining({ code: "policy.invalid", details: expect.objectContaining({ section: "chrome" }) }),
@@ -72,10 +72,6 @@ describe("arguments every verb shares", () => {
       code: "policy.invalid",
       details: { section: "chroma" },
     });
-    const profile = path.join(tmp, "profile.json");
-    await writeFile(profile, JSON.stringify({ formatVersion: 2, provider: "openai", policy: { genrate: { n: 2 } } }));
-    if (process.platform !== "win32") await chmod(profile, 0o600);
-    await expect(loadProfile(profile)).rejects.toMatchObject({ code: "policy.invalid", details: { section: "genrate" } });
   });
 
   it("verify stops when its signal is already aborted", async () => {

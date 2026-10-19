@@ -55,10 +55,6 @@ export async function editImpl(
 
   return withVerbLogger(ctx, "edit", opts, async (logger) => {
     const resolved = requireCredentials(ctx);
-    await logger.info("resolve", "apiKey resolved", {
-      apiKeySource: resolved.apiKeySource,
-      provider: resolved.redacted.provider,
-    });
 
     const policy = callPolicy(ctx, args.policy);
     const network = resolveNetworkForCall(policy);
@@ -87,20 +83,20 @@ export async function editImpl(
     assertStemAvailable(outDir, stem, n, overwrite);
 
     await logger.info("request", "calling provider.edit", {
-      provider: resolved.redacted.provider,
+      provider: "openai",
       model: params.model ?? null,
       input: path.basename(args.in),
       mask: args.mask ? path.basename(args.mask) : null,
       n,
     });
 
-    const provider = getProvider(resolved.redacted.provider);
+    const provider = getProvider();
     const providerResult = await provider.edit({
       prompt,
       imagePath: args.in,
       maskPath: args.mask,
       params,
-      profile: resolved,
+      credentials: resolved,
       network: {
         primary: network.imageGenerate,
         download: network.imageDownload,

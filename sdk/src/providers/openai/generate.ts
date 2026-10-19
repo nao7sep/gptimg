@@ -23,7 +23,7 @@ import { buildImageRequest } from "./request.ts";
 export async function openaiGenerate(
   args: GenerateProviderArgs,
 ): Promise<ProviderImageResult> {
-  const client = buildOpenAIClient(args.profile);
+  const client = buildOpenAIClient(args.credentials);
   const model = resolveModel(args.params.model, defaultModelFor("openai", "image-generate"));
 
   const params = buildImageRequest(model, {
@@ -36,7 +36,7 @@ export async function openaiGenerate(
 
   const { primary, download, logger, signal } = args.network;
   // Every record of this call, and any echo in an error, masks the key.
-  logger?.addCredential(args.profile.apiKey);
+  logger?.addCredential(args.credentials.apiKey);
 
   let response: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
   try {
@@ -52,7 +52,7 @@ export async function openaiGenerate(
       )
     ).data as never;
   } catch (err) {
-    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.profile.apiKey]), "imageGenerate", "OpenAI images.generate", [args.profile.apiKey]);
+    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.credentials.apiKey]), "imageGenerate", "OpenAI images.generate", [args.credentials.apiKey]);
   }
 
   const data = response.data ?? [];

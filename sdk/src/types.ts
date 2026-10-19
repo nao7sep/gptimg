@@ -23,51 +23,11 @@ import type {
   VisionDetail,
 } from "./enums.ts";
 
-/**
- * A profile (format 2): a bundle of arguments a caller keeps in one file and
- * points the SDK at (`loadProfile`). The SDK reads a profile only from a path
- * it is given and never writes one. Format 1 profiles (`provider`, `apiKey`,
- * `apiKeyEnv`, `organization`, `project`) read unchanged.
- */
-export interface Profile {
-  /** The image provider; `"openai"` is the only one. */
-  provider: string;
-  /** A stored key, `obf:`-encoded or plain. A profile holding one must be readable by its owner only. */
-  apiKey?: string;
-  /** The environment variable holding the key, looked up in the map the caller passes to `loadProfile`. */
-  apiKeyEnv?: string;
-  organization?: string;
-  project?: string;
-  /** The models folder; `~`, `$VAR` and `%VAR%` expand from the passed map, and a relative path resolves against the profile's folder. */
-  modelsDir?: string;
-  /** The folder logs are written to when a call asks for a log without naming one; expanded like `modelsDir`. */
-  logDir?: string;
-  /** Policy defaults below the instance's and the call's. */
-  policy?: Policy;
-}
-
-/** A profile as `loadProfile` returns it: the key resolved and every path absolute. */
-export interface LoadedProfile {
-  /** The absolute path the profile was read from. */
-  path: string;
-  provider: "openai";
-  /** The resolved key, or null when the profile supplies none. */
-  apiKey: string | null;
-  /** Where the key came from: `env:<NAME>`, `profile.apiKey`, or null. */
-  apiKeySource: string | null;
-  organization?: string;
-  project?: string;
-  modelsDir?: string;
-  logDir?: string;
-  policy?: Policy;
-}
-
-/** The credentials a paid call uses (internal). */
-export interface ResolvedProfile {
-  redacted: { provider: string; organization?: string; project?: string };
+/** The credentials a paid call spends with (internal): the constructor's key, organization and project. */
+export interface Credentials {
   apiKey: string;
-  /** Where the key came from: "constructor", "env:NAME" or "profile.apiKey". */
-  apiKeySource: string;
+  organization?: string;
+  project?: string;
 }
 
 /**
@@ -151,7 +111,7 @@ export interface NetworkBudgetPolicy {
 
 /**
  * How the work is done: typed sections with documented defaults, overridden
- * partially per profile, per instance and per call, the call winning. A list
+ * partially per instance and per call, the call winning. A list
  * replaces the earlier list whole.
  */
 export interface Policy {
@@ -362,7 +322,7 @@ export interface GenerateArgs {
   outDir?: string;
   /** A bare stem in `outDir`, or an absolute stem that also chooses the folder. */
   outName?: string;
-  /** Policy for this call, merged over the instance's and the profile's (last wins). */
+  /** Policy for this call, merged over the instance's (last wins). */
   policy?: Policy;
   overwrite?: boolean;
 }
@@ -396,7 +356,7 @@ export type EditResult = GenerateResult;
 export interface VisionArgs {
   in: string | string[];
   check: string;
-  /** Policy for this call, merged over the instance's and the profile's (last wins). */
+  /** Policy for this call, merged over the instance's (last wins). */
   policy?: Policy;
   /** Defaults beside the first input image. */
   outDir?: string;
@@ -461,7 +421,7 @@ export interface MaskArgs extends PngEncodingArgs {
   borderSample?: number;
   /** Spill ratio at which near-key pixels saturate to α=0 (0..1]. Chroma-method only. */
   saturationRatio?: number;
-  /** The models folder for the AI method; default the instance's, then the profile's, then `~/.gptimgsdk/models`. */
+  /** The models folder for the AI method; default the instance's, then `~/.gptimgsdk/models`. */
   modelsDir?: string;
   /** Policy for this call; the chroma method takes its unset arguments from `chroma`. */
   policy?: Policy;
@@ -710,7 +670,7 @@ export interface UpscaleArgs extends EncodingArgs {
    * much. A tile too large for the machine fails as `memory.exhausted`.
    */
   tile?: number;
-  /** The models folder for this call; default the instance's, then the profile's, then `~/.gptimgsdk/models`. */
+  /** The models folder for this call; default the instance's, then `~/.gptimgsdk/models`. */
   modelsDir?: string;
   /** Policy for this call; upscale reads only `onnx`. */
   policy?: Policy;
@@ -1241,17 +1201,15 @@ export interface VerifyResult {
 }
 
 export interface GptImgOptions {
-  /** A profile from `loadProfile`; every option below overrides its value. */
-  profile?: LoadedProfile;
-  /** The API key, overriding the profile's. Needed only by paid verbs. */
+  /** The API key. Needed only by paid verbs; the SDK reads no environment variable for it. */
   apiKey?: string;
   organization?: string;
   project?: string;
-  /** The models folder (absolute). Default the profile's, then `~/.gptimgsdk/models`. */
+  /** The models folder (absolute). Default `~/.gptimgsdk/models`. */
   modelsDir?: string;
   /** The folder calls log into when they ask for no other (absolute). No default: without one, nothing is logged. */
   logDir?: string;
-  /** Policy merged over the profile's; each call's policy merges over this. */
+  /** Policy merged over the built-in defaults; each call's policy merges over this. */
   policy?: Policy;
   /** The calling app, recorded in each sidecar's `writer` beside the SDK's own name and version. */
   app?: { name: string; version: string };

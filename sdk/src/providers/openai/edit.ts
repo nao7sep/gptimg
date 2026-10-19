@@ -14,7 +14,7 @@ import { imageFileForEditUpload } from "./upload.ts";
 export async function openaiEdit(
   args: EditProviderArgs,
 ): Promise<ProviderImageResult> {
-  const client = buildOpenAIClient(args.profile);
+  const client = buildOpenAIClient(args.credentials);
   const model = resolveModel(args.params.model, defaultModelFor("openai", "image-edit"));
 
   let imageFile;
@@ -48,7 +48,7 @@ export async function openaiEdit(
 
   const { primary, download, logger, signal } = args.network;
   // Every record of this call, and any echo in an error, masks the key.
-  logger?.addCredential(args.profile.apiKey);
+  logger?.addCredential(args.credentials.apiKey);
 
   let response: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
   try {
@@ -64,7 +64,7 @@ export async function openaiEdit(
       )
     ).data as never;
   } catch (err) {
-    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.profile.apiKey]), "imageGenerate", "OpenAI images.edit", [args.profile.apiKey]);
+    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.credentials.apiKey]), "imageGenerate", "OpenAI images.edit", [args.credentials.apiKey]);
   }
 
   const data = response.data ?? [];

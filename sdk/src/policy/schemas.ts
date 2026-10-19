@@ -123,8 +123,8 @@ export function validateChromaSection(input: unknown): ChromaPolicy {
 /**
  * Check a whole policy: unknown sections are refused, and each section is
  * checked as its verb will check it. The constructor and each call check the
- * policy they are given, and a profile's is checked when it is loaded, so a
- * misspelt section or field fails where it was written.
+ * policy they are given, so a misspelt section or field fails where it was
+ * written.
  */
 export function validatePolicy(input: unknown): Policy {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {

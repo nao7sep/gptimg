@@ -1,21 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { getProvider } from "../../src/providers/index.ts";
 import { buildOpenAIClient, clientHeaders, resolveModel } from "../../src/providers/openai/client.ts";
-import type { ResolvedProfile } from "../../src/types.ts";
+import type { Credentials } from "../../src/types.ts";
 
 describe("OpenAI client helpers", () => {
-  it("constructs the SDK client from the resolved profile without SDK retries", () => {
-    const profile: ResolvedProfile = {
-      apiKey: "sk-local",
-      apiKeySource: "profile.apiKey",
-      redacted: {
-        provider: "openai",
-        organization: "org-local",
-        project: "proj-local",
-      },
-    };
+  it("constructs the SDK client from the given credentials without SDK retries", () => {
+    const credentials: Credentials = { apiKey: "sk-local", organization: "org-local", project: "proj-local" };
 
-    const client = buildOpenAIClient(profile);
+    const client = buildOpenAIClient(credentials);
 
     expect(client.apiKey).toBe("sk-local");
     expect(client.organization).toBe("org-local");
@@ -30,15 +22,11 @@ describe("OpenAI client helpers", () => {
     vi.stubEnv("OPENAI_ADMIN_KEY", "sk-admin-ambient");
     vi.stubEnv("OPENAI_API_KEY", "sk-ambient");
     try {
-      const bare = buildOpenAIClient({ apiKey: "sk-local", apiKeySource: "constructor", redacted: { provider: "openai" } });
+      const bare = buildOpenAIClient({ apiKey: "sk-local" });
       expect(clientHeaders(bare)).toEqual({ Authorization: "Bearer sk-local" });
       expect(bare.baseURL).toBe("https://api.openai.com/v1");
       expect(bare.adminAPIKey ?? null).toBeNull();
-      const given = buildOpenAIClient({
-        apiKey: "sk-local",
-        apiKeySource: "profile.apiKey",
-        redacted: { provider: "openai", organization: "org-local", project: "proj-local" },
-      });
+      const given = buildOpenAIClient({ apiKey: "sk-local", organization: "org-local", project: "proj-local" });
       expect(clientHeaders(given)).toEqual({
         Authorization: "Bearer sk-local",
         "OpenAI-Organization": "org-local",
@@ -49,11 +37,11 @@ describe("OpenAI client helpers", () => {
     }
   });
 
-  it("records no organization or project header when neither the profile nor the environment sets one", () => {
+  it("records no organization or project header when neither the caller nor the environment sets one", () => {
     vi.stubEnv("OPENAI_ORG_ID", undefined);
     vi.stubEnv("OPENAI_PROJECT_ID", undefined);
     try {
-      const client = buildOpenAIClient({ apiKey: "sk-local", apiKeySource: "profile.apiKey", redacted: { provider: "openai" } });
+      const client = buildOpenAIClient({ apiKey: "sk-local" });
       expect(clientHeaders(client)).toEqual({ Authorization: "Bearer sk-local" });
     } finally {
       vi.unstubAllEnvs();
@@ -66,8 +54,7 @@ describe("OpenAI client helpers", () => {
     expect(resolveModel("", "fallback")).toBe("fallback");
   });
 
-  it("returns the OpenAI provider and rejects unknown providers", () => {
-    expect(getProvider("openai").name).toBe("openai");
-    expect(() => getProvider("nope")).toThrow(/Unknown provider/);
+  it("returns the OpenAI provider", () => {
+    expect(getProvider().name).toBe("openai");
   });
 });
