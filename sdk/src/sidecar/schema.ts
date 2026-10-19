@@ -49,6 +49,22 @@ export const SidecarV2Schema = z.discriminatedUnion("kind", [
     files: z.array(FileEntrySchema).min(1),
   }),
   z.looseObject({
+    kind: z.literal("chat"),
+    writer: WriterSchema,
+    request: z.looseObject({
+      model: z.string(),
+      instructions: z.string(),
+      tool: z.record(z.string(), z.unknown()),
+      message: z.string(),
+      images: z.array(z.looseObject({ name: z.string(), sha256: z.string() })),
+      previousResponseId: z.string().nullable(),
+      historyTurns: z.number().int().nonnegative(),
+    }),
+    response: z.record(z.string(), z.unknown()),
+    // A turn that produced no image still keeps its paid answer, as `<stem>.json`.
+    files: z.array(FileEntrySchema),
+  }),
+  z.looseObject({
     kind: z.literal("vision"),
     writer: WriterSchema,
     request: z.looseObject({

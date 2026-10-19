@@ -40,6 +40,7 @@ import { MODELS } from "../local/models/registry.ts";
 import { SWIN2SR_MIN_TILE } from "../local/models/swin2sr-constants.ts";
 import type {
   BackplateArgs,
+  ChatArgs,
   CombineArgs,
   ComposeArgs,
   DespeckleArgs,
@@ -379,6 +380,23 @@ const EncodeArgsSchema = z.object({
   ...OUTPUT_FIELDS,
 });
 
+const ChatTurnSchema = z.strictObject({
+  role: z.enum(["user", "assistant"]),
+  text: z.string(),
+  images: z.array(z.string().min(1)).optional(),
+});
+
+const ChatArgsSchema = z.object({
+  message: nonBlankText("message"),
+  images: z.array(z.string().min(1)).optional(),
+  history: z.array(ChatTurnSchema).optional(),
+  previousResponseId: z.string().min(1).optional(),
+  outDir: requiredPath("outDir"),
+  outName: z.string().optional(),
+  overwrite: z.boolean().optional(),
+  policy: policyField,
+});
+
 const VerifyArgsSchema = z.object({
   in: requiredPath("in"),
 });
@@ -415,7 +433,7 @@ const RETIRED_ARGS: Record<string, string> = {
 };
 
 // Every argument that names a file or folder; each must be absolute.
-const PATH_FIELDS = ["in", "mask", "outDir", "base", "top", "modelsDir", "inputs"] as const;
+const PATH_FIELDS = ["in", "mask", "outDir", "base", "top", "modelsDir", "inputs", "images"] as const;
 
 function check<T>(schema: z.ZodObject, args: T, verb: string): T {
   if (typeof args !== "object" || args === null) {
@@ -568,6 +586,13 @@ export function validateResizeArgs(args: ResizeArgs): ResizeArgs {
 
 export function validateEncodeArgs(args: EncodeArgs): EncodeArgs {
   return checkEncoding(EncodeArgsSchema, args, "encode");
+}
+
+export function validateChatArgs(args: ChatArgs): ChatArgs {
+  check(ChatArgsSchema, args, "chat");
+  // Each earlier turn's images are paths too, and must be absolute like every other.
+  args.history?.forEach((turn, t) => turn.images?.forEach((image, i) => assertAbsolutePath(image, `history[${t}].images[${i}]`, "chat")));
+  return args;
 }
 
 export function validateVerifyArgs(args: VerifyArgs): VerifyArgs {

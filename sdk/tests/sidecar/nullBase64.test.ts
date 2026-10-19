@@ -41,6 +41,21 @@ describe("nullBase64InResponse", () => {
     expect(JSON.stringify(out)).toBe('{"__proto__":{"b64_json":null},"x":1}');
   });
 
+  it("nulls a Responses image call's result but keeps every other result field", () => {
+    const out = nullBase64InResponse({
+      output: [
+        { type: "image_generation_call", id: "ig_1", result: "AAAA", revised_prompt: "a cat" },
+        { type: "other_tool_call", result: "kept" },
+      ],
+    });
+    expect(out).toEqual({
+      output: [
+        { type: "image_generation_call", id: "ig_1", result: null, revised_prompt: "a cat" },
+        { type: "other_tool_call", result: "kept" },
+      ],
+    });
+  });
+
   it("does not mutate the input", () => {
     const input = { data: [{ b64_json: "AAA" }] };
     const snapshot = JSON.stringify(input);

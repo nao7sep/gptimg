@@ -8,7 +8,7 @@ import { GptImgError } from "./errors.ts";
 export const MODEL_LINEUP = "ai-model-lineup-20261004";
 
 export type AiProvider = "openai";
-export type AiKind = "image-generate" | "image-edit" | "vision";
+export type AiKind = "image-generate" | "image-edit" | "vision" | "chat";
 
 /** The size rule an image row takes besides `auto`: both sides divisible by `multipleOf`, the
  * long side at most `maxRatio` times the short one, and the area within the pixel bounds. */
@@ -40,6 +40,7 @@ export interface ImageModelRow extends ModelRow {
   readonly image: ImageCapabilities;
 }
 
+/** A mainline model: it judges images (`vision`) and leads a conversation that calls the image tool (`chat`). */
 export interface VisionModelRow extends ModelRow {
   /** The `reasoning_effort` values the model accepts, in the order a choice lists them. */
   readonly thinking: readonly string[];
@@ -68,10 +69,12 @@ export const SUPPORTED_MODELS: readonly SupportedModel[] = [
     provider: "openai", id: "gpt-image-2", kinds: ["image-generate", "image-edit"], defaultFor: [],
     image: { qualities: ["auto", "low", "medium", "high"], backgrounds: IMAGE_BACKGROUNDS, outputFormats: IMAGE_FORMATS, compression: IMAGE_COMPRESSION, size: IMAGE_SIZE },
   },
-  { provider: "openai", id: "gpt-6-astra", kinds: ["vision"], defaultFor: [], thinking: ["low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
-  { provider: "openai", id: "gpt-6.1-sol", kinds: ["vision"], defaultFor: [], thinking: ["low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
-  { provider: "openai", id: "gpt-5.6-terra", kinds: ["vision"], defaultFor: [], thinking: ["none", "low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
-  { provider: "openai", id: "gpt-6-luna", kinds: ["vision"], defaultFor: ["vision"], thinking: ["none", "low", "medium", "high", "xhigh", "max"], defaultThinking: "none" },
+  // Each mainline row lists image_generation among its Responses API tools (its model page, 2026-10-19), so it can lead a chat.
+  { provider: "openai", id: "gpt-6-astra", kinds: ["vision", "chat"], defaultFor: [], thinking: ["low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
+  { provider: "openai", id: "gpt-6.1-sol", kinds: ["vision", "chat"], defaultFor: [], thinking: ["low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
+  // lineup-departure: the chat role is newer than ai-model-lineup-20261004, which gave gptimg none; balanced suits an assistant that phrases image requests and follows a long conversation.
+  { provider: "openai", id: "gpt-5.6-terra", kinds: ["vision", "chat"], defaultFor: ["chat"], thinking: ["none", "low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
+  { provider: "openai", id: "gpt-6-luna", kinds: ["vision", "chat"], defaultFor: ["vision"], thinking: ["none", "low", "medium", "high", "xhigh", "max"], defaultThinking: "none" },
 ];
 
 export const AI_ROLES = [
@@ -83,6 +86,11 @@ export const AI_ROLES = [
   // very small defects, so the fast tier's default model suits it. The default must honour
   // `detail`, which some models ignore; the live suite checks gpt-6-luna bills low detail low.
   { id: "vision", kind: "vision" },
+  // Leads a conversation: reads it, answers in words and calls the image tool to generate or
+  // edit. The balanced tier follows long conversations and phrases image requests well without
+  // the frontier's cost; the image tool's own model is the edit role's, since a conversation is
+  // mostly refinement.
+  { id: "chat", kind: "chat" },
 ] as const satisfies readonly { id: string; kind: AiKind }[];
 
 export type AiRole = (typeof AI_ROLES)[number]["id"];

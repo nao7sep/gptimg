@@ -10,7 +10,7 @@ import type { Provider } from "../../src/providers/types.ts";
 
 const generate = vi.hoisted(() => vi.fn());
 vi.mock("../../src/providers/index.ts", () => ({
-  getProvider: (): Provider => ({ name: "openai", generate, edit: vi.fn(), vision: vi.fn() }),
+  getProvider: (): Provider => ({ name: "openai", generate, edit: vi.fn(), vision: vi.fn(), chat: vi.fn() }),
 }));
 
 const SPELLINGS = [

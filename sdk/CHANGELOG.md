@@ -32,6 +32,7 @@ The SDK was redesigned under the fleet's SDK conventions. Every change under Cha
 ### Added
 
 - `verify({ in })` checks a published paid image against its sidecar and returns coded findings.
+- `chat(...)`: one turn of a conversation with an assistant that answers in words and generates or edits images, through OpenAI's Responses API and its image tool. The caller passes the earlier turns and the previous turn's `responseId`; while OpenAI holds that response only the new turn is sent, and when it is gone the history is resent. Each image is written with a sidecar of the new kind `chat`; a turn without images keeps its record as `<stem>.json`. `policy.chat` sets the assistant, its effort, instructions and the image tool's model and values; the routing table gains the `chat` kind and role.
 - `inspect({ in })` reports what an image is in one call: its format as the bytes say and whether the extension agrees, size, channels, bit depth, colour space, density, EXIF orientation, pages, whether any pixel is translucent, and the sidecar beside it (kind, writer, recorded chroma key) without checking it against the image.
 - The `encode` verb, the pipeline's delivery step, and the encoder options (`format`, `quality`, `lossless`, `smartSubsample`, `opaque`, `compressionLevel`, `adaptiveFiltering`) on every verb that writes an image; `opaque` refuses a translucent image as `image.notOpaque`.
 - The `gptimgsdk/types` entry: the types and the dependency-free code tables, loadable without sharp, ONNX Runtime or the OpenAI client.

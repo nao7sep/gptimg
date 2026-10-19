@@ -1,0 +1,67 @@
+{
+  "formatVersion": 2,
+  "kind": "chat",
+  "writer": {
+    "name": "gptimgsdk",
+    "version": "0.1.0",
+    "app": {
+      "name": "GptImg",
+      "version": "0.1.0"
+    }
+  },
+  "request": {
+    "model": "gpt-5.6-terra",
+    "reasoning": "medium",
+    "instructions": "You help the user create and refine images.",
+    "tool": {
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "medium",
+      "moderation": "low"
+    },
+    "message": "Make the lighthouse red.",
+    "images": [
+      {
+        "name": "ref.png",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ],
+    "previousResponseId": "resp_fixture_1",
+    "historyTurns": 0
+  },
+  "response": {
+    "id": "resp_fixture_2",
+    "status": "completed",
+    "output": [
+      {
+        "type": "image_generation_call",
+        "id": "ig_fixture",
+        "status": "completed",
+        "result": null,
+        "revised_prompt": "A red lighthouse"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Here it is in red."
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 812,
+      "output_tokens": 1290,
+      "total_tokens": 2102
+    }
+  },
+  "files": [
+    {
+      "index": 1,
+      "name": "turn-0002.png",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "format": "png"
+    }
+  ]
+}

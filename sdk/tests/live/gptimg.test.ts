@@ -348,4 +348,54 @@ describe("the live SDK", () => {
     }));
     expect(fails.ok, fails.reasons.join(" ")).toBe(false);
   });
+
+  // A conversation through the Responses API: a first turn that makes an image, a follow-up
+  // chained from OpenAI's stored copy that edits it, and a turn whose previous response
+  // OpenAI does not hold, which must resend the history. The cheapest assistant and image
+  // settings keep the three turns to a few cents.
+  it("holds a chat: generates, edits through the stored conversation, and resends when the stored copy is gone", async () => {
+    requireKey();
+    const { img, home } = await freshSdk("chat");
+    const policy = { chat: { model: "gpt-6-luna", reasoning: "none", quality: "low", size: "1024x1024" } };
+    const first = done(await img.chat({
+      message: "Draw a simple red circle on a white background.",
+      outDir: home,
+      outName: "turn-1",
+      policy,
+    }));
+    expect(first.resumed).toBeNull();
+    expect(first.files.length, first.text).toBeGreaterThan(0);
+    expect(first.response.usage, "the turn's usage is kept").toBeDefined();
+    const record = JSON.parse(await readFile(first.files[0]!.sidecarPath, "utf8")) as { kind: string; request: Record<string, unknown>; response: unknown };
+    expect(record).toMatchObject({ kind: "chat", request: { model: "gpt-6-luna", reasoning: "none", previousResponseId: null } });
+    expect(JSON.stringify(record)).not.toContain(process.env.OPENAI_API_KEY!.trim());
+    expect(done(await img.verify({ in: first.files[0]!.path }))).toMatchObject({ ok: true });
+
+    const second = done(await img.chat({
+      message: "Make the circle blue.",
+      previousResponseId: first.responseId,
+      history: [{ role: "user", text: "Draw a simple red circle on a white background." }, { role: "assistant", text: first.text, images: first.files.map((f) => f.path) }],
+      outDir: home,
+      outName: "turn-2",
+      policy,
+    }));
+    expect(second.resumed).toBe("chain");
+    expect(second.files.length, second.text).toBeGreaterThan(0);
+
+    const gone = done(await img.chat({
+      message: "Now make it green.",
+      previousResponseId: `resp_${"0".repeat(48)}`,
+      history: [
+        { role: "user", text: "Draw a simple red circle on a white background." },
+        { role: "assistant", text: first.text, images: first.files.map((f) => f.path) },
+        { role: "user", text: "Make the circle blue." },
+        { role: "assistant", text: second.text, images: second.files.map((f) => f.path) },
+      ],
+      outDir: home,
+      outName: "turn-3",
+      policy,
+    }));
+    expect(gone.resumed).toBe("resent");
+    expect(gone.files.length, gone.text).toBeGreaterThan(0);
+  });
 });

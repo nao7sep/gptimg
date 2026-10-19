@@ -18,6 +18,8 @@ import { RefusalSignal } from "../refusal.ts";
 import { nullBase64InResponse } from "../sidecar/nullBase64.ts";
 import { writeSidecar } from "../sidecar/write.ts";
 import type {
+  ChatRequestRecord,
+  ChatSidecar,
   EditRequestRecord,
   EditSidecar,
   FilePublication,
@@ -30,7 +32,7 @@ import type {
 import { planGenerateOutputs, type DetectedImage } from "./generate-plan.ts";
 
 export interface PublishProviderImagesArgs {
-  kind: "generate" | "edit";
+  kind: "generate" | "edit" | "chat";
   outDir: string;
   stem: string;
   /** The image count the run requested, which its pre-call check reserved. */
@@ -38,7 +40,7 @@ export interface PublishProviderImagesArgs {
   overwrite: boolean;
   providerResult: ProviderImageResult;
   /** What each per-image sidecar records as the request. */
-  requestRecord: GenerateRequestRecord | EditRequestRecord;
+  requestRecord: GenerateRequestRecord | EditRequestRecord | ChatRequestRecord;
   writer: SidecarWriter;
   /** Known credentials, applied only to sidecar snapshots. */
   credentials?: readonly string[];
@@ -92,7 +94,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
   const snapshot = maskDiagnosticCopy(
     { request: requestRecord, response: nullBase64InResponse(providerResult.raw) },
     args.credentials ?? [],
-  ) as { request: GenerateRequestRecord | EditRequestRecord; response: Record<string, unknown> };
+  ) as { request: GenerateRequestRecord | EditRequestRecord | ChatRequestRecord; response: Record<string, unknown> };
 
   // A requested image the provider did not return at all is an item failure too,
   // so a short or empty response is reported rather than silently yielding fewer files.
@@ -168,7 +170,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
           request: snapshot.request,
           response: snapshot.response,
           files: [{ index: item.index, name: path.basename(item.filePath), sha256, format: item.fmt.format }],
-        } as GenerateSidecar | EditSidecar;
+        } as GenerateSidecar | EditSidecar | ChatSidecar;
         let sidecar: FilePublication = { status: "published" };
         try {
           await writeSidecar(sidecarPath, record, { overwrite });

@@ -11,7 +11,7 @@ import type { Provider } from "../../src/providers/types.ts";
 import { RefusalSignal } from "../../src/refusal.ts";
 import { done } from "../helpers/results.ts";
 
-const provider = vi.hoisted(() => ({ generate: vi.fn(), edit: vi.fn(), vision: vi.fn() }));
+const provider = vi.hoisted(() => ({ generate: vi.fn(), edit: vi.fn(), vision: vi.fn(), chat: vi.fn() }));
 vi.mock("../../src/providers/index.ts", () => ({
   getProvider: (): Provider => ({ name: "openai", ...provider }),
 }));

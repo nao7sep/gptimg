@@ -41,6 +41,8 @@ import type {
   VerifyArgs,
   InspectArgs,
   InspectResult,
+  ChatArgs,
+  ChatResult,
   VerifyResult,
 } from "./types.ts";
 import { backplateImpl } from "./verbs/backplate.ts";
@@ -67,6 +69,7 @@ import { upscaleImpl } from "./verbs/upscale.ts";
 import { visionImpl } from "./verbs/vision.ts";
 import { verifyImpl } from "./verbs/verify.ts";
 import { inspectImpl } from "./verbs/inspect.ts";
+import { chatImpl } from "./verbs/chat.ts";
 import type { ModelKey } from "./local/models/registry.ts";
 import type { ModelInstallResult, ModelListResult, ModelVerifyResult } from "./types.ts";
 
@@ -173,6 +176,10 @@ export class GptImg {
 
   inspect(args: InspectArgs, opts?: VerbCallOptions): Promise<InspectResult | RefusedResult> {
     return inspectImpl(this.#ctx, args, opts);
+  }
+
+  chat(args: ChatArgs, opts?: VerbCallOptions): Promise<ChatResult | RefusedResult> {
+    return chatImpl(this.#ctx, args, opts);
   }
 
   grid(args: GridArgs, opts?: VerbCallOptions): Promise<GridResult | RefusedResult> {

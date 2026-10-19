@@ -7,7 +7,7 @@ import { GptImgError } from "../errors.ts";
 import type { VisionDetail } from "../types.ts";
 import { VISION_DEFAULTS } from "../verbs/defaults.ts";
 
-type ImageSection = "generate" | "edit";
+type ImageSection = "generate" | "edit" | "chat";
 
 function imageRow(model: string): ImageModelRow | undefined {
   return SUPPORTED_MODELS.find((row): row is ImageModelRow => "image" in row && row.id === model);
@@ -54,7 +54,7 @@ function checkSize(section: string, row: ImageModelRow, value: unknown): void {
   }
 }
 
-/** Refuses a generate or edit request whose values the chosen supported model does not take. */
+/** Refuses a generate, edit or chat image request whose values the chosen supported image model does not take. */
 export function checkImageParams(section: ImageSection, params: Readonly<Record<string, unknown>>): void {
   const model = params.model;
   if (typeof model !== "string") return;
@@ -90,16 +90,24 @@ export function resolveGenerateModeration(model: string): "low" | undefined {
 }
 
 /**
- * The reasoning effort a vision call sends: the policy's value, checked against the supported
+ * The reasoning effort a vision or chat call sends: the policy's value, checked against the supported
  * model's list, else that model's own default. An id with no row sends the policy's value
  * unchecked, or none when the policy sets none.
  */
-export function resolveVisionReasoning(model: string, chosen: string | undefined): string | undefined {
+export function resolveVisionReasoning(model: string, chosen: string | undefined, section: "vision" | "chat" = "vision"): string | undefined {
   const row = visionRow(model);
   if (!row) return chosen;
   if (chosen === undefined) return row.defaultThinking;
-  checkListed("vision", model, "reasoning", chosen, row.thinking);
+  checkListed(section, model, "reasoning", chosen, row.thinking);
   return chosen;
+}
+
+/**
+ * The moderation the chat's image tool sends: "low", as `generate` sends, for a supported image
+ * model (ai-model-lineup-20261004); none for an id with no row.
+ */
+export function resolveChatModeration(imageModel: string): "low" | undefined {
+  return resolveGenerateModeration(imageModel);
 }
 
 /**

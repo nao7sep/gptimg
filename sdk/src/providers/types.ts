@@ -52,9 +52,45 @@ export interface VisionProviderArgs {
   network: ProviderNetworkCtx;
 }
 
+/** An image sent to a chat: its name (for the records, never the bytes), its bytes and their format. */
+export interface ChatImage {
+  name: string;
+  data: Uint8Array;
+  format: string;
+}
+
+/** One earlier turn, its images loaded, for a request that carries the conversation itself. */
+export interface ChatHistoryTurn {
+  role: "user" | "assistant";
+  text: string;
+  images: ChatImage[];
+}
+
+export interface ChatProviderArgs {
+  message: string;
+  images: ChatImage[];
+  /** Continue OpenAI's copy of the conversation from this response. */
+  previousResponseId?: string | undefined;
+  /** The earlier turns, loaded only when they are sent: without a previous response, or when it is gone. */
+  loadHistory: () => Promise<ChatHistoryTurn[]>;
+  params: { model: string; reasoning?: string | undefined; instructions: string; tool: Record<string, unknown> };
+  credentials: Credentials;
+  network: ProviderNetworkCtx;
+}
+
+export interface ProviderChatResult extends ProviderImageResult {
+  text: string;
+  responseId: string;
+  resumed: "chain" | "resent" | null;
+  /** How many earlier turns the request carried; 0 when OpenAI's copy carried them. */
+  historyTurns: number;
+  incomplete: string | null;
+}
+
 export interface Provider {
   readonly name: string;
   generate(args: GenerateProviderArgs): Promise<ProviderImageResult>;
   edit(args: EditProviderArgs): Promise<ProviderImageResult>;
   vision(args: VisionProviderArgs): Promise<ProviderVisionResult>;
+  chat(args: ChatProviderArgs): Promise<ProviderChatResult>;
 }

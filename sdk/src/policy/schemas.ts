@@ -5,6 +5,7 @@ import { GptImgError } from "../errors.ts";
 import { firstZodIssue, formatZodError } from "../internal/zodError.ts";
 import { NetworkSchema } from "../network/schema.ts";
 import type {
+  ChatPolicy,
   ChromaPolicy,
   EditPolicy,
   GeneratePolicy,
@@ -62,6 +63,22 @@ const ChromaPolicySchema = z
   })
   .strict();
 
+// The assistant and its image tool. Strict: the request is built from these fields, so a
+// misspelt one would silently fall back to a default.
+const ChatPolicySchema = z
+  .object({
+    model: z.string().min(1).optional(),
+    reasoning: z.string().min(1).optional(),
+    instructions: z.string().optional(),
+    imageModel: z.string().min(1).optional(),
+    size: z.string().optional(),
+    quality: z.string().optional(),
+    background: z.string().optional(),
+    output_format: z.string().optional(),
+    output_compression: z.number().optional(),
+  })
+  .strict();
+
 // ONNX Runtime tuning, formerly the GPTIMG_ONNX_INTRA_OP_THREADS and
 // GPTIMG_ONNX_EP environment variables: the SDK reads no environment.
 const OnnxPolicySchema = z
@@ -75,6 +92,7 @@ const SECTION_SCHEMAS: Record<keyof Policy, z.ZodType> = {
   generate: GeneratePolicySchema,
   edit: EditPolicySchema,
   vision: VisionPolicySchema,
+  chat: ChatPolicySchema,
   chroma: ChromaPolicySchema,
   network: NetworkSchema,
   onnx: OnnxPolicySchema,
@@ -110,6 +128,12 @@ export function validateVisionSection(input: unknown): VisionPolicy {
     throw policyError("vision", r.error);
   }
   return r.data as VisionPolicy;
+}
+
+export function validateChatSection(input: unknown): ChatPolicy {
+  const r = ChatPolicySchema.safeParse(input ?? {});
+  if (!r.success) throw policyError("chat", r.error);
+  return r.data as ChatPolicy;
 }
 
 export function validateChromaSection(input: unknown): ChromaPolicy {

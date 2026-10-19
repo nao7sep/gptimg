@@ -94,6 +94,28 @@ export interface ChromaPolicy {
   saturationRatio?: number;
 }
 
+/**
+ * The `chat` policy section: the assistant that leads a conversation and the
+ * image tool it calls. For a supported assistant model the effort is checked
+ * against its row; for a supported image model the tool's values are checked
+ * against that row, as `generate`'s are.
+ */
+export interface ChatPolicy {
+  /** The assistant model; default the chat role's. */
+  model?: string;
+  /** Its reasoning effort; default the row's own. */
+  reasoning?: string;
+  /** Instructions for the assistant, replacing the built-in ones. */
+  instructions?: string;
+  /** The image tool's model; default the edit role's. */
+  imageModel?: string;
+  size?: string;
+  quality?: string;
+  background?: string;
+  output_format?: string;
+  output_compression?: number;
+}
+
 /** ONNX Runtime tuning for the local models. */
 export interface OnnxPolicy {
   /** Intra-op threads per session. Default half the CPU cores, at least one. */
@@ -118,6 +140,7 @@ export interface Policy {
   generate?: GeneratePolicy;
   edit?: EditPolicy;
   vision?: VisionPolicy;
+  chat?: ChatPolicy;
   chroma?: ChromaPolicy;
   /** Per-category network budgets. See src/network/defaults.ts. */
   network?: {
@@ -144,7 +167,7 @@ export interface SidecarWriter {
   app?: { name: string; version: string };
 }
 
-export type SidecarKind = "generate" | "edit" | "vision";
+export type SidecarKind = "generate" | "edit" | "vision" | "chat";
 
 /** The common shape of every sidecar as `readSidecar` returns it. */
 interface SidecarBase {
@@ -216,7 +239,38 @@ export interface VisionSidecar extends SidecarBase {
   files: [];
 }
 
-export type Sidecar = GenerateSidecar | EditSidecar | VisionSidecar;
+/**
+ * The request a chat turn's record holds: the assistant and image-tool
+ * parameters as sent, the user's message, its attached images by name and
+ * SHA-256, how the conversation was carried (`previousResponseId` when the
+ * turn continued OpenAI's copy, `historyTurns` when it resent the earlier
+ * turns), and no image bytes.
+ */
+export interface ChatRequestRecord {
+  model: string;
+  reasoning?: string;
+  instructions: string;
+  tool: Record<string, unknown>;
+  message: string;
+  images: Array<{ name: string; sha256: string }>;
+  previousResponseId: string | null;
+  historyTurns: number;
+  [param: string]: unknown;
+}
+
+/**
+ * The record of a chat turn: beside each image the turn produced, or alone as
+ * `<stem>.json` when the turn produced none, since its answer was paid for too.
+ */
+export interface ChatSidecar extends SidecarBase {
+  kind: "chat";
+  request: ChatRequestRecord;
+  /** The provider's response as received, with its reply, usage and image calls; image bytes are nulled. */
+  response: Record<string, unknown>;
+  files: SidecarFileEntry[];
+}
+
+export type Sidecar = GenerateSidecar | EditSidecar | VisionSidecar | ChatSidecar;
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogStage =
@@ -256,7 +310,8 @@ export type LogVerb =
   | "grid"
   | "model"
   | "verify"
-  | "inspect";
+  | "inspect"
+  | "chat";
 
 export interface LogEntry {
   /** Event instant: UTC ISO-8601 with milliseconds and `Z` (logging-conventions envelope). */
@@ -302,7 +357,7 @@ export interface OutputFile {
   sidecarPath: string;
   sidecar: FilePublication;
   /** The record the sidecar holds, also here so a caller keeps it when the sidecar could not be written. */
-  record: GenerateSidecar | EditSidecar;
+  record: GenerateSidecar | EditSidecar | ChatSidecar;
 }
 
 /** Item failure codes beyond the error and refusal codes: the provider returned no image for the item. */
@@ -1198,6 +1253,56 @@ export interface VerifyResult {
   findings: VerifyFinding[];
   /** The sidecar as read, or null when it is missing or unreadable. */
   record: Sidecar | null;
+  logPath: string | null;
+}
+
+/** One earlier turn of a conversation as the caller holds it; images by absolute path. */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+  images?: string[];
+}
+
+export interface ChatArgs {
+  /** The user's message. */
+  message: string;
+  /** Images attached to the message, by absolute path. */
+  images?: string[];
+  /**
+   * Every earlier turn, oldest first. Sent when there is no `previousResponseId`,
+   * or when OpenAI no longer holds that response; the SDK keeps no conversation.
+   */
+  history?: ChatTurn[];
+  /** The previous turn's `responseId`, so only this turn is sent while OpenAI holds the conversation. */
+  previousResponseId?: string;
+  /** Where the turn's images and records are written (absolute); required, since a chat has no source folder. */
+  outDir: string;
+  /** The stem of the turn's files: a bare name in `outDir`. */
+  outName?: string;
+  overwrite?: boolean;
+  /** Policy for this call; chat reads `chat` and `network`. */
+  policy?: Policy;
+}
+
+export interface ChatResult {
+  status: "completed";
+  /** The assistant's reply; empty when it only produced images. */
+  text: string;
+  /** Every image the turn produced and published, in order. */
+  files: OutputFile[];
+  /** Every image the turn produced that yielded no published file. */
+  failures: ItemFailure[];
+  leftovers: string[];
+  /** The turn's record when it produced no image (`<stem>.json`); null when its images carry it. */
+  recordPath: string | null;
+  /** Pass as the next turn's `previousResponseId`. */
+  responseId: string;
+  /** "chain": OpenAI's copy carried the conversation; "resent": it was gone and the history was resent; null: no previous response was given. */
+  resumed: "chain" | "resent" | null;
+  /** Why the provider stopped early (e.g. "max_output_tokens"), with what it produced kept; null when it finished. */
+  incomplete: string | null;
+  /** The provider's response as recorded (image data removed, credentials masked), with its token `usage`. */
+  response: Record<string, unknown>;
   logPath: string | null;
 }
 

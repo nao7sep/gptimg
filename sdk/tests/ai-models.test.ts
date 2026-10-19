@@ -38,10 +38,10 @@ describe("the model table", () => {
       ["gpt-image-2.5-flare", ["image-generate", "image-edit"], ["image-generate"]],
       ["gpt-image-2.5-sunburst", ["image-generate", "image-edit"], ["image-edit"]],
       ["gpt-image-2", ["image-generate", "image-edit"], []],
-      ["gpt-6-astra", ["vision"], []],
-      ["gpt-6.1-sol", ["vision"], []],
-      ["gpt-5.6-terra", ["vision"], []],
-      ["gpt-6-luna", ["vision"], ["vision"]],
+      ["gpt-6-astra", ["vision", "chat"], []],
+      ["gpt-6.1-sol", ["vision", "chat"], []],
+      ["gpt-5.6-terra", ["vision", "chat"], ["chat"]],
+      ["gpt-6-luna", ["vision", "chat"], ["vision"]],
     ]);
     for (const row of SUPPORTED_MODELS) expect(row.provider, row.id).toBe("openai");
   });
@@ -93,9 +93,9 @@ describe("the model table", () => {
     expect(Object.keys(VISION_REQUEST_BRANCHES).sort()).toEqual(visionRows.map((row) => row.id).sort());
   });
 
-  it("gives image rows image kinds and vision rows the vision kind", () => {
+  it("gives image rows image kinds and mainline rows the vision and chat kinds", () => {
     for (const row of imageRows) expect(row.kinds, row.id).toEqual(["image-generate", "image-edit"]);
-    for (const row of visionRows) expect(row.kinds, row.id).toEqual(["vision"]);
+    for (const row of visionRows) expect(row.kinds, row.id).toEqual(["vision", "chat"]);
   });
 
   it("lists each id once", () => {

@@ -24,6 +24,7 @@ vi.mock("../../src/providers/index.ts", () => ({
       generate: providerCalls.generate,
       edit: providerCalls.edit,
       vision: providerCalls.vision,
+      chat: vi.fn(),
     }),
   ),
 }));

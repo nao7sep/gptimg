@@ -38,6 +38,7 @@ describe("sidecar fixtures", () => {
     ["sidecar-v2-generate.json", "generate"],
     ["sidecar-v2-edit.json", "edit"],
     ["sidecar-v2-vision.json", "vision"],
+    ["sidecar-v2-chat.json", "chat"],
   ] as const)("reads %s as a format-2 %s record and the writer reproduces it byte for byte", async (name, kind) => {
     const bytes = await readFile(fixture(name), "utf8");
     const record = await readSidecar(fixture(name));

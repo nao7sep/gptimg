@@ -32,6 +32,25 @@ export const VISION_REQUEST_BRANCHES: Readonly<Record<string, VisionBranch>> = {
   "gpt-6-luna": effort,
 };
 
+// Mainline models leading a chat: the chosen effort, the row's default when the policy sets
+// none, is sent as the Responses API's `reasoning.effort`.
+type ChatBranch = (request: Record<string, unknown>, reasoning: string | undefined) => Record<string, unknown>;
+const chatEffort: ChatBranch = (request, reasoning) => (reasoning === undefined ? request : { ...request, reasoning: { effort: reasoning } });
+
+/** Branches for the chat's `responses.create`. */
+export const CHAT_REQUEST_BRANCHES: Readonly<Record<string, ChatBranch>> = {
+  "gpt-6-astra": chatEffort,
+  "gpt-6.1-sol": chatEffort,
+  "gpt-5.6-terra": chatEffort,
+  "gpt-6-luna": chatEffort,
+};
+
+/** An id with no branch gets the plain request, plus `reasoning.effort` only when the caller set one. */
+export function buildChatRequest(model: string, request: Record<string, unknown>, reasoning: string | undefined): Record<string, unknown> {
+  const branch = Object.hasOwn(CHAT_REQUEST_BRANCHES, model) ? CHAT_REQUEST_BRANCHES[model] : undefined;
+  return (branch ?? chatEffort)(request, reasoning);
+}
+
 export function buildImageRequest(model: string, request: Record<string, unknown>): Record<string, unknown> {
   const branch = Object.hasOwn(IMAGE_REQUEST_BRANCHES, model) ? IMAGE_REQUEST_BRANCHES[model] : undefined;
   return (branch ?? plainImage)(request);
