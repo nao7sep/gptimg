@@ -233,6 +233,12 @@ const FS_CODES: Record<string, ErrorCode> = {
  * says what the SDK was doing, for the diagnostic message only; the code is
  * the cause.
  */
+/** The fields Node puts on a system error, named here so this module needs no Node types: `gptimgsdk/types` loads in a browser. */
+interface ErrnoLike {
+  code?: unknown;
+  syscall?: unknown;
+}
+
 export function fsError(
   err: unknown,
   what: string,
@@ -240,7 +246,7 @@ export function fsError(
   effect: ErrorEffect = "none",
 ): GptImgError {
   if (err instanceof GptImgError) return err.effect === effect || effect === "none" ? err : err.withEffect(effect);
-  const e = err as NodeJS.ErrnoException;
+  const e = err as ErrnoLike | null;
   const errno = typeof e?.code === "string" ? e.code : undefined;
   const code = (errno && FS_CODES[errno]) || "fs.failed";
   return new GptImgError(code, `${what} ${subject}: ${(err as Error)?.message ?? String(err)}`, {
@@ -263,7 +269,7 @@ export function fsError(
  */
 export function processingError(err: unknown, what: string, subject: string, effect: ErrorEffect = "unknown"): Error {
   if (err instanceof GptImgError || (err as { name?: unknown } | null)?.name === "RefusalSignal") return err as Error;
-  const errno = (err as NodeJS.ErrnoException | null)?.code;
+  const errno = (err as ErrnoLike | null)?.code;
   if (typeof errno === "string" && /^E[A-Z]+$/.test(errno)) return fsError(err, what, subject, effect);
   return new GptImgError("internal.unexpected", `${what} ${subject}: ${(err as Error)?.message ?? String(err)}`, {
     cause: err,

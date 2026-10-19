@@ -194,7 +194,10 @@ describe("the package boundary", () => {
     expect([...packages]).toEqual([]);
     expect(files.size).toBeGreaterThan(1);
     // The same walk over the full entry finds its native and network dependencies, so it can fail.
-    expect([...runtimeImports(path.join(SRC, "index.ts")).packages]).toEqual(expect.arrayContaining(["sharp", "onnxruntime-node", "openai"]));
+    const full = [...runtimeImports(path.join(SRC, "index.ts")).packages];
+    expect(full).toEqual(expect.arrayContaining(["sharp", "openai"]));
+    // ONNX Runtime loads on the first inference, so a consumer that never runs a local model need not ship it.
+    expect(full).not.toContain("onnxruntime-node");
   });
 
   it("allows the home folder only in the resource-default module", () => {

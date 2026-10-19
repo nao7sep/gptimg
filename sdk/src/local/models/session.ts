@@ -9,14 +9,36 @@
  */
 
 import os from "node:os";
-import * as ort from "onnxruntime-node";
+import type * as Ort from "onnxruntime-node";
 import { GptImgError, cancelledError } from "../../errors.ts";
 import { isAbortError } from "../../network/retry.ts";
 import type { OnnxPolicy } from "../../types.ts";
 
 // One creation per model path and tuning: concurrent first callers await the
 // same promise instead of each loading its own copy of the weights.
-const sessions = new Map<string, Promise<ort.InferenceSession>>();
+const sessions = new Map<string, Promise<Ort.InferenceSession>>();
+
+let runtime: Promise<typeof Ort> | null = null;
+
+/**
+ * ONNX Runtime, loaded on the first inference rather than with the SDK, so a
+ * consumer that never runs a local model (an app that only chats, a script
+ * that only generates) neither loads nor has to ship its native binaries. A
+ * failed load is not cached, so installing the runtime and calling again works.
+ */
+export function onnxRuntime(): Promise<typeof Ort> {
+  runtime ??= import("onnxruntime-node").catch((err: unknown) => {
+    runtime = null;
+    throw new GptImgError("model.loadFailed", `ONNX Runtime could not be loaded: ${(err as Error)?.message ?? String(err)}`, { cause: err });
+  });
+  return runtime;
+}
+
+/** A float32 tensor for a model's input. */
+export async function float32Tensor(data: Float32Array, dims: number[]): Promise<Ort.Tensor> {
+  const ort = await onnxRuntime();
+  return new ort.Tensor("float32", data, dims);
+}
 
 /**
  * Intra-op thread count per session. ONNX Runtime's CPU EP defaults to one
@@ -48,7 +70,7 @@ function executionProviders(onnx: OnnxPolicy | undefined): string[] {
  * creation still in flight is shared with every caller that asks meanwhile. A
  * failed creation is dropped from the cache so the next call tries again.
  */
-export function loadSession(modelPath: string, onnx?: OnnxPolicy): Promise<ort.InferenceSession> {
+export function loadSession(modelPath: string, onnx?: OnnxPolicy): Promise<Ort.InferenceSession> {
   const providers = executionProviders(onnx);
   const threads = intraOpThreadCount(onnx);
   const key = `${modelPath}\0${providers.join(",")}\0${threads}`;
@@ -68,9 +90,9 @@ export function loadSession(modelPath: string, onnx?: OnnxPolicy): Promise<ort.I
  * failures and cancellation retain their identity for the caller's owner.
  */
 export async function runSession(
-  session: ort.InferenceSession,
-  feeds: ort.InferenceSession.FeedsType,
-): Promise<ort.InferenceSession.ReturnType> {
+  session: Ort.InferenceSession,
+  feeds: Ort.InferenceSession.FeedsType,
+): Promise<Ort.InferenceSession.ReturnType> {
   try {
     return await session.run(feeds);
   } catch (err) {
@@ -85,7 +107,8 @@ export async function runSession(
   }
 }
 
-async function createSession(modelPath: string, providers: string[], threads: number): Promise<ort.InferenceSession> {
+async function createSession(modelPath: string, providers: string[], threads: number): Promise<Ort.InferenceSession> {
+  const ort = await onnxRuntime();
   try {
     return await ort.InferenceSession.create(modelPath, {
       executionProviders: providers,

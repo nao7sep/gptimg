@@ -27,6 +27,9 @@ The SDK was redesigned under the fleet's SDK conventions. Every change under Cha
 - `icon` publishes its set together, removing the files it created when publication fails or is cancelled.
 - `grid`'s `skipped` entries (`GridSkip`) carry the error code and effect naming why each input could not be read; when none can be read, the first input's own error is thrown. Verdicts and findings are exported constant lists.
 - `policy` replaces per-call `overrides`, with precedence call, instance, built-in default; ONNX tuning is `policy.onnx`.
+- ONNX Runtime loads on the first local-model inference instead of with the SDK, so a consumer that runs no local model need not install or ship `onnxruntime-node`; when it cannot be loaded, the call fails `model.loadFailed`.
+- Masking also covers a provider's partial echo of a credential, such as OpenAI's `sk-proj-****…abcd` in a rejected-key message.
+- The `gptimgsdk/types` entry type-checks with browser libraries and no Node types.
 
 ### Added
 

@@ -6,6 +6,15 @@ describe("credential masking helpers", () => {
     expect(maskCredentials("Bearer sk-abc, again sk-abc", ["sk-abc", ""])).toBe("Bearer [REDACTED], again [REDACTED]");
   });
 
+  it("masks a provider's partial echo of a key, and only of that key", () => {
+    const key = "sk-proj-abcdefghijklmnopWXYZ";
+    expect(maskCredentials("Incorrect API key provided: sk-proj-****************WXYZ. See docs.", [key])).toBe(
+      "Incorrect API key provided: [REDACTED]. See docs.",
+    );
+    expect(maskCredentials("sk-other-****************WXYZ", [key])).toBe("sk-other-****************WXYZ");
+    expect(maskCredentials("short****WXYZ", ["shortWXYZ"])).toBe("short****WXYZ");
+  });
+
   it("masks every query value of a URL and leaves a URL without one alone", () => {
     expect(maskUrlQuery("https://h.example/img.png?se=2026&sig=tok#frag")).toBe(
       "https://h.example/img.png?se=[REDACTED]&sig=[REDACTED]#frag",

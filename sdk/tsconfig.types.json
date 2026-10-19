@@ -1,0 +1,10 @@
+{
+  // The `gptimgsdk/types` entry type-checked as a renderer sees it: browser
+  // libraries, no Node types. A Node-only type reaching it fails here.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": []
+  },
+  "include": ["src/types.ts"]
+}

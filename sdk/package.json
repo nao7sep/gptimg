@@ -24,7 +24,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.types.json && tsc --noEmit -p tsconfig.test.json",
     "test": "npm run typecheck && vitest run",
     "test:full": "npm test && npm run test:live",
     "test:live": "vitest run --config vitest.live.config.ts",

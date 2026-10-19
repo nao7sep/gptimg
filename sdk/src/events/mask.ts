@@ -7,11 +7,28 @@
  */
 export const REDACTED = "[REDACTED]";
 
-/** `text` with every occurrence of each credential replaced by the marker. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A provider's own partial echo of a credential: OpenAI's 401 message quotes
+ * the key as its first characters, a run of asterisks and its last four
+ * (`sk-proj-****…abcd`), which still discloses a third of a short key.
+ */
+function partialEcho(credential: string): RegExp | null {
+  if (credential.length < 16) return null;
+  return new RegExp(`${escapeRegExp(credential.slice(0, 3))}[^\\s*]*\\*{4,}${escapeRegExp(credential.slice(-4))}`, "g");
+}
+
+/** `text` with every occurrence of each credential, and a provider's partial echo of it, replaced by the marker. */
 export function maskCredentials(text: string, credentials: Iterable<string>): string {
   let out = text;
   for (const credential of credentials) {
-    if (credential.length > 0) out = out.replaceAll(credential, REDACTED);
+    if (credential.length === 0) continue;
+    out = out.replaceAll(credential, REDACTED);
+    const echo = partialEcho(credential);
+    if (echo) out = out.replace(echo, (match) => (credential.startsWith(match.slice(0, match.indexOf("*"))) ? REDACTED : match));
   }
   return out;
 }

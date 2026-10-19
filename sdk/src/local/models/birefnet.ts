@@ -12,7 +12,7 @@
  *      dimensions, quantize to Uint8Array.
  */
 
-import * as ort from "onnxruntime-node";
+import type * as Ort from "onnxruntime-node";
 import sharp from "sharp";
 import { GptImgError, throwIfAborted } from "../../errors.ts";
 import { resizeSingleChannel } from "../../image/bridge.ts";
@@ -20,7 +20,7 @@ import type { Logger } from "../../events/index.ts";
 import { requireInstalledModel } from "./fetch.ts";
 import type { OnnxPolicy } from "../../types.ts";
 import { BIREFNET } from "./registry.ts";
-import { loadSession, runSession } from "./session.ts";
+import { float32Tensor, loadSession, runSession } from "./session.ts";
 import { logitsToAlpha, normalizeImageNet } from "./birefnet-tensor.ts";
 
 async function resizeRGB(
@@ -40,8 +40,8 @@ async function resizeRGB(
   return new Uint8Array(rgb);
 }
 
-function preprocessToTensor(rgb: Uint8Array, size: number): ort.Tensor {
-  return new ort.Tensor("float32", normalizeImageNet(rgb, size), [1, 3, size, size]);
+function preprocessToTensor(rgb: Uint8Array, size: number): Promise<Ort.Tensor> {
+  return float32Tensor(normalizeImageNet(rgb, size), [1, 3, size, size]);
 }
 
 /**
@@ -51,7 +51,7 @@ function preprocessToTensor(rgb: Uint8Array, size: number): ort.Tensor {
  * future variants that downsample (e.g. deep-supervision outputs at H/4)
  * fail loudly with a clear error instead of silently reading wrong data.
  */
-function tensorToAlpha(tensor: ort.Tensor): { alpha: Uint8Array; width: number; height: number } {
+function tensorToAlpha(tensor: Ort.Tensor): { alpha: Uint8Array; width: number; height: number } {
   return logitsToAlpha(tensor.data as Float32Array, tensor.dims);
 }
 
@@ -82,7 +82,7 @@ export async function runBirefnet(
 
   const size = BIREFNET.inputSize;
   const rgb = await resizeRGB(rgba, width, height, size, size);
-  const tensor = preprocessToTensor(rgb, size);
+  const tensor = await preprocessToTensor(rgb, size);
 
   const inputName = session.inputNames[0];
   if (!inputName) {

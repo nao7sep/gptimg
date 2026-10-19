@@ -24,14 +24,14 @@
  * pinned export.
  */
 
-import * as ort from "onnxruntime-node";
+import type * as Ort from "onnxruntime-node";
 import sharp from "sharp";
 import { GptImgError, throwIfAborted } from "../../errors.ts";
 import type { Logger } from "../../events/index.ts";
 import { requireInstalledModel } from "./fetch.ts";
 import type { OnnxPolicy } from "../../types.ts";
 import { SWIN2SR_X4 } from "./registry.ts";
-import { loadSession, runSession } from "./session.ts";
+import { float32Tensor, loadSession, runSession } from "./session.ts";
 import { packNchw01, unpackChwToU8 } from "./swin2sr-tensor.ts";
 import {
   SWIN2SR_DEFAULT_TILE,
@@ -135,13 +135,13 @@ export type PaddedModelRun = (
 
 /** Build the real ONNX-backed model runner (NCHW [0,1] in, clamped u8 ×4 out). */
 function makeOnnxRun(
-  session: ort.InferenceSession,
+  session: Ort.InferenceSession,
   inputName: string,
   outputName: string,
 ): PaddedModelRun {
   return async (rgb, pw, ph) => {
     const outputs = await runSession(session, {
-      [inputName]: new ort.Tensor("float32", packNchw01(rgb, pw, ph), [1, 3, ph, pw]),
+      [inputName]: await float32Tensor(packNchw01(rgb, pw, ph), [1, 3, ph, pw]),
     });
     const tensor = outputs[outputName];
     if (!tensor) {
