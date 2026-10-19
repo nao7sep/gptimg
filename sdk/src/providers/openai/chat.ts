@@ -57,6 +57,13 @@ function userMessage(text: string, images: readonly ChatImage[], withBytes: bool
   };
 }
 
+/** The mask shown to the assistant after the message's images: a sentence, then the mask at low detail. */
+function withMaskGuide(message: Record<string, unknown>, guide: { image: ChatImage; text: string } | undefined, withBytes: boolean): Record<string, unknown> {
+  if (!guide) return message;
+  const content = message.content as unknown[];
+  return { ...message, content: [...content, { type: "input_text", text: guide.text }, { ...imagePart(guide.image, withBytes), detail: "low" }] };
+}
+
 /**
  * The earlier turns as input items. A user turn is a user message with its
  * images. An assistant turn is its reply, and its images follow as a user
@@ -108,7 +115,7 @@ export async function openaiChat(args: ChatProviderArgs): Promise<ProviderChatRe
     buildChatRequest(model, {
       model,
       instructions,
-      input: [...historyItems(history ?? [], withBytes), userMessage(args.message, args.images, withBytes)],
+      input: [...historyItems(history ?? [], withBytes), withMaskGuide(userMessage(args.message, args.images, withBytes), args.mask?.guide, withBytes)],
       tools: [{ type: "image_generation", ...tool, ...(args.mask && { input_image_mask: { image_url: imagePart(args.mask, withBytes).image_url } }) }],
       store: true,
       ...(history === null && args.previousResponseId !== undefined && { previous_response_id: args.previousResponseId }),

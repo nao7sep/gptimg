@@ -70,8 +70,8 @@ export interface ChatHistoryTurn {
 export interface ChatProviderArgs {
   message: string;
   images: ChatImage[];
-  /** Where the first image may change: its transparent pixels. */
-  mask?: ChatImage | undefined;
+  /** Where the first image may change: its transparent pixels. Its `guide` is shown to the assistant, which writes the image request. */
+  mask?: (ChatImage & { guide?: { image: ChatImage; text: string } | undefined }) | undefined;
   /** Continue OpenAI's copy of the conversation from this response. */
   previousResponseId?: string | undefined;
   /** The earlier turns, loaded only when they are sent: without a previous response, or when it is gone. */

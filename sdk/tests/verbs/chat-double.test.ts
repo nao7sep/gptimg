@@ -148,6 +148,30 @@ describe("a mask", () => {
     expect(pixel(60)).toEqual([255, 255, 255, 255]);
   });
 
+  it("is shown to the assistant too: the area's bounds in words, then the mask, opaque and at low detail", async () => {
+    const image = path.join(tmp, "photo.png");
+    const mask = path.join(tmp, "mask.png");
+    await writeFile(image, await picture(80, 40, false));
+    const hole = await sharp({ create: { width: 40, height: 20, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();
+    await writeFile(
+      mask,
+      await sharp({ create: { width: 80, height: 40, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } })
+        .composite([{ input: hole, left: 40, top: 0, blend: "dest-out" }])
+        .png()
+        .toBuffer(),
+    );
+    done(await img.chat({ message: "a bird here", images: [image], mask, outDir: tmp, outName: "turn" }));
+    const content = (body().input as { role: string; content: Record<string, string>[] }[]).at(-1)!.content;
+    expect(content.map((c) => c.type)).toEqual(["input_text", "input_image", "input_text", "input_image"]);
+    expect(content[2]!.text).toContain("from 50% to 100% across and 0% to 50% down");
+    expect(content[3]!.detail).toBe("low");
+    const guide = await sharp(Buffer.from(content[3]!.image_url!.split(",")[1]!, "base64")).raw().toBuffer({ resolveWithObject: true });
+    expect(guide.info.channels).toBe(3);
+    expect([...guide.data.subarray(0, 3)]).toEqual([255, 255, 255]);
+    const inHole = (5 * guide.info.width + 60) * 3;
+    expect([...guide.data.subarray(inHole, inHole + 3)]).toEqual([0, 0, 0]);
+  });
+
   it("is checked before paying: an image to apply to, a PNG of the same size, with transparency", async () => {
     const image = path.join(tmp, "photo.png");
     await writeFile(image, await picture(80, 40, false));

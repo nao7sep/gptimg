@@ -52,7 +52,7 @@ async function readAttachment(filePath: string): Promise<ChatImage & { sha256: s
  * PNG of the same size that has transparency, since OpenAI changes the image
  * only where the mask is transparent.
  */
-async function readMask(filePath: string, first: ChatImage): Promise<ChatImage & { sha256: string }> {
+async function readMask(filePath: string, first: ChatImage): Promise<ChatImage & { sha256: string; guide: { image: ChatImage; text: string } }> {
   const mask = await readAttachment(filePath);
   const invalid = (message: string, constraint: string) =>
     new GptImgError("args.invalid", `chat: ${message}`, { subject: filePath, details: { field: "mask", constraint } });
@@ -65,25 +65,65 @@ async function readMask(filePath: string, first: ChatImage): Promise<ChatImage &
     );
   }
   if (!maskInfo.hasAlpha) throw invalid("mask has no transparency to mark where the image may change.", "transparency");
-  return { ...mask, data: await documentedMask(mask.data) };
+  const { data, guide } = await maskForms(mask.data);
+  return { ...mask, data, guide };
 }
 
 /**
- * The mask as OpenAI documents it: grey equal to its own alpha, so what is kept
- * is opaque white and where the image may change is transparent black.
- * Masking is prompt-based, so the model looks at the mask's colours too, and a
- * mask that is opaque black where nothing should change came back with that
- * area painted black (observed 2026-10-19).
+ * The mask in its two forms. For the image tool, as OpenAI documents it: grey
+ * equal to its own alpha, so what is kept is opaque white and where the image
+ * may change is transparent black. Masking is prompt-based, so the model looks
+ * at the mask's colours too, and a mask that was opaque black where nothing
+ * should change came back with that area painted black (observed 2026-10-19).
+ * For the assistant, which writes the image request but is not shown the
+ * tool's mask: the same shape opaque, black where the image may change, with
+ * the area's bounds in words, so it can say where the change goes.
  */
-async function documentedMask(png: Uint8Array): Promise<Uint8Array> {
+async function maskForms(png: Uint8Array): Promise<{ data: Uint8Array; guide: { image: ChatImage; text: string } }> {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  for (let i = 0; i < data.length; i += 4) {
+  const { width, height } = info;
+  const opaque = Buffer.alloc(width * height * 3);
+  let left = width;
+  let top = height;
+  let right = -1;
+  let bottom = -1;
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
     const alpha = data[i + 3]!;
     data[i] = alpha;
     data[i + 1] = alpha;
     data[i + 2] = alpha;
+    opaque.fill(alpha, p * 3, p * 3 + 3);
+    if (alpha < 128) {
+      const x = p % width;
+      const y = Math.floor(p / width);
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
   }
-  return new Uint8Array(await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer());
+  const percent = (value: number, of: number) => Math.round((value / of) * 100);
+  const where =
+    right < 0
+      ? "nowhere in particular"
+      : `from ${percent(left, width)}% to ${percent(right + 1, width)}% across and ${percent(top, height)}% to ${percent(bottom + 1, height)}% down`;
+  const tool = new Uint8Array(await sharp(data, { raw: { width, height, channels: 4 } }).png().toBuffer());
+  const guide = new Uint8Array(
+    await sharp(opaque, { raw: { width, height, channels: 3 } })
+      .resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true })
+      .png()
+      .toBuffer(),
+  );
+  return {
+    data: tool,
+    guide: {
+      image: { name: "guide", data: guide, format: "png" },
+      text:
+        `The last image is the user's mask for the first image, not a picture to use: black marks the area that may change, ` +
+        `${where} of the first image measured from its top left; white must stay as it is. Put the requested change inside the black area, ` +
+        `and say where it goes when you ask for the image.`,
+    },
+  };
 }
 
 /** An earlier turn's image, fitted for resending; a file that is gone is left out with a warning. */
