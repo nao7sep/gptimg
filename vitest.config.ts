@@ -10,8 +10,9 @@ export default defineConfig({
       {
         test: {
           name: "app",
-          include: ["tests/**/*.test.ts"],
-          exclude: [...configDefaults.exclude, "sdk/**"],
+          include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+          setupFiles: ["tests/setup/rendered-keys.ts"],
+          exclude: [...configDefaults.exclude, "sdk/**", "tests/live/**"],
         },
       },
       "./sdk",

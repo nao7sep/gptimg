@@ -1,6 +1,7 @@
 // The bridge between the window and main, declared here so preload implements
 // it with `satisfies` and the renderer imports nothing from the Node side.
 import type { ExportRequest, ImageInfo } from "./export.ts";
+import type { RecordDetail, RecordKind, RecordQuery, RecordsPage } from "./records.ts";
 import type { Catalogue } from "./i18n/catalogues.ts";
 import type { Language } from "./i18n/languages.ts";
 import type { Message } from "./i18n/translator.ts";
@@ -97,7 +98,7 @@ export interface UpscalerStatus {
   downloadBytes: number | null;
 }
 
-export type MenuCommand = "newSession" | "settings" | "shortcuts" | "about" | "attach" | "close" | "rename" | "reveal" | "trash";
+export type MenuCommand = "newSession" | "settings" | "shortcuts" | "about" | "records" | "attach" | "close" | "rename" | "reveal" | "trash";
 
 export interface GptImgApi {
   boot(): Promise<BootInfo>;
@@ -140,6 +141,9 @@ export interface GptImgApi {
   cancelTask(): void;
   onProgress(handler: (progress: TaskProgress) => void): () => void;
   showInFolder(path: string): void;
+
+  queryRecords(query: RecordQuery): Promise<RecordsPage>;
+  recordDetail(kind: RecordKind, id: number): Promise<RecordDetail | null>;
 
   closeWindow(): void;
   onMenu(handler: (command: MenuCommand) => void): () => void;

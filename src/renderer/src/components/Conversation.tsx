@@ -7,6 +7,7 @@ import { sessionTotals, type AssistantTurn, type UserTurn } from "../../../share
 import type { Running } from "../App.tsx";
 import { useI18n } from "../i18n.tsx";
 import { CloseIcon, FolderIcon, PencilIcon, RetryIcon } from "./icons.tsx";
+import { Markdown } from "./Markdown.tsx";
 import { Print } from "./Print.tsx";
 import { elapsed, relativeDay } from "./time.ts";
 
@@ -202,7 +203,11 @@ function AssistantTurnView({
   const { t } = useI18n();
   return (
     <article className="turn turn-assistant" aria-label={t("conversation.assistant")}>
-      {turn.text && <div className="turn-text reading">{turn.text}</div>}
+      {turn.text && (
+        <div className="turn-text reading markdown">
+          <Markdown text={turn.text} />
+        </div>
+      )}
       {turn.images.map((rel) => {
         const path = absolute(rel);
         return (

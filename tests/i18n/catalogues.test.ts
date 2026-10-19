@@ -59,6 +59,7 @@ const LITERAL_EVERYWHERE = [
   "export.dimensions",
   "export.pixels",
   "export.source",
+  "viewer.info",
 ];
 
 describe.each(others)("%s catalogue", (language) => {

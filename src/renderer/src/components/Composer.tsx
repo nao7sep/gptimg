@@ -9,7 +9,7 @@ import { imageRow } from "../../../shared/settings.ts";
 import { QUALITIES, SIZES } from "../../../shared/ui-state.ts";
 import { api } from "../api.ts";
 import { useI18n } from "../i18n.tsx";
-import { ClipIcon, CloseIcon, SendIcon, ShapeGlyph, StopIcon } from "./icons.tsx";
+import { CheckerIcon, ClipIcon, CloseIcon, SendIcon, ShapeGlyph, StopIcon } from "./icons.tsx";
 
 export interface Reference {
   /** What is sent: an absolute path main registered, or a path relative to the session. */
@@ -47,6 +47,7 @@ export function Composer(props: ComposerProps) {
   const composing = useRef(false);
   const [size, setSize] = useState(props.options.size);
   const [quality, setQuality] = useState(props.options.quality);
+  const [transparent, setTransparent] = useState(props.options.transparent === true);
   const [dropping, setDropping] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   // The latest draft, for handlers that finish after an await.
@@ -56,7 +57,8 @@ export function Composer(props: ComposerProps) {
   useEffect(() => {
     setSize(props.options.size);
     setQuality(props.options.quality);
-  }, [props.options.size, props.options.quality]);
+    setTransparent(props.options.transparent === true);
+  }, [props.options.size, props.options.quality, props.options.transparent]);
 
   const qualities = imageRow(props.imageModel)?.image.qualities ?? QUALITIES;
 
@@ -96,7 +98,7 @@ export function Composer(props: ComposerProps) {
   const send = () => {
     if (!canSend) return;
     setNotice(null);
-    props.onSend({ text: draft.text.trim(), references: draft.references }, { size, quality });
+    props.onSend({ text: draft.text.trim(), references: draft.references }, { size, quality, ...(transparent && { transparent }) });
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -222,6 +224,16 @@ export function Composer(props: ComposerProps) {
               ))}
             </select>
           </label>
+          <button
+            type="button"
+            className={`icon-button transparency${transparent ? " on" : ""}`}
+            aria-pressed={transparent}
+            aria-label={t("composer.transparent")}
+            title={t("composer.transparent")}
+            onClick={() => setTransparent((v) => !v)}
+          >
+            <CheckerIcon />
+          </button>
           {notice && <span className="composer-notice">{notice}</span>}
           <span className="spacer" />
           {props.busy ? (

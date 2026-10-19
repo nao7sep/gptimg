@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, statSync, utimesSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createSession, importReference, isInside, isSessionId, listSessions, readSession, renameSession, writeSession } from "../../src/main/sessions.ts";
+import { createSession, importReference, isInside, isSessionId, listSessions, readSession, renameSession, withId, writeSession } from "../../src/main/sessions.ts";
 
 const root = () => mkdtempSync(join(tmpdir(), "gptimg-sessions-"));
 
@@ -52,5 +52,23 @@ describe("session folders", () => {
     expect(isInside("/s", "/s/x/y.png")).toBe(true);
     expect(isInside("/s", "/s/../t.png")).toBe(false);
     expect(isInside("/s", "/s")).toBe(false);
+  });
+});
+
+describe("a chat's lasting id", () => {
+  it("is given at creation and kept through a rename", async () => {
+    const dir = root();
+    const s = await createSession(dir, new Date("2026-10-19T01:00:00Z"), "First");
+    expect(s.doc.id).toMatch(/^[0-9a-f-]{36}$/);
+    await writeSession(dir, s.id, s.doc);
+    const renamed = await renameSession(dir, s.id, "Second");
+    expect(renamed.doc.id).toBe(s.doc.id);
+  });
+
+  it("is added to an older chat only when it is next written", () => {
+    const old = { format: 1 as const, title: "t", createdAt: "2026-10-01T00:00:00.000Z", turns: [] };
+    expect(withId(old).id).toMatch(/^[0-9a-f-]{36}$/);
+    const kept = { ...old, id: "abc" };
+    expect(withId(kept)).toBe(kept);
   });
 });

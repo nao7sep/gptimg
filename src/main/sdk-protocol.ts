@@ -1,7 +1,7 @@
 // The messages between main and the SDK's utility process.
 
 /** The SDK operations the app runs: one turn of a chat, and the local image work an export needs. */
-export const SDK_OPS = ["chat", "inspect", "encode", "resize", "upscale", "modelList", "modelInstall"] as const;
+export const SDK_OPS = ["chat", "inspect", "encode", "resize", "upscale", "modelList", "modelInstall", "modelRelease"] as const;
 export type SdkOp = (typeof SDK_OPS)[number];
 
 export type WorkerRequest =

@@ -10,6 +10,8 @@ export interface TurnOptions {
   /** "auto" or "<w>x<h>". */
   size: string;
   quality: string;
+  /** Ask the image model for a transparent background; absent, the model decides. */
+  transparent?: boolean;
 }
 
 /** A turn's tokens: the assistant model's, and the image tool's apart, since the two are billed at different rates. */
@@ -49,9 +51,16 @@ export type Turn = UserTurn | AssistantTurn;
 
 export interface SessionDoc {
   format: typeof SESSION_FORMAT;
+  /** The chat's lasting id: its records carry it, since the folder's name changes with the title. Absent in chats saved before ids existed, until their next write. */
+  id?: string;
   title: string;
   createdAt: string;
   turns: Turn[];
+}
+
+/** The id a chat's records carry: its own, or for a chat saved before ids existed, its folder's name. */
+export function chatIdOf(folder: string, doc: SessionDoc): string {
+  return doc.id ?? folder;
 }
 
 /** What the rail shows for one session. */
@@ -200,6 +209,7 @@ export function parseSession(value: unknown): SessionDoc | null {
   if (!value || typeof value !== "object") return null;
   const doc = value as Record<string, unknown>;
   if (doc.format !== SESSION_FORMAT || !isString(doc.title) || !isString(doc.createdAt) || !Array.isArray(doc.turns)) return null;
+  if (doc.id !== undefined && !isString(doc.id)) return null;
   for (const raw of doc.turns) {
     if (!raw || typeof raw !== "object") return null;
     const turn = raw as Record<string, unknown>;
@@ -208,6 +218,7 @@ export function parseSession(value: unknown): SessionDoc | null {
     if (turn.role === "user") {
       const options = turn.options as Record<string, unknown> | undefined;
       if (!options || !isString(options.size) || !isString(options.quality)) return null;
+      if (options.transparent !== undefined && typeof options.transparent !== "boolean") return null;
     } else if (turn.role === "assistant") {
       if (!isString(turn.responseId)) return null;
     } else {

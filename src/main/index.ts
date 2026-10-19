@@ -23,6 +23,8 @@ import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } fro
 import { openRecords, type Records } from "./records.ts";
 import { SdkHost } from "./sdk-host.ts";
 import { isSessionId, listSessions, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
+import { chatIdOf } from "../shared/session.ts";
+import type { RecordKind, RecordQuery } from "../shared/records.ts";
 import { TurnRunner } from "./turns.ts";
 
 declare const __APP_VERSION__: string;
@@ -80,7 +82,7 @@ async function start(): Promise<void> {
   await app.whenReady();
 
   const launchId = randomUUID();
-  const records = openRecords(paths.records, launchId, __APP_VERSION__);
+  const records = openRecords(paths.records, paths.logs, launchId, __APP_VERSION__);
   const backups = openBackups(paths.backups, launchId, (error) => records.log("warn", "backups.failed", { error: String(error) }));
   records.log("info", "app.start", { version: __APP_VERSION__, platform: process.platform, dataDir: paths.root });
 
@@ -108,7 +110,7 @@ async function start(): Promise<void> {
   // Pasted images from an earlier launch that were never sent.
   await rm(paths.staging, { recursive: true, force: true }).catch(() => {});
 
-  const keys = new KeyStore(paths.apiKeys, process.env, (event, fields) => records.log("warn", event, fields));
+  const keys = new KeyStore(paths.apiKeys, process.env, (_event, fields) => records.log("warn", "apiKeys.modeTightened", fields));
   const host = new SdkHost(join(here, "sdk-worker.js"), (code) => records.log(code === 0 ? "info" : "error", "sdk.workerExit", { code }));
 
   const state: State = {
@@ -315,6 +317,7 @@ function installIpc(state: State): void {
           state.configExisted = true;
           state.backups.keep(paths.config, text);
         }
+        records.log("info", "settings.saved", { wrote: text !== null });
       } catch (error) {
         records.log("error", "settings.saveFailed", { error: String(error) });
         return failure("failure.settingsWrite");
@@ -355,6 +358,7 @@ function installIpc(state: State): void {
       try {
         const problem = await keys.set(value);
         if (problem) return { ok: false, failure: { message: problem, retryable: false } };
+        records.log("info", "apiKeys.saved");
       } catch (error) {
         records.log("error", "apiKeys.writeFailed", { error: String(error) });
         return failure("failure.keyWrite");
@@ -365,6 +369,7 @@ function installIpc(state: State): void {
       try {
         const problem = await keys.clear();
         if (problem) return { ok: false, failure: { message: problem, retryable: false } };
+        records.log("info", "apiKeys.cleared");
       } catch (error) {
         records.log("error", "apiKeys.writeFailed", { error: String(error) });
         return failure("failure.keyWrite");
@@ -399,6 +404,7 @@ function installIpc(state: State): void {
       if (state.turns.isRunning(id)) return failure("failure.turnRunning");
       try {
         const renamed = await renameSession(root, id, clean);
+        records.log("info", "sessions.renamed", { chatId: chatIdOf(renamed.id, renamed.doc), from: id, to: renamed.id });
         return { ok: true, session: { id: renamed.id, doc: renamed.doc, dir: sessionDir(root, renamed.id) } };
       } catch (error) {
         records.log("error", "sessions.renameFailed", { error: String(error) });
@@ -410,8 +416,14 @@ function installIpc(state: State): void {
       if (!isSessionId(id)) return failure("failure.sessionMissing");
       if (state.turns.isRunning(id)) return failure("failure.turnRunning");
       try {
+        let chatId = id;
+        try {
+          chatId = chatIdOf(id, await readSession(root, id));
+        } catch {
+          // An unreadable chat is still trashed; its folder name stands in.
+        }
         await shell.trashItem(sessionDir(root, id));
-        records.log("info", "sessions.trashed", { id });
+        records.log("info", "sessions.trashed", { chatId, folder: id });
         return { ok: true };
       } catch (error) {
         records.log("error", "sessions.trashFailed", { error: String(error) });
@@ -506,6 +518,13 @@ function installIpc(state: State): void {
     },
     showInFolder(path: string) {
       if (state.images.allowed(path)) shell.showItemInFolder(path);
+    },
+
+    queryRecords(query: RecordQuery) {
+      return records.query(query);
+    },
+    recordDetail(kind: RecordKind, id: number) {
+      return records.detail(kind, id);
     },
 
     closeWindow() {

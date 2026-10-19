@@ -2,6 +2,7 @@
 // session.json, the turn images with their sidecars, and inputs/ with a copy
 // of every attached reference. Paths inside a session are relative, so the
 // folder can be moved or renamed whole.
+import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readdir, rename, stat, utimes } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import {
@@ -92,6 +93,11 @@ export async function readSession(root: string, id: string): Promise<SessionDoc>
   return doc;
 }
 
+/** A chat saved before ids existed gains its lasting id with its next real write; launch and reading write nothing. */
+export function withId(doc: SessionDoc): SessionDoc {
+  return doc.id ? doc : { format: doc.format, id: randomUUID(), title: doc.title, createdAt: doc.createdAt, turns: doc.turns };
+}
+
 /** Writes session.json; returns the bytes written, or null when nothing changed. */
 export async function writeSession(root: string, id: string, doc: SessionDoc): Promise<string | null> {
   const text = json(doc);
@@ -118,12 +124,12 @@ export async function createSession(root: string, now: Date, title: string): Pro
   await mkdir(root, { recursive: true });
   const id = await freeName(root, sessionFolderName(now, title));
   await mkdir(join(root, id));
-  return { id, doc: { format: SESSION_FORMAT, title, createdAt: now.toISOString(), turns: [] } };
+  return { id, doc: { format: SESSION_FORMAT, id: randomUUID(), title, createdAt: now.toISOString(), turns: [] } };
 }
 
 /** Renames a session: its title, and its folder to match, keeping the folder's creation stamp. */
 export async function renameSession(root: string, id: string, title: string): Promise<{ id: string; doc: SessionDoc }> {
-  const doc = await readSession(root, id);
+  const doc = withId(await readSession(root, id));
   const next = { ...doc, title };
   const stamp = folderStamp(id) ?? fileStamp(new Date(doc.createdAt));
   const wanted = `${stamp}-${folderPart(title)}`;

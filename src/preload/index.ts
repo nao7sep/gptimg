@@ -53,6 +53,8 @@ const api = {
     return () => ipcRenderer.off("progress", listener);
   },
   showInFolder: fire("showInFolder"),
+  queryRecords: invoke("queryRecords"),
+  recordDetail: invoke("recordDetail"),
   closeWindow: fire("closeWindow"),
   onMenu: (handler: (command: MenuCommand) => void) => {
     const listener = (_event: unknown, command: MenuCommand) => handler(command);

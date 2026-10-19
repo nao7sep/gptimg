@@ -3,7 +3,7 @@
 // panes receive what they show and report what the user did.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedSession, TurnOutcome } from "../../shared/api.ts";
-import type { SessionSummary, TurnOptions } from "../../shared/session.ts";
+import { chatIdOf, type SessionSummary, type TurnOptions } from "../../shared/session.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { commandFor } from "../../shared/shortcuts.ts";
 import type { UiState } from "../../shared/ui-state.ts";
@@ -16,6 +16,7 @@ import { SettingsModal } from "./modals/SettingsModal.tsx";
 import { SetupModal } from "./modals/SetupModal.tsx";
 import { AboutModal, ConfirmModal, RenameModal, ShortcutsModal } from "./modals/SmallModals.tsx";
 import { ExportModal } from "./modals/ExportModal.tsx";
+import { RecordsModal } from "./modals/RecordsModal.tsx";
 import { ViewerModal } from "./modals/ViewerModal.tsx";
 import { applyFonts } from "./fonts.ts";
 
@@ -27,7 +28,8 @@ type ModalSpec =
   | { kind: "rename"; id: string; title: string }
   | { kind: "trash"; id: string; title: string }
   | { kind: "viewer"; images: string[]; index: number }
-  | { kind: "export"; path: string };
+  | { kind: "export"; path: string }
+  | { kind: "records" };
 
 export interface Running {
   startedAt: number;
@@ -216,6 +218,9 @@ export function App({ boot }: { boot: BootInfo }) {
         case "about":
           pushModal({ kind: "about" });
           break;
+        case "records":
+          pushModal({ kind: "records" });
+          break;
         case "attach":
           attachRef.current();
           break;
@@ -399,6 +404,9 @@ export function App({ boot }: { boot: BootInfo }) {
           }}
         />
       )}
+      {front?.kind === "records" && (
+        <RecordsModal chatId={opened && currentId !== NEW ? chatIdOf(opened.id, opened.doc) : null} timeZone={settings.timeZone} onClose={popModal} />
+      )}
       {front?.kind === "export" && (
         <ExportModal
           path={front.path}
@@ -412,7 +420,15 @@ export function App({ boot }: { boot: BootInfo }) {
         />
       )}
       {front?.kind === "viewer" && (
-        <ViewerModal images={front.images} index={front.index} onClose={popModal} />
+        <ViewerModal
+          images={front.images}
+          index={front.index}
+          onClose={popModal}
+          onExport={(path, index) => {
+            // The viewer comes back where it was when the export dialog closes.
+            setModals((m) => [...m.slice(0, -1), { kind: "viewer", images: front.images, index }, { kind: "export", path }]);
+          }}
+        />
       )}
     </div>
   );

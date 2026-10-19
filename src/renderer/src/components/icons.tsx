@@ -127,6 +127,15 @@ export const EyeIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** A transparent background: the checkerboard image editors draw under nothing. */
+export const CheckerIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="12" height="12" rx="1.8" />
+    <path d="M4 8h4V4M8 12h4V8M12 16v-4h4M4 12h4v4M12 4v4h4" strokeWidth={1.2} />
+    <path d="M4.6 4.6h3.4v3.4H4.6zM8 8h4v4H8zM12 12h3.4v3.4H12zM12 4.6h3.4V8H12zM4.6 12H8v3.4H4.6z" fill="currentColor" stroke="none" opacity={0.35} />
+  </Svg>
+);
+
 /** The composer's shape glyphs: the frame each size will produce. */
 export function ShapeGlyph({ shape, ...p }: IconProps & { shape: string }) {
   const frames: Record<string, { w: number; h: number }> = {

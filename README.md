@@ -29,11 +29,12 @@ On first launch GptImg asks for your API key, then for a folder to keep chats in
 
 ## Using the app
 
-- **Send a message** to start a chat. Attach images to work from with the paperclip, by dropping files on the window, or by pasting. Choose the image's shape (square, portrait, landscape, or let the model decide) and its quality under the message box.
-- **Each generated image** can be opened full size, copied, exported, or used as an attachment in the next message.
+- **Send a message** to start a chat. Attach images to work from with the paperclip, by dropping files on the window, or by pasting. Choose the image's shape (square, portrait, landscape, or let the model decide), its quality and whether it should have a transparent background under the message box. Replies show the assistant's formatting (bold, lists, headings, links).
+- **Each generated image** can be opened full size (with its size and format, and Copy and Export), copied, exported, or used as an attachment in the next message.
 - **Export** saves an image as PNG, JPEG or WebP with the quality you choose, at its own size, at a longest side you type, or enlarged 2× or 4× by an AI upscaling model that runs on your computer. Transparent areas can be kept (PNG, WebP) or filled with a colour. The upscaling model is a one-time download of about 54 MB, made only when you click Download in the dialog; an upscale takes a few minutes and a few GB of memory.
 - **A reply takes a minute or two** when it makes an image. A placeholder of the chosen shape shows the elapsed time, with Stop beside it. A message whose reply failed or was stopped stays in the chat with Try again.
 - **Chats** are listed on the left by their latest image. Rename a chat from its title (its folder is renamed to match), show its folder, or move it to the Trash from the File menu.
+- **Records** (Help menu) shows what GptImg has recorded on this computer: its own activity, every OpenAI call with its tokens and full response, and the image engine's events, for this launch or all launches, for one chat or all.
 - **Settings** hold the language (ten languages, or follow the system), appearance, time zone, interface and conversation fonts, the chats folder, the API address (OpenAI's own unless you use a proxy or another service that speaks OpenAI's API), the API key, and the assistant and image models with the assistant's thinking level. The built-in models are the recommended ones; another model id can be typed, and one GptImg does not know is marked as unsupported but still sent.
 
 OpenAI keeps each conversation for about 30 days, so a follow-up sends only the new message. When OpenAI's copy is gone, GptImg resends the conversation from the chat's folder (with the images of its eight most recent image turns) and carries on.
@@ -41,7 +42,7 @@ OpenAI keeps each conversation for about 30 days, so a follow-up sends only the 
 ## Files
 
 - **Chats** live in the folder you chose, one folder per chat: `session.json` (the conversation), each image with a JSON record of the request and OpenAI's full reply beside it, and `inputs/` with a copy of every attached image. A chat folder is self-contained and can be moved, backed up or shared whole.
-- **App data** lives in `~/.gptimg`: `config.json` (only the settings you changed), `state.json` (window and list layout), `api-keys.json` (your key, obfuscated and readable only by you; obfuscation is not encryption), `records.sqlite3` (a record of every launch and every OpenAI call with its full reply and token use, the key masked) and `backups.sqlite3` (earlier copies of each settings and chat file the app wrote). Set `GPTIMG_DATA_DIR` to use another folder.
+- **App data** lives in `~/.gptimg`: `config.json` (only the settings you changed), `state.json` (window and list layout), `api-keys.json` (your key, obfuscated and readable only by you; obfuscation is not encryption), `records.sqlite3` (every launch, the app's activity, every OpenAI call with its full reply and token use, and the image engine's events, the key masked; the Records window reads it, and a line it cannot take goes to `logs/` instead) and `backups.sqlite3` (earlier copies of each settings and chat file the app wrote). Set `GPTIMG_DATA_DIR` to use another folder.
 - The upscaling model, once downloaded, lives in `~/.gptimgsdk/models`, where scripts using GptImgSdk find it too.
 - Removing a chat moves its folder to the Trash; GptImg never deletes images itself.
 

@@ -26,6 +26,8 @@ export interface AppPaths {
   apiKeys: string;
   /** Pasted images waiting for a message; emptied at launch. */
   staging: string;
+  /** Where a log line goes when records.sqlite3 cannot take it. */
+  logs: string;
 }
 
 export function dataRoot(env: NodeJS.ProcessEnv = process.env): { dir: string; fromEnv: boolean } {
@@ -43,6 +45,7 @@ export function pathsUnder(root: string): AppPaths {
     backups: join(root, "backups.sqlite3"),
     apiKeys: join(root, "api-keys.json"),
     staging: join(root, "staging"),
+    logs: join(root, "logs"),
   };
 }
 

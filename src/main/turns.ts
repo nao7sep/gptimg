@@ -9,6 +9,7 @@ import type { AppFailure, OpenedSession, SendRequest, TurnOutcome } from "../sha
 import { failureFromError, failureFromRefusal, lostWorkerFailure } from "../shared/failures.ts";
 import { message } from "../shared/i18n/translator.ts";
 import {
+  chatIdOf,
   fileStamp,
   historyBefore,
   previousResponseBefore,
@@ -21,7 +22,7 @@ import {
 import { effectiveThinking, OPENAI_ENDPOINT, type Settings } from "../shared/settings.ts";
 import type { Records } from "./records.ts";
 import type { CallSettlement, SdkHost } from "./sdk-host.ts";
-import { createSession, importReference, readSession, sessionDir, writeSession } from "./sessions.ts";
+import { createSession, importReference, readSession, sessionDir, withId, writeSession } from "./sessions.ts";
 
 export interface TurnDeps {
   host: SdkHost;
@@ -91,9 +92,10 @@ export class TurnRunner {
     try {
       if (request.sessionId) {
         id = request.sessionId;
-        doc = await readSession(root, id);
+        doc = withId(await readSession(root, id));
       } else {
         ({ id, doc } = await createSession(root, now, titleFrom(request.text)));
+        this.deps.records.log("info", "sessions.created", { chatId: chatIdOf(id, doc), folder: id });
       }
       const dir = sessionDir(root, id);
       const images: string[] = [];
@@ -105,6 +107,7 @@ export class TurnRunner {
       const turn: UserTurn = { id: randomUUID(), role: "user", at: now.toISOString(), text: request.text, images, options: request.options };
       doc = { ...doc, turns: [...doc.turns, turn] };
       await this.#save(root, id, doc);
+      this.deps.records.log("info", "turn.sent", { chatId: chatIdOf(id, doc), turnId: turn.id, attachments: images.length, options: turn.options });
     } catch (error) {
       this.deps.records.log("error", "turn.saveFailed", { error: String(error) });
       return plain({ message: message("failure.sessionWrite"), retryable: false }, null);
@@ -121,7 +124,7 @@ export class TurnRunner {
     if (this.isRunning(sessionId)) return plain({ message: message("failure.turnRunning"), retryable: false }, null);
     let doc: SessionDoc;
     try {
-      doc = await readSession(root, sessionId);
+      doc = withId(await readSession(root, sessionId));
     } catch {
       return plain({ message: message("failure.sessionRead"), retryable: false }, null);
     }
@@ -145,7 +148,8 @@ export class TurnRunner {
       history: historyBefore(doc.turns, index, absolute),
       ...(previousResponseId && { previousResponseId }),
       outDir: dir,
-      outName: fileStamp(this.#now()),
+      // The reply's position in the chat keeps two turns in one second apart; the stamp keeps a retry apart from an earlier attempt.
+      outName: `${fileStamp(this.#now())}-t${index + 2}`,
       policy: {
         chat: {
           model: settings["openai.chat"],
@@ -153,12 +157,15 @@ export class TurnRunner {
           imageModel: settings["openai.image"],
           size: turn.options.size,
           quality: turn.options.quality,
+          // Transparency needs a format that holds it; PNG is the image model's own default.
+          ...(turn.options.transparent && { background: "transparent", output_format: "png" }),
         },
       },
     };
 
     const endpoint = settings["openai.endpoint"].trim();
-    const call = this.deps.host.chat(apiKey, endpoint === OPENAI_ENDPOINT ? null : endpoint, this.deps.app, args, (event) => this.deps.records.sdkEvent(id, event));
+    const chat = { id: chatIdOf(id, doc), folder: id };
+    const call = this.deps.host.chat(apiKey, endpoint === OPENAI_ENDPOINT ? null : endpoint, this.deps.app, args, (event) => this.deps.records.sdkEvent(chat, event));
     let cancelled = false;
     this.#running.set(id, () => {
       cancelled = true;
@@ -174,19 +181,23 @@ export class TurnRunner {
     const model = settings["openai.chat"];
 
     if (settlement.kind === "lost") {
-      this.deps.records.turn({ sessionFolder: id, turnId: turn.id, model, status: "failed", responseId: null, inputTokens: null, outputTokens: null, body: { lost: true } });
+      this.deps.records.turn({ chatId: chat.id, sessionFolder: id, turnId: turn.id, model, status: "failed", responseId: null, inputTokens: null, outputTokens: null, body: { lost: true } });
+      this.deps.records.log("error", "turn.failed", { chatId: chat.id, turnId: turn.id, reason: "workerLost" });
       return plain(lostWorkerFailure(), opened(doc));
     }
     if (settlement.kind === "error") {
       const error = settlement.error as unknown as GptImgErrorData;
       const status = error.code === "cancelled" ? "cancelled" : "failed";
-      this.deps.records.turn({ sessionFolder: id, turnId: turn.id, model, status, responseId: null, inputTokens: null, outputTokens: null, body: error });
+      this.deps.records.turn({ chatId: chat.id, sessionFolder: id, turnId: turn.id, model, status, responseId: null, inputTokens: null, outputTokens: null, body: error });
+      this.deps.records.log(status === "cancelled" ? "info" : "warn", status === "cancelled" ? "turn.cancelled" : "turn.failed", { chatId: chat.id, turnId: turn.id, code: error.code });
       return plain(failureFromError(error), opened(doc), cancelled || error.code === "cancelled");
     }
     const result = settlement.result as unknown as ChatResult | RefusedResult;
     if (result.status === "refused") {
       const usage = result.response ? usageOf(result.response) : null;
+      this.deps.records.log("warn", "turn.failed", { chatId: chat.id, turnId: turn.id, refusal: result.refusal.code });
       this.deps.records.turn({
+        chatId: chat.id,
         sessionFolder: id,
         turnId: turn.id,
         model,
@@ -212,7 +223,9 @@ export class TurnRunner {
       usage,
       failedImages: result.failures.length,
     };
+    this.deps.records.log("info", "turn.replied", { chatId: chat.id, turnId: reply.id, images: reply.images.length, usage, resumed: reply.resumed });
     this.deps.records.turn({
+      chatId: chat.id,
       sessionFolder: id,
       turnId: reply.id,
       model,
@@ -225,7 +238,7 @@ export class TurnRunner {
     // Re-read before appending: a rename may not run meanwhile, but the file is the authority.
     let latest = doc;
     try {
-      latest = await readSession(root, id);
+      latest = withId(await readSession(root, id));
     } catch {
       // Fall back to what this turn started from.
     }

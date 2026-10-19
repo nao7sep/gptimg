@@ -48,6 +48,12 @@ const KIND_TEXT: Record<ErrorKind, MessageKey> = {
 };
 
 const REFUSAL_TEXT: Partial<Record<RefusalCode, MessageKey>> = {
+  // The SDK's own refusals about where files go: for the app, the chat could not be saved.
+  "output.exists": "failure.sessionWrite",
+  "output.caseConflict": "failure.sessionWrite",
+  "output.normalizationConflict": "failure.sessionWrite",
+  "output.staleSiblings": "failure.sessionWrite",
+  "output.busy": "failure.turnRunning",
   "provider.moderationBlocked": "failure.moderationBlocked",
   "provider.refused": "failure.refused",
   "provider.contentFiltered": "failure.contentFiltered",

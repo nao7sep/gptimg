@@ -29,8 +29,9 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit --composite false && tsc -p tsconfig.web.json --noEmit --composite false && tsc -p tsconfig.test.json --noEmit --composite false",
     "typecheck:app": "tsc -p tsconfig.node.json --noEmit --composite false && tsc -p tsconfig.web.json --noEmit --composite false",
     "test": "npm run typecheck && npm run typecheck -w gptimgsdk && vitest run",
-    "test:full": "npm test && npm run test:live -w gptimgsdk",
-    "check:release-tag": "node scripts/check-release-tag.ts"
+    "test:full": "npm test && npm run test:live -w gptimgsdk && npm run test:live",
+    "check:release-tag": "node scripts/check-release-tag.ts",
+    "test:live": "vitest run --config vitest.live.config.ts"
   },
   "dependencies": {
     "onnxruntime-node": "^1.30.0",
@@ -38,6 +39,8 @@
   },
   "devDependencies": {
     "@babel/parser": "^7.29.9",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -46,6 +49,7 @@
     "electron-builder": "^26.17.0",
     "electron-vite": "^5.0.0",
     "gptimgsdk": "*",
+    "jsdom": "^30.1.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2",

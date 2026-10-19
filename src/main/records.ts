@@ -1,13 +1,62 @@
-// records.sqlite3 (data-lifecycle-conventions): one row per launch, the app's
-// own log lines, every SDK event as the complete record it already is, and
-// every turn's provider response whole with its token usage. Credentials are
-// masked by the SDK before an event or response leaves it; the app's own
-// lines never carry one.
+// records.sqlite3 (data-lifecycle-conventions, logging-conventions): one row
+// per launch; the app's own log lines, each a complete record (time, level,
+// a stable event name, its fixed message, fields); every SDK event as the
+// complete record it already is; and every turn's provider response whole
+// with its token usage. Each row carries its launch and, where it has one,
+// the chat it belongs to. Credentials are masked by the SDK before an event
+// or response leaves it; the app's own lines never carry one. A write that
+// fails falls back to a JSON line under logs/, then to the console.
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileStamp } from "../shared/session.ts";
+import type { RecordDetail, RecordKind, RecordQuery, RecordRow, RecordsPage } from "../shared/records.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
+/** Every event the app logs, with its fixed message: the event names what happened, the fields say the rest. */
+export const APP_EVENTS = {
+  "app.start": "GptImg started",
+  "app.quit": "GptImg quit",
+  "settings.loadProblem": "settings could not all be read",
+  "settings.saved": "settings saved",
+  "settings.saveFailed": "settings could not be saved",
+  "state.saveFailed": "window state could not be saved",
+  "language.appleLanguagesFailed": "macOS language preference could not be written",
+  "apiKeys.saved": "API key saved",
+  "apiKeys.cleared": "API key cleared",
+  "apiKeys.writeFailed": "API key could not be saved",
+  "apiKeys.modeTightened": "API key file permissions tightened to owner-only",
+  "backups.failed": "a backup could not be written",
+  "sessions.created": "chat created",
+  "sessions.renamed": "chat renamed",
+  "sessions.renameFailed": "chat could not be renamed",
+  "sessions.trashed": "chat moved to the trash",
+  "sessions.trashFailed": "chat could not be moved to the trash",
+  "sessions.listFailed": "chats folder could not be read",
+  "turn.sent": "message sent",
+  "turn.replied": "reply received",
+  "turn.failed": "reply did not arrive",
+  "turn.cancelled": "reply stopped",
+  "turn.saveFailed": "message could not be saved",
+  "turn.replySaveFailed": "reply could not be saved",
+  "export.done": "image exported",
+  "export.failed": "image could not be exported",
+  "export.writeFailed": "exported image could not be written",
+  "model.installed": "upscaling model downloaded",
+  "model.installFailed": "upscaling model could not be downloaded",
+  "model.released": "upscaling model unloaded",
+  "sdk.workerExit": "image engine process exited",
+  "window.loadFailed": "window could not load",
+  "window.rendererGone": "window renderer stopped",
+  "window.console": "window reported a problem",
+  "window.preloadFailed": "window bridge could not load",
+} as const;
+
+export type AppEvent = keyof typeof APP_EVENTS;
+
 export interface TurnRecord {
+  chatId: string;
   sessionFolder: string;
   turnId: string;
   model: string;
@@ -21,9 +70,11 @@ export interface TurnRecord {
 
 export interface Records {
   readonly sessionId: string;
-  log(level: LogLevel, event: string, fields?: Record<string, unknown>): void;
-  sdkEvent(sessionFolder: string | null, event: Record<string, unknown>): void;
+  log(level: LogLevel, event: AppEvent, fields?: Record<string, unknown>): void;
+  sdkEvent(chat: { id: string; folder: string } | null, event: Record<string, unknown>): void;
   turn(record: TurnRecord): void;
+  query(query: RecordQuery): RecordsPage;
+  detail(kind: RecordKind, id: number): RecordDetail | null;
   close(): void;
 }
 
@@ -66,20 +117,57 @@ CREATE TABLE IF NOT EXISTS turns (
 );
 `;
 
+/** Columns later versions added, applied to a database an earlier version created. */
+const ADDED_COLUMNS: readonly [table: string, column: string, type: string][] = [
+  ["log", "message", "TEXT"],
+  ["log", "chat_id", "TEXT"],
+  ["sdk_events", "chat_id", "TEXT"],
+  ["turns", "chat_id", "TEXT"],
+];
+
+const INDEXES = `
+CREATE INDEX IF NOT EXISTS log_launch ON log (session_id, id);
+CREATE INDEX IF NOT EXISTS sdk_events_launch ON sdk_events (session_id, id);
+CREATE INDEX IF NOT EXISTS sdk_events_chat ON sdk_events (chat_id, id);
+CREATE INDEX IF NOT EXISTS turns_chat ON turns (chat_id, id);
+`;
+
 function text(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-/** Opens the records; when the database cannot be opened, records go to stderr instead and the app runs on. */
-export function openRecords(file: string, sessionId: string, version: string): Records {
+function migrate(db: DatabaseSync): void {
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+  db.exec(INDEXES);
+}
+
+const TABLES: Record<RecordKind, string> = { log: "log", calls: "turns", events: "sdk_events" };
+const PAGE = 200;
+
+function parse(value: unknown): unknown {
+  if (typeof value !== "string") return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+/** Opens the records; when the database cannot be opened, every record takes the fallback and the app runs on. */
+export function openRecords(file: string, logsDir: string, sessionId: string, version: string): Records {
+  const startedAt = new Date();
   let db: DatabaseSync | null = null;
   try {
     db = new DatabaseSync(file);
     db.exec("PRAGMA journal_mode = WAL");
     db.exec(SCHEMA);
+    migrate(db);
     db.prepare("INSERT INTO launches (session_id, started_at_utc, app_version, platform) VALUES (?, ?, ?, ?)").run(
       sessionId,
-      new Date().toISOString(),
+      startedAt.toISOString(),
       version,
       process.platform,
     );
@@ -87,35 +175,49 @@ export function openRecords(file: string, sessionId: string, version: string): R
     console.error("[gptimg] records unavailable", error);
     db = null;
   }
-  const logStmt = db?.prepare("INSERT INTO log (session_id, at_utc, level, event, fields) VALUES (?, ?, ?, ?, ?)");
+  const logStmt = db?.prepare("INSERT INTO log (session_id, at_utc, level, event, message, chat_id, fields) VALUES (?, ?, ?, ?, ?, ?, ?)");
   const eventStmt = db?.prepare(
-    "INSERT INTO sdk_events (session_id, at_utc, session_folder, level, event, body) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO sdk_events (session_id, at_utc, session_folder, chat_id, level, event, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
   );
-  const turnStmt = db?.prepare(`INSERT INTO turns (session_id, at_utc, session_folder, turn_id, model, status,
-    response_id, input_tokens, output_tokens, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const turnStmt = db?.prepare(`INSERT INTO turns (session_id, at_utc, session_folder, chat_id, turn_id, model, status,
+    response_id, input_tokens, output_tokens, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
-  const guard = (write: () => void, fallback: () => string) => {
+  // The launch's fallback log, named by its start, created only when a write first fails.
+  const fallbackFile = join(logsDir, `${fileStamp(startedAt)}.log`);
+  const fallback = (line: Record<string, unknown>) => {
+    const json = JSON.stringify({ time: new Date().toISOString(), session: sessionId, ...line });
+    try {
+      mkdirSync(logsDir, { recursive: true, mode: 0o700 });
+      appendFileSync(fallbackFile, `${json}\n`, { mode: 0o600 });
+    } catch {
+      console.error(`[gptimg] ${json}`);
+    }
+  };
+
+  const guard = (write: () => void, line: () => Record<string, unknown>) => {
     try {
       if (!db) throw new Error("records unavailable");
       write();
     } catch {
-      console.error(`[gptimg] ${fallback()}`);
+      fallback(line());
     }
   };
 
   return {
     sessionId,
     log(level, event, fields) {
+      const message = APP_EVENTS[event];
+      const chatId = typeof fields?.chatId === "string" ? fields.chatId : null;
       guard(
-        () => logStmt!.run(sessionId, new Date().toISOString(), level, event, fields ? text(fields) : null),
-        () => `${level} ${event} ${fields ? text(fields) : ""}`,
+        () => logStmt!.run(sessionId, new Date().toISOString(), level, event, message, chatId, fields ? text(fields) : null),
+        () => ({ level, event, message, ...(fields && { fields }) }),
       );
     },
-    sdkEvent(sessionFolder, event) {
+    sdkEvent(chat, event) {
       const time = typeof event.time === "string" ? event.time : new Date().toISOString();
       guard(
-        () => eventStmt!.run(sessionId, time, sessionFolder, String(event.level ?? "info"), String(event.event ?? ""), text(event)),
-        () => `sdk ${String(event.event)}`,
+        () => eventStmt!.run(sessionId, time, chat?.folder ?? null, chat?.id ?? null, String(event.level ?? "info"), String(event.event ?? ""), text(event)),
+        () => ({ level: String(event.level ?? "info"), event: `sdk.${String(event.event ?? "")}`, message: String(event.message ?? ""), body: event }),
       );
     },
     turn(record) {
@@ -125,6 +227,7 @@ export function openRecords(file: string, sessionId: string, version: string): R
             sessionId,
             new Date().toISOString(),
             record.sessionFolder,
+            record.chatId,
             record.turnId,
             record.model,
             record.status,
@@ -133,8 +236,54 @@ export function openRecords(file: string, sessionId: string, version: string): R
             record.outputTokens,
             text(record.body),
           ),
-        () => `turn ${record.status} ${record.turnId}`,
+        () => ({ level: record.status === "completed" ? "info" : "warn", event: "turn.record", message: `turn ${record.status}`, record }),
       );
+    },
+    query(query) {
+      if (!db) return { rows: [], more: false, unavailable: true };
+      const table = TABLES[query.kind];
+      const where: string[] = [];
+      const params: (string | number)[] = [];
+      if (query.scope === "launch") {
+        where.push("session_id = ?");
+        params.push(sessionId);
+      }
+      if (query.chatId) {
+        where.push("chat_id = ?");
+        params.push(query.chatId);
+      }
+      if (query.beforeId !== undefined) {
+        where.push("id < ?");
+        params.push(query.beforeId);
+      }
+      const columns =
+        query.kind === "log"
+          ? "id, at_utc, level, event, message AS summary, chat_id"
+          : query.kind === "calls"
+            ? "id, at_utc, CASE status WHEN 'completed' THEN 'info' WHEN 'cancelled' THEN 'info' ELSE 'warn' END AS level, status AS event, model AS summary, chat_id, input_tokens, output_tokens"
+            : "id, at_utc, level, event, json_extract(body, '$.message') AS summary, chat_id";
+      const sql = `SELECT ${columns} FROM ${table} ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id DESC LIMIT ${PAGE + 1}`;
+      const found = db.prepare(sql).all(...params) as Record<string, unknown>[];
+      const rows: RecordRow[] = found.slice(0, PAGE).map((r) => ({
+        id: Number(r.id),
+        at: String(r.at_utc),
+        level: String(r.level) as RecordRow["level"],
+        event: String(r.event),
+        summary: r.summary == null ? "" : String(r.summary),
+        chatId: r.chat_id == null ? null : String(r.chat_id),
+        ...(query.kind === "calls" && {
+          tokens: { input: r.input_tokens == null ? null : Number(r.input_tokens), output: r.output_tokens == null ? null : Number(r.output_tokens) },
+        }),
+      }));
+      return { rows, more: found.length > PAGE, unavailable: false };
+    },
+    detail(kind, id) {
+      if (!db) return null;
+      const row = db.prepare(`SELECT * FROM ${TABLES[kind]} WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+      if (!row) return null;
+      const body = kind === "log" ? parse(row.fields) : parse(row.body);
+      const { body: _body, fields: _fields, ...columns } = row;
+      return { kind, id, columns, body };
     },
     close() {
       db?.close();

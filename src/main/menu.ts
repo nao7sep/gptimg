@@ -83,7 +83,7 @@ export function buildMenu(t: Translator, send: (command: MenuCommand) => void, d
   const help: MenuItemConstructorOptions = {
     role: "help",
     label: t.t("nativeMenu.help"),
-    submenu: [item("shortcuts", t.t("nativeMenu.shortcuts")), ...(mac ? [] : [{ type: "separator" } as const, about])],
+    submenu: [item("shortcuts", t.t("nativeMenu.shortcuts")), item("records", t.t("nativeMenu.records")), ...(mac ? [] : [{ type: "separator" } as const, about])],
   };
 
   return Menu.buildFromTemplate(mac ? [appMenu, file, edit, view, windowMenu, help] : [file, edit, view, windowMenu, help]);

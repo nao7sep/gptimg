@@ -78,6 +78,11 @@ export class ExportRunner {
     }
   }
 
+  async #release(): Promise<void> {
+    const outcome = await this.#run<{ released: number }>("modelRelease", {}, null);
+    if (outcome.ok && outcome.value.released > 0) this.#deps.records.log("info", "model.released", { released: outcome.value.released });
+  }
+
   async inspect(path: string): Promise<Settled<ImageInfo>> {
     const outcome = await this.#run<InspectResult>("inspect", { in: path }, null);
     if (!outcome.ok) return outcome;
@@ -95,6 +100,7 @@ export class ExportRunner {
   async installUpscaler(): Promise<Settled<null>> {
     if (this.busy) return { ok: false, failure: { message: message("failure.taskRunning"), retryable: false }, cancelled: false };
     const outcome = await this.#run<unknown>("modelInstall", { key: UPSCALER }, "install");
+    this.#deps.records.log(outcome.ok ? "info" : "warn", outcome.ok ? "model.installed" : "model.installFailed", { key: UPSCALER });
     return outcome.ok ? { ok: true, value: null } : outcome;
   }
 
@@ -106,7 +112,10 @@ export class ExportRunner {
       await mkdir(staging, { recursive: true, mode: 0o700 });
       const { op, args } = exportCall(request, info, staging, "export");
       const outcome = await this.#run<{ output: string }>(op, args, "export");
-      if (!outcome.ok) return outcome;
+      if (!outcome.ok) {
+        if (!outcome.cancelled) this.#deps.records.log("warn", "export.failed", { op, format: request.format, size: request.size });
+        return outcome;
+      }
       // Staged beside the target and renamed over it, so the chosen file is replaced whole or not at all.
       const temp = stagingName(target);
       try {
@@ -114,13 +123,15 @@ export class ExportRunner {
         await rename(temp, target);
       } catch (error) {
         await rm(temp, { force: true }).catch(() => {});
-        this.#deps.records.log("error", "export.writeFailed", { error: String(error) });
+        this.#deps.records.log("error", "export.writeFailed", { error: String(error), target });
         return { ok: false, failure: { message: message("failure.exportFailed"), retryable: false }, cancelled: false };
       }
       this.#deps.records.log("info", "export.done", { op, format: request.format, size: request.size, target });
       return { ok: true, value: target };
     } finally {
       await rm(staging, { recursive: true, force: true }).catch(() => {});
+      // A loaded upscaler holds gigabytes; give them back once the export is done, however it ended.
+      if (request.size.kind === "upscale") void this.#release();
     }
   }
 }
