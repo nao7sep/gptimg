@@ -59,6 +59,7 @@ import { layerImpl } from "./verbs/layer.ts";
 import { maskImpl } from "./verbs/mask.ts";
 import { shadowImpl } from "./verbs/shadow.ts";
 import { installModelsImpl, listModelsImpl, verifyModelsImpl } from "./verbs/model.ts";
+import { releaseSessions } from "./local/models/session.ts";
 import { MODELS } from "./local/models/registry.ts";
 import type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.ts";
 import type { VerbCallOptions } from "./verbs/options.ts";
@@ -71,7 +72,7 @@ import { verifyImpl } from "./verbs/verify.ts";
 import { inspectImpl } from "./verbs/inspect.ts";
 import { chatImpl } from "./verbs/chat.ts";
 import type { ModelKey } from "./local/models/registry.ts";
-import type { ModelInstallResult, ModelListResult, ModelVerifyResult } from "./types.ts";
+import type { ModelInstallResult, ModelListResult, ModelReleaseResult, ModelVerifyResult } from "./types.ts";
 
 export type { VerbCallOptions } from "./verbs/options.ts";
 export type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.ts";
@@ -89,6 +90,11 @@ export class GptImg {
     list: (opts?: { modelsDir?: string }): ModelListResult => listModelsImpl(this.#ctx, opts),
     verify: (opts?: ModelVerifyOptions): Promise<ModelVerifyResult> =>
       verifyModelsImpl(this.#ctx, opts),
+    /**
+     * Free the loaded models' memory once any inference in flight finishes. Loaded models are
+     * shared by every instance in the process; the next call that needs one loads it again.
+     */
+    release: async (): Promise<ModelReleaseResult> => ({ status: "completed", released: await releaseSessions() }),
   };
 
   /**

@@ -84,32 +84,39 @@ async function loadHistory(history: readonly ChatTurn[], logger: Logger): Promis
  * image writes its record alone as `<stem>.json`, since its answer was paid
  * for too.
  */
+/** What a chat turn would send, resolved and checked with no disk, network or key (see `planGenerate`). */
+export function planChat(ctx: SdkContext, args: ChatArgs) {
+  validateChatArgs(args);
+  const policy = callPolicy(ctx, args.policy);
+  const section = validateChatSection(policy.chat);
+  // The assistant, its effort and the image tool's values are settled and checked before the
+  // call, so the events and the records name what is sent.
+  const model = resolveModel(section.model, defaultModelFor("openai", "chat"));
+  const reasoning = resolveVisionReasoning(model, section.reasoning, "chat");
+  const instructions = section.instructions ?? OPENAI_CHAT_INSTRUCTIONS;
+  const imageModel = section.imageModel ?? defaultModelFor("openai", "image-edit");
+  const toolValues = {
+    ...(section.size !== undefined && { size: section.size }),
+    ...(section.quality !== undefined && { quality: section.quality }),
+    ...(section.background !== undefined && { background: section.background }),
+    ...(section.output_format !== undefined && { output_format: section.output_format }),
+    ...(section.output_compression !== undefined && { output_compression: section.output_compression }),
+  };
+  checkImageParams("chat", { model: imageModel, ...toolValues });
+  const moderation = resolveChatModeration(imageModel);
+  const tool = { model: imageModel, ...toolValues, ...(moderation !== undefined && { moderation }) };
+  return { policy, model, reasoning, instructions, tool };
+}
+
 export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOptions = {}): Promise<ChatResult | RefusedResult> {
   validateChatArgs(args);
   const message = multiline(args.message);
 
   return withVerbLogger(ctx, "chat", opts, async (logger) => {
+    // Checked before the key is asked for, so a wrong value is reported without one.
+    const { policy, model, reasoning, instructions, tool } = planChat(ctx, args);
     const credentials = requireCredentials(ctx);
-    const policy = callPolicy(ctx, args.policy);
     const network = resolveNetworkForCall(policy);
-    const section = validateChatSection(policy.chat);
-
-    // The assistant, its effort and the image tool's values are settled and checked before the
-    // call, so the events and the records name what is sent.
-    const model = resolveModel(section.model, defaultModelFor("openai", "chat"));
-    const reasoning = resolveVisionReasoning(model, section.reasoning, "chat");
-    const instructions = section.instructions ?? OPENAI_CHAT_INSTRUCTIONS;
-    const imageModel = section.imageModel ?? defaultModelFor("openai", "image-edit");
-    const toolValues = {
-      ...(section.size !== undefined && { size: section.size }),
-      ...(section.quality !== undefined && { quality: section.quality }),
-      ...(section.background !== undefined && { background: section.background }),
-      ...(section.output_format !== undefined && { output_format: section.output_format }),
-      ...(section.output_compression !== undefined && { output_compression: section.output_compression }),
-    };
-    checkImageParams("chat", { model: imageModel, ...toolValues });
-    const moderation = resolveChatModeration(imageModel);
-    const tool = { model: imageModel, ...toolValues, ...(moderation !== undefined && { moderation }) };
 
     const attachments = await Promise.all((args.images ?? []).map(readAttachment));
 

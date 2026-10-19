@@ -24,6 +24,29 @@ import { defaultStem } from "../internal/paths.ts";
 
 export type GenerateContext = SdkContext;
 
+/**
+ * What a generate call would send, resolved and checked against the model's row with no disk,
+ * network or key: the verb runs it first, and `GptImg.check` exposes it.
+ */
+export function planGenerate(ctx: SdkContext, args: GenerateArgs) {
+  validateGenerateArgs(args);
+  const policy = callPolicy(ctx, args.policy);
+  const section = validateGenerateSection(policy.generate);
+  const chromaSection = validateChromaSection(policy.chroma);
+  // The model, its moderation and its values are settled before the call, so the events and
+  // the sidecar name what is sent.
+  const model = resolveModel(section.model, defaultModelFor("openai", "image-generate"));
+  const moderation = resolveGenerateModeration(model);
+  const params: Record<string, unknown> = {
+    ...section,
+    model,
+    ...(moderation !== undefined && { moderation }),
+  };
+  checkImageParams("generate", params);
+  const n = typeof section.n === "number" && section.n > 0 ? section.n : 1;
+  return { policy, section, chromaSection, model, params, n };
+}
+
 export async function generateImpl(
   ctx: GenerateContext,
   args: GenerateArgs,
@@ -39,29 +62,14 @@ export async function generateImpl(
   const prompt = multiline(args.prompt);
 
   return withVerbLogger(ctx, "generate", opts, async (logger) => {
+    // Checked before the key is asked for, so a wrong value is reported without one.
+    const { policy, chromaSection, params, n } = planGenerate(ctx, args);
     const resolved = requireCredentials(ctx);
-
-    const policy = callPolicy(ctx, args.policy);
     const network = resolveNetworkForCall(policy);
-    const section = validateGenerateSection(policy.generate);
-    const chromaSection = validateChromaSection(policy.chroma);
-
-    // The model, its moderation and its values are settled before the call, so the events and
-    // the sidecar name what is sent.
-    const model = resolveModel(section.model, defaultModelFor("openai", "image-generate"));
-    const moderation = resolveGenerateModeration(model);
-    const params: Record<string, unknown> = {
-      ...section,
-      model,
-      ...(moderation !== undefined && { moderation }),
-    };
-    checkImageParams("generate", params);
     const chromaColor =
       typeof chromaSection.color === "string" && chromaSection.color.length > 0
         ? chromaSection.color
         : null;
-
-    const n = typeof section.n === "number" && section.n > 0 ? section.n : 1;
 
     const { outDir, stem } = outputStemLocation(args.outDir, args.outName ?? defaultStem());
     await ensureOutputDir(outDir);

@@ -20,6 +20,9 @@ const sessions = new Map<string, Promise<Ort.InferenceSession>>();
 
 let runtime: Promise<typeof Ort> | null = null;
 
+// Inference in flight, so a release waits for it instead of freeing a session mid-run.
+const running = new Set<Promise<unknown>>();
+
 /**
  * ONNX Runtime, loaded on the first inference rather than with the SDK, so a
  * consumer that never runs a local model (an app that only chats, a script
@@ -93,8 +96,10 @@ export async function runSession(
   session: Ort.InferenceSession,
   feeds: Ort.InferenceSession.FeedsType,
 ): Promise<Ort.InferenceSession.ReturnType> {
+  const run = session.run(feeds);
+  running.add(run);
   try {
-    return await session.run(feeds);
+    return await run;
   } catch (err) {
     if (err instanceof GptImgError) throw err;
     // A native abort leaves the SDK as its own cancellation, with the original as cause.
@@ -104,7 +109,31 @@ export async function runSession(
       `ONNX inference failed: ${err instanceof Error ? err.message : String(err)}`,
       { cause: err },
     );
+  } finally {
+    running.delete(run);
   }
+}
+
+/**
+ * Frees every loaded session's native memory (a loaded model holds gigabytes) once the
+ * inference in flight has finished. The cache is process-wide, so this releases the sessions of
+ * every instance in the process; the next call that needs a model loads it again. Returns how
+ * many sessions were released.
+ */
+export async function releaseSessions(): Promise<number> {
+  await Promise.allSettled([...running]);
+  const loaded = [...sessions.values()];
+  sessions.clear();
+  let released = 0;
+  for (const pending of loaded) {
+    try {
+      await (await pending).release();
+      released += 1;
+    } catch {
+      // A session whose creation failed holds nothing to free.
+    }
+  }
+  return released;
 }
 
 async function createSession(modelPath: string, providers: string[], threads: number): Promise<Ort.InferenceSession> {

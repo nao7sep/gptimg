@@ -93,6 +93,22 @@ async function prepareImage(
   };
 }
 
+/** What a vision call would send, resolved and checked with no disk, network or key (see `planGenerate`). */
+export function planVision(ctx: SdkContext, args: VisionArgs) {
+  validateVisionArgs(args);
+  const policy = callPolicy(ctx, args.policy);
+  const section = validateVisionSection(policy.vision);
+  const { shrink: configuredShrink, detail: configuredDetail, reasoning: configuredReasoning, ...sectionParams } = section;
+  // The model, its effort and its detail are settled, and the effort checked against the
+  // model's row, before the call, so the events and the sidecar name what is sent.
+  const model = resolveModel(sectionParams.model, defaultModelFor("openai", "vision"));
+  const reasoning = resolveVisionReasoning(model, configuredReasoning);
+  const params = { ...sectionParams, model, ...(reasoning !== undefined && { reasoning }) };
+  const shrink = configuredShrink ?? VISION_DEFAULTS.shrink;
+  const detail = resolveVisionDetail(model, configuredDetail);
+  return { policy, model, params, shrink, detail };
+}
+
 export async function visionImpl(
   ctx: VisionContext,
   args: VisionArgs,
@@ -106,19 +122,10 @@ export async function visionImpl(
   const check = singleLine(args.check);
 
   return withVerbLogger(ctx, "vision", opts, async (logger) => {
+    // Checked before the key is asked for, so a wrong value is reported without one.
+    const { policy, params, shrink, detail } = planVision(ctx, args);
     const resolved = requireCredentials(ctx);
-
-    const policy = callPolicy(ctx, args.policy);
     const network = resolveNetworkForCall(policy);
-    const section = validateVisionSection(policy.vision);
-    const { shrink: configuredShrink, detail: configuredDetail, reasoning: configuredReasoning, ...sectionParams } = section;
-    // The model, its effort and its detail are settled, and the effort checked against the
-    // model's row, before the call, so the events and the sidecar name what is sent.
-    const model = resolveModel(sectionParams.model, defaultModelFor("openai", "vision"));
-    const reasoning = resolveVisionReasoning(model, configuredReasoning);
-    const params = { ...sectionParams, model, ...(reasoning !== undefined && { reasoning }) };
-    const shrink = configuredShrink ?? VISION_DEFAULTS.shrink;
-    const detail = resolveVisionDetail(model, configuredDetail);
 
     // Resolve + guard the sidecar path before the (paid) provider call so a
     // name collision fails fast without spending, like generate/edit.

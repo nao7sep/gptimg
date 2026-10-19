@@ -40,6 +40,22 @@ async function readImageSha256(filePath: string, label: string): Promise<string>
   }
 }
 
+/** What an edit call would send, resolved and checked with no disk, network or key (see `planGenerate`). */
+export function planEdit(ctx: SdkContext, args: EditArgs) {
+  validateEditArgs(args);
+  const policy = callPolicy(ctx, args.policy);
+  const section = validateEditSection(policy.edit);
+  // The model is settled and its values checked before the call, so the events and the sidecar
+  // name what is sent.
+  const params: Record<string, unknown> = {
+    ...section,
+    model: resolveModel(section.model, defaultModelFor("openai", "image-edit")),
+  };
+  checkImageParams("edit", params);
+  const n = typeof params.n === "number" && (params.n as number) > 0 ? (params.n as number) : 1;
+  return { policy, section, params, model: params.model as string, n };
+}
+
 export async function editImpl(
   ctx: EditContext,
   args: EditArgs,
@@ -54,23 +70,10 @@ export async function editImpl(
   const prompt = multiline(args.prompt);
 
   return withVerbLogger(ctx, "edit", opts, async (logger) => {
+    // Checked before the key is asked for, so a wrong value is reported without one.
+    const { policy, params, n } = planEdit(ctx, args);
     const resolved = requireCredentials(ctx);
-
-    const policy = callPolicy(ctx, args.policy);
     const network = resolveNetworkForCall(policy);
-    const section = validateEditSection(policy.edit);
-    // The model is settled and its values checked before the call, so the events and the sidecar
-    // name what is sent.
-    const params: Record<string, unknown> = {
-      ...section,
-      model: resolveModel(section.model, defaultModelFor("openai", "image-edit")),
-    };
-    checkImageParams("edit", params);
-
-    const n =
-      typeof params.n === "number" && (params.n as number) > 0
-        ? (params.n as number)
-        : 1;
 
     const inputSha256 = await readImageSha256(args.in, "input");
     const maskSha256 = args.mask ? await readImageSha256(args.mask, "mask") : null;

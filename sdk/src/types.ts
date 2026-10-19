@@ -1249,6 +1249,12 @@ export interface ModelListEntry {
   downloadBytes: number | null;
 }
 
+/** Result of `model.release()`: how many loaded models were freed. */
+export interface ModelReleaseResult {
+  status: "completed";
+  released: number;
+}
+
 /** Result of `model list`: every known model and whether it is cached. */
 export interface ModelListResult {
   status: "completed";

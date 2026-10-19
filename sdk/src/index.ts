@@ -120,6 +120,7 @@ export type {
   ModelIntegrity,
   ModelListEntry,
   ModelListResult,
+  ModelReleaseResult,
   ModelVerifyEntry,
   ModelVerifyResult,
   NetworkBudgetPolicy,
