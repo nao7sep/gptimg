@@ -13,6 +13,7 @@ import { runResize } from "../local/resize.ts";
 import type { ResizeArgs, ResizeResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateResizeArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type ResizeContext = SdkContext;
 
@@ -32,7 +33,7 @@ export async function resizeImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

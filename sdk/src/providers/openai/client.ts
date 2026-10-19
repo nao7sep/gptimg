@@ -20,7 +20,7 @@ const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export function buildOpenAIClient(credentials: Credentials): OpenAI {
   const opts: Record<string, unknown> = {
     apiKey: credentials.apiKey,
-    baseURL: DEFAULT_BASE_URL,
+    baseURL: credentials.baseURL ?? DEFAULT_BASE_URL,
     organization: null,
     project: null,
     adminAPIKey: null,

@@ -13,6 +13,7 @@ import { runLayer } from "../local/layer.ts";
 import type { LayerArgs, LayerResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateLayerArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type LayerContext = SdkContext;
 
@@ -32,7 +33,7 @@ export async function layerImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.base,
       stem: defaultStem(args.base),
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

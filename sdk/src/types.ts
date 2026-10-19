@@ -28,6 +28,8 @@ export interface Credentials {
   apiKey: string;
   organization?: string;
   project?: string;
+  /** The API's base URL; default OpenAI's own. */
+  baseURL?: string;
 }
 
 /**
@@ -869,9 +871,9 @@ export interface PngEncodingArgs {
  * is `args.invalid`.
  */
 export interface EncodingArgs extends PngEncodingArgs {
-  /** Output encoding; the output extension follows it. PNG is always lossless. Default "png". */
+  /** Output encoding; the output extension follows it (`.jpg` for JPEG). PNG is always lossless. Default "png". */
   format?: EncodeFormat;
-  /** WebP only: lossy quality, an integer 1..100. Unset, the encoder's default applies. Not with `lossless`. */
+  /** WebP and JPEG: lossy quality, an integer 1..100. Unset, the encoder's default applies. Not with `lossless`. */
   quality?: number;
   /**
    * WebP only: encode losslessly. Every visible pixel is kept exactly; the colour under a
@@ -889,6 +891,13 @@ export interface EncodingArgs extends PngEncodingArgs {
    * is refused, never flattened. Default false: the alpha channel is kept.
    */
   opaque?: boolean;
+  /**
+   * Fill transparency with this colour (`#rrggbb`) and write no alpha channel: the caller
+   * chooses the colour, so the SDK never invents one. JPEG holds no transparency, so a JPEG
+   * of an image with translucent pixels needs it; without it that image is refused as
+   * `image.notOpaque`. Not with `opaque`, which refuses transparency instead of filling it.
+   */
+  background?: string;
 }
 
 export interface EncodeArgs extends EncodingArgs {
@@ -1414,6 +1423,8 @@ export interface GptImgOptions {
   apiKey?: string;
   organization?: string;
   project?: string;
+  /** The OpenAI API's base URL (`https://…`); default `https://api.openai.com/v1`. A proxy or another endpoint that speaks OpenAI's API goes here. */
+  baseURL?: string;
   /** The models folder (absolute). Default `~/.gptimgsdk/models`. */
   modelsDir?: string;
   /** Hand debug events to `onEvent` too. Default false. */

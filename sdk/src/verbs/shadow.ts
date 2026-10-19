@@ -13,6 +13,7 @@ import { runShadow } from "../local/shadow.ts";
 import type { ShadowArgs, ShadowResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateShadowArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type ShadowContext = SdkContext;
 
@@ -32,7 +33,7 @@ export async function shadowImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

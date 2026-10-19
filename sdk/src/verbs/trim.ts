@@ -13,6 +13,7 @@ import { runTrim } from "../local/trim.ts";
 import type { TrimArgs, TrimResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateTrimArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type TrimContext = SdkContext;
 
@@ -32,7 +33,7 @@ export async function trimImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

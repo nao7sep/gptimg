@@ -14,6 +14,7 @@ import { validateOnnxSection } from "../policy/schemas.ts";
 import type { UpscaleArgs, UpscaleResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateUpscaleArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type UpscaleContext = SdkContext;
 
@@ -33,7 +34,7 @@ export async function upscaleImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

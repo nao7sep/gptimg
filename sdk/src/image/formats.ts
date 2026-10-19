@@ -13,5 +13,10 @@ export const FORMAT_TO_EXT: Readonly<Record<string, string>> = {
   jxl: "jxl",
 };
 
+/** The extension a file encoded as `format` takes: `jpg` for JPEG, else the format's own name. */
+export function extensionFor(format: string): string {
+  return FORMAT_TO_EXT[format] ?? format;
+}
+
 /** Canonical filename extensions this SDK can emit after format detection. */
 export const SUPPORTED_IMAGE_EXTENSIONS = [...new Set(Object.values(FORMAT_TO_EXT))] as readonly string[];

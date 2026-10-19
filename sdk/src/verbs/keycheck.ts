@@ -15,6 +15,7 @@ import { runKeycheck } from "../local/keycheck.ts";
 import type { ChromaKeySource, KeycheckArgs, KeycheckResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateKeycheckArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type KeycheckContext = SdkContext;
 
@@ -63,7 +64,7 @@ export async function keycheckImpl(
       heatmapOut = await resolveOutputPath(args, {
         inputForDir: args.in,
         stem: defaultStem(args.in),
-        ext: args.format ?? "png",
+        ext: extensionFor(args.format ?? "png"),
       });
       assertSingleFileAvailable(heatmapOut, args.overwrite ?? false);
     }

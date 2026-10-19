@@ -120,6 +120,7 @@ const ENCODING_FIELDS = {
   lossless: z.boolean().optional(),
   smartSubsample: z.boolean().optional(),
   opaque: z.boolean().optional(),
+  background: z.string().regex(/^#[0-9a-fA-F]{6}$/, "must be a #rrggbb colour").optional(),
 };
 
 // Where an output lands; `outName` is checked as a stem where it is resolved.
@@ -472,28 +473,42 @@ function checkEncoding<T extends EncodingArgs>(schema: z.ZodObject, args: T, ver
   if (format === "png" && (args.quality !== undefined || args.lossless !== undefined || args.smartSubsample !== undefined)) {
     throw new GptImgError(
       "args.invalid",
-      `${verb}: quality, lossless and smartSubsample apply to webp only; png is always lossless.`,
+      `${verb}: quality applies to webp and jpeg, lossless and smartSubsample to webp only; png is always lossless.`,
+      { details: { field: "format", constraint: "lossy-format options" } },
+    );
+  }
+  if (format === "jpeg" && (args.lossless !== undefined || args.smartSubsample !== undefined)) {
+    throw new GptImgError(
+      "args.invalid",
+      `${verb}: lossless and smartSubsample apply to webp only.`,
       { details: { field: "format", constraint: "webp-only options" } },
     );
   }
-  if (format === "webp" && (args.compressionLevel !== undefined || args.adaptiveFiltering !== undefined)) {
+  if (format !== "png" && (args.compressionLevel !== undefined || args.adaptiveFiltering !== undefined)) {
     throw new GptImgError(
       "args.invalid",
       `${verb}: compressionLevel and adaptiveFiltering apply to png only.`,
       { details: { field: "format", constraint: "png-only options" } },
     );
   }
+  if (args.background !== undefined && args.opaque === true) {
+    throw new GptImgError(
+      "args.invalid",
+      `${verb}: opaque refuses transparency and background fills it; pass one.`,
+      { details: { field: "background", constraint: "not with opaque" } },
+    );
+  }
   if (args.quality !== undefined && args.lossless === true) {
     throw new GptImgError(
       "args.invalid",
-      `${verb}: quality applies to lossy webp only; omit it with lossless.`,
+      `${verb}: quality applies to lossy encodings only; omit it with lossless.`,
       { details: { field: "quality", constraint: "lossy webp only" } },
     );
   }
   return args;
 }
 
-const NON_PNG_ENCODING_KEYS = ["format", "quality", "lossless", "smartSubsample", "opaque"] as const;
+const NON_PNG_ENCODING_KEYS = ["format", "quality", "lossless", "smartSubsample", "opaque", "background"] as const;
 
 /** The same for a verb whose format is fixed to PNG: only the lossless PNG options are accepted. */
 function checkPngEncoding<T extends PngEncodingArgs>(schema: z.ZodObject, args: T, verb: string): T {

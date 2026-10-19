@@ -10,6 +10,7 @@ export interface SdkContext {
   apiKey: string | null;
   organization?: string;
   project?: string;
+  baseURL?: string;
   modelsDir: string;
   /** Whether debug events reach `onEvent`. */
   debug: boolean;
@@ -22,7 +23,7 @@ export interface SdkContext {
 }
 
 // The constructor's options, so an unknown one is refused as a verb refuses an unknown argument.
-const OPTION_NAMES = ["apiKey", "organization", "project", "modelsDir", "debug", "policy", "app"];
+const OPTION_NAMES = ["apiKey", "organization", "project", "baseURL", "modelsDir", "debug", "policy", "app"];
 
 // Options earlier versions took, with where their value now goes.
 const RETIRED_OPTIONS: Record<string, string> = {
@@ -61,6 +62,10 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
   const apiKey = optionalString(opts.apiKey, "apiKey")?.trim();
   const organization = optionalString(opts.organization, "organization");
   const project = optionalString(opts.project, "project");
+  const baseURL = optionalString(opts.baseURL, "baseURL")?.trim().replace(/\/+$/, "");
+  if (baseURL !== undefined && !/^https?:\/\/[^\s/]+/.test(baseURL)) {
+    throw new GptImgError("args.invalid", "baseURL must be an http or https URL.", { details: { field: "baseURL", constraint: "http(s) URL" } });
+  }
   if (opts.modelsDir !== undefined) assertAbsolutePath(opts.modelsDir, "modelsDir");
   if (opts.debug !== undefined && typeof opts.debug !== "boolean") {
     throw new GptImgError("args.invalid", "debug must be a boolean.", { details: { field: "debug", constraint: "boolean" } });
@@ -81,6 +86,7 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
     apiKey: apiKey ?? null,
     ...(organization !== undefined && { organization }),
     ...(project !== undefined && { project }),
+    ...(baseURL !== undefined && { baseURL }),
     modelsDir: opts.modelsDir ?? defaultModelsDir(),
     debug: opts.debug ?? false,
     startup: { emitted: false },
@@ -98,6 +104,7 @@ export function requireCredentials(ctx: SdkContext): Credentials {
     apiKey: ctx.apiKey,
     ...(ctx.organization !== undefined && { organization: ctx.organization }),
     ...(ctx.project !== undefined && { project: ctx.project }),
+    ...(ctx.baseURL !== undefined && { baseURL: ctx.baseURL }),
   };
 }
 

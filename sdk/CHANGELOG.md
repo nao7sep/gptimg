@@ -13,7 +13,7 @@ The SDK was redesigned under the fleet's SDK conventions. Every change under Cha
 
 - The SDK is the package `gptimgsdk` in `sdk/` of the GptImg repository, laid out as the repository root it would become and imported by that name; the repository root is the GptImg app package.
 - The source runs on plain Node 24.12 or later with type stripping: no `tsx` or other loader is needed.
-- Configuration comes only from the caller. `new GptImg()` takes `apiKey`, `organization`, `project`, `modelsDir`, `debug`, `policy` and `app`, refuses any other option, and touches no disk. The SDK reads no environment variable and no working directory, and has no home folder for consumer data.
+- Configuration comes only from the caller. `new GptImg()` takes `apiKey`, `organization`, `project`, `baseURL`, `modelsDir`, `debug`, `policy` and `app`, refuses any other option, and touches no disk. The SDK reads no environment variable and no working directory, and has no home folder for consumer data.
 - Every path argument must be absolute; a relative one is `args.invalid` naming the bare field. An output name is a bare name or an absolute stem that also chooses the folder, for `generate`, `edit` and `vision` as for the local verbs; `generate` takes either `outDir` or an absolute `outName`.
 - An argument a verb does not take is refused as `args.invalid` naming it, rather than ignored; a retired one says where its value now goes. A policy is checked whole where it is given (constructor, call), so an unknown section or field is `policy.invalid` naming its section.
 - A missing or unreadable input is the filesystem's `fs.*` code in every verb; only an image that cannot be decoded is `image.undecodable`.
@@ -30,6 +30,8 @@ The SDK was redesigned under the fleet's SDK conventions. Every change under Cha
 - ONNX Runtime loads on the first local-model inference instead of with the SDK, so a consumer that runs no local model need not install or ship `onnxruntime-node`; when it cannot be loaded, the call fails `model.loadFailed`.
 - Masking also covers a provider's partial echo of a credential, such as OpenAI's `sk-proj-****…abcd` in a rejected-key message.
 - The `gptimgsdk/types` entry type-checks with browser libraries and no Node types.
+- The constructor takes `baseURL`, the OpenAI API's base URL, for a proxy or another endpoint that speaks OpenAI's API; without it, OpenAI's own.
+- Every verb that writes an image can write JPEG (`format: "jpeg"`, `.jpg`, with `quality`), and can fill transparency with a caller-chosen `background` colour. A JPEG of an image with translucent pixels and no `background` is refused as `image.notOpaque`; `background` with `opaque` is `args.invalid`.
 
 ### Added
 

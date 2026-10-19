@@ -219,6 +219,11 @@ describe("verb argument validation (single source of truth)", () => {
     expect(validateEncodeArgs({ in: "/x/a.png", format: "png", compressionLevel: 9, adaptiveFiltering: true })).toBeTruthy();
     badArgs(() => validateEncodeArgs({ in: "/x/a.png", format: "png", compressionLevel: 10 }), "[0..9]");
     badArgs(() => validateEncodeArgs({ in: "/x/a.png", format: "webp", compressionLevel: 9 }), "png only");
+    expect(validateEncodeArgs({ in: "/x/a.png", format: "jpeg", quality: 80, background: "#FFFFFF" })).toBeTruthy();
+    badArgs(() => validateEncodeArgs({ in: "/x/a.png", format: "jpeg", lossless: true }), "webp only");
+    badArgs(() => validateEncodeArgs({ in: "/x/a.png", format: "jpeg", compressionLevel: 9 }), "png only");
+    badArgs(() => validateEncodeArgs({ in: "/x/a.png", format: "png", background: "white" }), "#rrggbb");
+    badArgs(() => validateEncodeArgs({ in: "/x/a.png", format: "png", background: "#ffffff", opaque: true }), "pass one");
     badArgs(() => validateEncodeArgs({ in: "/x/a.png", format: "webp", adaptiveFiltering: true }), "png only");
     expect(validateEncodeArgs({ in: "/x/a.png", format: "webp", quality: 80 })).toBeTruthy();
     expect(validateEncodeArgs({ in: "/x/a.png", format: "webp", lossless: true })).toBeTruthy();

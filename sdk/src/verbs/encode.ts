@@ -13,6 +13,7 @@ import { runEncode } from "../local/encode.ts";
 import type { EncodeArgs, EncodeResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateEncodeArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type EncodeContext = SdkContext;
 
@@ -32,7 +33,7 @@ export async function encodeImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: args.format,
+      ext: extensionFor(args.format),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

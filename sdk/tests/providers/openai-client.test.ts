@@ -37,6 +37,10 @@ describe("OpenAI client helpers", () => {
     }
   });
 
+  it("sends to the caller's base URL when given one", () => {
+    expect(buildOpenAIClient({ apiKey: "sk-local", baseURL: "https://proxy.example/v1" }).baseURL).toBe("https://proxy.example/v1");
+  });
+
   it("records no organization or project header when neither the caller nor the environment sets one", () => {
     vi.stubEnv("OPENAI_ORG_ID", undefined);
     vi.stubEnv("OPENAI_PROJECT_ID", undefined);

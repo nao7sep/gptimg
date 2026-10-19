@@ -235,7 +235,7 @@ function toSdkError(verbName: VerbName, thrown: unknown): GptImgError {
   );
 }
 const PNG_ENCODING_KEYS = ["compressionLevel", "adaptiveFiltering"] as const;
-const ENCODING_KEYS = ["format", "quality", "lossless", "smartSubsample", ...PNG_ENCODING_KEYS, "opaque"] as const;
+const ENCODING_KEYS = ["format", "quality", "lossless", "smartSubsample", ...PNG_ENCODING_KEYS, "opaque", "background"] as const;
 
 function pickDefined<K extends keyof EncodingArgs>(args: EncodingArgs, keys: readonly K[]): Pick<EncodingArgs, K> {
   const picked: Pick<EncodingArgs, K> = {} as Pick<EncodingArgs, K>;
@@ -265,6 +265,7 @@ export function encodingEventFields(args: EncodingArgs): Record<string, unknown>
     compressionLevel: args.compressionLevel ?? null,
     adaptiveFiltering: args.adaptiveFiltering ?? null,
     opaque: args.opaque ?? false,
+    background: args.background ?? null,
   };
 }
 

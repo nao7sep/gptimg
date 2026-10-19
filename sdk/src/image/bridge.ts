@@ -71,9 +71,10 @@ async function publishImage(target: ImageTarget, bytes: Buffer, failure: string)
 /**
  * Encodes a sharp pipeline's pixels as the caller asked, passing sharp only the options the
  * caller set (PLAYBOOK, "Leave a library's defaults to the library"). PNG offers only the
- * lossless options, because sharp's `palette`, `quality` and `effort` quantize. With `opaque`
- * the pixels are checked first and a translucent one is refused as `image.notOpaque`, never
- * flattened. `failure` prefixes that refusal's message. `capture` is written into the encoded
+ * lossless options, because sharp's `palette`, `quality` and `effort` quantize. With
+ * `background` transparency is filled with the caller's colour. With `opaque`, or for JPEG without
+ * `background`, the pixels are checked first and a translucent one is refused as
+ * `image.notOpaque`, never flattened onto a colour the SDK would invent. `failure` prefixes that refusal's message. `capture` is written into the encoded
  * image last, so it survives the opaque check's re-read.
  */
 export async function encodeImage(
@@ -83,7 +84,10 @@ export async function encodeImage(
   capture?: CaptureMetadata,
 ): Promise<Buffer> {
   let image = pipeline;
-  if (encoding.opaque === true) {
+  if (encoding.background !== undefined) {
+    // The caller chose the colour; flattening removes the alpha channel.
+    image = pipeline.flatten({ background: encoding.background });
+  } else if (encoding.opaque === true || encoding.format === "jpeg") {
     // The pixels are rendered once to a lossless PNG and re-read, because a pipeline that already
     // called `ensureAlpha` keeps its alpha channel through a later `removeAlpha`. A PNG rather than
     // raw pixels keeps the source's density, so an opaque file's bytes stay what they were.
@@ -96,12 +100,16 @@ export async function encodeImage(
     if (translucent > 0) {
       throw new GptImgError(
         "image.notOpaque",
-        `${failure}: ${translucent} pixel(s) are not fully opaque; an opaque encoding would turn them solid.`,
+        encoding.format === "jpeg" && encoding.opaque !== true
+          ? `${failure}: ${translucent} pixel(s) are not fully opaque, and JPEG holds no transparency; pass background to fill it.`
+          : `${failure}: ${translucent} pixel(s) are not fully opaque; an opaque encoding would turn them solid.`,
       );
     }
     image = sharp(rendered).removeAlpha();
   }
-  if (encoding.format === "webp") {
+  if (encoding.format === "jpeg") {
+    image.jpeg({ ...(encoding.quality !== undefined && { quality: encoding.quality }) });
+  } else if (encoding.format === "webp") {
     image.webp({
       ...(encoding.lossless !== undefined && { lossless: encoding.lossless }),
       ...(encoding.quality !== undefined && { quality: encoding.quality }),

@@ -135,6 +135,17 @@ describe("local verbs success path (via GptImg SDK)", () => {
     expect(png.output).toBe(path.join(tmp, "in-encode.png"));
     expect(png.bytes).toBeGreaterThan(0);
     expect((await sharp(png.output).metadata()).format).toBe("png");
+
+    const jpeg = done(await sdk.encode({ in: input, format: "jpeg", outName: "photo", background: "#ffffff" }));
+    expect(jpeg.output).toBe(path.join(tmp, "photo.jpg"));
+    expect((await sharp(jpeg.output).metadata()).format).toBe("jpeg");
+  });
+
+  it("resize: writes JPEG with a .jpg extension", async () => {
+    const input = path.join(tmp, "in.png");
+    await writeRawPng(input, 40, 20, diskish(40, 20));
+    const out = done(await sdk.resize({ in: input, toSize: 20, format: "jpeg", quality: 85, background: "#000000", outName: "small" }));
+    expect(out.output).toBe(path.join(tmp, "small.jpg"));
   });
 
   it("shadow: writes the named output keeping the input canvas size", async () => {

@@ -12,6 +12,7 @@ import { runGrid } from "../local/grid.ts";
 import type { GridArgs, GridResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateGridArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type GridContext = SdkContext;
 
@@ -30,7 +31,7 @@ export async function gridImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.inputs[0]!,
       stem: "grid",
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

@@ -12,6 +12,7 @@ import { BACKPLATE_DEFAULTS, runBackplate } from "../local/backplate.ts";
 import type { BackplateArgs, BackplateResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateBackplateArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type BackplateContext = SdkContext;
 
@@ -34,7 +35,7 @@ export async function backplateImpl(
     const size = args.size ?? BACKPLATE_DEFAULTS.size;
     const outPath = await resolveOutputPath(args, {
       stem: defaultStem(size),
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

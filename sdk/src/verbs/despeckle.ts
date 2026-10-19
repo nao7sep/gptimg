@@ -13,6 +13,7 @@ import { runDespeckle } from "../local/despeckle.ts";
 import type { DespeckleArgs, DespeckleResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateDespeckleArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type DespeckleContext = SdkContext;
 
@@ -32,7 +33,7 @@ export async function despeckleImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

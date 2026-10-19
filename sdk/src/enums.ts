@@ -45,7 +45,7 @@ export type ResampleKernel = (typeof RESAMPLE_KERNELS)[number];
  * Delivery encoding, for every verb that writes an image. PNG is the default and the lossless
  * working format later verbs read back; WebP is what an app can ship.
  */
-export const ENCODE_FORMATS = ["png", "webp"] as const;
+export const ENCODE_FORMATS = ["png", "webp", "jpeg"] as const;
 export type EncodeFormat = (typeof ENCODE_FORMATS)[number];
 
 export const MASK_METHODS = ["chroma", "ai"] as const;

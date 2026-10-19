@@ -1,9 +1,10 @@
 /**
  * Encode: re-encode an image that already exists, such as a delivered file made before a
- * verb could write its own encoding. It writes PNG, always lossless, or WebP, lossy or
- * lossless, through the same encoder options every image-writing verb takes. It never
- * changes geometry, which `resize`, `trim` and `layer` do, and with `opaque` it refuses
- * transparency rather than flattening it onto a colour it would have to invent.
+ * verb could write its own encoding, or an export. It writes PNG, always lossless, WebP,
+ * lossy or lossless, or JPEG, through the same encoder options every image-writing verb
+ * takes. It never changes geometry, which `resize`, `trim` and `layer` do. Transparency is
+ * filled only with a `background` the caller chose; with `opaque`, or for JPEG without one,
+ * a translucent pixel is refused rather than flattened onto a colour it would have to invent.
  */
 
 import { stat } from "node:fs/promises";

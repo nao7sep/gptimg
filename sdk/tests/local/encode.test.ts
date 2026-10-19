@@ -125,6 +125,46 @@ describe("runEncode", () => {
     expect(existsSync(out)).toBe(false);
   });
 
+  it("writes JPEG at the chosen quality from an opaque image, with no alpha channel", async () => {
+    const input = path.join(tmp, "in.png");
+    await writeRaw(input, 64, 64, noisyRGBA(64, 64, () => 255));
+    const low = path.join(tmp, "low.jpg");
+    const high = path.join(tmp, "high.jpg");
+    const lowRes = await runEncode({ in: input, out: low, format: "jpeg", quality: 30 });
+    const highRes = await runEncode({ in: input, out: high, format: "jpeg", quality: 95 });
+    const meta = await sharp(high).metadata();
+    expect(meta.format).toBe("jpeg");
+    expect(meta.hasAlpha).toBe(false);
+    expect(highRes).toMatchObject({ format: "jpeg", alpha: false, lossless: false });
+    expect(lowRes.bytes).toBeLessThan(highRes.bytes);
+  });
+
+  it("refuses JPEG for an image with translucent pixels unless a background is given", async () => {
+    const input = path.join(tmp, "in.png");
+    await writeRaw(input, 64, 64, noisyRGBA(64, 64, border));
+    const out = path.join(tmp, "out.jpg");
+    await expect(runEncode({ in: input, out, format: "jpeg" })).rejects.toMatchObject({
+      code: "image.notOpaque",
+      message: expect.stringContaining("pass background"),
+    });
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("fills transparency with the background colour, in any format", async () => {
+    const input = path.join(tmp, "in.png");
+    await writeRaw(input, 64, 64, noisyRGBA(64, 64, border));
+    const jpeg = path.join(tmp, "out.jpg");
+    await runEncode({ in: input, out: jpeg, format: "jpeg", quality: 100, background: "#ff0000" });
+    const png = path.join(tmp, "out.png");
+    const res = await runEncode({ in: input, out: png, format: "png", background: "#00ff00" });
+    expect(res.alpha).toBe(false);
+    const pixels = await sharp(png).raw().toBuffer();
+    expect([...pixels.subarray(0, 3)]).toEqual([0, 255, 0]);
+    const corner = await sharp(jpeg).extract({ left: 0, top: 0, width: 1, height: 1 }).raw().toBuffer();
+    expect(corner[0]).toBeGreaterThan(240);
+    expect(corner[1]).toBeLessThan(15);
+  });
+
   it("reports an unreadable input as a decode failure", async () => {
     const input = path.join(tmp, "in.png");
     await writeFile(input, "not an image");

@@ -17,6 +17,7 @@ import {
 import type { ComposeArgs, ComposeResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateComposeArgs } from "./schemas.ts";
+import { extensionFor } from "../image/formats.ts";
 
 export type ComposeContext = SdkContext;
 
@@ -36,7 +37,7 @@ export async function composeImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.in,
       stem: defaultStem(args.in),
-      ext: args.format ?? "png",
+      ext: extensionFor(args.format ?? "png"),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
