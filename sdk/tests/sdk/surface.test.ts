@@ -73,6 +73,7 @@ describe("GptImg SDK surface", () => {
       "VERIFY_FINDING_CODES",
       "VERSION",
       "VISION_DETAILS",
+      "completed",
       "defaultModelFor",
       "isGptImgErrorData",
       "loadProfile",

@@ -39,7 +39,7 @@ export type {
   GptImgErrorData,
   SerializedCause,
 } from "./errors.ts";
-export { REFUSAL_CODES } from "./refusal.ts";
+export { REFUSAL_CODES, completed } from "./refusal.ts";
 export type { Refusal, RefusalCode, RefusedResult } from "./refusal.ts";
 export { NETWORK_BUDGET_NAMES, NETWORK_DEFAULTS } from "./network/defaults.ts";
 export type { NetworkBudget, NetworkBudgetName } from "./network/defaults.ts";

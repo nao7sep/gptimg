@@ -37,6 +37,7 @@ The SDK was redesigned under the fleet's SDK conventions. Every change under Cha
 - The `gptimgsdk/types` entry: the types and the dependency-free code tables, loadable without sharp, ONNX Runtime or the OpenAI client.
 - `SUPPORTED_MODELS`, `MODEL_LINEUP`, `modelsFor` and `defaultModelFor` (the supported-model table with each model's sizes, qualities, formats and efforts), `validatePolicy`, and `SUPPORTED_IMAGE_EXTENSIONS`.
 - `model.list` entries carry `downloadBytes`, for a free-space check before installing.
+- `completed(result)`: a verb's completed result narrowed to its type, or a refusal thrown as a `GptImgError` coded `refused` with the refusal in `details.refusal`, for scripts that treat any refusal as a stop.
 
 ### Removed
 

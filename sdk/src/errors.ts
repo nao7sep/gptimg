@@ -1,3 +1,5 @@
+import type { Refusal } from "./refusal.ts";
+
 /**
  * The SDK's one error type (sdk-conventions, *Errors*). An error means the
  * operation could not run; a decision not to proceed is a refusal result, not
@@ -27,6 +29,9 @@ export const ERROR_CODES = {
   "apiKey.missing": "invalid",
   "apiKey.malformed": "invalid",
   "policy.invalid": "invalid",
+  // A refusal a script chose to treat as a failure, through `completed()`; the
+  // refusal itself, with its own code, is in `details.refusal`.
+  refused: "invalid",
   "image.undecodable": "invalid",
   "image.unsupportedFormat": "invalid",
   "image.noContent": "invalid",
@@ -82,7 +87,8 @@ export type ErrorCode = keyof typeof ERROR_CODES;
  * `status`/`providerCode`/`requestId` on provider codes and `model.httpStatus`;
  * `expected`/`actual` on `model.integrity`; `errno`/`syscall` on `fs.*`; `mode`
  * on `profile.insecureMode`; `variable` on `apiKey.missing` and
- * `profile.malformed` when a named environment variable is involved.
+ * `profile.malformed` when a named environment variable is involved; `refusal`
+ * on `refused`.
  */
 export interface ErrorDetails {
   field?: string;
@@ -97,6 +103,7 @@ export interface ErrorDetails {
   syscall?: string;
   mode?: string;
   variable?: string;
+  refusal?: Refusal;
 }
 
 /** A serialized cause: enough to diagnose, nothing that needs its original realm. */

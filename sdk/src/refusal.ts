@@ -1,3 +1,5 @@
+import { GptImgError } from "./errors.ts";
+
 /**
  * Refusals (sdk-conventions, *A refusal is a result*). When the SDK, or a
  * provider on its behalf, decides an operation should not proceed, the verb
@@ -86,4 +88,25 @@ export interface RefusedResult {
   response?: Record<string, unknown>;
   /** The call's log, or null when no log was written. */
   logPath: string | null;
+}
+
+/**
+ * The completed result of a verb, for a script that treats any refusal as a
+ * failure: it returns the result narrowed to its completed type, or throws a
+ * `GptImgError` coded `refused` with the refusal in `details.refusal`, its
+ * subject as the error's, and `effect: "unknown"` when the refusal came in a
+ * paid answer. An app that presents refusals keeps branching on `status`.
+ *
+ *   const { output } = completed(await img.trim({ in: input, outDir }));
+ */
+export function completed<T extends { status: string }>(result: T): Exclude<T, RefusedResult> {
+  if (result.status === "refused") {
+    const { refusal, response } = result as unknown as RefusedResult;
+    throw new GptImgError("refused", refusal.message, {
+      effect: response === undefined ? "none" : "unknown",
+      ...(refusal.subject !== undefined && { subject: refusal.subject }),
+      details: { refusal },
+    });
+  }
+  return result as Exclude<T, RefusedResult>;
 }
