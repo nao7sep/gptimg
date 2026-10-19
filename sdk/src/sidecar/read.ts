@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { GptImgError, fsError } from "../errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { assertAbsolutePath } from "../internal/absolute-path.ts";
@@ -7,6 +8,13 @@ import { takeFormatVersion } from "../internal/format-version.ts";
 import { formatZodError } from "../internal/zodError.ts";
 import type { Sidecar, SidecarKind } from "../types.ts";
 import { SidecarV1Schema, SidecarV2Schema } from "./schema.ts";
+
+/** The sidecar beside an image: `<stem>.json` in the same folder. */
+export function sidecarPathBeside(imagePath: string): string {
+  const base = path.basename(imagePath);
+  const dot = base.lastIndexOf(".");
+  return path.join(path.dirname(imagePath), `${dot > 0 ? base.slice(0, dot) : base}.json`);
+}
 
 /**
  * Read the sidecar at the absolute `sidecarPath` (`<image stem>.json`), any

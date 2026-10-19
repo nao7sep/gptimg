@@ -39,6 +39,8 @@ import type {
   VisionArgs,
   VisionResult,
   VerifyArgs,
+  InspectArgs,
+  InspectResult,
   VerifyResult,
 } from "./types.ts";
 import { backplateImpl } from "./verbs/backplate.ts";
@@ -64,6 +66,7 @@ import { trimImpl } from "./verbs/trim.ts";
 import { upscaleImpl } from "./verbs/upscale.ts";
 import { visionImpl } from "./verbs/vision.ts";
 import { verifyImpl } from "./verbs/verify.ts";
+import { inspectImpl } from "./verbs/inspect.ts";
 import type { ModelKey } from "./local/models/registry.ts";
 import type { ModelInstallResult, ModelListResult, ModelVerifyResult } from "./types.ts";
 
@@ -166,6 +169,10 @@ export class GptImg {
   /** Check a published paid image against its sidecar before relying on it. */
   verify(args: VerifyArgs, opts?: VerbCallOptions): Promise<VerifyResult | RefusedResult> {
     return verifyImpl(this.#ctx, args, opts);
+  }
+
+  inspect(args: InspectArgs, opts?: VerbCallOptions): Promise<InspectResult | RefusedResult> {
+    return inspectImpl(this.#ctx, args, opts);
   }
 
   grid(args: GridArgs, opts?: VerbCallOptions): Promise<GridResult | RefusedResult> {

@@ -6,7 +6,7 @@ import { detectFormat } from "../image/detectFormat.ts";
 import { hash } from "../image/hash.ts";
 import { withVerbLogger } from "../internal/local-verb.ts";
 import type { RefusedResult } from "../refusal.ts";
-import { readSidecar } from "../sidecar/read.ts";
+import { readSidecar, sidecarPathBeside } from "../sidecar/read.ts";
 import type { Sidecar, VerifyArgs, VerifyFinding, VerifyResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateVerifyArgs } from "./schemas.ts";
@@ -27,8 +27,7 @@ export async function verifyImpl(
   validateVerifyArgs(args);
   const imagePath = args.in;
   const base = path.basename(imagePath);
-  const dot = base.lastIndexOf(".");
-  const sidecarPath = path.join(path.dirname(imagePath), `${dot > 0 ? base.slice(0, dot) : base}.json`);
+  const sidecarPath = sidecarPathBeside(imagePath);
 
   return withVerbLogger(ctx, "verify", opts, async (logger) => {
     throwIfAborted(opts.signal);

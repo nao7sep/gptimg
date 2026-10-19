@@ -32,6 +32,7 @@ The SDK was redesigned under the fleet's SDK conventions. Every change under Cha
 ### Added
 
 - `verify({ in })` checks a published paid image against its sidecar and returns coded findings.
+- `inspect({ in })` reports what an image is in one call: its format as the bytes say and whether the extension agrees, size, channels, bit depth, colour space, density, EXIF orientation, pages, whether any pixel is translucent, and the sidecar beside it (kind, writer, recorded chroma key) without checking it against the image.
 - The `encode` verb, the pipeline's delivery step, and the encoder options (`format`, `quality`, `lossless`, `smartSubsample`, `opaque`, `compressionLevel`, `adaptiveFiltering`) on every verb that writes an image; `opaque` refuses a translucent image as `image.notOpaque`.
 - The `gptimgsdk/types` entry: the types and the dependency-free code tables, loadable without sharp, ONNX Runtime or the OpenAI client.
 - `SUPPORTED_MODELS`, `MODEL_LINEUP`, `modelsFor` and `defaultModelFor` (the supported-model table with each model's sizes, qualities, formats and efforts), `validatePolicy`, and `SUPPORTED_IMAGE_EXTENSIONS`.

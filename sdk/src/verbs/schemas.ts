@@ -50,6 +50,7 @@ import type {
   GenerateArgs,
   GridArgs,
   IconArgs,
+  InspectArgs,
   KeycheckArgs,
   LayerArgs,
   MaskArgs,
@@ -382,6 +383,10 @@ const VerifyArgsSchema = z.object({
   in: requiredPath("in"),
 });
 
+const InspectArgsSchema = z.object({
+  in: requiredPath("in"),
+});
+
 const IconArgsSchema = z.object({
   ...PNG_ENCODING_FIELDS,
   in: requiredPath("in"),
@@ -567,6 +572,10 @@ export function validateEncodeArgs(args: EncodeArgs): EncodeArgs {
 
 export function validateVerifyArgs(args: VerifyArgs): VerifyArgs {
   return check(VerifyArgsSchema, args, "verify");
+}
+
+export function validateInspectArgs(args: InspectArgs): InspectArgs {
+  return check(InspectArgsSchema, args, "inspect");
 }
 
 export function validateIconArgs(args: IconArgs): IconArgs {

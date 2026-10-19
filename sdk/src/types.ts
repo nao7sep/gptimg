@@ -255,7 +255,8 @@ export type LogVerb =
   | "framecheck"
   | "grid"
   | "model"
-  | "verify";
+  | "verify"
+  | "inspect";
 
 export interface LogEntry {
   /** Event instant: UTC ISO-8601 with milliseconds and `Z` (logging-conventions envelope). */
@@ -1197,6 +1198,60 @@ export interface VerifyResult {
   findings: VerifyFinding[];
   /** The sidecar as read, or null when it is missing or unreadable. */
   record: Sidecar | null;
+  logPath: string | null;
+}
+
+export interface InspectArgs {
+  /** The image (absolute). A sidecar beside it is `<stem>.json`. */
+  in: string;
+}
+
+/** The sidecar beside an inspected image, read but not checked against the image (`verify` does that). */
+export type InspectRecord =
+  | {
+      path: string;
+      status: "readable";
+      kind: SidecarKind;
+      formatVersion: number;
+      /** Who wrote it; null for format 1 and unmarked v0.1.0 sidecars. */
+      writer: SidecarWriter | null;
+      /** The chroma key the paid request recorded, which `mask` and `keycheck` read with `key: "from-sidecar"`. */
+      chromaKey: string | null;
+    }
+  | { path: string; status: "unreadable"; code: ErrorCode; message: string };
+
+/**
+ * What an image is, for a consumer choosing what to run on it. Dimensions are
+ * as stored, which is what every verb works on; `orientation` reports an EXIF
+ * rotation a viewer would apply.
+ */
+export interface InspectResult {
+  status: "completed";
+  input: string;
+  fileBytes: number;
+  /** Detected from the bytes, as sharp names it: "png", "jpeg", "webp", … */
+  format: string;
+  /** False when the file's extension names another format than its bytes hold, e.g. JPEG data in a `.png`. */
+  extensionMatches: boolean;
+  width: number;
+  height: number;
+  channels: number;
+  /** The file has an alpha channel. */
+  hasAlpha: boolean;
+  /** No alpha channel, or every pixel fully opaque. Only an image with an alpha channel is decoded to tell. */
+  opaque: boolean;
+  /** Bits per channel sample. */
+  bitDepth: number;
+  /** sharp's colour-space name: "srgb", "cmyk", "b-w", … */
+  colorSpace: string;
+  /** Pixels per inch, when the file records it. */
+  density: number | null;
+  /** The EXIF orientation (1–8), when the file records one. */
+  orientation: number | null;
+  /** More than 1 for an animated or multi-page file. */
+  pages: number;
+  /** The sidecar beside the image, or null when there is none. */
+  record: InspectRecord | null;
   logPath: string | null;
 }
 
