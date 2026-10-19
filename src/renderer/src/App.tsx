@@ -15,6 +15,7 @@ import { useI18n } from "./i18n.tsx";
 import { SettingsModal } from "./modals/SettingsModal.tsx";
 import { SetupModal } from "./modals/SetupModal.tsx";
 import { AboutModal, ConfirmModal, RenameModal, ShortcutsModal } from "./modals/SmallModals.tsx";
+import { ExportModal } from "./modals/ExportModal.tsx";
 import { ViewerModal } from "./modals/ViewerModal.tsx";
 import { applyFonts } from "./fonts.ts";
 
@@ -25,7 +26,8 @@ type ModalSpec =
   | { kind: "shortcuts" }
   | { kind: "rename"; id: string; title: string }
   | { kind: "trash"; id: string; title: string }
-  | { kind: "viewer"; images: string[]; index: number };
+  | { kind: "viewer"; images: string[]; index: number }
+  | { kind: "export"; path: string };
 
 export interface Running {
   startedAt: number;
@@ -56,6 +58,7 @@ export function App({ boot }: { boot: BootInfo }) {
   const [running, setRunning] = useState<Record<string, Running>>({});
   const [failures, setFailures] = useState<Record<string, AppFailure>>({});
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [exported, setExported] = useState<{ path: string; count: number } | null>(null);
   const [modals, setModals] = useState<ModalSpec[]>(() =>
     boot.settings.sessionsDir === "" ? [{ kind: "setup" }] : [],
   );
@@ -307,6 +310,8 @@ export function App({ boot }: { boot: BootInfo }) {
           onRename={() => runCommand("rename")}
           onReveal={() => runCommand("reveal")}
           onView={(images, index) => pushModal({ kind: "viewer", images, index })}
+          onExport={(path) => pushModal({ kind: "export", path })}
+          exported={exported}
           onReuse={(path) => setDraft({ ...draft, references: [...draft.references.filter((r) => r.path !== path), { path, absolute: absoluteIn(opened, path) }] })}
         />
         <Composer
@@ -391,6 +396,18 @@ export function App({ boot }: { boot: BootInfo }) {
             if (currentRef.current === front.id) void openSession(NEW);
             await refreshList();
             return null;
+          }}
+        />
+      )}
+      {front?.kind === "export" && (
+        <ExportModal
+          path={front.path}
+          prefs={ui.export}
+          onClose={popModal}
+          onExported={(prefs, _savedTo, dir) => {
+            saveUi({ ...ui, export: prefs, exportDir: dir ?? ui.exportDir });
+            popModal();
+            setExported((e) => ({ path: front.path, count: (e?.count ?? 0) + 1 }));
           }}
         />
       )}

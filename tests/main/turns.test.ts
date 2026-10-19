@@ -17,7 +17,7 @@ function setup(answer: (call: Call) => CallSettlement | Promise<CallSettlement>,
   const root = mkdtempSync(join(tmpdir(), "gptimg-turns-"));
   const calls: Call[] = [];
   const host = {
-    chat(_key: string, _app: unknown, args: Record<string, unknown>, onEvent: (e: Record<string, unknown>) => void) {
+    chat(_key: string, _baseURL: string | null, _app: unknown, args: Record<string, unknown>, onEvent: (e: Record<string, unknown>) => void) {
       const call: Call = { args, cancelled: false };
       calls.push(call);
       onEvent({ event: "verb.start", level: "info" });

@@ -26,7 +26,7 @@ const placeholders = (text: string): string[] => [...text.matchAll(/\{(\w+)\}/g)
 
 /** Values that are the same word in a language, or literal by rule (brands, keys printed on keyboards). */
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
-  de: ["about.version", "rail.label", "rail.sessions", "settings.sessions", "settings.system", "settings.theme.system"],
+  de: ["about.version", "export.format", "rail.label", "rail.sessions", "settings.sessions", "settings.system", "settings.theme.system"],
   es: ["nativeMenu.zoom", "rail.label", "rail.sessions", "settings.general", "settings.sessions"],
   fr: [
     "about.version",
@@ -35,6 +35,7 @@ const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
     "conversation.label",
     "conversation.totals.other",
     "dialog.imageFilter",
+    "export.format",
     "nativeMenu.services",
     "nativeMenu.zoom",
     "rail.meta.other",
@@ -43,7 +44,22 @@ const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
   it: ["nativeMenu.file", "nativeMenu.zoom"],
   "pt-BR": ["nativeMenu.zoom", "rail.label", "rail.sessions", "settings.sessions"],
 };
-const LITERAL_EVERYWHERE = ["settings.apiKeyPlaceholder", "settings.openai", "keys.Cmd", "keys.Ctrl", "keys.Escape", "keys.Shift", "keys.Enter", "viewer.count"];
+const LITERAL_EVERYWHERE = [
+  "settings.apiKeyPlaceholder",
+  "settings.openai",
+  "keys.Cmd",
+  "keys.Ctrl",
+  "keys.Escape",
+  "keys.Shift",
+  "keys.Enter",
+  "viewer.count",
+  "export.format.png",
+  "export.format.jpeg",
+  "export.format.webp",
+  "export.dimensions",
+  "export.pixels",
+  "export.source",
+];
 
 describe.each(others)("%s catalogue", (language) => {
   let catalogue: Record<string, string>;
@@ -94,7 +110,14 @@ describe("catalogue files", () => {
   });
 
   it("English uses an ellipsis only for running status", () => {
-    expect(Object.entries(ENGLISH).filter(([, v]) => v.includes("…")).map(([k]) => k)).toEqual(["rail.working"]);
+    // Every one of these is a running status, shown only while its operation runs.
+    expect(Object.entries(ENGLISH).filter(([, v]) => v.includes("…")).map(([k]) => k)).toEqual([
+      "export.downloading",
+      "export.reading",
+      "export.upscaling",
+      "export.working",
+      "rail.working",
+    ]);
   });
 
   it("names System's resolved value", () => {

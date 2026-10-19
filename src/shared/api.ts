@@ -1,5 +1,6 @@
 // The bridge between the window and main, declared here so preload implements
 // it with `satisfies` and the renderer imports nothing from the Node side.
+import type { ExportRequest, ImageInfo } from "./export.ts";
 import type { Catalogue } from "./i18n/catalogues.ts";
 import type { Language } from "./i18n/languages.ts";
 import type { Message } from "./i18n/translator.ts";
@@ -81,6 +82,21 @@ export type TurnOutcome =
   | { ok: true; session: OpenedSession }
   | { ok: false; session: OpenedSession | null; failure: AppFailure; cancelled: boolean };
 
+/** A long local task's progress: an export (its upscale passes) or the upscaling model's download. */
+export interface TaskProgress {
+  task: "export" | "install";
+  stage: string;
+  done: number;
+  total: number;
+  unit: string;
+}
+
+export interface UpscalerStatus {
+  installed: boolean;
+  /** What installing it downloads, in bytes, when known. */
+  downloadBytes: number | null;
+}
+
 export type MenuCommand = "newSession" | "settings" | "shortcuts" | "about" | "attach" | "close" | "rename" | "reveal" | "trash";
 
 export interface GptImgApi {
@@ -114,7 +130,15 @@ export interface GptImgApi {
   pathForFile(file: File): string;
 
   copyImage(path: string): Promise<Outcome<object>>;
-  exportImage(path: string): Promise<Outcome<{ savedTo: string | null }>>;
+  inspectImage(path: string): Promise<Outcome<{ info: ImageInfo }>>;
+  upscalerStatus(): Promise<UpscalerStatus>;
+  /** Downloads the upscaling model, on the user's request only. */
+  installUpscaler(): Promise<Outcome<object>>;
+  /** Asks where to save (`suggestedName` in the last export folder), then makes the file. Null `savedTo` when the user cancelled the save dialog. */
+  exportImage(request: ExportRequest, suggestedName: string): Promise<Outcome<{ savedTo: string | null; dir: string | null }>>;
+  /** Stops the running export or download. */
+  cancelTask(): void;
+  onProgress(handler: (progress: TaskProgress) => void): () => void;
   showInFolder(path: string): void;
 
   closeWindow(): void;

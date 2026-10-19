@@ -26,6 +26,17 @@ const ERROR_TEXT: Partial<Record<ErrorCode, MessageKey>> = {
   "fs.noSpace": "failure.diskFull",
   "fs.readOnly": "failure.filePermission",
   "memory.exhausted": "failure.memory",
+  "image.notOpaque": "failure.needsFill",
+  "model.notInstalled": "failure.upscalerMissing",
+  "model.timeout": "failure.downloadFailed",
+  "model.connectionLost": "failure.downloadFailed",
+  "model.httpStatus": "failure.downloadFailed",
+  "model.badRedirect": "failure.downloadFailed",
+  "model.insecureUrl": "failure.downloadFailed",
+  "model.integrity": "failure.downloadFailed",
+  "model.loadFailed": "failure.upscaleFailed",
+  "model.runFailed": "failure.upscaleFailed",
+  "model.outputShape": "failure.upscaleFailed",
   cancelled: "failure.cancelled",
 };
 

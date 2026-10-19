@@ -12,8 +12,7 @@ export default defineConfig({
     define,
     build: {
       // The SDK is bundled from its TypeScript source; its native modules stay
-      // external. sharp ships in the app's dependencies; ONNX Runtime does not,
-      // since the SDK loads it only for local models, which the app never runs.
+      // external and ship in the app's own dependencies.
       externalizeDeps: { exclude: ["gptimgsdk"] },
       rollupOptions: {
         input: {

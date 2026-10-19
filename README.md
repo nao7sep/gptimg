@@ -31,9 +31,10 @@ On first launch GptImg asks for your API key, then for a folder to keep chats in
 
 - **Send a message** to start a chat. Attach images to work from with the paperclip, by dropping files on the window, or by pasting. Choose the image's shape (square, portrait, landscape, or let the model decide) and its quality under the message box.
 - **Each generated image** can be opened full size, copied, exported, or used as an attachment in the next message.
+- **Export** saves an image as PNG, JPEG or WebP with the quality you choose, at its own size, at a longest side you type, or enlarged 2× or 4× by an AI upscaling model that runs on your computer. Transparent areas can be kept (PNG, WebP) or filled with a colour. The upscaling model is a one-time download of about 54 MB, made only when you click Download in the dialog; an upscale takes a few minutes and a few GB of memory.
 - **A reply takes a minute or two** when it makes an image. A placeholder of the chosen shape shows the elapsed time, with Stop beside it. A message whose reply failed or was stopped stays in the chat with Try again.
 - **Chats** are listed on the left by their latest image. Rename a chat from its title (its folder is renamed to match), show its folder, or move it to the Trash from the File menu.
-- **Settings** hold the language (ten languages, or follow the system), appearance, time zone, interface and conversation fonts, the chats folder, the API key, and the assistant and image models with the assistant's thinking level. The built-in models are the recommended ones; another model id can be typed, and one GptImg does not know is marked as unsupported but still sent.
+- **Settings** hold the language (ten languages, or follow the system), appearance, time zone, interface and conversation fonts, the chats folder, the API address (OpenAI's own unless you use a proxy or another service that speaks OpenAI's API), the API key, and the assistant and image models with the assistant's thinking level. The built-in models are the recommended ones; another model id can be typed, and one GptImg does not know is marked as unsupported but still sent.
 
 OpenAI keeps each conversation for about 30 days, so a follow-up sends only the new message. When OpenAI's copy is gone, GptImg resends the conversation from the chat's folder (with the images of its eight most recent image turns) and carries on.
 
@@ -41,6 +42,7 @@ OpenAI keeps each conversation for about 30 days, so a follow-up sends only the 
 
 - **Chats** live in the folder you chose, one folder per chat: `session.json` (the conversation), each image with a JSON record of the request and OpenAI's full reply beside it, and `inputs/` with a copy of every attached image. A chat folder is self-contained and can be moved, backed up or shared whole.
 - **App data** lives in `~/.gptimg`: `config.json` (only the settings you changed), `state.json` (window and list layout), `api-keys.json` (your key, obfuscated and readable only by you; obfuscation is not encryption), `records.sqlite3` (a record of every launch and every OpenAI call with its full reply and token use, the key masked) and `backups.sqlite3` (earlier copies of each settings and chat file the app wrote). Set `GPTIMG_DATA_DIR` to use another folder.
+- The upscaling model, once downloaded, lives in `~/.gptimgsdk/models`, where scripts using GptImgSdk find it too.
 - Removing a chat moves its folder to the Trash; GptImg never deletes images itself.
 
 ## GptImgSdk
@@ -65,7 +67,7 @@ AI matting (`mask` with `method: "ai"`) and `upscale` run local models that are 
 
 ## Third-party models
 
-Neither the app nor the SDK ships model files. The SDK downloads these on request, from pinned revisions whose size and SHA-256 digest it checks:
+Neither the app nor the SDK ships model files. The app downloads Swin2SR when you ask for upscaling; the SDK downloads either on request, from pinned revisions whose size and SHA-256 digest it checks:
 
 - [BiRefNet ONNX](https://huggingface.co/onnx-community/BiRefNet-ONNX), MIT, for AI matting (about 0.5 GB).
 - [Swin2SR real-world ×4 ONNX](https://huggingface.co/onnx-community/swin2SR-realworld-sr-x4-64-bsrgan-psnr-ONNX), Apache-2.0, for upscaling (about 53 MB).

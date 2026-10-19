@@ -30,9 +30,17 @@ export interface Settings {
   contentFont: ContentFont;
   /** Absolute path of the folder holding session folders; "" until first run chooses it. */
   sessionsDir: string;
+  "openai.endpoint": string;
   "openai.chat": string;
   "openai.thinking.chat": string;
   "openai.image": string;
+}
+
+export const OPENAI_ENDPOINT = "https://api.openai.com/v1";
+
+/** An endpoint the app can send to: an http(s) URL with a host. */
+export function isEndpoint(value: string): boolean {
+  return /^https?:\/\/[^\s/]+/.test(value.trim());
 }
 
 export type SetKey = keyof Settings;
@@ -49,6 +57,7 @@ export function builtInSettings(): Settings {
     uiFont: SYSTEM_UI_FONT,
     contentFont: { family: SYSTEM_UI_FONT, readingSize: 15, writingSize: 14, lineHeight: 1.55 },
     sessionsDir: "",
+    "openai.endpoint": OPENAI_ENDPOINT,
     "openai.chat": chat,
     "openai.thinking.chat": defaultThinkingFor(chat) ?? "",
     "openai.image": defaultModelFor("openai", IMAGE_KIND),
@@ -119,6 +128,8 @@ export function validateSet<K extends SetKey>(key: K, value: unknown): string | 
     }
     case "sessionsDir":
       return typeof value === "string" ? null : "settings.error.shape";
+    case "openai.endpoint":
+      return typeof value === "string" && isEndpoint(value) ? null : "settings.error.endpoint";
     case "openai.chat":
     case "openai.image":
       return typeof value === "string" && cleanLine(value) !== "" ? null : "settings.error.required";
@@ -140,6 +151,7 @@ export function normalizeSet<K extends SetKey>(key: K, value: Settings[K]): Sett
 }
 
 export function setsEqual<K extends SetKey>(key: K, a: Settings[K], b: Settings[K]): boolean {
+  if (key === "openai.endpoint") return String(a).trim().replace(/\/+$/, "") === String(b).trim().replace(/\/+$/, "");
   if (key === "openai.chat" || key === "openai.image") {
     return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
   }

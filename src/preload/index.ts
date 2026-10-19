@@ -1,7 +1,7 @@
 // The window's only door to main: each method is one IPC call, typed by the
 // shared interface it satisfies.
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { GptImgApi, LanguageInfo, MenuCommand, OpenedSession } from "../shared/api.ts";
+import type { GptImgApi, LanguageInfo, MenuCommand, OpenedSession, TaskProgress } from "../shared/api.ts";
 
 const invoke =
   (name: string) =>
@@ -42,7 +42,16 @@ const api = {
     }
   },
   copyImage: invoke("copyImage"),
+  inspectImage: invoke("inspectImage"),
+  upscalerStatus: invoke("upscalerStatus"),
+  installUpscaler: invoke("installUpscaler"),
   exportImage: invoke("exportImage"),
+  cancelTask: fire("cancelTask"),
+  onProgress: (handler: (progress: TaskProgress) => void) => {
+    const listener = (_event: unknown, progress: TaskProgress) => handler(progress);
+    ipcRenderer.on("progress", listener);
+    return () => ipcRenderer.off("progress", listener);
+  },
   showInFolder: fire("showInFolder"),
   closeWindow: fire("closeWindow"),
   onMenu: (handler: (command: MenuCommand) => void) => {

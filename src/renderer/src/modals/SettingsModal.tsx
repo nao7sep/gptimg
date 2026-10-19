@@ -220,6 +220,12 @@ export function SettingsModal(props: SettingsModalProps) {
         <h3>{t("settings.openai")}</h3>
         <p className="section-note">{t("settings.openaiOnly")}</p>
         <label className="field">
+          <span className="field-label">{t("settings.endpoint")}</span>
+          <input type="text" value={draft["openai.endpoint"]} spellCheck={false} onChange={(e) => set("openai.endpoint", e.target.value)} />
+          <span className="field-help">{t("settings.endpointHelp")}</span>
+          {validateSet("openai.endpoint", draft["openai.endpoint"]) && <span className="field-error">{t("settings.error.endpoint")}</span>}
+        </label>
+        <label className="field">
           <span className="field-label">{t("settings.apiKey")}</span>
           <div className="key-row">
             <input

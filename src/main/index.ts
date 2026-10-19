@@ -1,11 +1,12 @@
 // GptImg's main process: settles storage, language and theme before any
 // window exists, owns every store, and answers the window's requests.
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell } from "electron";
 import type { AppFailure, BootInfo, GptImgApi, MenuCommand, Outcome, SendRequest } from "../shared/api.ts";
+import { extensionOf, type ExportRequest } from "../shared/export.ts";
 import { message } from "../shared/i18n/translator.ts";
 import { INITIAL_WINDOW, windowMinimum } from "../shared/layout.ts";
 import { SET_KEYS, validateSet, type Settings } from "../shared/settings.ts";
@@ -14,6 +15,7 @@ import { KeyStore } from "./api-keys.ts";
 import { openBackups, type Backups } from "./backups.ts";
 import { loadConfig, saveConfig, type LoadedConfig } from "./config.ts";
 import { json, readText, writeTextAtomic } from "./files.ts";
+import { ExportRunner, folderOf } from "./export.ts";
 import { ImageAccess, isImagePath, registerImageScheme, REFERENCE_EXTENSIONS } from "./images.ts";
 import { chromiumLang, clearAppleLanguages, earlyPreferences, LanguageOwner, writeAppleLanguages } from "./language.ts";
 import { buildMenu } from "./menu.ts";
@@ -48,6 +50,7 @@ interface State {
   language: LanguageOwner;
   host: SdkHost;
   turns: TurnRunner;
+  exports: ExportRunner;
   images: ImageAccess;
   window: BrowserWindow | null;
   quitConfirmed: boolean;
@@ -119,6 +122,13 @@ async function start(): Promise<void> {
     language,
     host,
     turns: null as unknown as TurnRunner,
+    exports: new ExportRunner({
+      host,
+      records,
+      app: { name: "GptImg", version: __APP_VERSION__ },
+      stagingRoot: paths.staging,
+      progress: (progress) => state.window?.webContents.send("progress", progress),
+    }),
     images: new ImageAccess(() => [state.config.settings.sessionsDir, paths.staging]),
     window: null,
     quitConfirmed: false,
@@ -163,6 +173,7 @@ async function start(): Promise<void> {
     // One quit owner: a reply still on its way is the only thing a quit can lose.
     if (state.quitConfirmed || !state.turns.busy) {
       state.turns.cancelAll();
+      state.exports.cancel();
       return;
     }
     event.preventDefault();
@@ -459,20 +470,39 @@ function installIpc(state: State): void {
       await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(image.toPNG())], { type: "image/png" }) })]);
       return { ok: true };
     },
-    async exportImage(path: string): Promise<Outcome<{ savedTo: string | null }>> {
+    async inspectImage(path: string) {
       if (!state.images.allowed(path)) return failure("failure.imageMissing");
+      const outcome = await state.exports.inspect(path);
+      return outcome.ok ? { ok: true, info: outcome.value } : { ok: false, failure: outcome.failure };
+    },
+    upscalerStatus() {
+      return state.exports.upscalerStatus();
+    },
+    async installUpscaler() {
+      const outcome = await state.exports.installUpscaler();
+      return outcome.ok ? { ok: true } : { ok: false, failure: outcome.failure };
+    },
+    async exportImage(request: ExportRequest, suggestedName: string): Promise<Outcome<{ savedTo: string | null; dir: string | null }>> {
+      if (!state.images.allowed(request.path)) return failure("failure.imageMissing");
+      const inspected = await state.exports.inspect(request.path);
+      if (!inspected.ok) return { ok: false, failure: inspected.failure };
+      const t = language.translator;
       const owner = state.window;
-      const name = path.split(/[\\/]/).pop() ?? "image.png";
-      const options = { title: language.translator.t("dialog.exportImage"), defaultPath: join(app.getPath("downloads"), name) };
-      const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return { ok: true, savedTo: null };
-      try {
-        await copyFile(path, result.filePath);
-        return { ok: true, savedTo: result.filePath };
-      } catch (error) {
-        records.log("error", "image.exportFailed", { error: String(error) });
-        return failure("failure.exportFailed");
-      }
+      const ext = extensionOf(request.format);
+      const folder = state.ui.exportDir ?? app.getPath("downloads");
+      const options = {
+        title: t.t("dialog.exportImage"),
+        defaultPath: join(folder, suggestedName.replace(/[\\/]/g, "-")),
+        filters: [{ name: t.t(`export.format.${request.format}`), extensions: request.format === "jpeg" ? ["jpg", "jpeg"] : [ext] }],
+      };
+      const chosen = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
+      if (chosen.canceled || !chosen.filePath) return { ok: true, savedTo: null, dir: null };
+      const outcome = await state.exports.export(request, inspected.value, chosen.filePath);
+      if (!outcome.ok) return { ok: false, failure: outcome.cancelled ? { message: message("failure.cancelled"), retryable: true } : outcome.failure };
+      return { ok: true, savedTo: outcome.value, dir: folderOf(outcome.value) };
+    },
+    cancelTask() {
+      state.exports.cancel();
     },
     showInFolder(path: string) {
       if (state.images.allowed(path)) shell.showItemInFolder(path);

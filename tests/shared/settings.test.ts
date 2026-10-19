@@ -22,6 +22,10 @@ describe("settings sets", () => {
     expect(differingSets({ ...builtInSettings(), "openai.chat": ` ${chat.toUpperCase()}` })).toEqual({});
   });
 
+  it("compares an endpoint without its trailing slash", () => {
+    expect(differingSets({ ...builtInSettings(), "openai.endpoint": "https://api.openai.com/v1/" })).toEqual({});
+  });
+
   it("does not store a thinking choice equal to the row's default, so it follows the row", () => {
     const settings = builtInSettings();
     expect(differingSets({ ...settings, "openai.thinking.chat": "medium" })).toEqual({});
@@ -40,6 +44,8 @@ describe("settings sets", () => {
     expect(validateSet("timeZone", "Asia/Tokyo")).toBeNull();
     expect(validateSet("timeZone", "Mars/Olympus")).not.toBeNull();
     expect(validateSet("openai.chat", "some-future-model")).toBeNull();
+    expect(validateSet("openai.endpoint", "https://proxy.example/v1")).toBeNull();
+    expect(validateSet("openai.endpoint", "proxy.example")).toBe("settings.error.endpoint");
     expect(validateSet("openai.chat", "  ")).not.toBeNull();
     expect(validateSet("contentFont", { family: "Georgia", readingSize: 30, writingSize: 14, lineHeight: 1.5 })).toBe("settings.error.fontSize");
   });

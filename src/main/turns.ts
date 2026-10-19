@@ -18,7 +18,7 @@ import {
   type SessionDoc,
   type UserTurn,
 } from "../shared/session.ts";
-import { effectiveThinking, type Settings } from "../shared/settings.ts";
+import { effectiveThinking, OPENAI_ENDPOINT, type Settings } from "../shared/settings.ts";
 import type { Records } from "./records.ts";
 import type { CallSettlement, SdkHost } from "./sdk-host.ts";
 import { createSession, importReference, readSession, sessionDir, writeSession } from "./sessions.ts";
@@ -157,7 +157,8 @@ export class TurnRunner {
       },
     };
 
-    const call = this.deps.host.chat(apiKey, this.deps.app, args, (event) => this.deps.records.sdkEvent(id, event));
+    const endpoint = settings["openai.endpoint"].trim();
+    const call = this.deps.host.chat(apiKey, endpoint === OPENAI_ENDPOINT ? null : endpoint, this.deps.app, args, (event) => this.deps.records.sdkEvent(id, event));
     let cancelled = false;
     this.#running.set(id, () => {
       cancelled = true;

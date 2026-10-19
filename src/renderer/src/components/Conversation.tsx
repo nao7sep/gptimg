@@ -23,6 +23,9 @@ interface ConversationProps {
   onReveal: () => void;
   onView: (images: string[], index: number) => void;
   onReuse: (relativePath: string) => void;
+  onExport: (path: string) => void;
+  /** The print just exported, and a count that changes with each export. */
+  exported: { path: string; count: number } | null;
 }
 
 export function Conversation(props: ConversationProps) {
@@ -109,6 +112,8 @@ export function Conversation(props: ConversationProps) {
                 allImages={allImages}
                 onView={props.onView}
                 onReuse={props.onReuse}
+                onExport={props.onExport}
+                exported={props.exported}
                 first={index === 0}
               />
             ),
@@ -182,12 +187,16 @@ function AssistantTurnView({
   allImages,
   onView,
   onReuse,
+  onExport,
+  exported,
 }: {
   turn: AssistantTurn;
   absolute: (rel: string) => string;
   allImages: string[];
   onView: (images: string[], index: number) => void;
   onReuse: (rel: string) => void;
+  onExport: (path: string) => void;
+  exported: { path: string; count: number } | null;
   first: boolean;
 }) {
   const { t } = useI18n();
@@ -196,7 +205,16 @@ function AssistantTurnView({
       {turn.text && <div className="turn-text reading">{turn.text}</div>}
       {turn.images.map((rel) => {
         const path = absolute(rel);
-        return <Print key={rel} path={path} onOpen={() => onView(allImages, allImages.indexOf(path))} onReuse={() => onReuse(rel)} />;
+        return (
+          <Print
+            key={rel}
+            path={path}
+            onOpen={() => onView(allImages, allImages.indexOf(path))}
+            onReuse={() => onReuse(rel)}
+            onExport={() => onExport(path)}
+            exported={exported?.path === path ? exported.count : 0}
+          />
+        );
       })}
       {turn.failedImages > 0 && <p className="turn-note">{t("conversation.failedImages", { count: turn.failedImages })}</p>}
       {turn.incomplete && <p className="turn-note">{t("conversation.incomplete")}</p>}

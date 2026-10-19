@@ -1,11 +1,16 @@
 // The messages between main and the SDK's utility process.
 
+/** The SDK operations the app runs: one turn of a chat, and the local image work an export needs. */
+export const SDK_OPS = ["chat", "inspect", "encode", "resize", "upscale", "modelList", "modelInstall"] as const;
+export type SdkOp = (typeof SDK_OPS)[number];
+
 export type WorkerRequest =
-  | { type: "chat"; id: string; apiKey: string; app: { name: string; version: string }; args: Record<string, unknown> }
+  | { type: "call"; id: string; op: SdkOp; apiKey: string | null; baseURL: string | null; app: { name: string; version: string }; args: Record<string, unknown> }
   | { type: "cancel"; id: string };
 
 export type WorkerReply =
   | { type: "ready" }
   | { type: "event"; id: string; event: Record<string, unknown> }
+  | { type: "progress"; id: string; progress: Record<string, unknown> }
   | { type: "result"; id: string; result: Record<string, unknown> }
   | { type: "error"; id: string; error: Record<string, unknown> };

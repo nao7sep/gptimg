@@ -1,5 +1,6 @@
 // What the app remembers about its own surface between launches (state.json):
 // not settings, so it is written freely and a bad copy is simply dropped.
+import { defaultExportPrefs, parseExportPrefs, type ExportPrefs } from "./export.ts";
 import type { TurnOptions } from "./session.ts";
 
 export interface UiState {
@@ -8,6 +9,10 @@ export interface UiState {
   lastSessionId: string | null;
   /** The composer's shape and quality, as last sent. */
   composer: TurnOptions;
+  /** The export dialog's choices, as last used. */
+  export: ExportPrefs;
+  /** The folder the last export went to. */
+  exportDir: string | null;
 }
 
 export const RAIL_WIDTH = { min: 200, max: 420, initial: 264 } as const;
@@ -16,7 +21,7 @@ export const SIZES = ["auto", "1024x1024", "1024x1536", "1536x1024"] as const;
 export const QUALITIES = ["auto", "low", "medium", "high"] as const;
 
 export function defaultUiState(): UiState {
-  return { railWidth: null, lastSessionId: null, composer: { size: "auto", quality: "auto" } };
+  return { railWidth: null, lastSessionId: null, composer: { size: "auto", quality: "auto" }, export: defaultExportPrefs(), exportDir: null };
 }
 
 export function parseUiState(value: unknown): UiState {
@@ -30,5 +35,6 @@ export function parseUiState(value: unknown): UiState {
   const composer = raw.composer as Record<string, unknown> | undefined;
   const size = typeof composer?.size === "string" ? composer.size : base.composer.size;
   const quality = typeof composer?.quality === "string" ? composer.quality : base.composer.quality;
-  return { railWidth, lastSessionId, composer: { size, quality } };
+  const exportDir = typeof raw.exportDir === "string" && raw.exportDir !== "" ? raw.exportDir : null;
+  return { railWidth, lastSessionId, composer: { size, quality }, export: parseExportPrefs(raw.export), exportDir };
 }

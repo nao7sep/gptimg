@@ -12,12 +12,16 @@ extraResources:
   - from: LICENSE
     to: LICENSE
 asarUnpack:
-  # The native image library the SDK's worker loads at run time. ONNX Runtime is
-  # left out: the SDK loads it only for local models, which the app never runs.
+  # The native libraries the SDK's worker loads at run time: sharp for every
+  # image, ONNX Runtime for upscaling on export.
   - node_modules/sharp/**
   - node_modules/@img/**
+  - node_modules/onnxruntime-node/**
 mac:
   category: public.app-category.graphics-design
+  # ONNX Runtime ships every platform's binaries; each build keeps only its own.
+  files:
+    - "!node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**"
   # Ad-hoc signed ("-"): no developer certificate, but a valid seal and a
   # stable bundle identity, which the dock name and per-app defaults rely on.
   identity: "-"
@@ -34,6 +38,9 @@ mac:
   extendInfo:
     CFBundleLocalizations: [en, de, es, fr, it, pt-BR, ru, ja, ko, zh-Hans]
 win:
+  files:
+    - "!node_modules/onnxruntime-node/bin/napi-v6/{linux,darwin}/**"
+    - "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
   electronLanguages: [en-US, de, es, fr, it, pt-BR, ru, ja, ko, zh-CN]
   target:
     - target: nsis

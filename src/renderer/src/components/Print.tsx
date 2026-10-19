@@ -12,11 +12,24 @@ import { CloseIcon, CopyIcon, ExpandIcon, ExportIcon, FolderIcon, ReuseIcon } fr
 /** Prints are decoded at the column's width at 2x, never at full size. */
 const PRINT_DECODE_WIDTH = 1600;
 
-export function Print({ path, onOpen, onReuse }: { path: string; onOpen: () => void; onReuse: () => void }) {
+export interface PrintProps {
+  path: string;
+  onOpen: () => void;
+  onReuse: () => void;
+  onExport: () => void;
+  /** Changes each time this print was just exported, so it can say so. */
+  exported: number;
+}
+
+export function Print({ path, onOpen, onReuse, onExport, exported }: PrintProps) {
   const { t, of } = useI18n();
   const [done, setDone] = useState<Message | null>(null);
   const [failure, setFailure] = useState<Message | null>(null);
   const [broken, setBroken] = useState(false);
+
+  useEffect(() => {
+    if (exported > 0) setDone({ key: "print.exported" });
+  }, [exported]);
 
   useEffect(() => {
     if (!done) return;
@@ -28,11 +41,6 @@ export function Print({ path, onOpen, onReuse }: { path: string; onOpen: () => v
     const outcome = await api.copyImage(path);
     if (outcome.ok) setDone({ key: "print.copied" });
     else setFailure(outcome.failure.message);
-  };
-  const exportIt = async () => {
-    const outcome = await api.exportImage(path);
-    if (!outcome.ok) setFailure(outcome.failure.message);
-    else if (outcome.savedTo) setDone({ key: "print.exported" });
   };
 
   return (
@@ -53,7 +61,7 @@ export function Print({ path, onOpen, onReuse }: { path: string; onOpen: () => v
           <CopyIcon size={15} />
           <span>{t("print.copy")}</span>
         </button>
-        <button type="button" className="quiet-button" onClick={() => void exportIt()}>
+        <button type="button" className="quiet-button" onClick={onExport}>
           <ExportIcon size={15} />
           <span>{t("print.export")}</span>
         </button>

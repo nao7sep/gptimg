@@ -4,7 +4,7 @@
 // since the provider may already have done the work.
 import { randomUUID } from "node:crypto";
 import { utilityProcess, type UtilityProcess } from "electron";
-import type { WorkerReply, WorkerRequest } from "./sdk-protocol.ts";
+import type { SdkOp, WorkerReply, WorkerRequest } from "./sdk-protocol.ts";
 
 export type CallSettlement =
   | { kind: "result"; result: Record<string, unknown> }
@@ -13,12 +13,21 @@ export type CallSettlement =
 
 interface Pending {
   onEvent: (event: Record<string, unknown>) => void;
+  onProgress: (progress: Record<string, unknown>) => void;
   settle: (settlement: CallSettlement) => void;
+}
+
+export interface CallHooks {
+  apiKey?: string | null;
+  baseURL?: string | null;
+  onEvent?: (event: Record<string, unknown>) => void;
+  onProgress?: (progress: Record<string, unknown>) => void;
 }
 
 export class SdkHost {
   #child: UtilityProcess | null = null;
   #ready: Promise<void> | null = null;
+  #stopping = false;
   readonly #pending = new Map<string, Pending>();
 
   readonly #entry: string;
@@ -42,6 +51,7 @@ export class SdkHost {
         const pending = this.#pending.get(reply.id);
         if (!pending) return;
         if (reply.type === "event") pending.onEvent(reply.event);
+        else if (reply.type === "progress") pending.onProgress(reply.progress);
         else {
           this.#pending.delete(reply.id);
           pending.settle(reply.type === "result" ? { kind: "result", result: reply.result } : { kind: "error", error: reply.error });
@@ -55,23 +65,24 @@ export class SdkHost {
           this.#pending.delete(id);
           pending.settle({ kind: "lost" });
         }
-        this.#onExit(code);
+        // An exit the app asked for while quitting is not news, and the records are closed by then.
+        if (!this.#stopping) this.#onExit(code);
       });
     });
     return this.#ready;
   }
 
-  /** Runs one chat call; `cancel` is returned at once so the caller can abort while it runs. */
-  chat(
-    apiKey: string,
+  /** Runs one SDK operation; `cancel` is returned at once so the caller can abort while it runs. */
+  call(
+    op: SdkOp,
     app: { name: string; version: string },
     args: Record<string, unknown>,
-    onEvent: (event: Record<string, unknown>) => void,
+    hooks: CallHooks = {},
   ): { id: string; done: Promise<CallSettlement>; cancel: () => void } {
     const id = randomUUID();
     let cancelled = false;
     const done = new Promise<CallSettlement>((settle) => {
-      this.#pending.set(id, { onEvent, settle });
+      this.#pending.set(id, { onEvent: hooks.onEvent ?? (() => {}), onProgress: hooks.onProgress ?? (() => {}), settle });
       void this.#start().then(() => {
         if (!this.#pending.has(id)) return;
         if (!this.#child) {
@@ -79,7 +90,7 @@ export class SdkHost {
           settle({ kind: "lost" });
           return;
         }
-        this.#post({ type: "chat", id, apiKey, app, args });
+        this.#post({ type: "call", id, op, apiKey: hooks.apiKey ?? null, baseURL: hooks.baseURL ?? null, app, args });
         if (cancelled) this.#post({ type: "cancel", id });
       });
     });
@@ -93,11 +104,23 @@ export class SdkHost {
     };
   }
 
+  /** One chat turn, billed to `apiKey`, sent to `baseURL` (OpenAI's own when null). */
+  chat(
+    apiKey: string,
+    baseURL: string | null,
+    app: { name: string; version: string },
+    args: Record<string, unknown>,
+    onEvent: (event: Record<string, unknown>) => void,
+  ): { id: string; done: Promise<CallSettlement>; cancel: () => void } {
+    return this.call("chat", app, args, { apiKey, baseURL, onEvent });
+  }
+
   #post(request: WorkerRequest): void {
     this.#child?.postMessage(request);
   }
 
   stop(): void {
+    this.#stopping = true;
     this.#child?.kill();
   }
 }
