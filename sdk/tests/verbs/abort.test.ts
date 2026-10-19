@@ -253,7 +253,7 @@ describe("AI verb abort propagation", () => {
 
     await expect(
       sdk.vision(
-        { in: input, check: "is it green?", outDir: path.join(tmp, "vision-out"), outName: "vision" },
+        { inputs: [input], check: "is it green?", outDir: path.join(tmp, "vision-out"), outName: "vision" },
         { signal: ctrl.signal },
       ),
     ).rejects.toMatchObject({ ...ABORT_SHAPE, effect: "none" });
@@ -271,7 +271,7 @@ describe("AI verb abort propagation", () => {
 
     await expect(
       sdk.vision(
-        { in: input, check: "is it green?", outDir: path.join(tmp, "vision-out"), outName: "vision" },
+        { inputs: [input], check: "is it green?", outDir: path.join(tmp, "vision-out"), outName: "vision" },
         { signal: ctrl.signal },
       ),
     ).rejects.toMatchObject({ ...ABORT_SHAPE, effect: "unknown" });

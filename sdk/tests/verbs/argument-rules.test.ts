@@ -26,11 +26,18 @@ describe("arguments every verb shares", () => {
 
   it.each([
     ["trim", () => sdk.trim({ in: FIXTURE, outDir: tmp, modelsDir: tmp } as never), "modelsDir"],
-    ["icon", () => sdk.icon({ in: FIXTURE, outDir: tmp, outName: "x" } as never), "outName"],
     ["framecheck", () => sdk.framecheck({ in: FIXTURE, overwrite: true } as never), "overwrite"],
     ["verify", () => sdk.verify({ in: FIXTURE, outDir: tmp } as never), "outDir"],
   ])("%s refuses an argument it does not take, naming it, before any work", async (_verb, call, field) => {
     await expect(call()).rejects.toMatchObject({ code: "args.invalid", details: { field, constraint: "known argument" } });
+  });
+
+  it.each([
+    ["icon", () => sdk.icon({ in: FIXTURE, outDir: tmp, name: "x" } as never), "name", "outName"],
+    ["vision", () => new GptImg({ apiKey: "sk-test" }).vision({ in: FIXTURE, check: "x", outDir: tmp } as never), "in", "inputs"],
+    ["model.install", () => sdk.model.install({ key: "swin2sr", signal: new AbortController().signal } as never), "signal", "second argument"],
+  ])("%s refuses an old argument name with the new one", async (_verb, call, field, hint) => {
+    await expect(call()).rejects.toMatchObject({ code: "args.invalid", message: expect.stringContaining(hint), details: { field } });
   });
 
   it("refuses a retired argument with a hint at where its value now goes", async () => {
@@ -81,12 +88,12 @@ describe("arguments every verb shares", () => {
   });
 
   it("model.list reports a models folder it cannot read as a typed error, and each model's download size", async () => {
-    expect(sdk.model.list().models.every((m) => typeof m.downloadBytes === "number" && m.downloadBytes > 0)).toBe(true);
+    expect((await sdk.model.list()).models.every((m) => typeof m.downloadBytes === "number" && m.downloadBytes > 0)).toBe(true);
     const notAFolder = path.join(tmp, "file");
     await writeFile(notAFolder, "x");
     let thrown: unknown;
     try {
-      sdk.model.list({ modelsDir: notAFolder });
+      await sdk.model.list({ modelsDir: notAFolder });
     } catch (err) {
       thrown = err;
     }

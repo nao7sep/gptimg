@@ -2,7 +2,7 @@ import { verbDone, verbStart } from "../events/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type { SdkContext } from "../context.ts";
 import path from "node:path";
-import {
+import { outputStemLocation,
   assertSingleFileAvailable,
   pngEncodingEventFields,
   pngEncodingOf,
@@ -25,9 +25,8 @@ export async function iconImpl(
   const signal = opts.signal;
 
   return withVerbLogger(ctx, "icon", opts, async (logger) => {
-    const outDir = args.outDir ?? path.dirname(args.in);
+    const { outDir, stem: name } = outputStemLocation(args.outDir ?? path.dirname(args.in), args.outName ?? ICON_DEFAULTS.name);
     await ensureOutputDir(outDir);
-    const name = args.name ?? ICON_DEFAULTS.name;
     const pngs = args.pngs ?? ICON_DEFAULTS.pngs;
 
     const plan = planIconOutputs(outDir, name, pngs);
@@ -61,8 +60,8 @@ export async function iconImpl(
       ico: result.ico,
       png: result.png,
       pngs: result.pngSet.map((p) => p.path),
-      width: result.sourceWidth,
-      height: result.sourceHeight,
+      sourceWidth: result.sourceWidth,
+      sourceHeight: result.sourceHeight,
       status: "completed" as const,
     };
   });

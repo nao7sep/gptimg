@@ -158,7 +158,7 @@ const EditArgsSchema = z.object({
 });
 
 const VisionArgsSchema = z.object({
-  in: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+  inputs: z.array(z.string().min(1)).min(1),
   check: nonBlankText("check"),
   ...OUTPUT_FIELDS,
   policy: policyField,
@@ -409,13 +409,7 @@ const InspectArgsSchema = z.object({
 const IconArgsSchema = z.object({
   ...PNG_ENCODING_FIELDS,
   in: requiredPath("in"),
-  name: z
-    .string()
-    .refine(
-      (n) => n.length > 0 && path.basename(n) === n,
-      "name must be a plain filename stem (no path separators)",
-    )
-    .optional(),
+  outName: z.string().min(1).optional(),
   pngs: z.boolean().optional(),
   outDir: requiredPath("outDir").optional(),
   overwrite: z.boolean().optional(),
@@ -425,6 +419,12 @@ const IconArgsSchema = z.object({
 
 // Arguments earlier versions took: refused like any unknown argument, with a
 // hint at where the value now goes.
+// Arguments a verb took under another name, with the name to use now.
+const RENAMED_ARGS: Record<string, Record<string, string>> = {
+  icon: { name: "icon's name is now outName" },
+  vision: { in: "vision's in is now inputs, an array" },
+};
+
 const RETIRED_ARGS: Record<string, string> = {
   recipe: "recipe files are retired; pass policy per call or per instance",
   overrides: "overrides is now policy",
@@ -447,9 +447,10 @@ function check<T>(schema: z.ZodObject, args: T, verb: string): T {
   // or misplaced option never runs the verb with its default instead.
   const unknown = Object.keys(given).find((key) => given[key] !== undefined && !Object.hasOwn(schema.shape, key));
   if (unknown !== undefined) {
-    const hint = RETIRED_ARGS[unknown] ?? `${verb} takes ${Object.keys(schema.shape).join(", ")}`;
+    const renamed = RENAMED_ARGS[verb]?.[unknown];
+    const hint = renamed ?? RETIRED_ARGS[unknown] ?? `${verb} takes ${Object.keys(schema.shape).join(", ")}`;
     throw new GptImgError("args.invalid", `${verb}: ${unknown} is not accepted; ${hint}.`, {
-      details: { field: unknown, constraint: Object.hasOwn(RETIRED_ARGS, unknown) ? "retired" : "known argument" },
+      details: { field: unknown, constraint: renamed ? "renamed" : Object.hasOwn(RETIRED_ARGS, unknown) ? "retired" : "known argument" },
     });
   }
   const r = schema.safeParse(args);

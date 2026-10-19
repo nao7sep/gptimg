@@ -130,7 +130,7 @@ export async function visionImpl(
     // Resolve + guard the sidecar path before the (paid) provider call so a
     // name collision fails fast without spending, like generate/edit.
     const { outDir, stem } = outputStemLocation(
-      args.outDir ?? path.dirname(Array.isArray(args.in) ? args.in[0]! : args.in),
+      args.outDir ?? path.dirname(args.inputs[0]!),
       args.outName ?? defaultStem(),
     );
     await ensureOutputDir(outDir);
@@ -139,7 +139,7 @@ export async function visionImpl(
     using _outputReservation = await reserveOutputGroup(outputGroup);
     assertOutputGroupAvailable(outputGroup, [`${stemPath}.json`], args.overwrite ?? false);
 
-    const inputs = Array.isArray(args.in) ? args.in : [args.in];
+    const inputs = args.inputs;
     const prepared = await Promise.all(
       inputs.map((p) => prepareImage(p, shrink, detail, logger)),
     );

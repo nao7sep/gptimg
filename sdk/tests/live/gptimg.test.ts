@@ -187,7 +187,7 @@ afterAll(async () => {
 describe("the live SDK", () => {
   it("has every pinned model installed and matching its pinned digest, and verify passes a real output", async () => {
     const { img } = await freshSdk("verify");
-    for (const model of img.model.list().models) expect(model.cached, model.name).toBe(true);
+    for (const model of (await img.model.list()).models) expect(model.cached, model.name).toBe(true);
     const { models } = await img.model.verify();
     for (const model of models) expect(model.integrity, model.name).toBe("ok");
   });
@@ -284,7 +284,7 @@ describe("the live SDK", () => {
       const { img, home } = await freshSdk(`detail-${model}`);
       const photo = await copyInto(home, join(CORPUS, CAT_PHOTO));
       const holds = done(await img.vision({
-        in: photo,
+        inputs: [photo],
         check: "A cat is visible in the image.",
         outDir: home,
         policy: { vision: { ...CHEAPEST_VISION, model } },
@@ -307,7 +307,7 @@ describe("the live SDK", () => {
       requireKey();
       const { img, home } = await freshSdk(`effort-${row.id}`);
       const result = done(await img.vision({
-        in: await copyInto(home, DISC),
+        inputs: [await copyInto(home, DISC)],
         check: "A red disc is visible.",
         outDir: home,
         policy: { vision: { model: row.id } },
@@ -326,7 +326,7 @@ describe("the live SDK", () => {
     const { img, home } = await freshSdk("vision");
     const photo = await copyInto(home, join(CORPUS, CAT_PHOTO));
     const holds = done(await img.vision({
-      in: photo,
+      inputs: [photo],
       check: "A cat is visible in the image.",
       outDir: home,
       policy: { vision: CHEAPEST_VISION },
@@ -361,7 +361,7 @@ describe("the live SDK", () => {
     expect(sidecar.response.raw.usage, "the provider's usage is kept").toBeDefined();
     expect(sidecar.files).toEqual([]);
     const fails = done(await img.vision({
-      in: photo,
+      inputs: [photo],
       check: "A dog is visible in the image.",
       outDir: home,
       outName: "dog-check",

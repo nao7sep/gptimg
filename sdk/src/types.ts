@@ -483,11 +483,12 @@ export interface EditArgs extends Omit<GenerateArgs, "outDir"> {
 export type EditResult = GenerateResult;
 
 export interface VisionArgs {
-  in: string | string[];
+  /** The images to judge together (absolute), at least one. */
+  inputs: string[];
   check: string;
   /** Policy for this call, merged over the instance's (last wins). */
   policy?: Policy;
-  /** Defaults beside the first input image. */
+  /** Defaults beside the first input. */
   outDir?: string;
   outName?: string;
   /** Overwrite an existing sidecar at the resolved stem. Default false. */
@@ -936,8 +937,8 @@ export interface IconArgs extends PngEncodingArgs {
    * the backplate/layer pipeline. Smaller sizes are downsampled from it.
    */
   in: string;
-  /** Base filename stem for outputs. Default "icon" → icon.icns/.ico/.png. */
-  name?: string;
+  /** The outputs' stem: a bare name in `outDir`, or an absolute stem that also chooses the folder. Default "icon" → icon.icns/.ico/.png. */
+  outName?: string;
   /** Also emit the loose sized-PNG set `<name>-<size>.png` (16…1024). Default false. */
   pngs?: boolean;
   /** Output directory. Default: same as `in`. */
@@ -955,9 +956,9 @@ export interface IconResult {
   png: string;
   /** The sized-PNG set paths. Empty unless `pngs` was set. */
   pngs: string[];
-  /** Source master dimensions. */
-  width: number;
-  height: number;
+  /** The master's dimensions. */
+  sourceWidth: number;
+  sourceHeight: number;
 }
 
 export interface CombineArgs extends PngEncodingArgs {

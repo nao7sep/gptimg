@@ -47,7 +47,7 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateGenerateArgs({ outDir: "output", prompt: "x" }), "outDir must be an absolute path");
     badArgs(() => validateLayerArgs({ base: "/x/b.png", top: "t.png" }), "top must be an absolute path");
     badArgs(() => validateGridArgs({ inputs: ["/x/a.png", "b.png"] }), "inputs[1] must be an absolute path");
-    badArgs(() => validateVisionArgs({ in: ["/x/a.png", "b.png"], check: "c" }), "in[1] must be an absolute path");
+    badArgs(() => validateVisionArgs({ inputs: ["/x/a.png", "b.png"], check: "c" }), "inputs[1] must be an absolute path");
   });
 
   it("refuses arguments earlier versions took instead of silently ignoring them", () => {
@@ -62,14 +62,14 @@ describe("verb argument validation (single source of truth)", () => {
     badArgs(() => validateGenerateArgs({ outDir: "/x/output", prompt: "" }), "prompt");
     badArgs(() => validateEditArgs({ prompt: "x", in: "" }), "in");
     expect(validateEditArgs({ prompt: "x", in: "/x/a.png" }).in).toBe("/x/a.png");
-    badArgs(() => validateVisionArgs({ in: "/x/a.png", check: "" }), "check");
-    badArgs(() => validateVisionArgs({ in: [], check: "ok" }));
-    badArgs(() => validateVisionArgs({ in: "", check: "ok" }));
-    badArgs(() => validateVisionArgs({ in: ["/x/a.png", ""], check: "ok" }));
-    expect(validateVisionArgs({ in: ["/x/a.png", "/x/b.png"], check: "ok" })).toBeTruthy();
+    badArgs(() => validateVisionArgs({ inputs: ["/x/a.png"], check: "" }), "check");
+    badArgs(() => validateVisionArgs({ inputs: [], check: "ok" }));
+    badArgs(() => validateVisionArgs({ inputs: [""], check: "ok" }));
+    badArgs(() => validateVisionArgs({ inputs: ["/x/a.png", ""], check: "ok" }));
+    expect(validateVisionArgs({ inputs: ["/x/a.png", "/x/b.png"], check: "ok" })).toBeTruthy();
     badArgs(() => validateGenerateArgs({ outDir: "/x/output", prompt: " \n\t " }), "blank");
     badArgs(() => validateEditArgs({ prompt: "\t", in: "/x/a.png" }), "blank");
-    badArgs(() => validateVisionArgs({ in: "/x/a.png", check: "  " }), "blank");
+    badArgs(() => validateVisionArgs({ inputs: ["/x/a.png"], check: "  " }), "blank");
   });
 
   it("rejects truthy strings for optional boolean controls", () => {
@@ -282,10 +282,9 @@ describe("verb argument validation (single source of truth)", () => {
     }
   });
 
-  it("icon: name stem (no path separators)", () => {
-    expect(validateIconArgs({ in: "/x/a.png", name: "app" })).toBeTruthy();
-    badArgs(() => validateIconArgs({ in: "/x/a.png", name: "sub/app" }), "path separators");
-    badArgs(() => validateIconArgs({ in: "/x/a.png", name: "../evil" }), "path separators");
+  it("icon: outName, and the old name refused with the new one", () => {
+    expect(validateIconArgs({ in: "/x/a.png", outName: "app" })).toBeTruthy();
+    badArgs(() => validateIconArgs({ in: "/x/a.png", name: "app" } as never), "outName");
   });
 
   it("model: key membership (own properties only)", () => {

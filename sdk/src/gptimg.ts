@@ -58,10 +58,9 @@ import { keycheckImpl } from "./verbs/keycheck.ts";
 import { layerImpl } from "./verbs/layer.ts";
 import { maskImpl } from "./verbs/mask.ts";
 import { shadowImpl } from "./verbs/shadow.ts";
-import { installModelsImpl, listModelsImpl, verifyModelsImpl } from "./verbs/model.ts";
+import { installAllModelsImpl, installModelImpl, listModelsImpl, verifyModelsImpl } from "./verbs/model.ts";
 import { releaseSessions } from "./local/models/session.ts";
-import { MODELS } from "./local/models/registry.ts";
-import type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.ts";
+import type { ModelInstallAllArgs, ModelInstallArgs, ModelListArgs, ModelVerifyArgs } from "./verbs/model.ts";
 import type { VerbCallOptions } from "./verbs/options.ts";
 import { encodeImpl } from "./verbs/encode.ts";
 import { resizeImpl } from "./verbs/resize.ts";
@@ -71,25 +70,24 @@ import { visionImpl } from "./verbs/vision.ts";
 import { verifyImpl } from "./verbs/verify.ts";
 import { inspectImpl } from "./verbs/inspect.ts";
 import { chatImpl } from "./verbs/chat.ts";
-import type { ModelKey } from "./local/models/registry.ts";
 import type { ModelInstallResult, ModelListResult, ModelReleaseResult, ModelVerifyResult } from "./types.ts";
 
 export type { VerbCallOptions } from "./verbs/options.ts";
-export type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.ts";
+export type { ModelInstallAllArgs, ModelInstallArgs, ModelListArgs, ModelVerifyArgs } from "./verbs/model.ts";
 
 export class GptImg {
   readonly #ctx: SdkContext;
 
   readonly model = {
     /** Install one model into the models folder; nothing installs implicitly. */
-    install: (key: ModelKey, opts?: ModelInstallOptions): Promise<ModelInstallResult> =>
-      installModelsImpl(this.#ctx, [key], opts),
+    install: (args: ModelInstallArgs, opts?: VerbCallOptions): Promise<ModelInstallResult> => installModelImpl(this.#ctx, args, opts),
     /** Install every model the SDK uses. */
-    installAll: (opts?: ModelInstallOptions): Promise<ModelInstallResult> =>
-      installModelsImpl(this.#ctx, Object.keys(MODELS) as ModelKey[], opts),
-    list: (opts?: { modelsDir?: string }): ModelListResult => listModelsImpl(this.#ctx, opts),
-    verify: (opts?: ModelVerifyOptions): Promise<ModelVerifyResult> =>
-      verifyModelsImpl(this.#ctx, opts),
+    installAll: (args?: ModelInstallAllArgs, opts?: VerbCallOptions): Promise<ModelInstallResult> =>
+      installAllModelsImpl(this.#ctx, args, opts),
+    /** Which models are installed in the models folder, by a cheap presence check. */
+    list: (args?: ModelListArgs, opts?: VerbCallOptions): Promise<ModelListResult> => listModelsImpl(this.#ctx, args, opts),
+    /** Re-hash every installed model against its pin. */
+    verify: (args?: ModelVerifyArgs, opts?: VerbCallOptions): Promise<ModelVerifyResult> => verifyModelsImpl(this.#ctx, args, opts),
     /**
      * Free the loaded models' memory once any inference in flight finishes. Loaded models are
      * shared by every instance in the process; the next call that needs one loads it again.

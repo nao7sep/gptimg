@@ -39,7 +39,7 @@ describe("installModelImpl logging", () => {
     await seedCachedModel(homeDir);
     let result: { installed: Array<{ name: string; forced: boolean }> } | undefined;
     const chunks = await captureStderr(async () => {
-      result = await new GptImg({ modelsDir: path.join(homeDir, "models") }).model.install(key);
+      result = await new GptImg({ modelsDir: path.join(homeDir, "models") }).model.install({ key });
     });
     expect(result?.installed[0]).toMatchObject({ name: MODELS[key].name, forced: false });
     expect(chunks.join("")).toBe("");
@@ -50,10 +50,10 @@ describe("installModelImpl logging", () => {
     const homeDir = path.join(tmp, "home");
     const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
 
-    await expect(sdk.model.install(key, { force: "false" } as never)).rejects.toMatchObject({
+    await expect(sdk.model.install({ key, force: "false" } as never)).rejects.toMatchObject({
       code: "args.invalid",
     });
-    await expect(sdk.model.install(key, { log: { file: path.join(tmp, "x.log") } } as never)).rejects.toMatchObject({
+    await expect(sdk.model.install({ key }, { log: { file: path.join(tmp, "x.log") } } as never)).rejects.toMatchObject({
       code: "args.invalid",
       details: { field: "log", constraint: "retired" },
     });
@@ -106,7 +106,7 @@ describe("model verb result shapes", () => {
     await truncate(cachedPath, cachedEntry.byteSize);
 
     const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
-    const result = sdk.model.list();
+    const result = await sdk.model.list();
 
     expect(Array.isArray(result)).toBe(false);
     expect(result.models.map((m) => m.key)).toEqual(keys);
@@ -151,7 +151,7 @@ describe("model.verify integrity check", () => {
     await mkdir(modelsDir, { recursive: true });
     await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
 
-    const result = new GptImg({ modelsDir: path.join(homeDir, "models") }).model.list();
+    const result = await new GptImg({ modelsDir: path.join(homeDir, "models") }).model.list();
     const entry = result.models.find((model) => model.key === key);
     expect(entry?.cached).toBe(false);
     expect(entry?.sizeBytes).toBe(3);
@@ -163,7 +163,7 @@ describe("model.verify integrity check", () => {
     const homeDir = path.join(tmp, "home");
     const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
 
-    await expect(sdk.model.verify({ signal: ctrl.signal })).rejects.toMatchObject({
+    await expect(sdk.model.verify({}, { signal: ctrl.signal })).rejects.toMatchObject({
       code: "cancelled",
     });
   });
@@ -194,7 +194,7 @@ describe("model.verify integrity check", () => {
     const onProgress = vi.fn();
     const sdk = new GptImg({ modelsDir: path.join(homeDir, "models") });
 
-    const result = await sdk.model.verify({ onEvent, onProgress });
+    const result = await sdk.model.verify({}, { onEvent, onProgress });
 
     expect(result.models.length).toBeGreaterThan(0);
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ event: "model.verify.start", stage: "resolve" }));
@@ -238,19 +238,19 @@ describe("models install only on request", () => {
     await expect(sdk.mask({ in: input, method: "ai" })).rejects.toMatchObject({
       code: "model.notInstalled",
       kind: "unavailable",
-      message: expect.stringContaining('img.model.install("birefnet")'),
+      message: expect.stringContaining('img.model.install({ key: "birefnet" })'),
     });
     await expect(sdk.upscale({ in: input })).rejects.toMatchObject({
       code: "model.notInstalled",
-      message: expect.stringContaining('img.model.install("swin2sr")'),
+      message: expect.stringContaining('img.model.install({ key: "swin2sr" })'),
     });
     expect(existsSync(modelsDir)).toBe(false);
   });
 
   it("uses a call's own models folder over the instance's, so several folders work side by side", async () => {
     const sdk = new GptImg({ modelsDir: path.join(tmp, "a") });
-    const listed = sdk.model.list({ modelsDir: path.join(tmp, "b") });
+    const listed = await sdk.model.list({ modelsDir: path.join(tmp, "b") });
     expect(listed.models.every((m) => m.path.startsWith(path.join(tmp, "b")))).toBe(true);
-    expect(() => sdk.model.list({ modelsDir: "relative" })).toThrow(expect.objectContaining({ code: "args.invalid" }));
+    await expect(sdk.model.list({ modelsDir: "relative" })).rejects.toMatchObject({ code: "args.invalid" });
   });
 });

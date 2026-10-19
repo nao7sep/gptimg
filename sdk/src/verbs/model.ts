@@ -18,7 +18,7 @@ import type {
 import type { VerbCallOptions } from "./options.ts";
 import { validateModelKey } from "./schemas.ts";
 
-export interface ModelInstallOptions extends VerbCallOptions {
+export interface ModelInstallAllArgs {
   /** Re-download and replace even if the model is already installed. */
   force?: boolean;
   /** The models folder (absolute); default the instance's. */
@@ -27,10 +27,17 @@ export interface ModelInstallOptions extends VerbCallOptions {
   policy?: Policy;
 }
 
-export interface ModelVerifyOptions extends VerbCallOptions {
+export interface ModelInstallArgs extends ModelInstallAllArgs {
+  /** The model to install. */
+  key: ModelKey;
+}
+
+export interface ModelListArgs {
   /** The models folder (absolute); default the instance's. */
   modelsDir?: string;
 }
+
+export type ModelVerifyArgs = ModelListArgs;
 
 /** Model verbs never refuse; the envelope's refused branch cannot occur. */
 function completed<T>(result: T | RefusedResult): T {
@@ -40,22 +47,21 @@ function completed<T>(result: T | RefusedResult): T {
   return result as T;
 }
 
-/**
- * The call options within a model operation's options, after refusing any key
- * it does not take: its own arguments and the call options share one object.
- */
-function callOptionsOf(operation: string, opts: object, own: readonly string[]): VerbCallOptions {
-  const given = opts as Record<string, unknown>;
-  const known = [...own, "signal", "onEvent", "onProgress"];
+/** A model operation's arguments, refusing any it does not take, as every verb does. */
+function checkArgs<T extends object>(operation: string, args: T, known: readonly string[]): T {
+  if (typeof args !== "object" || args === null) {
+    throw new GptImgError("args.invalid", `${operation}: args must be an object.`, { details: { field: "args", constraint: "object" } });
+  }
+  const given = args as Record<string, unknown>;
   const unknown = Object.keys(given).find((key) => given[key] !== undefined && !known.includes(key));
   if (unknown !== undefined) {
-    const hint = unknown === "log" ? "the SDK writes no log; store the events onEvent receives" : `it takes ${known.join(", ")}`;
+    const callOption = ["signal", "onEvent", "onProgress"].includes(unknown);
+    const hint = callOption ? `${unknown} is a call option and goes in the second argument` : `it takes ${known.join(", ")}`;
     throw new GptImgError("args.invalid", `${operation}: ${unknown} is not accepted; ${hint}.`, {
-      details: { field: unknown, constraint: unknown === "log" ? "retired" : "known option" },
+      details: { field: unknown, constraint: callOption ? "call option" : "known argument" },
     });
   }
-  const { signal, onEvent, onProgress } = opts as VerbCallOptions;
-  return { signal, onEvent, onProgress };
+  return args;
 }
 
 /**
@@ -67,36 +73,49 @@ function callOptionsOf(operation: string, opts: object, own: readonly string[]):
 export async function installModelsImpl(
   ctx: SdkContext,
   keys: readonly ModelKey[],
-  opts: ModelInstallOptions = {},
+  args: ModelInstallAllArgs,
+  opts: VerbCallOptions = {},
 ): Promise<ModelInstallResult> {
   for (const key of keys) validateModelKey(key);
-  const callOptions = callOptionsOf("model install", opts, ["force", "modelsDir", "policy"]);
-  if (opts.force !== undefined && typeof opts.force !== "boolean") {
+  if (args.force !== undefined && typeof args.force !== "boolean") {
     throw new GptImgError("args.invalid", "model install: force must be a boolean.", {
       details: { field: "force", constraint: "boolean" },
     });
   }
-  const modelsDir = callModelsDir(ctx, opts.modelsDir);
-  const budget = resolveNetworkForCall(callPolicy(ctx, opts.policy)).modelDownload;
-  return completed(await withVerbLogger(ctx, "model", callOptions, async (logger) => {
+  const modelsDir = callModelsDir(ctx, args.modelsDir);
+  const budget = resolveNetworkForCall(callPolicy(ctx, args.policy)).modelDownload;
+  return completed(await withVerbLogger(ctx, "model", opts, async (logger) => {
     const installed: InstalledModel[] = [];
     for (const key of keys) {
       throwIfAborted(opts.signal);
       const entry = MODELS[key];
       const installedPath = await ensureModel(entry, modelsDir, {
-        force: opts.force,
+        force: args.force,
         budget,
         signal: opts.signal,
         logger,
       });
-      installed.push({ key, name: entry.name, path: installedPath, forced: opts.force ?? false });
+      installed.push({ key, name: entry.name, path: installedPath, forced: args.force ?? false });
     }
     return { status: "completed" as const, installed };
   }));
 }
 
-export function listModelsImpl(ctx: SdkContext, opts: { modelsDir?: string } = {}): ModelListResult {
-  const modelsDir = callModelsDir(ctx, opts.modelsDir);
+/** Install one model; `args.key` names it. */
+export async function installModelImpl(ctx: SdkContext, args: ModelInstallArgs, opts: VerbCallOptions = {}): Promise<ModelInstallResult> {
+  const { key, ...rest } = checkArgs("model install", args, ["key", "force", "modelsDir", "policy"]);
+  return installModelsImpl(ctx, [key], rest, opts);
+}
+
+/** Install every model the SDK uses. */
+export async function installAllModelsImpl(ctx: SdkContext, args: ModelInstallAllArgs = {}, opts: VerbCallOptions = {}): Promise<ModelInstallResult> {
+  return installModelsImpl(ctx, Object.keys(MODELS) as ModelKey[], checkArgs("model installAll", args, ["force", "modelsDir", "policy"]), opts);
+}
+
+export async function listModelsImpl(ctx: SdkContext, args: ModelListArgs = {}, opts: VerbCallOptions = {}): Promise<ModelListResult> {
+  checkArgs("model list", args, ["modelsDir"]);
+  throwIfAborted(opts.signal);
+  const modelsDir = callModelsDir(ctx, args.modelsDir);
   const models = (Object.keys(MODELS) as ModelKey[]).map((key) => {
     const entry = MODELS[key];
     const filePath = path.join(modelsDir, entry.name);
@@ -122,11 +141,12 @@ export function listModelsImpl(ctx: SdkContext, opts: { modelsDir?: string } = {
  */
 export async function verifyModelsImpl(
   ctx: SdkContext,
-  opts: ModelVerifyOptions = {},
+  args: ModelVerifyArgs = {},
+  opts: VerbCallOptions = {},
 ): Promise<ModelVerifyResult> {
-  const callOptions = callOptionsOf("model verify", opts, ["modelsDir"]);
-  const modelsDir = callModelsDir(ctx, opts.modelsDir);
-  return completed(await withVerbLogger(ctx, "model", callOptions, async (logger) => {
+  checkArgs("model verify", args, ["modelsDir"]);
+  const modelsDir = callModelsDir(ctx, args.modelsDir);
+  return completed(await withVerbLogger(ctx, "model", opts, async (logger) => {
     const models: ModelVerifyEntry[] = [];
     for (const key of Object.keys(MODELS) as ModelKey[]) {
       throwIfAborted(opts.signal);

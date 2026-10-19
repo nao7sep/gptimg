@@ -133,7 +133,7 @@ describe("credential masking across every sink", () => {
         ? { network: { imageGenerate: { timeout: 100, maxRetries: 0 }, imageVision: { timeout: 100, maxRetries: 0 } } }
         : undefined;
       const outcome = verb === "vision"
-        ? await sdk.vision({ check: instruction, in: INPUT, ...output, policy }, options)
+        ? await sdk.vision({ check: instruction, inputs: [INPUT], ...output, policy }, options)
         : verb === "edit"
           ? await sdk.edit({ prompt: instruction, in: INPUT, ...output, policy }, options)
           : await sdk.generate({ prompt: instruction, ...output, policy }, options);

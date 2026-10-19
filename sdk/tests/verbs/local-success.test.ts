@@ -244,14 +244,14 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const master = path.join(tmp, "master.png");
     await writeSquare(master, 1024);
 
-    const res = done(await sdk.icon({ in: master, outDir: tmp, name: "app" }));
+    const res = done(await sdk.icon({ in: master, outDir: tmp, outName: "app" }));
 
     expect(res.outputs).toEqual([res.icns, res.ico, res.png]);
     expect(res.icns).toBe(path.join(tmp, "app.icns"));
     expect(res.ico).toBe(path.join(tmp, "app.ico"));
     expect(res.png).toBe(path.join(tmp, "app.png"));
     for (const f of res.outputs) expect(existsSync(f)).toBe(true);
-    expect(res.width).toBe(1024);
+    expect(res.sourceWidth).toBe(1024);
     // The .icns has the "icns" magic and a self-consistent total length.
     const icns = await readFile(res.icns);
     expect(icns.toString("ascii", 0, 4)).toBe("icns");

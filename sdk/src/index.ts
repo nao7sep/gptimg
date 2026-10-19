@@ -4,7 +4,7 @@
  * uses is exported.
  */
 export { GptImg } from "./gptimg.ts";
-export type { ModelInstallOptions, ModelVerifyOptions } from "./verbs/model.ts";
+export type { ModelInstallAllArgs, ModelInstallArgs, ModelListArgs, ModelVerifyArgs } from "./verbs/model.ts";
 export type { VerbCallOptions } from "./verbs/options.ts";
 export { VERSION } from "./version.ts";
 export type { ModelKey } from "./local/models/registry.ts";

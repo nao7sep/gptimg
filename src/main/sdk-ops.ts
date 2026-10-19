@@ -11,8 +11,8 @@ export const OPS: Record<SdkOp, (sdk: GptImg, args: never, options: OpOptions) =
   encode: (sdk, args, o) => sdk.encode(args, o),
   resize: (sdk, args, o) => sdk.resize(args, o),
   upscale: (sdk, args, o) => sdk.upscale(args, o),
-  modelList: (sdk) => sdk.model.list(),
-  modelInstall: (sdk, args: { key: "swin2sr" | "birefnet" }, o) => sdk.model.install(args.key, o),
+  modelList: (sdk, _args, o) => sdk.model.list({}, o),
+  modelInstall: (sdk, args: { key: "swin2sr" | "birefnet" }, o) => sdk.model.install({ key: args.key }, o),
   modelRelease: (sdk) => sdk.model.release(),
 };
 

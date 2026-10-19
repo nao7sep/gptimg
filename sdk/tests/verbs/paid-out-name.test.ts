@@ -41,7 +41,7 @@ describe("paid verbs' outName", () => {
     const invalid = { code: "args.invalid", details: { field: "outName" } };
     await expect(sdk.generate({ prompt: "x", outDir, outName })).rejects.toMatchObject(invalid);
     await expect(sdk.edit({ prompt: "x", in: input, outName })).rejects.toMatchObject(invalid);
-    await expect(sdk.vision({ in: input, check: "x", outName })).rejects.toMatchObject(invalid);
+    await expect(sdk.vision({ inputs: [input], check: "x", outName })).rejects.toMatchObject(invalid);
     expect(provider.generate).not.toHaveBeenCalled();
     expect(provider.edit).not.toHaveBeenCalled();
     expect(provider.vision).not.toHaveBeenCalled();

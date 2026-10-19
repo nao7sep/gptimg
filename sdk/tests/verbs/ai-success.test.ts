@@ -94,7 +94,7 @@ describe("AI verb implementations with mocked provider", () => {
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
     const edit = done(await sdk.edit({ in: input, prompt: "blue", outName: "edited" }));
     expect(edit.files[0]!.path).toBe(path.join(sourceDir, "edited.png"));
-    const vision = done(await sdk.vision({ in: [input, other], check: "green", outName: "verdict" }));
+    const vision = done(await sdk.vision({ inputs: [input, other], check: "green", outName: "verdict" }));
     expect(vision.sidecarPath).toBe(path.join(sourceDir, "verdict.json"));
     expect(await readFile(input)).toEqual(Buffer.from(png));
     expect(existsSync(path.join(tmp, "output"))).toBe(false);
@@ -110,7 +110,7 @@ describe("AI verb implementations with mocked provider", () => {
     providerCalls.edit.mockResolvedValue({ raw: {}, images: [{ data: png }] });
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
     const edit = done(await sdk.edit({ in: input, prompt: "blue", outName: "edited" }));
-    const vision = done(await sdk.vision({ in: input, check: "green", outName: "verdict" }));
+    const vision = done(await sdk.vision({ inputs: [input], check: "green", outName: "verdict" }));
     expect(edit.files[0]!.path).toBe(path.join(links, "edited.png"));
     expect(vision.sidecarPath).toBe(path.join(links, "verdict.json"));
   });
@@ -434,7 +434,7 @@ describe("AI verb implementations with mocked provider", () => {
     await writeFile(path.join(outDir, "same.json"), newer);
 
     await expect(
-      sdk.vision({ in: input, check: "must not be charged", outDir, outName: "same", overwrite: true }),
+      sdk.vision({ inputs: [input], check: "must not be charged", outDir, outName: "same", overwrite: true }),
     ).rejects.toMatchObject({ code: "sidecar.newerFormat" });
     expect(providerCalls.vision).not.toHaveBeenCalled();
     expect(await readFile(path.join(outDir, "same.json"), "utf-8")).toBe(newer);
@@ -548,7 +548,7 @@ describe("AI verb implementations with mocked provider", () => {
     await expect(sdk.generate({ prompt: "overlapping slot", outDir, outName: "foo-1" })).resolves.toMatchObject({
       status: "refused", refusal: { code: "output.busy" },
     });
-    await expect(sdk.vision({ in: fixture("green-disk.png"), check: "overlapping", outDir, outName: "FOO" })).resolves.toMatchObject({
+    await expect(sdk.vision({ inputs: [fixture("green-disk.png")], check: "overlapping", outDir, outName: "FOO" })).resolves.toMatchObject({
       status: "refused", refusal: { code: "output.busy" },
     });
     expect(providerCalls.vision).not.toHaveBeenCalled();
@@ -949,7 +949,7 @@ describe("AI verb implementations with mocked provider", () => {
     });
 
     const result = done(await sdk.vision({
-      in: [first, second],
+      inputs: [first, second],
       check: "both are green disks",
       outDir: path.join(tmp, "vision-out"),
       outName: "vision",
@@ -1004,7 +1004,7 @@ describe("AI verb implementations with mocked provider", () => {
     });
 
     const result = done(await sdk.vision({
-      in: input,
+      inputs: [input],
       check: "is this transparent?",
       outDir: path.join(tmp, "vision-single"),
       outName: "single",
@@ -1033,7 +1033,7 @@ describe("AI verb implementations with mocked provider", () => {
     });
 
     await expect(
-      sdk.vision({ in: input, check: "must not be charged", outDir, outName: "same" }),
+      sdk.vision({ inputs: [input], check: "must not be charged", outDir, outName: "same" }),
     ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.exists" } });
     expect(providerCalls.vision).not.toHaveBeenCalled();
   });
@@ -1062,7 +1062,7 @@ describe("AI verb implementations with mocked provider", () => {
     await mkdir(outDir);
     await symlink(outDir, aliasDir, process.platform === "win32" ? "junction" : "dir");
     const first = sdk.vision({
-      in: input,
+      inputs: [input],
       check: "first contender",
       outDir,
       outName: "same",
@@ -1070,10 +1070,10 @@ describe("AI verb implementations with mocked provider", () => {
     await firstAtProvider;
 
     await expect(
-      sdk.vision({ in: input, check: "direct contender", outDir, outName: "same", overwrite: true }),
+      sdk.vision({ inputs: [input], check: "direct contender", outDir, outName: "same", overwrite: true }),
     ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.busy" } });
     await expect(
-      sdk.vision({ in: input, check: "alias contender", outDir: aliasDir, outName: "same", overwrite: true }),
+      sdk.vision({ inputs: [input], check: "alias contender", outDir: aliasDir, outName: "same", overwrite: true }),
     ).resolves.toMatchObject({ status: "refused", refusal: { code: "output.busy" } });
     expect(providerCalls.vision).toHaveBeenCalledOnce();
 
@@ -1093,7 +1093,7 @@ describe("AI verb implementations with mocked provider", () => {
     });
 
     const result = done(await shrinking.vision({
-      in: input,
+      inputs: [input],
       check: "small enough",
       outDir: path.join(tmp, "recipe-vision-out"),
       outName: "recipe-vision",
@@ -1155,7 +1155,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(editSidecar.request.model).toBe("gpt-image-2.5-sunburst");
     expect(providerCalls.edit.mock.calls[0]?.[0].params.model).toBe("gpt-image-2.5-sunburst");
 
-    const judged = done(await sdk.vision({ in: input, check: "is it green?", outDir, outName: "judged" }));
+    const judged = done(await sdk.vision({ inputs: [input], check: "is it green?", outDir, outName: "judged" }));
     const visionSidecar = JSON.parse(await readFile(judged.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
     expect(visionSidecar.request.model).toBe("gpt-6-luna");
     expect(providerCalls.vision.mock.calls[0]?.[0].params.model).toBe("gpt-6-luna");
@@ -1268,7 +1268,7 @@ describe("AI verb implementations with mocked provider", () => {
     for (const [model, reasoning] of expected) {
       providerCalls.vision.mockClear();
       const outName = `effort-${model ?? "default"}`;
-      const result = done(await sdk.vision({ in: input, check: "green?", outDir, outName, policy: { vision: { model } } }));
+      const result = done(await sdk.vision({ inputs: [input], check: "green?", outDir, outName, policy: { vision: { model } } }));
       const call = providerCalls.vision.mock.calls[0]?.[0];
       expect(call?.params.reasoning, outName).toBe(reasoning);
       expect(call?.images[0]?.detail, outName).toBe("auto");
@@ -1286,7 +1286,7 @@ describe("AI verb implementations with mocked provider", () => {
     for (const model of ["some-future-chat-model", "gpt-5.6-luna"]) {
       providerCalls.vision.mockClear();
       const outName = `unlisted-${model}`;
-      const result = done(await sdk.vision({ in: input, check: "green?", outDir, outName, policy: { vision: { model } } }));
+      const result = done(await sdk.vision({ inputs: [input], check: "green?", outDir, outName, policy: { vision: { model } } }));
       const call = providerCalls.vision.mock.calls[0]?.[0];
       expect(call?.params, outName).toEqual({ model });
       expect(call?.images[0], outName).not.toHaveProperty("detail");
@@ -1305,7 +1305,7 @@ describe("AI verb implementations with mocked provider", () => {
       providerCalls.vision.mockClear();
       const outName = `chosen-${model}`;
       const result = done(await sdk.vision({
-        in: input,
+        inputs: [input],
         check: "green?",
         outDir,
         outName,
@@ -1325,11 +1325,11 @@ describe("AI verb implementations with mocked provider", () => {
     const input = path.join(tmp, "chosen-effort.png");
     await copyFile(fixture("green-disk.png"), input);
     const outDir = path.join(tmp, "chosen-effort");
-    done(await sdk.vision({ in: input, check: "green?", outDir, outName: "high", policy: { vision: { reasoning: "high" } } }));
+    done(await sdk.vision({ inputs: [input], check: "green?", outDir, outName: "high", policy: { vision: { reasoning: "high" } } }));
     expect(providerCalls.vision.mock.calls[0]?.[0].params).toMatchObject({ model: "gpt-6-luna", reasoning: "high" });
     providerCalls.vision.mockClear();
     await expect(
-      sdk.vision({ in: input, check: "green?", outDir, outName: "none", policy: { vision: { model: "gpt-6-astra", reasoning: "none" } } }),
+      sdk.vision({ inputs: [input], check: "green?", outDir, outName: "none", policy: { vision: { model: "gpt-6-astra", reasoning: "none" } } }),
     ).rejects.toMatchObject({ code: "policy.invalid", message: expect.stringContaining("gpt-6-astra takes reasoning") });
     expect(providerCalls.vision).not.toHaveBeenCalled();
   });
@@ -1340,7 +1340,7 @@ describe("AI verb implementations with mocked provider", () => {
     await copyFile(fixture("green-disk.png"), input);
     await expect(
       sdk.vision({
-        in: input,
+        inputs: [input],
         check: "green?",
         outDir: path.join(tmp, "wire-effort"),
         policy: { vision: { reasoning_effort: "high" } as never },

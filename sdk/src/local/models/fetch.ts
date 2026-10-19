@@ -307,7 +307,7 @@ export function requireInstalledModel(entry: ModelEntry, key: string, modelsDir:
   throw new GptImgError(
     "model.notInstalled",
     `The ${key} model is not installed in ${modelsDir}${cache.present ? " (the file there is incomplete)" : ""}. ` +
-      `Install it with img.model.install("${key}") first.`,
+      `Install it with img.model.install({ key: "${key}" }) first.`,
     { subject: filePath },
   );
 }

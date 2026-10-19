@@ -86,7 +86,7 @@ describe("the runtime boundary", () => {
       expect(resized).not.toHaveProperty("logPath");
       const generated = done(await img.generate({ prompt: "a disc", outDir: out, outName: "paid" }));
       expect(generated.files).toHaveLength(1);
-      const listed = img.model.list();
+      const listed = await img.model.list();
       expect(listed.models.every((m) => m.path.startsWith(path.join(home, ".gptimgsdk", "models")))).toBe(true);
     });
     expect(stderr.join("")).toBe("");

@@ -30,6 +30,9 @@ The SDK was redesigned under the fleet's SDK conventions. Every change under Cha
 - ONNX Runtime loads on the first local-model inference instead of with the SDK, so a consumer that runs no local model need not install or ship `onnxruntime-node`; when it cannot be loaded, the call fails `model.loadFailed`.
 - Masking also covers a provider's partial echo of a credential, such as OpenAI's `sk-proj-****…abcd` in a rejected-key message.
 - The `gptimgsdk/types` entry type-checks with browser libraries and no Node types.
+- `model.install`, `model.installAll`, `model.list` and `model.verify` take `(args, opts)` like every verb: `model.install({ key, force, modelsDir, policy }, opts)`, `model.installAll({ … }, opts)`, `model.verify({ modelsDir }, opts)`, and `model.list({ modelsDir }, opts)`, which is now async. A call option passed among the arguments is refused with a hint.
+- `icon` takes `outName` (a bare stem or an absolute one) instead of `name`, and its result reports `sourceWidth` and `sourceHeight` instead of `width` and `height`, as `resize` and `upscale` do.
+- `vision` takes `inputs`, an array of one or more images, instead of `in`. The old names are refused with the new one.
 - A `gptimgsdk/testing` entry: `startOpenAIDouble()` runs a local stand-in for OpenAI that the SDK reaches through `baseURL`, with scripted answers (success with chosen usage, a refusal, the content filter, moderation, an expired conversation, a missing picture, any HTTP error, a call that never answers), so a consumer's tests meet them without paying.
 - `model.release()` frees the loaded local models' memory once inference in flight has finished; the next call that needs a model loads it again.
 - A paid verb checks its arguments, policy and the chosen model's values before it asks for the key, so a wrong value is reported as such without one.

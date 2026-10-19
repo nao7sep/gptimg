@@ -75,7 +75,7 @@ describe("what a paid call spent", () => {
       signal.response = { usage: { prompt_tokens: 85, completion_tokens: 9 } };
       throw signal;
     });
-    await expect(sdk.vision({ in: input, check: "x" })).resolves.toMatchObject({
+    await expect(sdk.vision({ inputs: [input], check: "x" })).resolves.toMatchObject({
       status: "refused",
       refusal: { code: "provider.refused" },
       response: { usage: { prompt_tokens: 85, completion_tokens: 9 } },
