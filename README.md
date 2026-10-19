@@ -1,89 +1,80 @@
 # GptImg
 
-Generate, edit and read images with OpenAI from TypeScript, then mask, compose and upscale them locally. GptImg is a TypeScript **SDK** pairing that AI generation with a local image-processing pipeline: masking, compositing, mask algebra, cropping, gradient backplates, layering, drop shadows, super-resolution upscaling, resizing, macOS/Windows icon packing, deterministic keying-quality and frame-geometry checks, and comparison-sheet tiling. It's built for **AI agents and scripts** that need durable, inspectable artifacts: the AI verbs (`generate`, `edit`, `vision`) write JSON sidecars — `generate` and `edit` also write timestamped images — every run writes a JSONL log, and each verb returns a typed result object naming what it produced. Every capability is a method on one `GptImg` class — there is no CLI; the library is the whole product.
+Make and edit images by talking with OpenAI's models. GptImg is a desktop app that works like ChatGPT's image feature: describe a picture, get it back, then ask for changes ("warmer light", "make it a night scene") until it is right. Every chat is saved as a folder of its own, with its messages, images and attached files, so it can be reopened and continued months later.
 
-Each verb does one observable operation; composing them into finished assets — margins, glyph sizing, directory layout, output names — is deliberately the caller's job, not GptImg's. A personal tool: v1 ships **OpenAI only** (the provider boundary exists, but no second provider is shipped).
+It runs on your own OpenAI API key and is billed per use, so there is no subscription and no message cap. Each reply shows the tokens it used, the assistant model's and the image model's separately.
+
+The repository also holds **GptImgSdk** (`gptimgsdk`, in [`sdk/`](sdk/)), the TypeScript library the app is built on. Scripts use it for image generation and editing with JSON records beside every paid image, and for local image work: masking, compositing, trimming, shadows, upscaling, icon packing and comparison sheets.
 
 ## Requirements
 
-- Node.js **22.12+** and npm. GptImg is consumed directly from its TypeScript source — there is no build step; run your scripts with [`tsx`](https://github.com/privatenumber/tsx) (`npx tsx your-script.ts`).
-- An **OpenAI API key** for the provider-backed verbs (`generate`, `edit`, `vision`), billed to your key. The local image ops need no key; AI matting and upscaling need the one-time model downloads described below, then run offline.
-- For AI matting (`mask({ method: "ai" })`) and `upscale`: a one-time **ONNX model download** (BiRefNet ~0.5 GB, Swin2SR ~53 MB) and the RAM to run them: an AI mask peaks at about 11 GB whatever the image size, and `upscale` at about 3 GB with its default `tile` of 256, growing with the tile's area. A loaded model stays in memory until the script exits, and a call that runs out of memory fails with `memory.exhausted` and leaves no partial output. Run these one at a time. Models are accepted third-party ONNX re-exports from the `onnx-community` organization on Hugging Face (the model authors do not publish ONNX builds), fetched on first use or explicitly via the `model` API, commit-pinned and SHA-256-verified, and cached under `~/.gptimg`. The model API can also re-verify cached files on demand.
-- macOS is the primary execution platform. Windows runs the same Node code on a best-effort basis; the full live suite is qualified on macOS. Icon packing emits macOS `.icns` and Windows `.ico`.
+- An **OpenAI API key**, created at [platform.openai.com](https://platform.openai.com). Each message is billed to that account.
+- **macOS on Apple silicon** is the primary platform. A Windows build is configured but not yet qualified.
+- To build from source: **Node.js 24.12 or later** and npm.
 
 ## Getting started
+
+There is no published download yet; build the app from source:
 
 ```sh
 git clone https://github.com/nao7sep/gptimg.git
 cd gptimg
-npm install
 ```
 
-No build step — `import "gptimg"` resolves to the TypeScript source, so editing `src/` takes effect on the next run with nothing to keep in sync. Store your API key once, then generate an image and verify it:
+On macOS, double-click `scripts/rebuild.command`. It installs dependencies, type-checks, builds `dist/mac-arm64/GptImg.app` and opens it. Later launches can use `scripts/run-built.command`, which opens the existing build without rebuilding it. On Windows, the matching `.ps1` scripts do the same.
+
+The app is unsigned (an ad-hoc seal on macOS). If macOS refuses to open it, right-click the app and choose Open, or run `xattr -dr com.apple.quarantine GptImg.app`.
+
+On first launch GptImg asks for your API key, then for a folder to keep chats in. If `OPENAI_API_KEY` is set in the environment, it is used and the key step can be skipped. Both choices can be changed later in Settings.
+
+## Using the app
+
+- **Send a message** to start a chat. Attach images to work from with the paperclip, by dropping files on the window, or by pasting. Choose the image's shape (square, portrait, landscape, or let the model decide) and its quality under the message box.
+- **Each generated image** can be opened full size, copied, exported, or used as an attachment in the next message.
+- **A reply takes a minute or two** when it makes an image. A placeholder of the chosen shape shows the elapsed time, with Stop beside it. A message whose reply failed or was stopped stays in the chat with Try again.
+- **Chats** are listed on the left by their latest image. Rename a chat from its title (its folder is renamed to match), show its folder, or move it to the Trash from the File menu.
+- **Settings** hold the language (ten languages, or follow the system), appearance, time zone, interface and conversation fonts, the chats folder, the API key, and the assistant and image models with the assistant's thinking level. The built-in models are the recommended ones; another model id can be typed, and one GptImg does not know is marked as unsupported but still sent.
+
+OpenAI keeps each conversation for about 30 days, so a follow-up sends only the new message. When OpenAI's copy is gone, GptImg resends the conversation from the chat's folder (with the images of its eight most recent image turns) and carries on.
+
+## Files
+
+- **Chats** live in the folder you chose, one folder per chat: `session.json` (the conversation), each image with a JSON record of the request and OpenAI's full reply beside it, and `inputs/` with a copy of every attached image. A chat folder is self-contained and can be moved, backed up or shared whole.
+- **App data** lives in `~/.gptimg`: `config.json` (only the settings you changed), `state.json` (window and list layout), `api-keys.json` (your key, obfuscated and readable only by you; obfuscation is not encryption), `records.sqlite3` (a record of every launch and every OpenAI call with its full reply and token use, the key masked) and `backups.sqlite3` (earlier copies of each settings and chat file the app wrote). Set `GPTIMG_DATA_DIR` to use another folder.
+- Removing a chat moves its folder to the Trash; GptImg never deletes images itself.
+
+## GptImgSdk
+
+`gptimgsdk` is consumed from its TypeScript source on plain Node, with no build step. A script outside this repository depends on it by path (`"gptimgsdk": "file:../gptimg/sdk"`) and imports it by name:
 
 ```ts
-import { GptImg } from "gptimg";
+import { GptImg, completed } from "gptimgsdk";
 
-const img = new GptImg();
-await img.profile.setApiKey("sk-..."); // one-time, into the default profile
-
-const gen = await img.generate({
-  prompt: "a single centered pink frosted donut",
-  outDir: "./output",
-  outName: "donut",
-});
-const verdict = await img.vision({
-  in: gen.files[0].path,
-  check: "one donut, centered and fully visible",
-  outDir: "./output",
-});
-console.log(gen.files, verdict);
-```
-
-Run it with `npx tsx your-script.ts`.
-
-The key lives inside the profile on purpose: a profile is the unit you manage cost by, so each profile carries the key it spends. Keys are stored obfuscated in a file created with owner-only permissions on POSIX systems. Obfuscation is reversible, not encryption; treat the profile as a secret. To supply a key from the environment instead, name the variable in the profile's `apiKeyEnv` field; when that variable is set, it overrides the stored key. An `OPENAI_API_KEY` exported for other tools is not read unless a profile names it, so it never spends on a profile's behalf.
-
-Each provider call or image download attempt gets its own JSONL log line holding the request it sent and, when one came back, the response. The API key reads `[REDACTED]` there and in every progress event and error, and a signed download URL's query values are masked the same way; only image bytes stay out otherwise, since the image files hold them. Log files are created readable only by you, since they hold your prompts. Log lines are written in order in the background, and a call waits at most two seconds at the end for its last lines. Log creation still needs access to the log directory; a stalled directory can delay startup. Abrupt process exit may lose pending diagnostic lines.
-
-Every long-running verb accepts the same optional call controls. Pass an `AbortSignal` to cancel at the next safe boundary and `onProgress` to receive the structured stage events that also feed the JSONL log. AI matting and `upscale` run their model on the calling thread: while a model runs (about half a minute per AI mask, a few seconds per upscale tile), nothing else in the script runs, and a cancellation takes effect when it finishes, before anything is saved:
-
-```ts
-const controller = new AbortController();
-
-const result = await img.upscale(
-  { in: "cutout.png", toSize: 2048 },
-  {
-    signal: controller.signal,
-    onProgress: event => console.log(event.stage, event.message),
-  },
+const img = new GptImg({ apiKey: process.env.OPENAI_API_KEY });
+const result = completed(
+  await img.generate({ prompt: "a single centered pink frosted donut", outDir: "/absolute/output" }),
 );
+console.log(result.files.map((file) => file.path));
 ```
 
-The AI verbs default to the models listed in `src/ai-models.ts`. A recipe that names a listed model is checked against that model's values (quality, background, output format and compression, and size for images; reasoning effort for `vision`) before any paid call, so a value the model does not take fails without spending. Any other model id is sent as given in the plain request: the recipe's own fields pass through, including a `vision` recipe's `detail` and `reasoning` (sent as `reasoning_effort`) when the recipe sets them, gptimg adds no moderation, reasoning effort or detail of its own, and OpenAI's answer is the verdict. For a listed model, `generate` sends moderation `"low"`, and `vision` sends `reasoning` as `reasoning_effort` (the model's default when unset) and `detail` as chosen (`"auto"` when unset). A recipe sets neither `moderation` nor `reasoning_effort`.
+The SDK reads no environment variable, configuration file or working directory: everything comes from the constructor and each call, and every path is absolute. Each verb returns `{ status: "completed", … }` or `{ status: "refused", refusal }`; `completed()` turns a refusal into a thrown `GptImgError` for scripts that do not handle one. The SDK writes no log: pass `onEvent` to receive each event of a call as a complete record, credentials masked, and store it where you keep your own records. Paid images get a JSON sidecar with the request, OpenAI's response and token usage.
 
-The package entry point exports the argument, result, error, model, progress, profile, image-helper, and logger types used by its public surface. Source, those types, focused examples, and tests are the API reference; there is no parallel hand-maintained API inventory.
+The public types, the exported code tables, the tests and [`sdk/CHANGELOG.md`](sdk/CHANGELOG.md) are the API reference.
 
-## Files and operations
-
-`generate` requires `outDir`. `backplate` requires `outDir` unless `outName` is an absolute output stem. `edit` and `vision` default beside the supplied input image (the first image for multi-image vision); pass `outDir` to choose another folder. Relative input and output operands are relative to the script's working directory. A sidecar records the settings and prompt that were sent, the provider's reply with its creation time and token usage (image bytes are left to the image files), each output's name, SHA-256 and format, and for `edit` and `vision` each input's name and SHA-256. Keep a paid image and its JSON sidecar together: `mask` with `key: "from-sidecar"` checks that the sidecar describes that image, including after both files are renamed.
-
-Existing output is protected unless you request `overwrite`. Overwriting an output group can remove stale numbered siblings belonging to that group. Images and sidecars publish separately, so an interrupted replacement can leave a new image beside an older sidecar; a mismatching sidecar is refused by `mask`. Concurrent paid calls in one process reserve overlapping output names before spending. Separate processes do not share that reservation: give concurrent scripts distinct names or directories, especially when overwriting.
-
-The profile, optional hand-written recipe, logs and downloaded models normally live under `~/.gptimg`. Set `GPTIMG_DATA_DIR` before constructing `GptImg` to use another root; it selects a location and does not move existing files. Do not delete the whole root as a cache: it can also contain your profile, recipe and output from older versions. Existing files are never moved by the new output defaults. GptImg does not back up these files or prune its logs. Logs contain prompts and responses even after credentials are masked; inspect them before sharing.
-
-Use the result's returned paths and typed errors to determine whether a call succeeded; diagnostic logs are best effort. Cancellation of a paid request does not establish that the provider did not bill it. For local AI work, `model.list()` reports cached models, `model.verify()` checks their hashes, and `model.install("birefnet", { force: true })` explicitly replaces that cached model after a failed verification. Installing a missing or replacement model requires its download again. When a GptImg update pins a new revision of a model, the old file is deleted once the new one has been downloaded and verified. `GPTIMG_MODELS_DIR` can put that large cache on another disk without relocating the profile.
+AI matting (`mask` with `method: "ai"`) and `upscale` run local models that are installed only on request (`img.model.install`), into `~/.gptimgsdk/models` unless a call or the constructor names another folder. They run offline once installed, but need memory: an AI mask peaks at about 11 GB, an upscale at about 3 GB with its default tile.
 
 ## Third-party models
 
-GptImg does not distribute model files in its npm package. The following models are downloaded separately on first use, from immutable revisions whose size and SHA-256 digest are enforced by the model registry:
+Neither the app nor the SDK ships model files. The SDK downloads these on request, from pinned revisions whose size and SHA-256 digest it checks:
 
-- [BiRefNet ONNX](https://huggingface.co/onnx-community/BiRefNet-ONNX), licensed under MIT, provides AI matting.
-- [Swin2SR real-world ×4 ONNX](https://huggingface.co/onnx-community/swin2SR-realworld-sr-x4-64-bsrgan-psnr-ONNX), licensed under Apache-2.0, provides super-resolution upscaling.
+- [BiRefNet ONNX](https://huggingface.co/onnx-community/BiRefNet-ONNX), MIT, for AI matting (about 0.5 GB).
+- [Swin2SR real-world ×4 ONNX](https://huggingface.co/onnx-community/swin2SR-realworld-sr-x4-64-bsrgan-psnr-ONNX), Apache-2.0, for upscaling (about 53 MB).
 
-## Tests
+## Development
 
-`npm test` typechecks and runs the whole suite, which takes a few seconds. `npm run test:full` then runs the live lane: it installs both models through the SDK's own installer into `node_modules/.cache`, about 540 MB on the first run and again only when a new pin names a new file, runs each on a test image, and calls the real OpenAI API to generate, edit, and judge images. Export `OPENAI_API_KEY` first; the lane makes a few paid OpenAI calls, and the full run fails without the key. The vision test reads a photo from the shared test-fixture corpus in the company repository, which must be checked out beside this one.
+- `scripts/run-dev.command` runs the app from source with live reload; `rebuild.command` and `run-built.command` exercise the production build.
+- `npm test` type-checks the app and the SDK and runs the ordinary suite.
+- `npm run test:full` also runs the SDK's live lane: it makes a few paid OpenAI calls (export `OPENAI_API_KEY` first), downloads both models into `sdk/node_modules/.cache` (about 540 MB, once per pinned revision), and reads a photo from the company test-fixture corpus, which must be checked out beside this repository.
 
 ## License
 
