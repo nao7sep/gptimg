@@ -14,6 +14,7 @@ import {
   chatRow,
   CONTENT_LINE_HEIGHT,
   CONTENT_SIZE,
+  DRAFT_COUNTS,
   imageRow,
   SET_KEYS,
   THEMES,
@@ -351,6 +352,17 @@ export function SettingsModal(props: SettingsModalProps) {
                   <input type="text" value={draft["openai.image"]} spellCheck={false} onChange={(e) => set("openai.image", e.target.value)} />
                   <span className="field-help">{t("settings.imageModelHelp")}</span>
                   {!imageRow(draft["openai.image"]) && draft["openai.image"].trim() !== "" && <span className="field-warn">{t("settings.unsupportedModel")}</span>}
+                </label>
+                <label className="field">
+                  <span className="field-label">{t("settings.drafts")}</span>
+                  <select value={draft["openai.drafts"]} onChange={(e) => set("openai.drafts", Number(e.target.value))}>
+                    {DRAFT_COUNTS.map((count) => (
+                      <option key={count} value={count}>
+                        {t(`settings.drafts.${count}`)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="field-help">{t("settings.draftsHelp")}</span>
                 </label>
               </section>
             </>

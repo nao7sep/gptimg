@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell } from "electron";
 import type { AppFailure, BootInfo, GptImgApi, MenuCommand, Outcome, SendRequest } from "../shared/api.ts";
+import type { PartialDraft } from "./sdk-protocol.ts";
 import { extensionOf, type ExportRequest } from "../shared/export.ts";
 import { message } from "../shared/i18n/translator.ts";
 import { INITIAL_WINDOW, windowMinimum } from "../shared/layout.ts";
@@ -139,6 +140,44 @@ async function start(): Promise<void> {
     window: null,
     quitConfirmed: false,
   };
+  // The drafts of the image a turn is drawing: the latest one per chat, in staging, gone when the turn
+  // settles. A write still under way when the turn settles is dropped, never shown late.
+  const drafts = (() => {
+    const shown = new Map<string, string>();
+    const generation = new Map<string, number>();
+    const drop = (sessionId: string) => {
+      const previous = shown.get(sessionId);
+      shown.delete(sessionId);
+      if (previous) void rm(previous, { force: true });
+    };
+    return {
+      async show(sessionId: string, draft: PartialDraft | null) {
+        if (!draft) {
+          generation.set(sessionId, (generation.get(sessionId) ?? 0) + 1);
+          drop(sessionId);
+          state.window?.webContents.send("turnDraft", { sessionId, path: null });
+          return;
+        }
+        const mine = generation.get(sessionId) ?? 0;
+        const path = join(paths.staging, `draft-${randomUUID().slice(0, 8)}.${draft.format === "jpeg" ? "jpg" : draft.format}`);
+        try {
+          await mkdir(paths.staging, { recursive: true, mode: 0o700 });
+          await writeFile(path, draft.data, { mode: 0o600 });
+          if ((generation.get(sessionId) ?? 0) !== mine) {
+            await rm(path, { force: true });
+            return;
+          }
+          await state.images.register(path);
+          drop(sessionId);
+          shown.set(sessionId, path);
+          state.window?.webContents.send("turnDraft", { sessionId, path });
+        } catch {
+          // A draft is only a preview; the finished image does not depend on it.
+          void rm(path, { force: true });
+        }
+      },
+    };
+  })();
   state.turns = new TurnRunner({
     host,
     records,
@@ -147,6 +186,7 @@ async function start(): Promise<void> {
     app: { name: "GptImg", version: __APP_VERSION__ },
     backup: (path, text) => backups.keep(path, text),
     started: (requestId, session) => state.window?.webContents.send("turnStarted", { requestId, session }),
+    draft: (sessionId, draft) => void drafts.show(sessionId, draft),
     releaseStaged: (path) => {
       if (path.startsWith(paths.staging)) void rm(path, { force: true });
     },
@@ -504,7 +544,12 @@ function installIpc(state: State): void {
     },
 
     send(request: SendRequest) {
-      return state.turns.send(request);
+      // An absolute path is only one the window registered (picked, dropped, pasted or painted); a session path stays inside the session.
+      const outside = (path: string) => (path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path)) && !state.images.allowed(path);
+      const references = request.references.filter((path) => !outside(path));
+      const mask = request.mask && !outside(request.mask.mask) && !outside(request.mask.image) ? request.mask : undefined;
+      const { mask: _requested, ...rest } = request;
+      return state.turns.send({ ...rest, references, ...(mask && { mask }) });
     },
     retry(sessionId: string) {
       return state.turns.retry(sessionId);
@@ -536,6 +581,22 @@ function installIpc(state: State): void {
       await writeFile(path, new Uint8Array(await blob.arrayBuffer()), { flag: "wx", mode: 0o600 });
       await state.images.register(path);
       return path;
+    },
+    async saveMask(png: Uint8Array) {
+      const bytes = png instanceof Uint8Array ? png : null;
+      // Only a PNG the painter made: its signature, and a size no painted mask comes near.
+      const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      if (!bytes || bytes.length > 64 * 1024 * 1024 || !signature.every((b, i) => bytes[i] === b)) return null;
+      try {
+        await mkdir(paths.staging, { recursive: true, mode: 0o700 });
+        const path = join(paths.staging, `mask-${randomUUID().slice(0, 8)}.png`);
+        await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
+        await state.images.register(path);
+        return path;
+      } catch (error) {
+        state.records.log("warn", "mask.saveFailed", { error: String(error) });
+        return null;
+      }
     },
     async registerFiles(list: string[]) {
       const accepted: string[] = [];

@@ -5,13 +5,23 @@ export const SESSION_FORMAT = 1;
 export const SESSION_FILE = "session.json";
 export const INPUTS_DIR = "inputs";
 
+export const BACKGROUNDS = ["auto", "transparent", "opaque"] as const;
+export type Background = (typeof BACKGROUNDS)[number];
+
 /** The image choices a user turn was sent with. */
 export interface TurnOptions {
   /** "auto" or "<w>x<h>". */
   size: string;
   quality: string;
-  /** Ask the image model for a transparent background; absent, the model decides. */
+  /** Ask the image model for a transparent or an opaque background; absent, the model decides. */
+  background?: "transparent" | "opaque";
+  /** Turns saved before `background`: true asked for a transparent one. Read, never written. */
   transparent?: boolean;
+}
+
+/** The background a turn asks for, from either form. */
+export function backgroundOf(options: TurnOptions): Background {
+  return options.background ?? (options.transparent ? "transparent" : "auto");
 }
 
 /** A turn's tokens: the assistant model's, and the image tool's apart, since the two are billed at different rates. */
@@ -29,6 +39,8 @@ export interface UserTurn {
   text: string;
   /** Session-relative paths of the images attached to this message. */
   images: string[];
+  /** A painted mask (session-relative) for the first of `images`: only its transparent area may change. */
+  mask?: string;
   options: TurnOptions;
 }
 
@@ -43,8 +55,12 @@ export interface AssistantTurn {
   resumed: "chain" | "resent" | null;
   incomplete: string | null;
   usage: TokenUsage | null;
-  /** How many images the provider produced that could not be saved. */
+  /** How many images arrived but could not be saved. */
   failedImages: number;
+  /** How many images the provider's moderation blocked. Absent in turns saved before it was told apart. */
+  blockedImages?: number;
+  /** How many images the image tool failed to return for another reason. */
+  missingImages?: number;
 }
 
 export type Turn = UserTurn | AssistantTurn;

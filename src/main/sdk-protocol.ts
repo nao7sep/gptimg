@@ -12,5 +12,14 @@ export type WorkerReply =
   | { type: "ready" }
   | { type: "event"; id: string; event: Record<string, unknown> }
   | { type: "progress"; id: string; progress: Record<string, unknown> }
+  | { type: "partial"; id: string; partial: PartialDraft }
   | { type: "result"; id: string; result: Record<string, unknown> }
   | { type: "error"; id: string; error: Record<string, unknown> };
+
+/** A draft of an image while it is drawn (the SDK's PartialImage). */
+export interface PartialDraft {
+  image: number;
+  index: number;
+  data: Uint8Array;
+  format: string;
+}

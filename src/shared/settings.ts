@@ -34,7 +34,11 @@ export interface Settings {
   "openai.chat": string;
   "openai.thinking.chat": string;
   "openai.image": string;
+  /** How many drafts of each image to show while it is drawn, 0 to 3; each costs a little more. */
+  "openai.drafts": number;
 }
+
+export const DRAFT_COUNTS = [0, 1, 2, 3] as const;
 
 export const OPENAI_ENDPOINT = "https://api.openai.com/v1";
 
@@ -61,6 +65,7 @@ export function builtInSettings(): Settings {
     "openai.chat": chat,
     "openai.thinking.chat": defaultThinkingFor(chat) ?? "",
     "openai.image": defaultModelFor("openai", IMAGE_KIND),
+    "openai.drafts": 2,
   };
 }
 
@@ -135,6 +140,8 @@ export function validateSet<K extends SetKey>(key: K, value: unknown): string | 
       return typeof value === "string" && cleanLine(value) !== "" ? null : "settings.error.required";
     case "openai.thinking.chat":
       return typeof value === "string" ? null : "settings.error.shape";
+    case "openai.drafts":
+      return (DRAFT_COUNTS as readonly unknown[]).includes(value) ? null : "settings.error.shape";
     default:
       return "settings.error.shape";
   }

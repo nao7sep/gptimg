@@ -14,6 +14,7 @@ export function inProcessHost(): SdkHost {
           signal: controller.signal,
           onEvent: (event) => hooks.onEvent?.(event as Record<string, unknown>),
           onProgress: (progress) => hooks.onProgress?.(progress as Record<string, unknown>),
+          onPartialImage: (partial) => hooks.onPartial?.(partial),
         });
         return { kind: "result", result: result as Record<string, unknown> };
       } catch (error) {
@@ -24,8 +25,8 @@ export function inProcessHost(): SdkHost {
   };
   return {
     call,
-    chat: (apiKey: string, baseURL: string | null, app: unknown, args: Record<string, unknown>, onEvent: (e: Record<string, unknown>) => void) =>
-      call("chat", app, args, { apiKey, baseURL, onEvent }),
+    chat: (apiKey: string, baseURL: string | null, app: unknown, args: Record<string, unknown>, hooks: Pick<CallHooks, "onEvent" | "onPartial">) =>
+      call("chat", app, args, { apiKey, baseURL, ...hooks }),
     stop() {},
   } as unknown as SdkHost;
 }

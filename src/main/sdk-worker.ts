@@ -25,6 +25,7 @@ async function call(request: Extract<WorkerRequest, { type: "call" }>): Promise<
       signal: controller.signal,
       onEvent: (event) => post({ type: "event", id: request.id, event: event as Record<string, unknown> }),
       onProgress: (progress) => post({ type: "progress", id: request.id, progress: progress as Record<string, unknown> }),
+      onPartialImage: (partial) => post({ type: "partial", id: request.id, partial }),
     });
     post({ type: "result", id: request.id, result: result as Record<string, unknown> });
   } catch (error) {

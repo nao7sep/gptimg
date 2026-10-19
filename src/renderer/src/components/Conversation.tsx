@@ -6,7 +6,7 @@ import { imageUrl, type AppFailure, type OpenedSession } from "../../../shared/a
 import { sessionTotals, type AssistantTurn, type UserTurn } from "../../../shared/session.ts";
 import type { Running } from "../App.tsx";
 import { useI18n } from "../i18n.tsx";
-import { CloseIcon, FolderIcon, PencilIcon, RetryIcon } from "./icons.tsx";
+import { CloseIcon, FolderIcon, ImagesIcon, PencilIcon, RetryIcon } from "./icons.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Print } from "./Print.tsx";
 import { elapsed, relativeDay } from "./time.ts";
@@ -22,6 +22,8 @@ interface ConversationProps {
   onDismissFailure: () => void;
   onRename: () => void;
   onReveal: () => void;
+  imagesPane: boolean;
+  onToggleImagesPane: () => void;
   onView: (images: string[], index: number) => void;
   onReuse: (relativePath: string) => void;
   onExport: (path: string) => void;
@@ -77,6 +79,16 @@ export function Conversation(props: ConversationProps) {
             <button type="button" className="icon-button" onClick={props.onReveal} aria-label={t("conversation.reveal")} title={t("conversation.reveal")}>
               <FolderIcon />
             </button>
+            <button
+              type="button"
+              className={`icon-button images-toggle${props.imagesPane ? " on" : ""}`}
+              aria-pressed={props.imagesPane}
+              onClick={props.onToggleImagesPane}
+              aria-label={t("images.toggle")}
+              title={t("images.toggle")}
+            >
+              <ImagesIcon />
+            </button>
           </>
         ) : (
           <span className="title-text muted">{t("conversation.newTitle")}</span>
@@ -104,7 +116,14 @@ export function Conversation(props: ConversationProps) {
           )}
           {turns.map((turn, index) =>
             turn.role === "user" ? (
-              <UserTurnView key={turn.id} turn={turn} absolute={absolute} timeZone={props.timeZone} onView={props.onView} />
+              <UserTurnView
+                key={turn.id}
+                turn={turn}
+                absolute={absolute}
+                timeZone={props.timeZone}
+                onView={props.onView}
+                skipped={turns[index + 1]?.role === "user"}
+              />
             ) : (
               <AssistantTurnView
                 key={turn.id}
@@ -158,11 +177,14 @@ function UserTurnView({
   turn,
   absolute,
   onView,
+  skipped,
 }: {
   turn: UserTurn;
   absolute: (rel: string) => string;
   timeZone: string;
   onView: (images: string[], index: number) => void;
+  /** It got no reply and a later message was sent: the conversation the assistant knows leaves it out. */
+  skipped: boolean;
 }) {
   const { t } = useI18n();
   const images = turn.images.map(absolute);
@@ -172,12 +194,20 @@ function UserTurnView({
       {images.length > 0 && (
         <div className="references">
           {images.map((path, index) => (
-            <button key={path} type="button" className="reference-print" onClick={() => onView(images, index)} aria-label={t("conversation.viewReference")}>
+            <button
+              key={path}
+              type="button"
+              className={`reference-print${turn.mask && index === 0 ? " masked" : ""}`}
+              onClick={() => onView(images, index)}
+              aria-label={t("conversation.viewReference")}
+            >
               <img src={imageUrl(path, 160)} alt="" draggable={false} />
             </button>
           ))}
         </div>
       )}
+      {turn.mask && images.length > 0 && <p className="turn-note">{t("conversation.masked")}</p>}
+      {skipped && <p className="turn-note">{t("conversation.skipped")}</p>}
     </article>
   );
 }
@@ -221,6 +251,8 @@ function AssistantTurnView({
           />
         );
       })}
+      {(turn.blockedImages ?? 0) > 0 && <p className="turn-note">{t("conversation.blockedImages", { count: turn.blockedImages! })}</p>}
+      {(turn.missingImages ?? 0) > 0 && <p className="turn-note">{t("conversation.missingImages", { count: turn.missingImages! })}</p>}
       {turn.failedImages > 0 && <p className="turn-note">{t("conversation.failedImages", { count: turn.failedImages })}</p>}
       {turn.incomplete && <p className="turn-note">{t("conversation.incomplete")}</p>}
       <p className="token-line">
@@ -245,8 +277,12 @@ function Developing({ running, onCancel }: { running: Running; onCancel: () => v
   const [w, h] = running.size === "auto" ? [1, 1] : running.size.split("x").map(Number);
   return (
     <div className="turn turn-assistant" aria-live="polite">
-      <div className="developing" style={{ aspectRatio: `${w} / ${h}` }}>
-        <div className="developing-sheen" aria-hidden="true" />
+      <div className={`developing${running.draft ? " has-draft" : ""}`} style={{ aspectRatio: `${w} / ${h}` }}>
+        {running.draft ? (
+          <img className="developing-draft" src={imageUrl(running.draft, 1600)} alt={t("conversation.draft")} draggable={false} />
+        ) : (
+          <div className="developing-sheen" aria-hidden="true" />
+        )}
         <div className="developing-label">
           <span>{t("conversation.working")}</span>
           <span className="developing-time">{elapsed(now - running.startedAt)}</span>

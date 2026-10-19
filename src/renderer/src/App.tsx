@@ -8,8 +8,9 @@ import type { Settings } from "../../shared/settings.ts";
 import { commandFor } from "../../shared/shortcuts.ts";
 import type { UiState } from "../../shared/ui-state.ts";
 import { api } from "./api.ts";
-import { Composer, type Draft } from "./components/Composer.tsx";
+import { Composer, type Draft, type Reference } from "./components/Composer.tsx";
 import { Conversation } from "./components/Conversation.tsx";
+import { ImagesPane, paneImages, type PaneImage } from "./components/ImagesPane.tsx";
 import { Rail } from "./components/Rail.tsx";
 import { useI18n } from "./i18n.tsx";
 import { SettingsModal } from "./modals/SettingsModal.tsx";
@@ -17,6 +18,7 @@ import { SetupModal } from "./modals/SetupModal.tsx";
 import { AboutModal, ConfirmModal, RenameModal, ShortcutsModal } from "./modals/SmallModals.tsx";
 import { ExportModal } from "./modals/ExportModal.tsx";
 import { ViewerModal } from "./modals/ViewerModal.tsx";
+import { MaskModal } from "./modals/MaskModal.tsx";
 import { applyFonts } from "./fonts.ts";
 
 type ModalSpec =
@@ -27,11 +29,14 @@ type ModalSpec =
   | { kind: "rename"; id: string; title: string }
   | { kind: "trash"; id: string; title: string }
   | { kind: "viewer"; images: string[]; index: number }
-  | { kind: "export"; path: string };
+  | { kind: "export"; path: string }
+  | { kind: "mask"; reference: Reference };
 
 export interface Running {
   startedAt: number;
   size: string;
+  /** The latest draft of the image being drawn, when drafts are on. */
+  draft?: string;
 }
 
 const NEW = "";
@@ -139,6 +144,19 @@ export function App({ boot }: { boot: BootInfo }) {
     [refreshList],
   );
 
+  useEffect(
+    () =>
+      api.onTurnDraft(({ sessionId, path }) =>
+        setRunning((r) => {
+          const run = r[sessionId];
+          if (!run) return r;
+          const { draft: _old, ...rest } = run;
+          return { ...r, [sessionId]: path ? { ...rest, draft: path } : rest };
+        }),
+      ),
+    [],
+  );
+
   const settle = useCallback(
     (sessionId: string | null, outcome: TurnOutcome) => {
       const id = outcome.session?.id ?? sessionId;
@@ -168,7 +186,7 @@ export function App({ boot }: { boot: BootInfo }) {
       setFailures(({ [currentId]: _old, ...rest }) => rest);
       setDrafts(({ [currentId]: _sent, ...rest }) => rest);
       saveUi({ ...ui, composer: options });
-      const outcome = await api.send({ requestId, sessionId, text: draft.text, references: draft.references.map((r) => r.path), options });
+      const outcome = await api.send({ requestId, sessionId, text: draft.text, references: draft.references.map((r) => r.path), ...(draft.mask && { mask: draft.mask }), options });
       if (!sessionId && pendingNew.current?.requestId === requestId) {
         pendingNew.current = null;
         setPendingRun(null);
@@ -281,6 +299,15 @@ export function App({ boot }: { boot: BootInfo }) {
   }, [opened, ui.composer]);
 
   const front = modals[modals.length - 1];
+  const images = useMemo(() => (currentId !== NEW && opened ? paneImages(opened) : []), [currentId, opened]);
+  const chosen = useMemo(() => new Set(draft.references.map((r) => r.path)), [draft.references]);
+  const toggleImage = (image: PaneImage) =>
+    setDraft(
+      chosen.has(image.path)
+        ? { ...draft, references: draft.references.filter((r) => r.path !== image.path) }
+        : { ...draft, references: [...draft.references, { path: image.path, absolute: image.absolute }] },
+    );
+  const paneShown = ui.imagesPane && currentId !== NEW && opened !== null;
 
   return (
     <div className="shell">
@@ -312,6 +339,8 @@ export function App({ boot }: { boot: BootInfo }) {
           onRetry={() => currentId !== NEW && void retry(currentId)}
           onDismissFailure={() => setFailures(({ [currentId]: _gone, ...rest }) => rest)}
           onRename={() => runCommand("rename")}
+          imagesPane={ui.imagesPane}
+          onToggleImagesPane={() => saveUi({ ...ui, imagesPane: !ui.imagesPane })}
           onReveal={() => runCommand("reveal")}
           onView={(images, index) => pushModal({ kind: "viewer", images, index })}
           onExport={(path) => pushModal({ kind: "export", path })}
@@ -331,8 +360,10 @@ export function App({ boot }: { boot: BootInfo }) {
           onSend={(d, o) => void send(d, o)}
           onCancel={() => currentId !== NEW && api.cancel(currentId)}
           onOpenSettings={() => runCommand("settings")}
+          onPaintMask={(reference) => pushModal({ kind: "mask", reference })}
         />
       </main>
+      {paneShown && <ImagesPane images={images} chosen={chosen} onToggle={toggleImage} />}
 
       {front?.kind === "setup" && (
         <SetupModal
@@ -412,6 +443,16 @@ export function App({ boot }: { boot: BootInfo }) {
             saveUi({ ...ui, export: prefs, exportDir: dir ?? ui.exportDir });
             popModal();
             setExported((e) => ({ path: front.path, count: (e?.count ?? 0) + 1 }));
+          }}
+        />
+      )}
+      {front?.kind === "mask" && (
+        <MaskModal
+          absolute={front.reference.absolute}
+          onClose={popModal}
+          onDone={(mask) => {
+            popModal();
+            setDraft({ ...draft, mask: { image: front.reference.path, mask } });
           }}
         />
       )}

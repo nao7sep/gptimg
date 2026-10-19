@@ -9,6 +9,7 @@ import type { AppFailure, OpenedSession, SendRequest, TurnOutcome } from "../sha
 import { failureFromError, failureFromRefusal, lostWorkerFailure } from "../shared/failures.ts";
 import { message } from "../shared/i18n/translator.ts";
 import {
+  backgroundOf,
   chatIdOf,
   fileStamp,
   historyBefore,
@@ -22,6 +23,7 @@ import {
 import { effectiveThinking, OPENAI_ENDPOINT, type Settings } from "../shared/settings.ts";
 import type { Records } from "./records.ts";
 import type { CallSettlement, SdkHost } from "./sdk-host.ts";
+import type { PartialDraft } from "./sdk-protocol.ts";
 import { createSession, importReference, readSession, sessionDir, withId, writeSession } from "./sessions.ts";
 
 export interface TurnDeps {
@@ -35,7 +37,13 @@ export interface TurnDeps {
   releaseStaged: (path: string) => void;
   /** The user's turn is saved; the call is about to start. */
   started: (requestId: string, session: OpenedSession) => void;
+  /** A draft of an image the session's turn is drawing; `null` once the turn settles. */
+  draft?: (sessionId: string, draft: PartialDraft | null) => void;
   now?: () => Date;
+}
+
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
 function plain(failure: AppFailure, session: OpenedSession | null, cancelled = false): TurnOutcome {
@@ -99,15 +107,30 @@ export class TurnRunner {
       }
       const dir = sessionDir(root, id);
       const images: string[] = [];
-      for (const reference of request.references) {
-        const isAbsolute = reference.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(reference);
-        images.push(isAbsolute ? await importReference(dir, reference, now) : reference);
-        if (isAbsolute) this.deps.releaseStaged(reference);
+      // The masked image goes first: a mask applies to the first image a message carries.
+      const masked = request.mask && request.references.includes(request.mask.image) ? request.mask : undefined;
+      const references = masked ? [masked.image, ...request.references.filter((r) => r !== masked.image)] : request.references;
+      for (const reference of references) {
+        images.push(isAbsolutePath(reference) ? await importReference(dir, reference, now) : reference);
+        if (isAbsolutePath(reference)) this.deps.releaseStaged(reference);
       }
-      const turn: UserTurn = { id: randomUUID(), role: "user", at: now.toISOString(), text: request.text, images, options: request.options };
+      let mask: string | undefined;
+      if (masked) {
+        mask = await importReference(dir, masked.mask, now);
+        this.deps.releaseStaged(masked.mask);
+      }
+      const turn: UserTurn = {
+        id: randomUUID(),
+        role: "user",
+        at: now.toISOString(),
+        text: request.text,
+        images,
+        ...(mask && { mask }),
+        options: request.options,
+      };
       doc = { ...doc, turns: [...doc.turns, turn] };
       await this.#save(root, id, doc);
-      this.deps.records.log("info", "turn.sent", { chatId: chatIdOf(id, doc), turnId: turn.id, attachments: images.length, options: turn.options });
+      this.deps.records.log("info", "turn.sent", { chatId: chatIdOf(id, doc), turnId: turn.id, attachments: images.length, masked: mask !== undefined, options: turn.options });
     } catch (error) {
       this.deps.records.log("error", "turn.saveFailed", { error: String(error) });
       return plain({ message: message("failure.sessionWrite"), retryable: false }, null);
@@ -145,6 +168,7 @@ export class TurnRunner {
     const args = {
       message: turn.text,
       ...(turn.images.length > 0 && { images: turn.images.map(absolute) }),
+      ...(turn.mask && turn.images.length > 0 && { mask: absolute(turn.mask) }),
       history: historyBefore(doc.turns, index, absolute),
       ...(previousResponseId && { previousResponseId }),
       outDir: dir,
@@ -158,14 +182,19 @@ export class TurnRunner {
           size: turn.options.size,
           quality: turn.options.quality,
           // Transparency needs a format that holds it; PNG is the image model's own default.
-          ...(turn.options.transparent && { background: "transparent", output_format: "png" }),
+          ...(backgroundOf(turn.options) === "transparent" && { background: "transparent", output_format: "png" }),
+          ...(backgroundOf(turn.options) === "opaque" && { background: "opaque" }),
+          ...(settings["openai.drafts"] > 0 && { partial_images: settings["openai.drafts"] }),
         },
       },
     };
 
     const endpoint = settings["openai.endpoint"].trim();
     const chat = { id: chatIdOf(id, doc), folder: id };
-    const call = this.deps.host.chat(apiKey, endpoint === OPENAI_ENDPOINT ? null : endpoint, this.deps.app, args, (event) => this.deps.records.sdkEvent(chat, event));
+    const call = this.deps.host.chat(apiKey, endpoint === OPENAI_ENDPOINT ? null : endpoint, this.deps.app, args, {
+      onEvent: (event) => this.deps.records.sdkEvent(chat, event),
+      onPartial: (draft) => this.deps.draft?.(id, draft),
+    });
     let cancelled = false;
     this.#running.set(id, () => {
       cancelled = true;
@@ -176,6 +205,7 @@ export class TurnRunner {
       settlement = await call.done;
     } finally {
       this.#running.delete(id);
+      this.deps.draft?.(id, null);
     }
     const opened = (d: SessionDoc): OpenedSession => ({ id, doc: d, dir });
     const model = settings["openai.chat"];
@@ -221,7 +251,7 @@ export class TurnRunner {
       resumed: result.resumed,
       incomplete: result.incomplete,
       usage,
-      failedImages: result.failures.length,
+      ...imageFailures(result.failures),
     };
     this.deps.records.log("info", "turn.replied", { chatId: chat.id, turnId: reply.id, images: reply.images.length, usage, resumed: reply.resumed });
     this.deps.records.turn({
@@ -251,4 +281,11 @@ export class TurnRunner {
     }
     return { ok: true, session: opened(next) };
   }
+}
+
+/** A turn's image failures by what happened: blocked by moderation, never returned, or returned but not saved. */
+function imageFailures(failures: readonly { code: string }[]): Pick<AssistantTurn, "failedImages" | "blockedImages" | "missingImages"> {
+  const blocked = failures.filter((f) => f.code === "provider.moderationBlocked").length;
+  const missing = failures.filter((f) => f.code === "provider.noImage").length;
+  return { failedImages: failures.length - blocked - missing, ...(blocked > 0 && { blockedImages: blocked }), ...(missing > 0 && { missingImages: missing }) };
 }

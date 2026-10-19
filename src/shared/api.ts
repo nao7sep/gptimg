@@ -75,6 +75,8 @@ export interface SendRequest {
   text: string;
   /** Absolute paths of attached images (registered through `attach.*`) or session-relative paths. */
   references: string[];
+  /** A painted mask (an absolute staged path) for one of `references`, which is sent first. */
+  mask?: { image: string; mask: string };
   options: TurnOptions;
 }
 
@@ -137,6 +139,8 @@ export interface GptImgApi {
   pickImages(): Promise<string[]>;
   /** The clipboard's image saved to a staging file, or null when it holds none. */
   pasteImage(): Promise<string | null>;
+  /** A painted mask's PNG saved to a staging file, or null when it could not be saved. */
+  saveMask(png: Uint8Array): Promise<string | null>;
   /** Registers dropped files: returns the ones that are images the SDK can read. */
   registerFiles(paths: string[]): Promise<string[]>;
   /** The path of a dropped File (Electron's webUtils), "" when it has none. */
@@ -170,6 +174,8 @@ export interface GptImgApi {
   onLanguage(handler: (info: LanguageInfo) => void): () => void;
   /** The user's turn is saved and the call has started: the session as it now stands. */
   onTurnStarted(handler: (event: { requestId: string; session: OpenedSession }) => void): () => void;
+  /** The latest draft of the image a chat's turn is drawing, or null once the turn settles. */
+  onTurnDraft(handler: (event: { sessionId: string; path: string | null }) => void): () => void;
 }
 
 /** The URL the renderer loads an image through; `width` asks main for a copy decoded at that size. */

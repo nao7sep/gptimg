@@ -24,6 +24,26 @@ function Svg({ size = 18, children, ...rest }: IconProps & { children: React.Rea
   );
 }
 
+export const ImagesIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="3" width="14" height="14" rx="2" />
+    <path d="M12.5 3v14M12.5 8h4.5M12.5 12.5h4.5" />
+  </Svg>
+);
+
+export const BrushIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M15.5 3.5l-7 7M10 12l-2-2" />
+    <path d="M8 10c-2 0-3.5 1.2-3.5 3.2 0 1.2-.6 2-1.5 2.3 1 .7 2.2 1 3.4 1 2.3 0 3.6-1.7 3.6-3.5" />
+  </Svg>
+);
+
+export const CheckIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.5 10.5l3.5 3.5 7.5-8" />
+  </Svg>
+);
+
 export const PlusIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M10 4.5v11M4.5 10h11" />
@@ -134,14 +154,6 @@ export const EyeIcon = (p: IconProps) => (
 );
 
 /** A transparent background: the checkerboard image editors draw under nothing. */
-export const CheckerIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="4" y="4" width="12" height="12" rx="1.8" />
-    <path d="M4 8h4V4M8 12h4V8M12 16v-4h4M4 12h4v4M12 4v4h4" strokeWidth={1.2} />
-    <path d="M4.6 4.6h3.4v3.4H4.6zM8 8h4v4H8zM12 12h3.4v3.4H12zM12 4.6h3.4V8H12zM4.6 12H8v3.4H4.6z" fill="currentColor" stroke="none" opacity={0.35} />
-  </Svg>
-);
-
 /** The composer's shape glyphs: the frame each size will produce. */
 export function ShapeGlyph({ shape, ...p }: IconProps & { shape: string }) {
   const frames: Record<string, { w: number; h: number }> = {

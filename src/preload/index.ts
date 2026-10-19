@@ -36,6 +36,7 @@ const api = {
   cancel: fire("cancel"),
   pickImages: invoke("pickImages"),
   pasteImage: invoke("pasteImage"),
+  saveMask: invoke("saveMask"),
   registerFiles: invoke("registerFiles"),
   pathForFile: (file: File) => {
     try {
@@ -82,6 +83,11 @@ const api = {
     const listener = (_event: unknown, payload: { requestId: string; session: OpenedSession }) => handler(payload);
     ipcRenderer.on("turnStarted", listener);
     return () => ipcRenderer.off("turnStarted", listener);
+  },
+  onTurnDraft: (handler: (event: { sessionId: string; path: string | null }) => void) => {
+    const listener = (_event: unknown, payload: { sessionId: string; path: string | null }) => handler(payload);
+    ipcRenderer.on("turnDraft", listener);
+    return () => ipcRenderer.off("turnDraft", listener);
   },
 } satisfies GptImgApi;
 

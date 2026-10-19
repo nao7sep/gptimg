@@ -18,9 +18,11 @@ export interface ModalProps {
   intro?: string;
   /** A band under the title that stays while the body scrolls, such as a tab strip. */
   band?: ReactNode;
+  /** A surface that works on an image: 85% of the window both ways (modal-dialog-conventions). */
+  large?: boolean;
 }
 
-export function Modal({ title, onClose, width, footer, children, intro, band }: ModalProps) {
+export function Modal({ title, onClose, width, footer, children, intro, band, large }: ModalProps) {
   const { t } = useI18n();
   const panel = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -59,13 +61,13 @@ export function Modal({ title, onClose, width, footer, children, intro, band }: 
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
-        className="modal"
+        className={`modal${large ? " modal-large" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         ref={panel}
         tabIndex={-1}
-        style={{ width }}
+        style={large ? undefined : { width }}
         onKeyDown={onKeyDown}
       >
         <header className="modal-head">

@@ -28,6 +28,7 @@ const placeholders = (text: string): string[] => [...text.matchAll(/\{(\w+)\}/g)
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
   de: [
     "about.version",
+    "composer.background.transparent",
     "export.format",
     "rail.label",
     "rail.sessions",
@@ -54,12 +55,15 @@ const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
   ],
   fr: [
     "about.version",
+    "composer.background.opaque",
+    "composer.background.transparent",
     "composer.label",
     "composer.size.portrait",
     "conversation.label",
     "conversation.totals.other",
     "dialog.imageFilter",
     "export.format",
+    "images.title",
     "menu.open",
     "nativeMenu.services",
     "nativeMenu.zoom",
@@ -68,8 +72,11 @@ const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
     "records.level.info",
     "viewer.label",
   ],
+  ja: ["composer.size.customShort"],
+  ko: ["composer.size.customShort"],
   it: ["menu.open", "nativeMenu.file", "nativeMenu.zoom", "records.field.chat", "records.level.debug", "records.level.info"],
   "pt-BR": [
+    "composer.size.ok",
     "menu.open",
     "nativeMenu.zoom",
     "rail.label",

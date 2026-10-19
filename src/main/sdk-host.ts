@@ -4,7 +4,7 @@
 // since the provider may already have done the work.
 import { randomUUID } from "node:crypto";
 import { utilityProcess, type UtilityProcess } from "electron";
-import type { SdkOp, WorkerReply, WorkerRequest } from "./sdk-protocol.ts";
+import type { PartialDraft, SdkOp, WorkerReply, WorkerRequest } from "./sdk-protocol.ts";
 
 export type CallSettlement =
   | { kind: "result"; result: Record<string, unknown> }
@@ -14,6 +14,7 @@ export type CallSettlement =
 interface Pending {
   onEvent: (event: Record<string, unknown>) => void;
   onProgress: (progress: Record<string, unknown>) => void;
+  onPartial: (partial: PartialDraft) => void;
   settle: (settlement: CallSettlement) => void;
 }
 
@@ -22,6 +23,7 @@ export interface CallHooks {
   baseURL?: string | null;
   onEvent?: (event: Record<string, unknown>) => void;
   onProgress?: (progress: Record<string, unknown>) => void;
+  onPartial?: (partial: PartialDraft) => void;
 }
 
 export class SdkHost {
@@ -52,6 +54,7 @@ export class SdkHost {
         if (!pending) return;
         if (reply.type === "event") pending.onEvent(reply.event);
         else if (reply.type === "progress") pending.onProgress(reply.progress);
+        else if (reply.type === "partial") pending.onPartial(reply.partial);
         else {
           this.#pending.delete(reply.id);
           pending.settle(reply.type === "result" ? { kind: "result", result: reply.result } : { kind: "error", error: reply.error });
@@ -82,7 +85,7 @@ export class SdkHost {
     const id = randomUUID();
     let cancelled = false;
     const done = new Promise<CallSettlement>((settle) => {
-      this.#pending.set(id, { onEvent: hooks.onEvent ?? (() => {}), onProgress: hooks.onProgress ?? (() => {}), settle });
+      this.#pending.set(id, { onEvent: hooks.onEvent ?? (() => {}), onProgress: hooks.onProgress ?? (() => {}), onPartial: hooks.onPartial ?? (() => {}), settle });
       void this.#start().then(() => {
         if (!this.#pending.has(id)) return;
         if (!this.#child) {
@@ -110,9 +113,9 @@ export class SdkHost {
     baseURL: string | null,
     app: { name: string; version: string },
     args: Record<string, unknown>,
-    onEvent: (event: Record<string, unknown>) => void,
+    hooks: Pick<CallHooks, "onEvent" | "onPartial">,
   ): { id: string; done: Promise<CallSettlement>; cancel: () => void } {
-    return this.call("chat", app, args, { apiKey, baseURL, onEvent });
+    return this.call("chat", app, args, { apiKey, baseURL, ...hooks });
   }
 
   #post(request: WorkerRequest): void {

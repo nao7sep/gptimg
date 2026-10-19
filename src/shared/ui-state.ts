@@ -1,7 +1,7 @@
 // What the app remembers about its own surface between launches (state.json):
 // not settings, so it is written freely and a bad copy is simply dropped.
 import { defaultExportPrefs, parseExportPrefs, type ExportPrefs } from "./export.ts";
-import type { TurnOptions } from "./session.ts";
+import { BACKGROUNDS, type TurnOptions } from "./session.ts";
 
 export interface UiState {
   /** The rail's width as the user last dragged it; null until they drag. */
@@ -15,6 +15,8 @@ export interface UiState {
   exportDir: string | null;
   /** The Records window's list width as the user last dragged it. */
   recordsListWidth: number | null;
+  /** Whether the chat's images show beside the conversation. */
+  imagesPane: boolean;
 }
 
 export const RECORDS_LIST_WIDTH = { min: 300, max: 720, initial: 420 } as const;
@@ -25,7 +27,7 @@ export const SIZES = ["auto", "1024x1024", "1024x1536", "1536x1024"] as const;
 export const QUALITIES = ["auto", "low", "medium", "high"] as const;
 
 export function defaultUiState(): UiState {
-  return { railWidth: null, lastSessionId: null, composer: { size: "auto", quality: "auto" }, export: defaultExportPrefs(), exportDir: null, recordsListWidth: null };
+  return { railWidth: null, lastSessionId: null, composer: { size: "auto", quality: "auto" }, export: defaultExportPrefs(), exportDir: null, recordsListWidth: null, imagesPane: true };
 }
 
 export function parseUiState(value: unknown): UiState {
@@ -39,12 +41,12 @@ export function parseUiState(value: unknown): UiState {
   const composer = raw.composer as Record<string, unknown> | undefined;
   const size = typeof composer?.size === "string" ? composer.size : base.composer.size;
   const quality = typeof composer?.quality === "string" ? composer.quality : base.composer.quality;
-  const transparent = composer?.transparent === true;
+  const background = BACKGROUNDS.find((b) => b !== "auto" && (composer?.background === b || (b === "transparent" && composer?.transparent === true)));
   const exportDir = typeof raw.exportDir === "string" && raw.exportDir !== "" ? raw.exportDir : null;
   const listWidth = raw.recordsListWidth;
   const recordsListWidth =
     typeof listWidth === "number" && Number.isFinite(listWidth)
       ? Math.min(RECORDS_LIST_WIDTH.max, Math.max(RECORDS_LIST_WIDTH.min, Math.round(listWidth)))
       : null;
-  return { railWidth, lastSessionId, composer: { size, quality, ...(transparent && { transparent }) }, export: parseExportPrefs(raw.export), exportDir, recordsListWidth };
+  return { railWidth, lastSessionId, composer: { size, quality, ...(background && background !== "auto" && { background }) }, export: parseExportPrefs(raw.export), exportDir, recordsListWidth, imagesPane: raw.imagesPane !== false };
 }

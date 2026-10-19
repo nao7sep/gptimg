@@ -44,6 +44,7 @@ export const APP_EVENTS = {
   "export.done": "image exported",
   "export.failed": "image could not be exported",
   "export.writeFailed": "exported image could not be written",
+  "mask.saveFailed": "painted mask could not be saved",
   "model.installed": "upscaling model downloaded",
   "model.installFailed": "upscaling model could not be downloaded",
   "model.released": "upscaling model unloaded",

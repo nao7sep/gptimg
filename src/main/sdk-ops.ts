@@ -1,9 +1,14 @@
 // What each SDK operation runs, shared by the utility process and by tests
 // that run the SDK in their own process.
 import { GptImg } from "gptimgsdk";
-import type { SdkOp } from "./sdk-protocol.ts";
+import type { PartialDraft, SdkOp } from "./sdk-protocol.ts";
 
-export type OpOptions = { signal: AbortSignal; onEvent: (event: unknown) => void; onProgress: (progress: unknown) => void };
+export type OpOptions = {
+  signal: AbortSignal;
+  onEvent: (event: unknown) => void;
+  onProgress: (progress: unknown) => void;
+  onPartialImage?: (partial: PartialDraft) => void;
+};
 
 export const OPS: Record<SdkOp, (sdk: GptImg, args: never, options: OpOptions) => Promise<unknown> | unknown> = {
   chat: (sdk, args, o) => sdk.chat(args, o),
