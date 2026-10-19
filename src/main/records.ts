@@ -10,7 +10,8 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileStamp } from "../shared/session.ts";
-import type { RecordDetail, RecordKind, RecordQuery, RecordRow, RecordsPage } from "../shared/records.ts";
+import { queryRecords, detailOf } from "./records-query.ts";
+import type { LaunchEntry, RecordDetail, RecordQuery, RecordRef, RecordsPage } from "../shared/records.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -73,8 +74,11 @@ export interface Records {
   log(level: LogLevel, event: AppEvent, fields?: Record<string, unknown>): void;
   sdkEvent(chat: { id: string; folder: string } | null, event: Record<string, unknown>): void;
   turn(record: TurnRecord): void;
+  launches(): LaunchEntry[];
   query(query: RecordQuery): RecordsPage;
-  detail(kind: RecordKind, id: number): RecordDetail | null;
+  detail(ref: RecordRef): RecordDetail | null;
+  /** Called after each record is stored, so an open Records window can refresh. */
+  onChange(listener: () => void): void;
   close(): void;
 }
 
@@ -130,6 +134,8 @@ CREATE INDEX IF NOT EXISTS log_launch ON log (session_id, id);
 CREATE INDEX IF NOT EXISTS sdk_events_launch ON sdk_events (session_id, id);
 CREATE INDEX IF NOT EXISTS sdk_events_chat ON sdk_events (chat_id, id);
 CREATE INDEX IF NOT EXISTS turns_chat ON turns (chat_id, id);
+CREATE INDEX IF NOT EXISTS log_time ON log (at_utc);
+CREATE INDEX IF NOT EXISTS sdk_events_time ON sdk_events (at_utc);
 `;
 
 function text(value: unknown): string {
@@ -144,17 +150,6 @@ function migrate(db: DatabaseSync): void {
   db.exec(INDEXES);
 }
 
-const TABLES: Record<RecordKind, string> = { log: "log", calls: "turns", events: "sdk_events" };
-const PAGE = 200;
-
-function parse(value: unknown): unknown {
-  if (typeof value !== "string") return null;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
 
 /** Opens the records; when the database cannot be opened, every record takes the fallback and the app runs on. */
 export function openRecords(file: string, logsDir: string, sessionId: string, version: string): Records {
@@ -194,13 +189,16 @@ export function openRecords(file: string, logsDir: string, sessionId: string, ve
     }
   };
 
+  const listeners: (() => void)[] = [];
   const guard = (write: () => void, line: () => Record<string, unknown>) => {
     try {
       if (!db) throw new Error("records unavailable");
       write();
     } catch {
       fallback(line());
+      return;
     }
+    for (const listener of listeners) listener();
   };
 
   return {
@@ -239,51 +237,30 @@ export function openRecords(file: string, logsDir: string, sessionId: string, ve
         () => ({ level: record.status === "completed" ? "info" : "warn", event: "turn.record", message: `turn ${record.status}`, record }),
       );
     },
-    query(query) {
-      if (!db) return { rows: [], more: false, unavailable: true };
-      const table = TABLES[query.kind];
-      const where: string[] = [];
-      const params: (string | number)[] = [];
-      if (query.scope === "launch") {
-        where.push("session_id = ?");
-        params.push(sessionId);
-      }
-      if (query.chatId) {
-        where.push("chat_id = ?");
-        params.push(query.chatId);
-      }
-      if (query.beforeId !== undefined) {
-        where.push("id < ?");
-        params.push(query.beforeId);
-      }
-      const columns =
-        query.kind === "log"
-          ? "id, at_utc, level, event, message AS summary, chat_id"
-          : query.kind === "calls"
-            ? "id, at_utc, CASE status WHEN 'completed' THEN 'info' WHEN 'cancelled' THEN 'info' ELSE 'warn' END AS level, status AS event, model AS summary, chat_id, input_tokens, output_tokens"
-            : "id, at_utc, level, event, json_extract(body, '$.message') AS summary, chat_id";
-      const sql = `SELECT ${columns} FROM ${table} ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id DESC LIMIT ${PAGE + 1}`;
-      const found = db.prepare(sql).all(...params) as Record<string, unknown>[];
-      const rows: RecordRow[] = found.slice(0, PAGE).map((r) => ({
-        id: Number(r.id),
-        at: String(r.at_utc),
-        level: String(r.level) as RecordRow["level"],
-        event: String(r.event),
-        summary: r.summary == null ? "" : String(r.summary),
-        chatId: r.chat_id == null ? null : String(r.chat_id),
-        ...(query.kind === "calls" && {
-          tokens: { input: r.input_tokens == null ? null : Number(r.input_tokens), output: r.output_tokens == null ? null : Number(r.output_tokens) },
-        }),
-      }));
-      return { rows, more: found.length > PAGE, unavailable: false };
+    launches() {
+      if (!db) return [];
+      return (db.prepare("SELECT session_id, started_at_utc, app_version FROM launches ORDER BY started_at_utc DESC").all() as Record<string, unknown>[]).map(
+        (r) => ({ id: String(r.session_id), startedAt: String(r.started_at_utc), version: String(r.app_version), current: r.session_id === sessionId }),
+      );
     },
-    detail(kind, id) {
+    query(query) {
+      if (!db) return { rows: [], next: null, failed: true };
+      try {
+        return queryRecords(db, query);
+      } catch {
+        return { rows: [], next: null, failed: true };
+      }
+    },
+    detail(ref) {
       if (!db) return null;
-      const row = db.prepare(`SELECT * FROM ${TABLES[kind]} WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
-      if (!row) return null;
-      const body = kind === "log" ? parse(row.fields) : parse(row.body);
-      const { body: _body, fields: _fields, ...columns } = row;
-      return { kind, id, columns, body };
+      try {
+        return detailOf(db, ref);
+      } catch {
+        return null;
+      }
+    },
+    onChange(listener) {
+      listeners.push(listener);
     },
     close() {
       db?.close();

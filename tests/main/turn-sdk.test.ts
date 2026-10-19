@@ -50,9 +50,10 @@ describe("a turn through the real SDK", () => {
     const doc = await readSession(root, outcome.session.id);
     expect(doc.turns[1]).toMatchObject({ role: "assistant", text: "**A fox.**", usage: { input: 10, output: 20, imageInput: 30, imageOutput: 40 } });
     expect(doc.turns[1]!.images[0]).toMatch(/\.png$/);
-    const calls = records.query({ kind: "calls", scope: "launch", chatId: doc.id! });
-    expect(calls.rows[0]).toMatchObject({ event: "completed", tokens: { input: 10, output: 20 } });
-    expect(records.query({ kind: "log", scope: "launch", chatId: doc.id! }).rows.map((r) => r.event)).toEqual(["turn.replied", "turn.sent", "sessions.created"]);
+    const calls = records.query({ kind: "call", chatId: doc.id! });
+    expect(calls.rows[0]).toMatchObject({ title: "chat succeeded" });
+    const appLines = records.query({ kind: "log", chatId: doc.id! }).rows.filter((r) => r.source === "app");
+    expect(appLines.map((r) => r.title)).toEqual(["turn.replied", "turn.sent", "sessions.created"]);
   });
 
   it("asks for a transparent PNG when the message does", async () => {

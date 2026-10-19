@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "npm@12.2.0",
-  "description": "Generate, edit and read images with OpenAI from TypeScript, then mask, compose and upscale them locally.",
+  "description": "Make and edit images by chatting with OpenAI's models, and keep every conversation to pick up again later.",
   "license": "GPL-3.0-or-later",
   "author": {
     "name": "Yoshinao Inoguchi",

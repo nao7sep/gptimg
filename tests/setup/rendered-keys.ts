@@ -6,6 +6,9 @@ import english from "../../src/shared/i18n/catalogues/en.json";
 
 const PLURAL = /\.(zero|one|two|few|many|other)$/;
 const KEYS = new Set(Object.keys(english).flatMap((key) => [key, key.replace(PLURAL, "")]));
+// A word shaped like a key in one of the catalogue's namespaces, existing or not, such as "keys.N".
+const NAMESPACES = [...new Set(Object.keys(english).map((key) => key.split(".")[0]!))];
+const KEY_SHAPE = new RegExp(`(?:^|[^\\w.])((?:${NAMESPACES.join("|")})\\.[A-Za-z][\\w.]*)`, "g");
 const READ_ATTRIBUTES = ["aria-label", "title", "placeholder", "alt"];
 
 /** The catalogue keys found in a document's text and read attributes. Exported so a test can plant one. */
@@ -14,6 +17,7 @@ export function renderedKeys(root: ParentNode): string[] {
   const check = (value: string | null) => {
     if (!value) return;
     for (const word of value.split(/\s+/)) if (KEYS.has(word.replace(/[.,:;!?)]+$/, ""))) found.add(word);
+    for (const match of value.matchAll(KEY_SHAPE)) found.add(match[1]!.replace(/[.]+$/, ""));
   };
   const walker = (root as Node).ownerDocument?.createTreeWalker(root as Node, 4 /* NodeFilter.SHOW_TEXT */);
   for (let node = walker?.nextNode(); node; node = walker?.nextNode()) check(node.textContent);

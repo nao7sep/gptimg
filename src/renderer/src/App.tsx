@@ -3,7 +3,7 @@
 // panes receive what they show and report what the user did.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedSession, TurnOutcome } from "../../shared/api.ts";
-import { chatIdOf, type SessionSummary, type TurnOptions } from "../../shared/session.ts";
+import type { SessionSummary, TurnOptions } from "../../shared/session.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { commandFor } from "../../shared/shortcuts.ts";
 import type { UiState } from "../../shared/ui-state.ts";
@@ -16,7 +16,6 @@ import { SettingsModal } from "./modals/SettingsModal.tsx";
 import { SetupModal } from "./modals/SetupModal.tsx";
 import { AboutModal, ConfirmModal, RenameModal, ShortcutsModal } from "./modals/SmallModals.tsx";
 import { ExportModal } from "./modals/ExportModal.tsx";
-import { RecordsModal } from "./modals/RecordsModal.tsx";
 import { ViewerModal } from "./modals/ViewerModal.tsx";
 import { applyFonts } from "./fonts.ts";
 
@@ -28,8 +27,7 @@ type ModalSpec =
   | { kind: "rename"; id: string; title: string }
   | { kind: "trash"; id: string; title: string }
   | { kind: "viewer"; images: string[]; index: number }
-  | { kind: "export"; path: string }
-  | { kind: "records" };
+  | { kind: "export"; path: string };
 
 export interface Running {
   startedAt: number;
@@ -219,7 +217,7 @@ export function App({ boot }: { boot: BootInfo }) {
           pushModal({ kind: "about" });
           break;
         case "records":
-          pushModal({ kind: "records" });
+          api.openRecords();
           break;
         case "attach":
           attachRef.current();
@@ -300,7 +298,8 @@ export function App({ boot }: { boot: BootInfo }) {
         onOpen={(id) => void openSession(id)}
         onRename={(id, title) => pushModal({ kind: "rename", id, title })}
         onTrash={(id, title) => pushModal({ kind: "trash", id, title })}
-        onSettings={() => runCommand("settings")}
+        mac={mac}
+        onMenu={(command) => (command === "chatsFolder" ? api.showChatsFolder() : runCommand(command))}
       />
       <main className="stage">
         <Conversation
@@ -403,9 +402,6 @@ export function App({ boot }: { boot: BootInfo }) {
             return null;
           }}
         />
-      )}
-      {front?.kind === "records" && (
-        <RecordsModal chatId={opened && currentId !== NEW ? chatIdOf(opened.id, opened.doc) : null} timeZone={settings.timeZone} onClose={popModal} />
       )}
       {front?.kind === "export" && (
         <ExportModal

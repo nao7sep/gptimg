@@ -16,9 +16,11 @@ export interface ModalProps {
   children: ReactNode;
   /** Shown above the body, below the title: one line of what this is for. */
   intro?: string;
+  /** A band under the title that stays while the body scrolls, such as a tab strip. */
+  band?: ReactNode;
 }
 
-export function Modal({ title, onClose, width, footer, children, intro }: ModalProps) {
+export function Modal({ title, onClose, width, footer, children, intro, band }: ModalProps) {
   const { t } = useI18n();
   const panel = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -72,6 +74,7 @@ export function Modal({ title, onClose, width, footer, children, intro }: ModalP
             <CloseIcon size={16} />
           </button>
         </header>
+        {band && <div className="modal-band">{band}</div>}
         <div className="modal-body">
           {intro && <p className="modal-intro">{intro}</p>}
           {children}

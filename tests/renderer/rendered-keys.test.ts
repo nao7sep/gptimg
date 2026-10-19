@@ -8,4 +8,10 @@ describe("the rendered-key gate", () => {
     root.innerHTML = '<p>conversation.retry</p><button aria-label="composer.send">x</button><p>Try again</p>';
     expect(renderedKeys(root).sort()).toEqual(["composer.send", "conversation.retry"]);
   });
+
+  it("finds a key-shaped word the catalogue lacks, inside other text", () => {
+    const root = document.createElement("div");
+    root.innerHTML = "<p>Cmd+keys.N</p><p>photo.png, 2.5 MB</p>";
+    expect(renderedKeys(root)).toEqual(["keys.N"]);
+  });
 });

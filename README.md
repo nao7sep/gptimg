@@ -1,6 +1,8 @@
 # GptImg
 
-Make and edit images by talking with OpenAI's models. GptImg is a desktop app that works like ChatGPT's image feature: describe a picture, get it back, then ask for changes ("warmer light", "make it a night scene") until it is right. Every chat is saved as a folder of its own, with its messages, images and attached files, so it can be reopened and continued months later.
+Make and edit images by chatting with OpenAI's models, and keep every conversation to pick up again later.
+
+GptImg is a desktop app that works like ChatGPT's image feature: describe a picture, get it back, then ask for changes ("warmer light", "make it a night scene") until it is right. Every chat is saved as a folder of its own, with its messages, images and attached files, so it can be reopened and continued months later.
 
 It runs on your own OpenAI API key and is billed per use, so there is no subscription and no message cap. Each reply shows the tokens it used, the assistant model's and the image model's separately.
 
@@ -34,8 +36,9 @@ On first launch GptImg asks for your API key, then for a folder to keep chats in
 - **Export** saves an image as PNG, JPEG or WebP with the quality you choose, at its own size, at a longest side you type, or enlarged 2× or 4× by an AI upscaling model that runs on your computer. Transparent areas can be kept (PNG, WebP) or filled with a colour. The upscaling model is a one-time download of about 54 MB, made only when you click Download in the dialog; an upscale takes a few minutes and a few GB of memory.
 - **A reply takes a minute or two** when it makes an image. A placeholder of the chosen shape shows the elapsed time, with Stop beside it. A message whose reply failed or was stopped stays in the chat with Try again.
 - **Chats** are listed on the left by their latest image. Rename a chat from its title (its folder is renamed to match), show its folder, or move it to the Trash from the File menu.
-- **Records** (Help menu) shows what GptImg has recorded on this computer: its own activity, every OpenAI call with its tokens and full response, and the image engine's events, for this launch or all launches, for one chat or all.
-- **Settings** hold the language (ten languages, or follow the system), appearance, time zone, interface and conversation fonts, the chats folder, the API address (OpenAI's own unless you use a proxy or another service that speaks OpenAI's API), the API key, and the assistant and image models with the assistant's thinking level. The built-in models are the recommended ones; another model id can be typed, and one GptImg does not know is marked as unsupported but still sent.
+- **The menu** at the top of the chat list holds New chat, Show chats folder, Settings, Records, Keyboard Shortcuts and About GptImg.
+- **Records** opens a window of what GptImg has recorded on this computer: its own activity and the image engine's events as log lines, and every request to OpenAI (each attempt, with what was sent and what came back) as provider calls. Search it, or filter by launch, chat, kind and level.
+- **Settings** (in tabs: General, Chats, OpenAI) hold the language (ten languages, or follow the system), appearance, time zone, interface and conversation fonts, the chats folder, the API address (OpenAI's own unless you use a proxy or another service that speaks OpenAI's API), the API key, and the assistant and image models with the assistant's thinking level. The built-in models are the recommended ones; another model id can be typed, and one GptImg does not know is marked as unsupported but still sent.
 
 OpenAI keeps each conversation for about 30 days, so a follow-up sends only the new message. When OpenAI's copy is gone, GptImg resends the conversation from the chat's folder (with the images of its eight most recent image turns) and carries on.
 

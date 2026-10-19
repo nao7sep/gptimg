@@ -26,8 +26,32 @@ const placeholders = (text: string): string[] => [...text.matchAll(/\{(\w+)\}/g)
 
 /** Values that are the same word in a language, or literal by rule (brands, keys printed on keyboards). */
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
-  de: ["about.version", "export.format", "rail.label", "rail.sessions", "settings.sessions", "settings.system", "settings.theme.system"],
-  es: ["nativeMenu.zoom", "rail.label", "rail.sessions", "settings.general", "settings.sessions"],
+  de: [
+    "about.version",
+    "export.format",
+    "rail.label",
+    "rail.sessions",
+    "records.block.details",
+    "records.field.chat",
+    "records.field.status",
+    "records.level.debug",
+    "records.level.info",
+    "settings.sessions",
+    "settings.system",
+    "settings.theme.system",
+    "startup.details",
+  ],
+  es: [
+    "nativeMenu.zoom",
+    "rail.label",
+    "rail.sessions",
+    "records.block.error",
+    "records.field.chat",
+    "records.level.error",
+    "records.level.info",
+    "settings.general",
+    "settings.sessions",
+  ],
   fr: [
     "about.version",
     "composer.label",
@@ -36,13 +60,25 @@ const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
     "conversation.totals.other",
     "dialog.imageFilter",
     "export.format",
+    "menu.open",
     "nativeMenu.services",
     "nativeMenu.zoom",
     "rail.meta.other",
+    "records.field.message",
+    "records.level.info",
     "viewer.label",
   ],
-  it: ["nativeMenu.file", "nativeMenu.zoom"],
-  "pt-BR": ["nativeMenu.zoom", "rail.label", "rail.sessions", "settings.sessions"],
+  it: ["menu.open", "nativeMenu.file", "nativeMenu.zoom", "records.field.chat", "records.level.debug", "records.level.info"],
+  "pt-BR": [
+    "menu.open",
+    "nativeMenu.zoom",
+    "rail.label",
+    "rail.sessions",
+    "records.field.chat",
+    "records.field.status",
+    "records.level.info",
+    "settings.sessions",
+  ],
 };
 const LITERAL_EVERYWHERE = [
   "settings.apiKeyPlaceholder",
@@ -60,6 +96,9 @@ const LITERAL_EVERYWHERE = [
   "export.pixels",
   "export.source",
   "viewer.info",
+  "about.copyright",
+  "about.github",
+  "records.launch.entry",
 ];
 
 describe.each(others)("%s catalogue", (language) => {
@@ -118,6 +157,7 @@ describe("catalogue files", () => {
       "export.upscaling",
       "export.working",
       "rail.working",
+      "records.loading",
     ]);
   });
 

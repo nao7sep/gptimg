@@ -30,6 +30,12 @@ export const PlusIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const MenuIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 6h12M4 10h12M4 14h12" />
+  </Svg>
+);
+
 export const GearIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="10" cy="10" r="2.6" />

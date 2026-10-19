@@ -1,44 +1,86 @@
 // What the Records window asks of records.sqlite3, and what comes back.
 
-/** The three kinds of record: the app's own activity, each OpenAI call's outcome, and the SDK's events. */
-export const RECORD_KINDS = ["log", "calls", "events"] as const;
+/** A log line (the app's own lines and the SDK's events) or a provider call (one request attempt). */
+export const RECORD_KINDS = ["log", "call"] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 
-export interface RecordQuery {
-  kind: RecordKind;
-  /** This launch only, or every launch. */
-  scope: "launch" | "all";
-  /** Only the records of one chat. */
-  chatId?: string;
-  /** For the next page: the smallest id already shown. */
-  beforeId?: number;
+export const RECORD_LEVELS = ["error", "warn", "info", "debug"] as const;
+export type RecordLevel = (typeof RECORD_LEVELS)[number];
+
+/** Where a row lives: the app's own log table or the SDK's events. */
+export type RecordSource = "app" | "sdk";
+
+export interface RecordRef {
+  source: RecordSource;
+  id: number;
 }
 
-export interface RecordRow {
-  id: number;
+export interface RecordQuery {
+  /** Literal text to find in the record. */
+  search?: string;
+  /** A launch's id, or all launches. */
+  launch?: string;
+  kind?: RecordKind;
+  /** One level, or "attention" for warnings and errors. */
+  level?: RecordLevel | "attention";
+  chatId?: string;
+  /** Continue after the last row of the previous page. */
+  cursor?: RecordCursor;
+}
+
+export interface RecordCursor {
   at: string;
-  level: "debug" | "info" | "warn" | "error";
-  /** The event name, or for a call its status. */
-  event: string;
-  /** The event's message, or for a call its model. */
-  summary: string;
+  source: RecordSource;
+  id: number;
+}
+
+export interface RecordRow extends RecordRef {
+  at: string;
+  level: RecordLevel;
+  kind: RecordKind;
+  /** The event name, or for a call its operation and outcome. */
+  title: string;
+  /** The event's message, or for a call its model and duration. */
+  text: string;
   chatId: string | null;
-  tokens?: { input: number | null; output: number | null };
 }
 
 export interface RecordsPage {
   rows: RecordRow[];
-  /** More rows are older than the last one. */
-  more: boolean;
-  /** The database could not be opened this launch. */
-  unavailable: boolean;
+  /** Where the next page starts, or null at the oldest record. */
+  next: RecordCursor | null;
+  /** The records could not be read. */
+  failed: boolean;
 }
 
-export interface RecordDetail {
-  kind: RecordKind;
-  id: number;
-  /** The row's own columns. */
-  columns: Record<string, unknown>;
-  /** The record whole: the log line's fields, the SDK event, or the provider's response. */
-  body: unknown;
+export interface LaunchEntry {
+  id: string;
+  startedAt: string;
+  version: string;
+  current: boolean;
 }
+
+export interface RecordField {
+  label: "time" | "level" | "kind" | "event" | "message" | "chat" | "launch" | "operation" | "model" | "attempt" | "duration" | "status";
+  value: string;
+}
+
+export interface RecordBlock {
+  label: "details" | "request" | "response" | "error";
+  /** Pretty-printed JSON. */
+  text: string;
+}
+
+export interface RecordDetail extends RecordRef {
+  kind: RecordKind;
+  level: RecordLevel;
+  title: string;
+  text: string;
+  at: string;
+  chatId: string | null;
+  launchId: string;
+  fields: { label: RecordField["label"]; value: string | number }[];
+  blocks: RecordBlock[];
+}
+
+export const RECORDS_PAGE = 100;

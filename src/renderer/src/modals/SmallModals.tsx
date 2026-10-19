@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { AppFailure } from "../../../shared/api.ts";
 import { LOCAL_KEYS, SHORTCUTS, displayKeys } from "../../../shared/shortcuts.ts";
 import { useI18n } from "../i18n.tsx";
+import { keyName } from "../keys.ts";
 import iconUrl from "../assets/icon.png";
 import { Modal } from "./Modal.tsx";
 
@@ -16,8 +17,13 @@ export function AboutModal({ version, onClose }: { version: string; onClose: () 
         <p className="about-name">GptImg</p>
         <p className="about-version">{t("about.version", { version })}</p>
         <p>{t("about.description")}</p>
+        <p>
+          <a href="https://github.com/nao7sep/gptimg" target="_blank" rel="noreferrer">
+            {t("about.github")}
+          </a>
+        </p>
+        <p className="about-copyright">{t("about.copyright")}</p>
         <p className="about-licence">{t("about.licence")}</p>
-        <p className="about-copyright">© Yoshinao Inoguchi</p>
       </div>
     </Modal>
   );
@@ -34,11 +40,6 @@ function Keys({ keys }: { keys: readonly string[] }) {
   );
 }
 
-const KEY_NAMES = ["Cmd", "Ctrl", "Shift", "Enter", "Escape", "Up", "Down", "Comma", "Slash"] as const;
-
-function keyName(key: string, t: ReturnType<typeof useI18n>["t"]): string {
-  return (KEY_NAMES as readonly string[]).includes(key) ? t(`keys.${key as (typeof KEY_NAMES)[number]}`) : key;
-}
 
 export function ShortcutsModal({ mac, onClose }: { mac: boolean; onClose: () => void }) {
   const { t } = useI18n();
@@ -128,12 +129,14 @@ export function ConfirmModal({
   title,
   body,
   confirmLabel,
+  cancelLabel,
   onClose,
   onConfirm,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
+  cancelLabel?: string;
   onClose: () => void;
   onConfirm: () => Promise<AppFailure | null>;
 }) {
@@ -148,7 +151,7 @@ export function ConfirmModal({
       footer={
         <>
           <button type="button" className="button" data-autofocus="true" onClick={onClose}>
-            {t("common.cancel")}
+            {cancelLabel ?? t("common.cancel")}
           </button>
           <button
             type="button"

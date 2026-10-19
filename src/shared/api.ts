@@ -1,7 +1,7 @@
 // The bridge between the window and main, declared here so preload implements
 // it with `satisfies` and the renderer imports nothing from the Node side.
 import type { ExportRequest, ImageInfo } from "./export.ts";
-import type { RecordDetail, RecordKind, RecordQuery, RecordsPage } from "./records.ts";
+import type { LaunchEntry, RecordDetail, RecordQuery, RecordRef, RecordsPage } from "./records.ts";
 import type { Catalogue } from "./i18n/catalogues.ts";
 import type { Language } from "./i18n/languages.ts";
 import type { Message } from "./i18n/translator.ts";
@@ -100,8 +100,18 @@ export interface UpscalerStatus {
 
 export type MenuCommand = "newSession" | "settings" | "shortcuts" | "about" | "records" | "attach" | "close" | "rename" | "reveal" | "trash";
 
+export interface StartupFailure {
+  language: LanguageInfo;
+  message: Message;
+  /** The system's own words for the cause, shown under Details. */
+  detail: string;
+}
+
 export interface GptImgApi {
   boot(): Promise<BootInfo>;
+  /** Only in the startup-failure window: why GptImg could not start. */
+  startupFailure(): Promise<StartupFailure>;
+  quitApp(): void;
   saveSettings(next: Settings): Promise<Outcome<{ settings: Settings; language: LanguageInfo }>>;
   saveState(state: UiState): void;
   pickFolder(current: string): Promise<string | null>;
@@ -116,6 +126,8 @@ export interface GptImgApi {
   renameSession(id: string, title: string): Promise<Outcome<{ session: OpenedSession }>>;
   trashSession(id: string): Promise<Outcome<object>>;
   revealSession(id: string): void;
+  /** Opens the chats folder in Finder or Explorer. */
+  showChatsFolder(): void;
 
   send(request: SendRequest): Promise<TurnOutcome>;
   retry(sessionId: string): Promise<TurnOutcome>;
@@ -142,8 +154,16 @@ export interface GptImgApi {
   onProgress(handler: (progress: TaskProgress) => void): () => void;
   showInFolder(path: string): void;
 
+  /** Opens the Records window, or brings it forward. */
+  openRecords(): void;
+  recordLaunches(): Promise<LaunchEntry[]>;
+  /** The chats in the chats folder, by lasting id, for the Records window's chat filter. */
+  recordChats(): Promise<{ id: string; title: string }[]>;
   queryRecords(query: RecordQuery): Promise<RecordsPage>;
-  recordDetail(kind: RecordKind, id: number): Promise<RecordDetail | null>;
+  recordDetail(ref: RecordRef): Promise<RecordDetail | null>;
+  saveRecordsLayout(listWidth: number): void;
+  /** A record was stored (at most once a second): the Records window refreshes. */
+  onRecordsChanged(handler: () => void): () => void;
 
   closeWindow(): void;
   onMenu(handler: (command: MenuCommand) => void): () => void;

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 const RENDERER = new URL("../../src/renderer/src/", import.meta.url).pathname;
 /** Text that is not interface copy: the product name and the copyright holder. */
-const LITERALS = new Set(["GptImg", "© Yoshinao Inoguchi"]);
+const LITERALS = new Set(["GptImg"]);
 
 function tsxFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

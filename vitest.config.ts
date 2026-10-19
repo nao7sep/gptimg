@@ -12,6 +12,8 @@ export default defineConfig({
           name: "app",
           include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
           setupFiles: ["tests/setup/rendered-keys.ts"],
+          // After-hooks in the order registered, so the rendered-key gate looks before a file's cleanup empties the page.
+          sequence: { hooks: "list" },
           exclude: [...configDefaults.exclude, "sdk/**", "tests/live/**"],
         },
       },

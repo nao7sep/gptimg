@@ -16,6 +16,8 @@ const fire =
 
 const api = {
   boot: invoke("boot"),
+  startupFailure: invoke("startupFailure"),
+  quitApp: fire("quitApp"),
   saveSettings: invoke("saveSettings"),
   saveState: fire("saveState"),
   pickFolder: invoke("pickFolder"),
@@ -28,6 +30,7 @@ const api = {
   renameSession: invoke("renameSession"),
   trashSession: invoke("trashSession"),
   revealSession: fire("revealSession"),
+  showChatsFolder: fire("showChatsFolder"),
   send: invoke("send"),
   retry: invoke("retry"),
   cancel: fire("cancel"),
@@ -53,8 +56,17 @@ const api = {
     return () => ipcRenderer.off("progress", listener);
   },
   showInFolder: fire("showInFolder"),
+  openRecords: fire("openRecords"),
+  recordLaunches: invoke("recordLaunches"),
+  recordChats: invoke("recordChats"),
   queryRecords: invoke("queryRecords"),
   recordDetail: invoke("recordDetail"),
+  saveRecordsLayout: fire("saveRecordsLayout"),
+  onRecordsChanged: (handler: () => void) => {
+    const listener = () => handler();
+    ipcRenderer.on("recordsChanged", listener);
+    return () => ipcRenderer.off("recordsChanged", listener);
+  },
   closeWindow: fire("closeWindow"),
   onMenu: (handler: (command: MenuCommand) => void) => {
     const listener = (_event: unknown, command: MenuCommand) => handler(command);

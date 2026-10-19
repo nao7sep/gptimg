@@ -2,13 +2,14 @@
 // a session is found by its picture. One tab stop: a listbox whose active row
 // moves with the arrow keys (composite-control-conventions).
 import { useEffect, useRef, useState } from "react";
-import { imageUrl, type AppFailure } from "../../../shared/api.ts";
+import { imageUrl, type AppFailure, type MenuCommand } from "../../../shared/api.ts";
 import { PANES, railWidth } from "../../../shared/layout.ts";
 import type { SessionSummary } from "../../../shared/session.ts";
 import { RAIL_WIDTH } from "../../../shared/ui-state.ts";
 import type { Running } from "../App.tsx";
 import { useI18n } from "../i18n.tsx";
-import { FrameIcon, GearIcon, PlusIcon } from "./icons.tsx";
+import { AppMenu } from "./AppMenu.tsx";
+import { FrameIcon, PlusIcon } from "./icons.tsx";
 import { relativeDay } from "./time.ts";
 
 interface RailProps {
@@ -25,7 +26,8 @@ interface RailProps {
   onOpen: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onTrash: (id: string, title: string) => void;
-  onSettings: () => void;
+  mac: boolean;
+  onMenu: (command: MenuCommand | "chatsFolder") => void;
 }
 
 const THUMB = 44;
@@ -123,10 +125,11 @@ export function Rail(props: RailProps) {
     <>
       <nav className="rail" style={{ width }} aria-label={t("rail.label")}>
         <div className="rail-top">
-          <button type="button" className="button new-session" onClick={props.onNew}>
-            <PlusIcon size={16} />
-            <span>{t("rail.new")}</span>
+          <span className="app-name">GptImg</span>
+          <button type="button" className="icon-button" onClick={props.onNew} aria-label={t("rail.new")} title={t("rail.new")}>
+            <PlusIcon />
           </button>
+          <AppMenu mac={props.mac} onCommand={props.onMenu} />
         </div>
         <div
           ref={list}
@@ -170,11 +173,6 @@ export function Rail(props: RailProps) {
           {sessions.length === 0 && !props.failure && <p className="rail-empty">{t("rail.empty")}</p>}
           {props.failure && <p className="rail-problem" role="alert">{of(props.failure.message)}</p>}
           {props.unreadable > 0 && <p className="rail-note">{t("rail.unreadable", { count: props.unreadable })}</p>}
-        </div>
-        <div className="rail-bottom">
-          <button type="button" className="icon-button" aria-label={t("rail.settings")} title={t("rail.settings")} onClick={props.onSettings}>
-            <GearIcon />
-          </button>
         </div>
       </nav>
       <div

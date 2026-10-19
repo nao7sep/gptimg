@@ -16,6 +16,9 @@ extraResources:
   # CFBundleIconFile, the classic build/icon.icns (mac.icon). Building needs no Xcode.
   - from: build/Assets.car
     to: Assets.car
+  # The window icon Windows and Linux paint in the title bar and taskbar.
+  - from: build/icon.png
+    to: icon.png
 asarUnpack:
   # The native libraries the SDK's worker loads at run time: sharp for every
   # image, ONNX Runtime for upscaling on export.

@@ -39,7 +39,7 @@ describe("a real chat", () => {
     expect(replies).toHaveLength(2);
     expect(replies.every((t) => t.role === "assistant" && t.images.length >= 1 && (t.usage?.input ?? 0) > 0)).toBe(true);
     expect(replies[1]).toMatchObject({ resumed: "chain" });
-    expect(records.query({ kind: "calls", scope: "launch" }).rows.map((r) => r.event)).toEqual(["completed", "completed"]);
+    expect(records.query({ kind: "call" }).rows.filter((r) => r.title === "chat succeeded")).toHaveLength(2);
     records.close();
   }, 600_000);
 });

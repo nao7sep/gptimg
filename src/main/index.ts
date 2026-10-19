@@ -19,12 +19,13 @@ import { ExportRunner, folderOf } from "./export.ts";
 import { ImageAccess, isImagePath, registerImageScheme, REFERENCE_EXTENSIONS } from "./images.ts";
 import { chromiumLang, clearAppleLanguages, earlyPreferences, LanguageOwner, writeAppleLanguages } from "./language.ts";
 import { buildMenu } from "./menu.ts";
+import { RecordsWindow } from "./records-window.ts";
 import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } from "./paths.ts";
 import { openRecords, type Records } from "./records.ts";
 import { SdkHost } from "./sdk-host.ts";
 import { isSessionId, listSessions, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
 import { chatIdOf } from "../shared/session.ts";
-import type { RecordKind, RecordQuery } from "../shared/records.ts";
+import type { RecordQuery, RecordRef } from "../shared/records.ts";
 import { TurnRunner } from "./turns.ts";
 
 declare const __APP_VERSION__: string;
@@ -53,6 +54,7 @@ interface State {
   host: SdkHost;
   turns: TurnRunner;
   exports: ExportRunner;
+  recordsWindow: RecordsWindow;
   images: ImageAccess;
   window: BrowserWindow | null;
   quitConfirmed: boolean;
@@ -64,14 +66,7 @@ async function start(): Promise<void> {
   try {
     paths = ensureDataRoot();
   } catch (error) {
-    await app.whenReady();
-    const language = new LanguageOwner();
-    language.readComputer();
-    await language.use("system");
-    const t = language.translator;
-    const dir = error instanceof DataDirError ? error.dir : "";
-    dialog.showErrorBox(t.t("startup.storageTitle"), t.t(error instanceof DataDirError && error.fromEnv ? "startup.storageEnv" : "startup.storage", { path: dir }));
-    app.exit(1);
+    await showStartupFailure(error);
     return;
   }
 
@@ -131,6 +126,15 @@ async function start(): Promise<void> {
       stagingRoot: paths.staging,
       progress: (progress) => state.window?.webContents.send("progress", progress),
     }),
+    recordsWindow: new RecordsWindow({
+      preload: join(here, "../preload/index.cjs"),
+      load: (win, hash) => {
+        harden(win);
+        if (DEV_URL) void win.loadURL(`${DEV_URL}#${hash}`);
+        else void win.loadFile(join(here, "../renderer/index.html"), { hash });
+      },
+      title: () => language.translator.t("records.title"),
+    }),
     images: new ImageAccess(() => [state.config.settings.sessionsDir, paths.staging]),
     window: null,
     quitConfirmed: false,
@@ -156,8 +160,10 @@ async function start(): Promise<void> {
   applyMenu();
   language.onChange((info) => {
     applyMenu();
-    state.window?.webContents.send("language", info);
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("language", info);
+    state.recordsWindow.retitle();
   });
+  records.onChange(() => state.recordsWindow.changed());
 
   createWindow(state);
 
@@ -204,9 +210,70 @@ async function start(): Promise<void> {
   });
 }
 
+/**
+ * GptImg could not start: an app-drawn window in the computer's language says
+ * why and closes the app. Nothing has been written. A window cannot be shown
+ * at all only when even that fails; then the system's own error box speaks.
+ */
+async function showStartupFailure(error: unknown): Promise<void> {
+  await app.whenReady();
+  const language = new LanguageOwner();
+  language.readComputer();
+  await language.use("system");
+  const t = language.translator;
+  const dir = error instanceof DataDirError ? error.dir : "";
+  const message = error instanceof DataDirError && error.fromEnv ? message_("startup.storageEnv", { path: dir }) : message_("startup.storage", { path: dir });
+  ipcMain.handle("startupFailure", () => ({ language: language.info(), message, detail: error instanceof Error ? String(error.cause ?? error.message) : String(error) }));
+  ipcMain.handle("quitApp", () => app.exit(1));
+  try {
+    const win = new BrowserWindow({
+      width: 520,
+      height: 320,
+      resizable: false,
+      show: false,
+      title: t.t("startup.title"),
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#141517" : "#f6f3ee",
+      webPreferences: { preload: join(here, "../preload/index.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false },
+    });
+    harden(win);
+    win.once("ready-to-show", () => win.show());
+    win.on("closed", () => app.exit(1));
+    if (DEV_URL) await win.loadURL(`${DEV_URL}#startup`);
+    else await win.loadFile(join(here, "../renderer/index.html"), { hash: "startup" });
+  } catch {
+    dialog.showErrorBox(t.t("startup.title"), t.of(message));
+    app.exit(1);
+  }
+}
+
+function message_(key: Parameters<typeof message>[0], values?: Record<string, string>) {
+  return message(key, values);
+}
+
 function sendMenu(state: State, command: MenuCommand): void {
-  const win = BrowserWindow.getFocusedWindow() ?? state.window;
+  if (command === "records") {
+    state.recordsWindow.open();
+    return;
+  }
+  const focused = BrowserWindow.getFocusedWindow();
+  // Close in the Records window closes that window; every other command belongs to the main window.
+  if (command === "close" && state.recordsWindow.owns(focused)) {
+    focused?.close();
+    return;
+  }
+  const win = state.recordsWindow.owns(focused) ? state.window : (focused ?? state.window);
   win?.webContents.send("menu", command);
+}
+
+/** Links never navigate a window; a web link opens in the browser. */
+function harden(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://")) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (event, url) => {
+    if (!DEV_URL || !url.startsWith(DEV_URL)) event.preventDefault();
+  });
 }
 
 /** The production renderer enforces a strict policy; the dev server's hot reload needs it relaxed. */
@@ -240,6 +307,8 @@ function createWindow(state: State): void {
     show: false,
     title: "GptImg",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#141517" : "#f6f3ee",
+    // Windows and Linux paint a window icon; on macOS the bundle's icons own the Dock (app-chrome-conventions).
+    ...(process.platform !== "darwin" && { icon: join(process.resourcesPath ?? "", "icon.png") }),
     webPreferences: {
       preload: join(here, "../preload/index.cjs"),
       sandbox: true,
@@ -259,15 +328,10 @@ function createWindow(state: State): void {
   win.webContents.on("preload-error", (_event, path, error) => state.records.log("error", "window.preloadFailed", { path, error: String(error) }));
   win.on("closed", () => {
     state.window = null;
+    // Secondary windows go with the main one.
+    state.recordsWindow.close();
   });
-  // Links never navigate the window; a web link opens in the browser.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://")) void shell.openExternal(url);
-    return { action: "deny" };
-  });
-  win.webContents.on("will-navigate", (event, url) => {
-    if (!DEV_URL || !url.startsWith(DEV_URL)) event.preventDefault();
-  });
+  harden(win);
   if (DEV_URL) void win.loadURL(DEV_URL);
   else void win.loadFile(join(here, "../renderer/index.html"));
 }
@@ -430,6 +494,10 @@ function installIpc(state: State): void {
         return failure(process.platform === "darwin" ? "failure.trashMac" : "failure.trashOther");
       }
     },
+    showChatsFolder() {
+      const root = state.config.settings.sessionsDir;
+      if (root) void mkdir(root, { recursive: true }).then(() => shell.openPath(root));
+    },
     revealSession(id: string) {
       const root = state.config.settings.sessionsDir;
       if (isSessionId(id)) shell.showItemInFolder(join(sessionDir(root, id), "session.json"));
@@ -520,11 +588,39 @@ function installIpc(state: State): void {
       if (state.images.allowed(path)) shell.showItemInFolder(path);
     },
 
+    openRecords() {
+      state.recordsWindow.open();
+    },
+    recordLaunches() {
+      return records.launches();
+    },
+    async recordChats() {
+      const root = state.config.settings.sessionsDir;
+      if (!root) return [];
+      try {
+        const listing = await listSessions(root);
+        const chats: { id: string; title: string }[] = [];
+        for (const summary of listing.sessions) {
+          try {
+            chats.push({ id: chatIdOf(summary.id, await readSession(root, summary.id)), title: summary.title });
+          } catch {
+            // A chat that cannot be read is left out of the filter; its records still show under all chats.
+          }
+        }
+        return chats;
+      } catch {
+        return [];
+      }
+    },
     queryRecords(query: RecordQuery) {
       return records.query(query);
     },
-    recordDetail(kind: RecordKind, id: number) {
-      return records.detail(kind, id);
+    recordDetail(ref: RecordRef) {
+      return records.detail(ref);
+    },
+    saveRecordsLayout(listWidth: number) {
+      state.ui = parseUiState({ ...state.ui, recordsListWidth: listWidth });
+      void writeTextAtomic(paths.state, json(state.ui)).catch((error) => records.log("warn", "state.saveFailed", { error: String(error) }));
     },
 
     closeWindow() {
