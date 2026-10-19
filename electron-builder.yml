@@ -11,6 +11,11 @@ files:
 extraResources:
   - from: LICENSE
     to: LICENSE
+  # The Tahoe "Liquid Glass" icon: a pre-compiled asset catalog, built in company/assets by the
+  # liquid-glass-icon tool. CFBundleIconName points macOS 26 at it; older macOS reads
+  # CFBundleIconFile, the classic build/icon.icns (mac.icon). Building needs no Xcode.
+  - from: build/Assets.car
+    to: Assets.car
 asarUnpack:
   # The native libraries the SDK's worker loads at run time: sharp for every
   # image, ONNX Runtime for upscaling on export.
@@ -19,6 +24,7 @@ asarUnpack:
   - node_modules/onnxruntime-node/**
 mac:
   category: public.app-category.graphics-design
+  icon: build/icon.icns
   # ONNX Runtime ships every platform's binaries; each build keeps only its own.
   files:
     - "!node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**"
@@ -36,8 +42,10 @@ mac:
     - target: zip
       arch: arm64
   extendInfo:
+    CFBundleIconName: painting-hibiscus
     CFBundleLocalizations: [en, de, es, fr, it, pt-BR, ru, ja, ko, zh-Hans]
 win:
+  icon: build/icon.ico
   files:
     - "!node_modules/onnxruntime-node/bin/napi-v6/{linux,darwin}/**"
     - "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"

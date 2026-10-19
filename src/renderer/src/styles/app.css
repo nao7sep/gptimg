@@ -974,6 +974,10 @@ select {
 .about {
   text-align: center;
 }
+.about-icon {
+  display: block;
+  margin: 4px auto 6px;
+}
 .about-name {
   margin: 4px 0 2px !important;
   font-size: 20px;

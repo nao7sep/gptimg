@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { AppFailure } from "../../../shared/api.ts";
 import { LOCAL_KEYS, SHORTCUTS, displayKeys } from "../../../shared/shortcuts.ts";
 import { useI18n } from "../i18n.tsx";
+import iconUrl from "../assets/icon.png";
 import { Modal } from "./Modal.tsx";
 
 export function AboutModal({ version, onClose }: { version: string; onClose: () => void }) {
@@ -11,6 +12,7 @@ export function AboutModal({ version, onClose }: { version: string; onClose: () 
   return (
     <Modal title={t("about.title")} width={380} onClose={onClose}>
       <div className="about">
+        <img className="about-icon" src={iconUrl} alt="" width={88} height={88} draggable={false} />
         <p className="about-name">GptImg</p>
         <p className="about-version">{t("about.version", { version })}</p>
         <p>{t("about.description")}</p>
