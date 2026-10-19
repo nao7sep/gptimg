@@ -1,21 +1,6 @@
 {
-  // The app root's own scripts and tests. The SDK type-checks itself in sdk/;
-  // the GUI app adds its configurations here when it exists.
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ES2022"],
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "types": ["node"]
-  },
-  "include": ["scripts/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["node_modules", "sdk"]
+  // A solution file: main and preload on Node, the renderer in the browser,
+  // and the tests with both. The SDK type-checks itself in sdk/.
+  "files": [],
+  "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }, { "path": "./tsconfig.test.json" }]
 }

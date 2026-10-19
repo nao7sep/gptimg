@@ -1,0 +1,408 @@
+// The main window: the session rail, the open conversation and its composer,
+// and the one modal host. App is the single writer of the window's state; the
+// panes receive what they show and report what the user did.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedSession, TurnOutcome } from "../../shared/api.ts";
+import type { SessionSummary, TurnOptions } from "../../shared/session.ts";
+import type { Settings } from "../../shared/settings.ts";
+import { commandFor } from "../../shared/shortcuts.ts";
+import type { UiState } from "../../shared/ui-state.ts";
+import { api } from "./api.ts";
+import { Composer, type Draft } from "./components/Composer.tsx";
+import { Conversation } from "./components/Conversation.tsx";
+import { Rail } from "./components/Rail.tsx";
+import { useI18n } from "./i18n.tsx";
+import { SettingsModal } from "./modals/SettingsModal.tsx";
+import { SetupModal } from "./modals/SetupModal.tsx";
+import { AboutModal, ConfirmModal, RenameModal, ShortcutsModal } from "./modals/SmallModals.tsx";
+import { ViewerModal } from "./modals/ViewerModal.tsx";
+import { applyFonts } from "./fonts.ts";
+
+type ModalSpec =
+  | { kind: "settings" }
+  | { kind: "setup" }
+  | { kind: "about" }
+  | { kind: "shortcuts" }
+  | { kind: "rename"; id: string; title: string }
+  | { kind: "trash"; id: string; title: string }
+  | { kind: "viewer"; images: string[]; index: number };
+
+export interface Running {
+  startedAt: number;
+  size: string;
+}
+
+const NEW = "";
+
+function editableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  return el.isContentEditable || el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT";
+}
+
+export function App({ boot }: { boot: BootInfo }) {
+  const { t } = useI18n();
+  const mac = boot.platform === "darwin";
+  const [settings, setSettings] = useState<Settings>(boot.settings);
+  const [settingsProblem, setSettingsProblem] = useState(boot.settingsProblem);
+  const [keyStatus, setKeyStatus] = useState<KeyStatus>(boot.key);
+  const [ui, setUi] = useState<UiState>(boot.state);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [unreadable, setUnreadable] = useState(0);
+  const [listFailure, setListFailure] = useState<AppFailure | null>(null);
+  const [currentId, setCurrentId] = useState<string>(NEW);
+  const [opened, setOpened] = useState<OpenedSession | null>(null);
+  const [openFailure, setOpenFailure] = useState<AppFailure | null>(null);
+  const [running, setRunning] = useState<Record<string, Running>>({});
+  const [failures, setFailures] = useState<Record<string, AppFailure>>({});
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [modals, setModals] = useState<ModalSpec[]>(() =>
+    boot.settings.sessionsDir === "" ? [{ kind: "setup" }] : [],
+  );
+  const pendingNew = useRef<{ requestId: string; running: Running } | null>(null);
+  // Mirrors pendingNew for rendering: the new-session composer shows its turn as working.
+  const [pendingRun, setPendingRun] = useState<Running | null>(null);
+  const currentRef = useRef(currentId);
+  currentRef.current = currentId;
+  const composerFocus = useRef<() => void>(() => {});
+  const attachRef = useRef<() => void>(() => {});
+
+  useEffect(() => applyFonts(settings), [settings]);
+
+  const saveUi = useCallback((next: UiState) => {
+    setUi(next);
+    api.saveState(next);
+  }, []);
+
+  const refreshList = useCallback(async () => {
+    const outcome = await api.listSessions();
+    if (!outcome.ok) {
+      setListFailure(outcome.failure);
+      return;
+    }
+    setListFailure(null);
+    setSessions(outcome.sessions);
+    setUnreadable(outcome.unreadable);
+  }, []);
+
+  const openSession = useCallback(
+    async (id: string) => {
+      setCurrentId(id);
+      setOpenFailure(null);
+      if (id === NEW) {
+        setOpened(null);
+        return;
+      }
+      const outcome = await api.openSession(id);
+      if (currentRef.current !== id) return;
+      if (outcome.ok) {
+        setOpened(outcome.session);
+        saveUi({ ...ui, lastSessionId: id });
+      } else {
+        setOpened(null);
+        setOpenFailure(outcome.failure);
+      }
+    },
+    [saveUi, ui],
+  );
+
+  // First listing, then reopen the session the user last had open.
+  useEffect(() => {
+    void (async () => {
+      await refreshList();
+      if (boot.state.lastSessionId) void openSession(boot.state.lastSessionId);
+    })();
+    // Runs once at launch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.sessionsDir]);
+
+  useEffect(
+    () =>
+      api.onTurnStarted(({ requestId, session }) => {
+        const pending = pendingNew.current;
+        if (pending?.requestId === requestId) {
+          pendingNew.current = null;
+          setPendingRun(null);
+          setRunning((r) => ({ ...r, [session.id]: pending.running }));
+          if (currentRef.current === NEW) {
+            setCurrentId(session.id);
+            setOpened(session);
+          }
+        } else if (currentRef.current === session.id) {
+          setOpened(session);
+        }
+        void refreshList();
+      }),
+    [refreshList],
+  );
+
+  const settle = useCallback(
+    (sessionId: string | null, outcome: TurnOutcome) => {
+      const id = outcome.session?.id ?? sessionId;
+      if (id) {
+        setRunning(({ [id]: _done, ...rest }) => rest);
+        setFailures(({ [id]: _old, ...rest }) => (!outcome.ok && !outcome.cancelled ? { ...rest, [id]: outcome.failure } : rest));
+        if (outcome.session && currentRef.current === id) setOpened(outcome.session);
+      } else if (!outcome.ok) {
+        // Nothing was saved (no key, no folder): the failure belongs to the new-session composer.
+        setFailures((f) => ({ ...f, [NEW]: outcome.failure }));
+      }
+      void refreshList();
+    },
+    [refreshList],
+  );
+
+  const send = useCallback(
+    async (draft: Draft, options: TurnOptions) => {
+      const sessionId = currentId === NEW ? null : currentId;
+      const requestId = crypto.randomUUID();
+      const run: Running = { startedAt: Date.now(), size: options.size };
+      if (sessionId) setRunning((r) => ({ ...r, [sessionId]: run }));
+      else {
+        pendingNew.current = { requestId, running: run };
+        setPendingRun(run);
+      }
+      setFailures(({ [currentId]: _old, ...rest }) => rest);
+      setDrafts(({ [currentId]: _sent, ...rest }) => rest);
+      saveUi({ ...ui, composer: options });
+      const outcome = await api.send({ requestId, sessionId, text: draft.text, references: draft.references.map((r) => r.path), options });
+      if (!sessionId && pendingNew.current?.requestId === requestId) {
+        pendingNew.current = null;
+        setPendingRun(null);
+      }
+      settle(sessionId, outcome);
+    },
+    [currentId, saveUi, settle, ui],
+  );
+
+  const retry = useCallback(
+    async (sessionId: string) => {
+      const lastUser = [...(opened?.doc.turns ?? [])].reverse().find((turn) => turn.role === "user");
+      const size = lastUser?.role === "user" ? lastUser.options.size : "auto";
+      setRunning((r) => ({ ...r, [sessionId]: { startedAt: Date.now(), size } }));
+      setFailures(({ [sessionId]: _old, ...rest }) => rest);
+      settle(sessionId, await api.retry(sessionId));
+    },
+    [opened, settle],
+  );
+
+  const pushModal = useCallback((spec: ModalSpec) => setModals((m) => [...m, spec]), []);
+  const popModal = useCallback(() => setModals((m) => m.slice(0, -1)), []);
+
+  const currentTitle = sessions.find((s) => s.id === currentId)?.title ?? opened?.doc.title ?? "";
+
+  const runCommand = useCallback(
+    (command: MenuCommand) => {
+      if (command === "close") {
+        if (modals.length > 0) popModal();
+        else api.closeWindow();
+        return;
+      }
+      if (modals.length > 0 && command !== "shortcuts" && command !== "settings") return;
+      switch (command) {
+        case "newSession":
+          void openSession(NEW);
+          setTimeout(() => composerFocus.current(), 0);
+          break;
+        case "settings":
+          if (!modals.some((m) => m.kind === "settings")) pushModal({ kind: "settings" });
+          break;
+        case "shortcuts":
+          if (!modals.some((m) => m.kind === "shortcuts")) pushModal({ kind: "shortcuts" });
+          break;
+        case "about":
+          pushModal({ kind: "about" });
+          break;
+        case "attach":
+          attachRef.current();
+          break;
+        case "rename":
+          if (currentId !== NEW) pushModal({ kind: "rename", id: currentId, title: currentTitle });
+          break;
+        case "reveal":
+          if (currentId !== NEW) api.revealSession(currentId);
+          break;
+        case "trash":
+          if (currentId !== NEW) pushModal({ kind: "trash", id: currentId, title: currentTitle });
+          break;
+      }
+    },
+    [currentId, currentTitle, modals, openSession, popModal, pushModal],
+  );
+
+  useEffect(() => api.onMenu(runCommand), [runCommand]);
+
+  // The macOS Ctrl half of each shortcut (the menu owns the Cmd half), standing down in text.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229) return;
+      if (!mac || !event.ctrlKey || event.metaKey) return;
+      const command = commandFor(event, mac, editableTarget(event.target));
+      if (command) {
+        event.preventDefault();
+        runCommand(command);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mac, runCommand]);
+
+  // The invisible denial boundary: a file dropped anywhere but the composer is refused, never opened.
+  useEffect(() => {
+    const deny = (event: DragEvent) => {
+      if (!(event.target as HTMLElement | null)?.closest?.("[data-drop-receiver]")) {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+      }
+    };
+    window.addEventListener("dragover", deny);
+    window.addEventListener("drop", deny);
+    return () => {
+      window.removeEventListener("dragover", deny);
+      window.removeEventListener("drop", deny);
+    };
+  }, []);
+
+  const draftKey = currentId;
+  const draft = drafts[draftKey] ?? { text: "", references: [] };
+  const setDraft = useCallback((next: Draft) => setDrafts((d) => ({ ...d, [draftKey]: next })), [draftKey]);
+
+  const runningHere = currentId === NEW ? pendingRun : (running[currentId] ?? null);
+  const composerOptions = useMemo(() => {
+    const turns = opened?.doc.turns ?? [];
+    const lastUser = [...turns].reverse().find((turn) => turn.role === "user");
+    return lastUser?.role === "user" ? lastUser.options : ui.composer;
+  }, [opened, ui.composer]);
+
+  const front = modals[modals.length - 1];
+
+  return (
+    <div className="shell">
+      <Rail
+        sessions={sessions}
+        currentId={currentId}
+        running={running}
+        unreadable={unreadable}
+        failure={listFailure}
+        sessionsDir={settings.sessionsDir}
+        timeZone={settings.timeZone}
+        width={ui.railWidth}
+        onWidth={(railWidth) => saveUi({ ...ui, railWidth })}
+        onNew={() => runCommand("newSession")}
+        onOpen={(id) => void openSession(id)}
+        onRename={(id, title) => pushModal({ kind: "rename", id, title })}
+        onTrash={(id, title) => pushModal({ kind: "trash", id, title })}
+        onSettings={() => runCommand("settings")}
+      />
+      <main className="stage">
+        <Conversation
+          session={currentId === NEW ? null : opened}
+          openFailure={openFailure}
+          running={runningHere}
+          failure={failures[currentId] ?? null}
+          timeZone={settings.timeZone}
+          onCancel={() => currentId !== NEW && api.cancel(currentId)}
+          onRetry={() => currentId !== NEW && void retry(currentId)}
+          onDismissFailure={() => setFailures(({ [currentId]: _gone, ...rest }) => rest)}
+          onRename={() => runCommand("rename")}
+          onReveal={() => runCommand("reveal")}
+          onView={(images, index) => pushModal({ kind: "viewer", images, index })}
+          onReuse={(path) => setDraft({ ...draft, references: [...draft.references.filter((r) => r.path !== path), { path, absolute: absoluteIn(opened, path) }] })}
+        />
+        <Composer
+          draft={draft}
+          onDraft={setDraft}
+          options={composerOptions}
+          imageModel={settings["openai.image"]}
+          busy={runningHere !== null}
+          keyMissing={keyStatus.source === "none"}
+          sessionDir={opened?.dir ?? null}
+          focusRef={composerFocus}
+          attachRef={attachRef}
+          onSend={(d, o) => void send(d, o)}
+          onCancel={() => currentId !== NEW && api.cancel(currentId)}
+          onOpenSettings={() => runCommand("settings")}
+        />
+      </main>
+
+      {front?.kind === "setup" && (
+        <SetupModal
+          boot={boot}
+          settings={settings}
+          keyStatus={keyStatus}
+          onDone={(next, status) => {
+            setSettings(next);
+            setKeyStatus(status);
+            popModal();
+          }}
+        />
+      )}
+      {front?.kind === "settings" && (
+        <SettingsModal
+          boot={boot}
+          settings={settings}
+          problem={settingsProblem}
+          keyStatus={keyStatus}
+          onClose={popModal}
+          onSaved={(next, status) => {
+            const folderMoved = next.sessionsDir !== settings.sessionsDir;
+            setSettings(next);
+            setSettingsProblem(null);
+            setKeyStatus(status);
+            popModal();
+            if (folderMoved) {
+              setCurrentId(NEW);
+              setOpened(null);
+            }
+          }}
+        />
+      )}
+      {front?.kind === "about" && <AboutModal version={boot.version} onClose={popModal} />}
+      {front?.kind === "shortcuts" && <ShortcutsModal mac={mac} onClose={popModal} />}
+      {front?.kind === "rename" && (
+        <RenameModal
+          title={front.title}
+          onClose={popModal}
+          onRename={async (title) => {
+            const outcome = await api.renameSession(front.id, title);
+            if (!outcome.ok) return outcome.failure;
+            popModal();
+            if (currentRef.current === front.id) {
+              setCurrentId(outcome.session.id);
+              setOpened(outcome.session);
+              saveUi({ ...ui, lastSessionId: outcome.session.id });
+            }
+            setDrafts(({ [front.id]: moved, ...rest }) => (moved ? { ...rest, [outcome.session.id]: moved } : rest));
+            await refreshList();
+            return null;
+          }}
+        />
+      )}
+      {front?.kind === "trash" && (
+        <ConfirmModal
+          title={t(mac ? "trash.titleMac" : "trash.titleOther")}
+          body={t(mac ? "trash.bodyMac" : "trash.bodyOther", { title: front.title || t("rail.untitled") })}
+          confirmLabel={t(mac ? "trash.confirmMac" : "trash.confirmOther")}
+          onClose={popModal}
+          onConfirm={async () => {
+            const outcome = await api.trashSession(front.id);
+            if (!outcome.ok) return outcome.failure;
+            popModal();
+            if (currentRef.current === front.id) void openSession(NEW);
+            await refreshList();
+            return null;
+          }}
+        />
+      )}
+      {front?.kind === "viewer" && (
+        <ViewerModal images={front.images} index={front.index} onClose={popModal} />
+      )}
+    </div>
+  );
+}
+
+function absoluteIn(session: OpenedSession | null, relative: string): string {
+  if (!session) return relative;
+  const sep = session.dir.includes("\\") ? "\\" : "/";
+  return `${session.dir}${sep}${relative.split("/").join(sep)}`;
+}

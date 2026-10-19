@@ -1,0 +1,46 @@
+appId: io.github.nao7sep.gptimg
+productName: GptImg
+copyright: Copyright © Yoshinao Inoguchi
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: LICENSE
+    to: LICENSE
+asarUnpack:
+  # The native image library the SDK's worker loads at run time. ONNX Runtime is
+  # left out: the SDK loads it only for local models, which the app never runs.
+  - node_modules/sharp/**
+  - node_modules/@img/**
+mac:
+  category: public.app-category.graphics-design
+  # Ad-hoc signed ("-"): no developer certificate, but a valid seal and a
+  # stable bundle identity, which the dock name and per-app defaults rely on.
+  identity: "-"
+  # No notarization, so the hardened runtime would only add library-validation
+  # failures for an ad-hoc seal.
+  hardenedRuntime: false
+  # Electron's own strings in the app's ten languages only.
+  electronLanguages: [en, de, es, fr, it, pt_BR, ru, ja, ko, zh_CN]
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  extendInfo:
+    CFBundleLocalizations: [en, de, es, fr, it, pt-BR, ru, ja, ko, zh-Hans]
+win:
+  electronLanguages: [en-US, de, es, fr, it, pt-BR, ru, ja, ko, zh-CN]
+  target:
+    - target: nsis
+      arch: x64
+    - target: zip
+      arch: x64
+nsis:
+  oneClick: false
+  multiLanguageInstaller: true
+  installerLanguages: [en_US, de_DE, es_ES, fr_FR, it_IT, pt_BR, ru_RU, ja_JP, ko_KR, zh_CN]

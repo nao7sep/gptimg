@@ -1,0 +1,86 @@
+/*
+ * Darkroom: GptImg's palette, written once. Warm matte-paper neutrals in
+ * light mode, graphite in dark; one persimmon accent, kept for the send
+ * action, the selected session and focus. Line colours hit the fleet's
+ * contrast targets against both the page and the surface: row separator
+ * 1.15–1.30, divider 1.35–1.70, control edge 2.0–2.5.
+ */
+:root {
+  color-scheme: light dark;
+
+  --bg: #f6f3ee;
+  --surface: #ffffff;
+  --rail: #efebe4;
+  --sunken: #ebe6de;
+  --ink: #23201c;
+  --ink-2: #514b44;
+  --ink-3: #6f685f;
+  --line-row: #e4e0d9;
+  --line-divider: #cfcac2;
+  --line-control: #a8a299;
+  --accent: #c4501c;
+  --accent-hover: #ad4515;
+  --accent-ink: #ffffff;
+  --accent-soft: #f5e1d6;
+  --accent-rule: #e0885c;
+  --danger: #b3261e;
+  --danger-soft: #fbe5e2;
+  --warn: #8a5a00;
+  --focus: #c4501c;
+  --scrim: rgba(28, 24, 20, 0.42);
+  --shadow-print: 0 1px 2px rgba(40, 30, 20, 0.08), 0 6px 18px rgba(40, 30, 20, 0.07);
+  --shadow-modal: 0 18px 50px rgba(30, 22, 15, 0.22);
+  --sheen: rgba(255, 255, 255, 0.55);
+
+  --radius-chip: 6px;
+  --radius-control: 7px;
+  --radius-print: 10px;
+  --radius-panel: 12px;
+  --radius-modal: 14px;
+
+  --control-h: 32px;
+  --control-h-compact: 28px;
+  --gap: 8px;
+  --motion: 120ms;
+
+  --font-ui: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-ui-size: 13.5px;
+  --font-content: var(--font-ui);
+  --content-reading: 15px;
+  --content-writing: 14px;
+  --content-line: 1.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141517;
+    --surface: #1c1d20;
+    --rail: #18191b;
+    --sunken: #111214;
+    --ink: #ece7e0;
+    --ink-2: #bdb6ac;
+    --ink-3: #948d83;
+    --line-row: #2b2c30;
+    --line-divider: #3a3b40;
+    --line-control: #54555b;
+    --accent: #f0804a;
+    --accent-hover: #f6956a;
+    --accent-ink: #1a0e08;
+    --accent-soft: #3a2519;
+    --accent-rule: #b5603a;
+    --danger: #f2877e;
+    --danger-soft: #3b1f1d;
+    --warn: #e2b55c;
+    --focus: #f0804a;
+    --scrim: rgba(0, 0, 0, 0.58);
+    --shadow-print: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 22px rgba(0, 0, 0, 0.35);
+    --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.55);
+    --sheen: rgba(255, 255, 255, 0.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 0ms;
+  }
+}

@@ -1,0 +1,103 @@
+// The catalogue gates (localization-conventions): every language has every
+// key with exactly its plural categories, keeps every placeholder, has an
+// ellipsis exactly where English does, holds no literal no-break space, and
+// copies English only where a value is deliberately literal.
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { ENGLISH, loadCatalogue } from "../../src/shared/i18n/catalogues.ts";
+import { LANGUAGES, type Language } from "../../src/shared/i18n/languages.ts";
+
+const PLURAL = /\.(zero|one|two|few|many|other)$/;
+const others = LANGUAGES.filter((l) => l !== "en");
+
+function shape(catalogue: Record<string, string>, language: Language): string[] {
+  const categories = new Intl.PluralRules(language).resolvedOptions().pluralCategories;
+  const keys = new Set<string>();
+  for (const key of Object.keys(catalogue)) {
+    if (PLURAL.test(key)) {
+      const base = key.replace(PLURAL, "");
+      for (const category of categories) keys.add(`${base}.${category}`);
+    } else keys.add(key);
+  }
+  return [...keys].sort();
+}
+
+const placeholders = (text: string): string[] => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!).sort();
+
+/** Values that are the same word in a language, or literal by rule (brands, keys printed on keyboards). */
+const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
+  de: ["about.version", "rail.label", "rail.sessions", "settings.sessions", "settings.system", "settings.theme.system"],
+  es: ["nativeMenu.zoom", "rail.label", "rail.sessions", "settings.general", "settings.sessions"],
+  fr: [
+    "about.version",
+    "composer.label",
+    "composer.size.portrait",
+    "conversation.label",
+    "conversation.totals.other",
+    "dialog.imageFilter",
+    "nativeMenu.services",
+    "nativeMenu.zoom",
+    "rail.meta.other",
+    "viewer.label",
+  ],
+  it: ["nativeMenu.file", "nativeMenu.zoom"],
+  "pt-BR": ["nativeMenu.zoom", "rail.label", "rail.sessions", "settings.sessions"],
+};
+const LITERAL_EVERYWHERE = ["settings.apiKeyPlaceholder", "settings.openai", "keys.Cmd", "keys.Ctrl", "keys.Escape", "keys.Shift", "keys.Enter", "viewer.count"];
+
+describe.each(others)("%s catalogue", (language) => {
+  let catalogue: Record<string, string>;
+
+  it("loads and has exactly English's keys, with its own plural categories", async () => {
+    catalogue = await loadCatalogue(language);
+    expect(Object.keys(catalogue).sort()).toEqual(shape(ENGLISH, language));
+  });
+
+  it("keeps every placeholder, and a count in every plural form but one", async () => {
+    catalogue ??= await loadCatalogue(language);
+    for (const [key, value] of Object.entries(catalogue)) {
+      const plural = PLURAL.test(key);
+      const source = ENGLISH[key] ?? ENGLISH[key.replace(PLURAL, ".other")]!;
+      const strip = (list: string[]) => (plural ? list.filter((p) => p !== "count") : list);
+      expect(strip(placeholders(value)), key).toEqual(strip(placeholders(source)));
+      if (plural && !key.endsWith(".one") && placeholders(ENGLISH[key.replace(PLURAL, ".other")]!).includes("count")) {
+        expect(placeholders(value), key).toContain("count");
+      }
+    }
+  });
+
+  it("has an ellipsis exactly where English does", async () => {
+    catalogue ??= await loadCatalogue(language);
+    for (const [key, value] of Object.entries(catalogue)) {
+      const source = ENGLISH[key] ?? ENGLISH[key.replace(PLURAL, ".other")]!;
+      expect(value.includes("…"), key).toBe(source.includes("…"));
+      expect(value.includes("..."), key).toBe(false);
+    }
+  });
+
+  it("copies English only where the value is literal", async () => {
+    catalogue ??= await loadCatalogue(language);
+    const allowed = new Set([...LITERAL_EVERYWHERE, ...(SAME_AS_ENGLISH[language] ?? [])]);
+    const copied = Object.entries(catalogue)
+      .filter(([key, value]) => ENGLISH[key] === value && !allowed.has(key))
+      .map(([key]) => key);
+    expect(copied).toEqual([]);
+  });
+});
+
+describe("catalogue files", () => {
+  it.each(LANGUAGES)("%s holds no literal no-break space and is sorted", (language) => {
+    const raw = readFileSync(new URL(`../../src/shared/i18n/catalogues/${language}.json`, import.meta.url), "utf8");
+    expect(raw.includes(" ")).toBe(false);
+    const keys = Object.keys(JSON.parse(raw));
+    expect(keys).toEqual([...keys].sort());
+  });
+
+  it("English uses an ellipsis only for running status", () => {
+    expect(Object.entries(ENGLISH).filter(([, v]) => v.includes("…")).map(([k]) => k)).toEqual(["rail.working"]);
+  });
+
+  it("names System's resolved value", () => {
+    expect(ENGLISH["settings.system"]).toContain("{value}");
+  });
+});

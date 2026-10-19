@@ -16,6 +16,7 @@
     "url": "git+https://github.com/nao7sep/gptimg.git"
   },
   "type": "module",
+  "main": "out/main/index.js",
   "workspaces": [
     "sdk"
   ],
@@ -23,17 +24,36 @@
     "node": ">=24.12.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck:app && electron-vite build",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit --composite false && tsc -p tsconfig.web.json --noEmit --composite false && tsc -p tsconfig.test.json --noEmit --composite false",
+    "typecheck:app": "tsc -p tsconfig.node.json --noEmit --composite false && tsc -p tsconfig.web.json --noEmit --composite false",
     "test": "npm run typecheck && npm run typecheck -w gptimgsdk && vitest run",
     "test:full": "npm test && npm run test:live -w gptimgsdk",
     "check:release-tag": "node scripts/check-release-tag.ts"
   },
+  "dependencies": {
+    "sharp": "^0.35.5"
+  },
   "devDependencies": {
+    "@babel/parser": "^7.29.9",
     "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.17.0",
+    "electron-vite": "^5.0.0",
+    "gptimgsdk": "*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
+    "vite": "^7.3.7",
     "vitest": "^5.0.4"
   },
   "allowScripts": {
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.25.12": true,
     "esbuild@0.28.2": true,
     "fsevents@2.3.3": false,
     "onnxruntime-node@1.30.0": true

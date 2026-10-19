@@ -1,0 +1,34 @@
+// What the app remembers about its own surface between launches (state.json):
+// not settings, so it is written freely and a bad copy is simply dropped.
+import type { TurnOptions } from "./session.ts";
+
+export interface UiState {
+  /** The rail's width as the user last dragged it; null until they drag. */
+  railWidth: number | null;
+  lastSessionId: string | null;
+  /** The composer's shape and quality, as last sent. */
+  composer: TurnOptions;
+}
+
+export const RAIL_WIDTH = { min: 200, max: 420, initial: 264 } as const;
+
+export const SIZES = ["auto", "1024x1024", "1024x1536", "1536x1024"] as const;
+export const QUALITIES = ["auto", "low", "medium", "high"] as const;
+
+export function defaultUiState(): UiState {
+  return { railWidth: null, lastSessionId: null, composer: { size: "auto", quality: "auto" } };
+}
+
+export function parseUiState(value: unknown): UiState {
+  const base = defaultUiState();
+  if (!value || typeof value !== "object") return base;
+  const raw = value as Record<string, unknown>;
+  const width = raw.railWidth;
+  const railWidth =
+    typeof width === "number" && Number.isFinite(width) ? Math.min(RAIL_WIDTH.max, Math.max(RAIL_WIDTH.min, Math.round(width))) : null;
+  const lastSessionId = typeof raw.lastSessionId === "string" ? raw.lastSessionId : null;
+  const composer = raw.composer as Record<string, unknown> | undefined;
+  const size = typeof composer?.size === "string" ? composer.size : base.composer.size;
+  const quality = typeof composer?.quality === "string" ? composer.quality : base.composer.quality;
+  return { railWidth, lastSessionId, composer: { size, quality } };
+}
