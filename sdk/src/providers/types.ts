@@ -9,9 +9,10 @@ export interface ProviderImageResult {
    * Image bytes in response order. `data` is `null` for any item that
    * failed to materialize (e.g., missing both b64 and url, or URL fetch
    * failed). The array length matches `response.data.length` so positional
-   * mapping to file indices is preserved.
+   * mapping to file indices is preserved. `code` marks an item the
+   * provider's moderation blocked, as against one that went missing.
    */
-  images: Array<{ data: Uint8Array | null; error?: string }>;
+  images: Array<{ data: Uint8Array | null; error?: string; code?: "provider.moderationBlocked" }>;
 }
 
 export interface ProviderVisionResult {
@@ -69,6 +70,8 @@ export interface ChatHistoryTurn {
 export interface ChatProviderArgs {
   message: string;
   images: ChatImage[];
+  /** Where the first image may change: its transparent pixels. */
+  mask?: ChatImage | undefined;
   /** Continue OpenAI's copy of the conversation from this response. */
   previousResponseId?: string | undefined;
   /** The earlier turns, loaded only when they are sent: without a previous response, or when it is gone. */
@@ -76,6 +79,8 @@ export interface ChatProviderArgs {
   params: { model: string; reasoning?: string | undefined; instructions: string; tool: Record<string, unknown> };
   credentials: Credentials;
   network: ProviderNetworkCtx;
+  /** Set when the tool asks for partial images: the response is streamed and each one is handed over as it arrives. */
+  onPartialImage?: ((image: { callId: string; index: number; data: Uint8Array }) => void) | undefined;
 }
 
 export interface ProviderChatResult extends ProviderImageResult {

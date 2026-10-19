@@ -128,6 +128,7 @@ export type {
   OutputFile,
   PngEncodingArgs,
   Policy,
+  PartialImage,
   ProgressUpdate,
   ResizeArgs,
   ResizeResult,

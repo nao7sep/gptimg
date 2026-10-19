@@ -161,6 +161,8 @@ function serializeThrownError(
 
 // The call options; an unknown one is refused, as an unknown argument is.
 const CALL_OPTION_NAMES = ["signal", "onEvent", "onProgress"];
+// Options only one verb reads: refused on every other verb, as any unknown option is.
+const VERB_CALL_OPTIONS: Partial<Record<VerbName, string[]>> = { chat: ["onPartialImage"] };
 
 /**
  * The single envelope for every verb:
@@ -180,9 +182,10 @@ export async function withVerbLogger<T>(
   opts: VerbCallOptions,
   body: (logger: Logger) => Promise<T>,
 ): Promise<T | RefusedResult> {
-  const unknown = Object.keys(opts ?? {}).find((key) => (opts as Record<string, unknown>)[key] !== undefined && !CALL_OPTION_NAMES.includes(key));
+  const known = [...CALL_OPTION_NAMES, ...(VERB_CALL_OPTIONS[verbName] ?? [])];
+  const unknown = Object.keys(opts ?? {}).find((key) => (opts as Record<string, unknown>)[key] !== undefined && !known.includes(key));
   if (unknown !== undefined) {
-    const hint = unknown === "log" ? "the SDK writes no log; store the events onEvent receives" : `the call options are ${CALL_OPTION_NAMES.join(", ")}`;
+    const hint = unknown === "log" ? "the SDK writes no log; store the events onEvent receives" : `the call options are ${known.join(", ")}`;
     throw new GptImgError("args.invalid", `${verbName}: ${unknown} is not a call option; ${hint}.`, {
       details: { field: unknown, constraint: unknown === "log" ? "retired" : "known call option" },
     });

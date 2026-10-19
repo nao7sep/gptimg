@@ -1,8 +1,9 @@
 /**
  * `gptimgsdk/testing`: a local stand-in for OpenAI, for a consumer's tests. Point the SDK at
  * it with the `baseURL` option and script each answer, so a test meets a refusal, a rate limit,
- * a missing image, an expired conversation or plain success without paying and without
- * reaching into the SDK. It speaks only the slice of OpenAI's API the SDK calls: images
+ * a missing image, a blocked image, an expired conversation, a streamed turn with drafts, a
+ * stream that drops or stalls, or plain success without paying and without reaching into
+ * the SDK. It speaks only the slice of OpenAI's API the SDK calls: images
  * (generate, edit), chat completions (vision) and responses (chat).
  *
  *   const openai = await startOpenAIDouble();
@@ -44,6 +45,8 @@ export type DoubleReply =
       imageUsage?: DoubleUsage;
       /** A chat turn that stopped early, with this reason. */
       incomplete?: string;
+      /** A chat turn's image-tool calls that moderation blocked, after its pictures. */
+      blockedImages?: number;
     }
   | { kind: "verdict"; ok: boolean; score?: number; reasons?: string[] }
   /** The model's own refusal in a chat answer, with its stated reason. */
@@ -59,7 +62,11 @@ export type DoubleReply =
   /** Any HTTP error, with OpenAI's error body; `insufficient_quota` with 429 is an exhausted quota. */
   | { kind: "error"; status: number; code?: string; message?: string; retryAfterSeconds?: number }
   /** Never answer, for a cancellation or timeout test. */
-  | { kind: "hang" };
+  | { kind: "hang" }
+  /** A streamed chat turn whose connection drops after this many drafts (default 1). */
+  | { kind: "streamDropped"; afterDrafts?: number }
+  /** A streamed chat turn that sends one draft and then goes silent. */
+  | { kind: "streamStalled" };
 
 export interface OpenAIDouble {
   /** Pass as the SDK's `baseURL`. */
@@ -159,12 +166,26 @@ export async function startOpenAIDouble(options: { picture?: Uint8Array } = {}):
     // A chat turn: the Responses API.
     const id = `resp_double_${++responses}`;
     const base = { id, object: "response", created_at: Math.floor(Date.now() / 1000), model: body.model, previous_response_id: body.previous_response_id ?? null };
+    // A streamed turn's final response arrives as its last event, after any drafts.
+    let sequence = 0;
+    const event = (data: Record<string, unknown>) => res.write(`event: ${String(data.type)}\ndata: ${JSON.stringify({ ...data, sequence_number: sequence++ })}\n\n`);
+    const finish = (response: Record<string, unknown>, drafts: Record<string, unknown>[] = []) => {
+      if (body.stream !== true) {
+        send(res, 200, response);
+        return;
+      }
+      res.writeHead(200, { "content-type": "text/event-stream", "x-request-id": `req_double_${Date.now()}` });
+      event({ type: "response.created", response: { ...base, status: "in_progress", output: [] } });
+      drafts.forEach(event);
+      event({ type: response.status === "incomplete" ? "response.incomplete" : "response.completed", response });
+      res.end();
+    };
     if (reply.kind === "refusal") {
-      send(res, 200, { ...base, status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "refusal", refusal: reply.reason }] }], usage: usageOf(undefined, { input: 100, output: 10 }) });
+      finish({ ...base, status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "refusal", refusal: reply.reason }] }], usage: usageOf(undefined, { input: 100, output: 10 }) });
       return;
     }
     if (reply.kind === "contentFilter") {
-      send(res, 200, { ...base, status: "incomplete", incomplete_details: { reason: "content_filter" }, output: [], usage: usageOf(undefined, { input: 100, output: 0 }) });
+      finish({ ...base, status: "incomplete", incomplete_details: { reason: "content_filter" }, output: [], usage: usageOf(undefined, { input: 100, output: 0 }) });
       return;
     }
     const success = reply.kind === "success" ? reply : { kind: "success" as const };
@@ -174,14 +195,41 @@ export async function startOpenAIDouble(options: { picture?: Uint8Array } = {}):
     if (text) output.push({ type: "message", role: "assistant", content: [{ type: "output_text", text }] });
     for (let i = 0; i < images; i++) output.push({ type: "image_generation_call", id: `ig_${id}_${i}`, status: "completed", result: picture });
     if (reply.kind === "noImage") output.push({ type: "image_generation_call", id: `ig_${id}_failed`, status: "failed", result: null });
-    send(res, 200, {
+    for (let i = 0; i < (success.blockedImages ?? 0); i++) {
+      output.push({
+        type: "image_generation_call",
+        id: `ig_${id}_blocked_${i}`,
+        status: "failed",
+        error: {
+          type: "image_generation_user_error",
+          code: "moderation_blocked",
+          message: "Your request was rejected by the safety system.",
+          moderation_details: { categories: ["sexual"], moderation_stage: "output" },
+        },
+      });
+    }
+    const response = {
       ...base,
       status: success.incomplete ? "incomplete" : "completed",
       incomplete_details: success.incomplete ? { reason: success.incomplete } : null,
       output,
       usage: usageOf(success.usage, { input: 1000, output: 100 }),
       tool_usage: { image_gen: usageOf(success.imageUsage, { input: images > 0 ? 80 : 0, output: images > 0 ? 200 : 0 }) },
-    });
+    };
+    // Streamed: each picture's drafts, then the final response, as server-sent events.
+    const tool = (Array.isArray(body.tools) ? body.tools[0] : undefined) as { partial_images?: number } | undefined;
+    const draftCount = body.stream === true ? (tool?.partial_images ?? 0) : 0;
+    const drafts = Array.from({ length: Math.max(images, 1) }, (_, i) =>
+      Array.from({ length: draftCount }, (_, d) => ({ type: "response.image_generation_call.partial_image", item_id: `ig_${id}_${i}`, output_index: i, partial_image_index: d, partial_image_b64: picture })),
+    ).flat();
+    if (body.stream === true && (reply.kind === "streamDropped" || reply.kind === "streamStalled")) {
+      res.writeHead(200, { "content-type": "text/event-stream", "x-request-id": `req_double_${Date.now()}` });
+      event({ type: "response.created", response: { ...base, status: "in_progress", output: [] } });
+      drafts.slice(0, reply.kind === "streamDropped" ? (reply.afterDrafts ?? 1) : 1).forEach(event);
+      if (reply.kind === "streamDropped") setTimeout(() => res.destroy(), 20);
+      return;
+    }
+    finish(response, images > 0 ? drafts : []);
   };
 
   const server = createServer((req, res) => {

@@ -3,7 +3,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { defaultModelFor } from "../ai-models.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
-import { fsError } from "../errors.ts";
+import { fsError, GptImgError } from "../errors.ts";
 import { detectFormat } from "../image/detectFormat.ts";
 import { hash } from "../image/hash.ts";
 import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
@@ -45,6 +45,45 @@ async function readAttachment(filePath: string): Promise<ChatImage & { sha256: s
   }
   const { format } = await detectFormat(data);
   return { name: path.basename(filePath), data: new Uint8Array(data), format, sha256: hash(data) };
+}
+
+/**
+ * The mask, read and checked against the first image before the paid call: a
+ * PNG of the same size that has transparency, since OpenAI changes the image
+ * only where the mask is transparent.
+ */
+async function readMask(filePath: string, first: ChatImage): Promise<ChatImage & { sha256: string }> {
+  const mask = await readAttachment(filePath);
+  const invalid = (message: string, constraint: string) =>
+    new GptImgError("args.invalid", `chat: ${message}`, { subject: filePath, details: { field: "mask", constraint } });
+  if (mask.format !== "png") throw invalid(`mask must be a PNG, not ${mask.format}.`, "a PNG");
+  const [maskInfo, firstInfo] = await Promise.all([sharp(mask.data).metadata(), sharp(first.data).metadata()]);
+  if (maskInfo.width !== firstInfo.width || maskInfo.height !== firstInfo.height) {
+    throw invalid(
+      `mask is ${maskInfo.width}x${maskInfo.height}, but the first image is ${firstInfo.width}x${firstInfo.height}.`,
+      "the first image's size",
+    );
+  }
+  if (!maskInfo.hasAlpha) throw invalid("mask has no transparency to mark where the image may change.", "transparency");
+  return { ...mask, data: await documentedMask(mask.data) };
+}
+
+/**
+ * The mask as OpenAI documents it: grey equal to its own alpha, so what is kept
+ * is opaque white and where the image may change is transparent black.
+ * Masking is prompt-based, so the model looks at the mask's colours too, and a
+ * mask that is opaque black where nothing should change came back with that
+ * area painted black (observed 2026-10-19).
+ */
+async function documentedMask(png: Uint8Array): Promise<Uint8Array> {
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (let i = 0; i < data.length; i += 4) {
+    const alpha = data[i + 3]!;
+    data[i] = alpha;
+    data[i + 1] = alpha;
+    data[i + 2] = alpha;
+  }
+  return new Uint8Array(await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer());
 }
 
 /** An earlier turn's image, fitted for resending; a file that is gone is left out with a warning. */
@@ -101,11 +140,25 @@ export function planChat(ctx: SdkContext, args: ChatArgs) {
     ...(section.background !== undefined && { background: section.background }),
     ...(section.output_format !== undefined && { output_format: section.output_format }),
     ...(section.output_compression !== undefined && { output_compression: section.output_compression }),
+    ...(section.partial_images !== undefined && section.partial_images > 0 && { partial_images: section.partial_images }),
   };
   checkImageParams("chat", { model: imageModel, ...toolValues });
   const moderation = resolveChatModeration(imageModel);
   const tool = { model: imageModel, ...toolValues, ...(moderation !== undefined && { moderation }) };
   return { policy, model, reasoning, instructions, tool };
+}
+
+/** Drafts numbered by the image they belong to, handed to the caller's hook, which can never break the call. */
+function partialHandler(opts: VerbCallOptions, format: string) {
+  const calls: string[] = [];
+  return ({ callId, index, data }: { callId: string; index: number; data: Uint8Array }) => {
+    if (!calls.includes(callId)) calls.push(callId);
+    try {
+      opts.onPartialImage?.({ image: calls.indexOf(callId), index, data, format });
+    } catch {
+      // The hook's failure is the caller's; the call goes on.
+    }
+  };
 }
 
 export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOptions = {}): Promise<ChatResult | RefusedResult> {
@@ -119,6 +172,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     const network = resolveNetworkForCall(policy);
 
     const attachments = await Promise.all((args.images ?? []).map(readAttachment));
+    const mask = args.mask !== undefined ? await readMask(args.mask, attachments[0]!) : undefined;
 
     const { outDir, stem } = outputStemLocation(args.outDir, args.outName ?? defaultStem());
     await ensureOutputDir(outDir);
@@ -131,6 +185,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     logger.emit("info", "resolve", {
       event: "verb.start",
       input: args.images ?? [],
+      ...(args.mask !== undefined && { mask: args.mask }),
       output: path.join(outDir, stem),
       settings: { historyTurns: args.history?.length ?? 0, previousResponseId: args.previousResponseId ?? null, overwrite },
     });
@@ -138,11 +193,13 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     const result = await getProvider().chat({
       message,
       images: attachments,
+      mask,
       previousResponseId: args.previousResponseId,
       loadHistory: () => loadHistory(args.history ?? [], logger),
       params: { model, reasoning, instructions, tool },
       credentials,
       network: { primary: network.imageGenerate, download: network.imageDownload, logger, signal: opts.signal },
+      ...(tool.partial_images !== undefined && { onPartialImage: partialHandler(opts, String(tool.output_format ?? "png")) }),
     });
     logger.emit("info", "response", {
       event: "provider.returned",
@@ -157,6 +214,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
       tool,
       message,
       images: attachments.map(({ name, sha256 }) => ({ name, sha256 })),
+      ...(mask && { mask: { name: mask.name, sha256: mask.sha256 } }),
       previousResponseId: result.resumed === "chain" ? (args.previousResponseId ?? null) : null,
       historyTurns: result.historyTurns,
     };

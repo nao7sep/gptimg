@@ -390,6 +390,7 @@ const ChatTurnSchema = z.strictObject({
 const ChatArgsSchema = z.object({
   message: nonBlankText("message"),
   images: z.array(z.string().min(1)).optional(),
+  mask: z.string().min(1).optional(),
   history: z.array(ChatTurnSchema).optional(),
   previousResponseId: z.string().min(1).optional(),
   outDir: requiredPath("outDir"),
@@ -608,6 +609,14 @@ export function validateChatArgs(args: ChatArgs): ChatArgs {
   check(ChatArgsSchema, args, "chat");
   // Each earlier turn's images are paths too, and must be absolute like every other.
   args.history?.forEach((turn, t) => turn.images?.forEach((image, i) => assertAbsolutePath(image, `history[${t}].images[${i}]`, "chat")));
+  if (args.mask !== undefined) {
+    assertAbsolutePath(args.mask, "mask", "chat");
+    if (!args.images?.length) {
+      throw new GptImgError("args.invalid", "chat: mask applies to the first image, but no image is attached.", {
+        details: { field: "mask", constraint: "an attached image" },
+      });
+    }
+  }
   return args;
 }
 

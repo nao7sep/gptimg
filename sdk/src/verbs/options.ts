@@ -1,4 +1,4 @@
-import type { ProgressUpdate, SdkEvent } from "../types.ts";
+import type { PartialImage, ProgressUpdate, SdkEvent } from "../types.ts";
 
 export interface VerbCallOptions {
   /**
@@ -25,4 +25,11 @@ export interface VerbCallOptions {
    * the final count.
    */
   onProgress?: ((update: ProgressUpdate) => void) | undefined;
+
+  /**
+   * Receive each draft of an image while it is drawn, when the call's policy
+   * asks for partial images (`chat.partial_images`). A throwing hook never
+   * affects the call.
+   */
+  onPartialImage?: ((image: PartialImage) => void) | undefined;
 }

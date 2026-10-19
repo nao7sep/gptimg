@@ -110,7 +110,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
       limit(async (): Promise<{ data: Uint8Array | null } & DetectedImage> => {
         const index = i + 1;
         if (!item.data) {
-          failures.push({ index, code: "provider.noImage", effect: "unknown", message: item.error ?? `The provider returned no image for item ${index}.` });
+          failures.push({ index, code: item.code ?? "provider.noImage", effect: "unknown", message: item.error ?? `The provider returned no image for item ${index}.` });
           logger.emit("warn", "write", { event: "image.missing", index, error: item.error ?? null });
           return { data: null, format: null };
         }

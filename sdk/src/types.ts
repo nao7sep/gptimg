@@ -116,6 +116,22 @@ export interface ChatPolicy {
   background?: string;
   output_format?: string;
   output_compression?: number;
+  /**
+   * How many drafts of each image to show while it is drawn, 0 to 3 (default
+   * 0). Above 0 the response is streamed and each draft reaches the call's
+   * `onPartialImage`; drafts are not saved.
+   */
+  partial_images?: number;
+}
+
+/** A draft of an image while the image tool draws it. */
+export interface PartialImage {
+  /** Which image of the turn it belongs to, 0 for the first, in the order the image tool began them. */
+  image: number;
+  /** Which draft of that image, from 0. */
+  index: number;
+  data: Uint8Array;
+  format: string;
 }
 
 /** ONNX Runtime tuning for the local models. */
@@ -255,6 +271,8 @@ export interface ChatRequestRecord {
   tool: Record<string, unknown>;
   message: string;
   images: Array<{ name: string; sha256: string }>;
+  /** The mask applied to the first image, when one was sent. */
+  mask?: { name: string; sha256: string };
   previousResponseId: string | null;
   historyTurns: number;
   [param: string]: unknown;
@@ -1335,6 +1353,12 @@ export interface ChatArgs {
   message: string;
   /** Images attached to the message, by absolute path. */
   images?: string[];
+  /**
+   * A PNG the size of the first image in `images` whose transparent pixels
+   * mark where that image may change, by absolute path (OpenAI's
+   * `input_image_mask`). Needs at least one image.
+   */
+  mask?: string;
   /**
    * Every earlier turn, oldest first. Sent when there is no `previousResponseId`,
    * or when OpenAI no longer holds that response; the SDK keeps no conversation.

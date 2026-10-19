@@ -76,6 +76,7 @@ const ChatPolicySchema = z
     background: z.string().optional(),
     output_format: z.string().optional(),
     output_compression: z.number().optional(),
+    partial_images: z.number().int().min(0).max(3).optional(),
   })
   .strict();
 
