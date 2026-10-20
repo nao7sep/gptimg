@@ -2,7 +2,7 @@
 // (ai-model-routing-conventions). An id with no row is not checked: its request is the plain
 // one, and OpenAI's answer at call time is the verdict on it.
 
-import { SUPPORTED_MODELS, type ImageModelRow, type VisionModelRow } from "../ai-models.ts";
+import { findModelRow, type ImageModelRow, type VisionModelRow } from "../ai-models.ts";
 import { GptImgError } from "../errors.ts";
 import type { VisionDetail } from "../types.ts";
 import { VISION_DEFAULTS } from "../verbs/defaults.ts";
@@ -10,11 +10,13 @@ import { VISION_DEFAULTS } from "../verbs/defaults.ts";
 type ImageSection = "generate" | "edit" | "chat";
 
 function imageRow(model: string): ImageModelRow | undefined {
-  return SUPPORTED_MODELS.find((row): row is ImageModelRow => "image" in row && row.id === model);
+  const row = findModelRow(model);
+  return row && "image" in row ? row : undefined;
 }
 
 function visionRow(model: string): VisionModelRow | undefined {
-  return SUPPORTED_MODELS.find((row): row is VisionModelRow => "thinking" in row && row.id === model);
+  const row = findModelRow(model);
+  return row && "thinking" in row ? row : undefined;
 }
 
 function invalidPolicy(section: string, message: string): never {

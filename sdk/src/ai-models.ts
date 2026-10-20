@@ -95,6 +95,12 @@ export const AI_ROLES = [
 
 export type AiRole = (typeof AI_ROLES)[number]["id"];
 
+/** The row an id names, compared without regard to case; undefined for an id with no row. */
+export function findModelRow(id: string): SupportedModel | undefined {
+  const want = id.toLowerCase();
+  return SUPPORTED_MODELS.find((row) => row.id.toLowerCase() === want);
+}
+
 export function modelsFor(provider: AiProvider, kind: AiKind): readonly SupportedModel[] {
   return SUPPORTED_MODELS.filter((row) => row.provider === provider && row.kinds.includes(kind));
 }

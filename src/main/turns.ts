@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { relative, sep } from "node:path";
 import type { ChatResult, RefusedResult } from "gptimgsdk/types";
 import type { AppFailure, OpenedSession, SendRequest, TurnOutcome } from "../shared/api.ts";
+import { modelSpelling } from "../shared/ai-models.ts";
 import { errorDataOf, failureFromError, failureFromRefusal, lostWorkerFailure } from "../shared/failures.ts";
 import { message } from "../shared/i18n/translator.ts";
 import {
@@ -175,9 +176,9 @@ export class TurnRunner {
       outName: `${fileStamp(this.#now())}-t${index + 2}`,
       policy: {
         chat: {
-          model: settings["openai.chat"],
+          model: modelSpelling(settings["openai.chat"]),
           ...(reasoning && { reasoning }),
-          imageModel: settings["openai.image"],
+          imageModel: modelSpelling(settings["openai.image"]),
           size: turn.options.size,
           quality: turn.options.quality,
           // Transparency needs a format that holds it; PNG is the image model's own default.

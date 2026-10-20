@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { getProvider } from "../../src/providers/index.ts";
 import { buildOpenAIClient, clientHeaders, resolveModel } from "../../src/providers/openai/client.ts";
-import type { Credentials } from "../../src/types.ts";
+import type { Credentials } from "../../src/providers/types.ts";
 
 describe("OpenAI client helpers", () => {
   it("constructs the SDK client from the given credentials without SDK retries", () => {

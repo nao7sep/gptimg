@@ -1,6 +1,6 @@
 // An exact image size, checked against the chosen image model's rule before
 // it is sent, so a size the model refuses is caught in the composer.
-import { SUPPORTED_MODELS } from "gptimgsdk/types";
+import { imageRow } from "./settings.ts";
 
 export interface SizeRule {
   multipleOf: number;
@@ -9,11 +9,9 @@ export interface SizeRule {
   maxPixels: number;
 }
 
-/** The size rule of a supported image model, or null for one the SDK does not list. */
+/** The size rule of a supported image model, or null for one the app does not list. */
 export function sizeRuleOf(model: string): SizeRule | null {
-  const want = model.trim().toLowerCase();
-  const row = SUPPORTED_MODELS.find((r) => r.id === want && "image" in r) as { image: { size: SizeRule } } | undefined;
-  return row?.image.size ?? null;
+  return imageRow(model)?.image.size ?? null;
 }
 
 export type SizeProblem = "format" | "multiple" | "ratio" | "small" | "large";

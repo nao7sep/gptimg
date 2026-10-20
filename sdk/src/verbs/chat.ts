@@ -173,7 +173,7 @@ function planChat(ctx: SdkContext, args: ChatArgs) {
   const model = resolveModel(section.model, defaultModelFor("openai", "chat"));
   const reasoning = resolveVisionReasoning(model, section.reasoning, "chat");
   const instructions = section.instructions ?? OPENAI_CHAT_INSTRUCTIONS;
-  const imageModel = section.imageModel ?? defaultModelFor("openai", "image-edit");
+  const imageModel = resolveModel(section.imageModel, defaultModelFor("openai", "image-edit"));
   const toolValues = {
     ...(section.size !== undefined && { size: section.size }),
     ...(section.quality !== undefined && { quality: section.quality }),

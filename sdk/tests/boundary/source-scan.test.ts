@@ -59,7 +59,7 @@ function packageName(specifier: string): string {
 
 /** Every boundary violation in `code`, read as the package file `file` (relative to the package). */
 export function scanSource(code: string, file: string): string[] {
-  const ast = parse(code, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(code, { sourceType: "module", plugins: ["typescript", "importAttributes"] });
   const found: string[] = [];
   const homeAllowed = file === RESOURCE_HOME;
   for (const node of walk(ast.program)) {
@@ -72,7 +72,8 @@ export function scanSource(code: string, file: string): string[] {
     if (typeof source === "string") {
       if (source.startsWith(".")) {
         const target = path.normalize(path.join(path.dirname(file), source));
-        if (!target.startsWith(`src${path.sep}`)) found.push(`import outside the package: ${source}`);
+        // The SDK's own manifest is part of the package: VERSION is read from it.
+        if (!target.startsWith(`src${path.sep}`) && target !== "package.json") found.push(`import outside the package: ${source}`);
       } else if (!source.startsWith("node:") && !DEPENDENCIES.has(packageName(source))) {
         found.push(`import of an undeclared package: ${source}`);
       }
@@ -129,13 +130,14 @@ function runtimeImports(entry: string, seen = new Set<string>()): { files: Set<s
   const visit = (file: string): void => {
     if (seen.has(file)) return;
     seen.add(file);
-    const ast = parse(readFileSync(file, "utf8"), { sourceType: "module", plugins: ["typescript"] });
+    const ast = parse(readFileSync(file, "utf8"), { sourceType: "module", plugins: ["typescript", "importAttributes"] });
     for (const node of ast.program.body as unknown as Node[]) {
       const isModuleLink = node.type === "ImportDeclaration" || node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration";
       const source = isModuleLink ? (node.source as { value?: string } | null)?.value : undefined;
       if (typeof source !== "string") continue;
       const kind = (node as { importKind?: string; exportKind?: string }).importKind ?? (node as { exportKind?: string }).exportKind;
       if (kind === "type") continue;
+      if (source.endsWith(".json")) continue;
       if (source.startsWith(".")) visit(path.join(path.dirname(file), source));
       else packages.add(source);
     }

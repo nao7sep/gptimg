@@ -35,6 +35,7 @@ export type {
   ErrorEffect,
   ErrorKind,
   GptImgErrorData,
+  GptImgErrorOptions,
   SerializedCause,
 } from "./errors.ts";
 export { REFUSAL_CODES, completed } from "./refusal.ts";

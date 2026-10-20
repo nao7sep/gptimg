@@ -135,7 +135,7 @@ describe("a turn", () => {
   it("cancels the running call", async () => {
     let release!: () => void;
     const t = setup((call) => new Promise((resolve) => {
-      release = () => resolve(call.cancelled ? { kind: "error", error: { code: "cancelled", kind: "cancelled", effect: "unknown", message: "x" } } : { kind: "lost" });
+      release = () => resolve(call.cancelled ? { kind: "error", error: { name: "GptImgError", code: "cancelled", kind: "cancelled", effect: "unknown", message: "x" } } : { kind: "lost" });
     }));
     const pending = t.runner.send(request(null, "slow"));
     await new Promise((r) => setTimeout(r, 20));

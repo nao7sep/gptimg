@@ -3,7 +3,8 @@ import { assertAbsolutePath } from "./internal/absolute-path.ts";
 import { defaultModelsDir } from "./internal/resource-home.ts";
 import { validatePolicy } from "./policy/schemas.ts";
 import { mergePolicies } from "./policy/merge.ts";
-import type { Credentials, GptImgOptions, Policy } from "./types.ts";
+import type { Credentials } from "./providers/types.ts";
+import type { GptImgOptions, Policy } from "./types.ts";
 
 /** What one `GptImg` instance resolved from its options; in memory only. */
 export interface SdkContext {

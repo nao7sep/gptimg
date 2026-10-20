@@ -23,18 +23,9 @@ import type {
   VisionDetail,
 } from "./enums.ts";
 
-/** The credentials a paid call spends with (internal): the constructor's key, organization and project. */
-export interface Credentials {
-  apiKey: string;
-  organization?: string;
-  project?: string;
-  /** The API's base URL; default OpenAI's own. */
-  baseURL?: string;
-}
-
 /**
- * The `images.generate` / `images.edit` parameters a policy sets; other fields pass through to
- * OpenAI as given. For a supported model (`src/ai-models.ts`), `quality`, `background`,
+ * The `images.generate` / `images.edit` parameters a policy sets; any other field is refused
+ * as `policy.invalid`, never sent. For a supported model (`src/ai-models.ts`), `quality`, `background`,
  * `output_format`, `output_compression` and `size` are checked against its row before any paid
  * call; any other model id is sent unchecked, with nothing added.
  */
@@ -1566,7 +1557,7 @@ export interface GptImgOptions {
 // `gptimgsdk/types` entry alone can map codes to its own text and fill its
 // pickers without loading sharp, ONNX Runtime or the OpenAI client.
 export { ERROR_CODES, ERROR_EFFECTS, ERROR_KINDS, isGptImgErrorData } from "./errors.ts";
-export type { ErrorCode, ErrorDetails, ErrorEffect, ErrorKind, GptImgErrorData, SerializedCause } from "./errors.ts";
+export type { ErrorCode, ErrorDetails, ErrorEffect, ErrorKind, GptImgErrorData, GptImgErrorOptions, SerializedCause } from "./errors.ts";
 export { REFUSAL_CODES } from "./refusal.ts";
 export type { Refusal, RefusalCode, RefusedResult } from "./refusal.ts";
 export {

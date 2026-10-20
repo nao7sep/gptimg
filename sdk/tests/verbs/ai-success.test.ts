@@ -1176,6 +1176,16 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
+  it("matches a listed model without regard to case, checks it against its row and sends the row's spelling", async () => {
+    providerCalls.generate.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
+    const outDir = path.join(tmp, "model-case");
+    done(await sdk.generate({ prompt: "a disk", outDir, outName: "cased", policy: { generate: { model: "GPT-Image-2", quality: "high" } } }));
+    expect(providerCalls.generate.mock.calls[0]?.[0].params).toMatchObject({ model: "gpt-image-2", moderation: "low" });
+    await expect(
+      sdk.generate({ prompt: "a disk", outDir, outName: "cased-x", policy: { generate: { model: "GPT-IMAGE-2", quality: "xhigh" } } }),
+    ).rejects.toMatchObject({ code: "policy.invalid" });
+  });
+
   it("generate sends an id with no row exactly what the recipe chose, with no moderation", async () => {
     providerCalls.generate.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
     const outDir = path.join(tmp, "moderation-unlisted");

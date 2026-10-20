@@ -1,6 +1,16 @@
 import type { Logger } from "../events/index.ts";
 import type { NetworkBudget } from "../network/defaults.ts";
-import type { Credentials, VisionDetail, VisionVerdict } from "../types.ts";
+import type { VisionDetail, VisionVerdict } from "../types.ts";
+
+/** The credentials a paid call spends with (internal): the constructor's key, organization and project. */
+export interface Credentials {
+  apiKey: string;
+  organization?: string;
+  project?: string;
+  /** The API's base URL; default OpenAI's own. */
+  baseURL?: string;
+}
+
 
 export interface ProviderImageResult {
   /** Raw response from the provider, suitable for sidecar capture. */

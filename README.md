@@ -6,7 +6,7 @@ GptImg is a desktop app that works like ChatGPT's image feature: describe a pict
 
 It runs on your own OpenAI API key and is billed per use, so there is no subscription and no message cap. Each reply shows the tokens it used, the assistant model's and the image model's separately.
 
-The repository also holds **GptImgSdk** (`gptimgsdk`, in [`sdk/`](sdk/)), the TypeScript library the app is built on. Scripts use it for image generation and editing with JSON records beside every paid image, and for local image work: masking, compositing, trimming, shadows, upscaling, icon packing and comparison sheets.
+The repository also holds **GptImgSdk** (`gptimgsdk`, in [`sdk/`](sdk/), documented in [`sdk/README.md`](sdk/README.md)), the TypeScript library the app is built on. Scripts use it for image generation and editing with JSON records beside every paid image, and for local image work: masking, compositing, trimming, shadows, upscaling, icon packing and comparison sheets.
 
 ## Requirements
 
@@ -53,25 +53,7 @@ OpenAI keeps each conversation for about 30 days, so a follow-up sends only the 
 
 ## GptImgSdk
 
-`gptimgsdk` is consumed from its TypeScript source on plain Node, with no build step. A script outside this repository depends on it by path (`"gptimgsdk": "file:../gptimg/sdk"`) and imports it by name:
-
-```ts
-import { GptImg, completed } from "gptimgsdk";
-
-const img = new GptImg({ apiKey: process.env.OPENAI_API_KEY });
-const result = completed(
-  await img.generate({ prompt: "a single centered pink frosted donut", outDir: "/absolute/output" }),
-);
-console.log(result.files.map((file) => file.path));
-```
-
-The SDK reads no environment variable, configuration file or working directory: everything comes from the constructor and each call, and every path is absolute. Each verb returns `{ status: "completed", … }` or `{ status: "refused", refusal }`; `completed()` turns a refusal into a thrown `GptImgError` for scripts that do not handle one. The SDK writes no log: pass `onEvent` to receive each event of a call as a complete record, credentials masked, and store it where you keep your own records. Paid images get a JSON sidecar with the request, OpenAI's response and token usage.
-
-The public types, the exported code tables, the tests and [`sdk/CHANGELOG.md`](sdk/CHANGELOG.md) are the API reference.
-
-`chat` is one turn of a conversation, for an app that holds conversations, as the GptImg app does: the caller keeps the conversation (its earlier turns, the previous turn's `responseId`, which images to attach) and passes it with each turn, and the SDK sends that one turn to OpenAI and publishes the turn's images with their records, like any other paid verb. A script that makes or changes images uses `generate` and `edit`.
-
-AI matting (`mask` with `method: "ai"`) and `upscale` run local models that are installed only on request (`img.model.install`), into `~/.gptimgsdk/models` unless a call or the constructor names another folder. They run offline once installed, but need memory: an AI mask peaks at about 11 GB, an upscale at about 3 GB with its default tile.
+[`sdk/README.md`](sdk/README.md) is the SDK's own document: how a script depends on it, how its verbs, results, errors and events behave, its entries and its local models.
 
 ## Third-party models
 

@@ -2,7 +2,7 @@
 // key and a built-in in code; config.json holds a set only while the user's
 // copy differs from its built-in. Everything here is pure, so main validates
 // what it loads and the renderer validates a draft with the same rules.
-import { SUPPORTED_MODELS, defaultModelFor } from "gptimgsdk/types";
+import { defaultModelFor, findModelRow, modelSpelling, type ChatModelRow, type ImageModelRow } from "./ai-models.ts";
 import { LANGUAGE_PREFERENCES, type LanguagePreference } from "./i18n/languages.ts";
 
 export const THEMES = ["system", "light", "dark"] as const;
@@ -72,18 +72,14 @@ export function builtInSettings(): Settings {
 export const SET_KEYS = Object.keys(builtInSettings()) as SetKey[];
 
 /** The supported assistant row for an id, compared trimmed and case-insensitive; undefined for an id with no row. */
-export function chatRow(id: string) {
-  const want = id.trim().toLowerCase();
-  return SUPPORTED_MODELS.find((row) => row.id === want && row.kinds.includes(CHAT_KIND) && "thinking" in row) as
-    | { id: string; thinking: readonly string[]; defaultThinking: string }
-    | undefined;
+export function chatRow(id: string): ChatModelRow | undefined {
+  const row = findModelRow(id);
+  return row && "thinking" in row && row.kinds.includes(CHAT_KIND) ? row : undefined;
 }
 
-export function imageRow(id: string) {
-  const want = id.trim().toLowerCase();
-  return SUPPORTED_MODELS.find((row) => row.id === want && "image" in row) as
-    | { id: string; image: { qualities: readonly string[] } }
-    | undefined;
+export function imageRow(id: string): ImageModelRow | undefined {
+  const row = findModelRow(id);
+  return row && "image" in row ? row : undefined;
 }
 
 export function defaultThinkingFor(model: string): string | undefined {
@@ -147,8 +143,9 @@ export function validateSet<K extends SetKey>(key: K, value: unknown): string | 
   }
 }
 
-/** A set's value as it is compared and stored: text cleaned, model ids trimmed. */
+/** A set's value as it is compared and stored: text cleaned, a listed model id in its row's spelling. */
 export function normalizeSet<K extends SetKey>(key: K, value: Settings[K]): Settings[K] {
+  if ((key === "openai.chat" || key === "openai.image") && typeof value === "string") return modelSpelling(cleanLine(value)) as Settings[K];
   if (key === "contentFont") {
     const font = value as ContentFont;
     return { ...font, family: cleanLine(font.family) } as Settings[K];

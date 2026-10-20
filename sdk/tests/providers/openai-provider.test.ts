@@ -13,7 +13,8 @@ import { openaiEdit } from "../../src/providers/openai/edit.ts";
 import { openaiGenerate } from "../../src/providers/openai/generate.ts";
 import { OPENAI_VISION_SYSTEM_PROMPT } from "../../src/providers/openai/defaults.ts";
 import { openaiVision } from "../../src/providers/openai/vision.ts";
-import type { Credentials, SdkEvent, VerbName } from "../../src/types.ts";
+import type { Credentials } from "../../src/providers/types.ts";
+import type { SdkEvent, VerbName } from "../../src/types.ts";
 
 const openaiMock = vi.hoisted(() => ({
   generate: vi.fn(),

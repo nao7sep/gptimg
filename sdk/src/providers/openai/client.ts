@@ -1,6 +1,7 @@
 import OpenAI from "openai";
+import { findModelRow } from "../../ai-models.ts";
 import { nullBase64InResponse } from "../../sidecar/nullBase64.ts";
-import type { Credentials } from "../../types.ts";
+import type { Credentials } from "../types.ts";
 
 // Retry policy is owned by callWithRetry; maxRetries=0 disables the SDK's
 // built-in retries. Per-request `{ timeout }` is passed at the call site,
@@ -63,6 +64,7 @@ export function recordedResponse(result: { data: unknown; response: Response; re
 }
 
 export function resolveModel(paramModel: unknown, fallback: string): string {
-  if (typeof paramModel === "string" && paramModel.length > 0) return paramModel;
+  // A listed model, however its case was typed, is sent in its row's spelling; any other id as given.
+  if (typeof paramModel === "string" && paramModel.length > 0) return findModelRow(paramModel)?.id ?? paramModel;
   return fallback;
 }
