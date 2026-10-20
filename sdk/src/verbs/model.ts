@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import path from "node:path";
 import { callModelsDir, callPolicy, type SdkContext } from "../context.ts";
-import { fsError, GptImgError, throwIfAborted } from "../errors.ts";
+import { cancelledError, fsError, GptImgError, throwIfAborted } from "../errors.ts";
 import { CALL_OPTION_NAMES, withVerbLogger } from "../internal/local-verb.ts";
 import { ensureModel, fileSha256, inspectCachedModel } from "../local/models/fetch.ts";
 import { MODELS, type ModelKey } from "../local/models/registry.ts";
@@ -10,6 +10,7 @@ import { resolveNetworkForCall } from "../network/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type {
   InstalledModel,
+  ModelInstallFailure,
   ModelInstallResult,
   ModelIntegrity,
   ModelListResult,
@@ -81,6 +82,7 @@ export async function installModelsImpl(
   keys: readonly ModelKey[],
   args: ModelInstallAllArgs,
   opts: VerbCallOptions = {},
+  batch = false,
 ): Promise<ModelInstallResult> {
   for (const key of keys) validateModelKey(key);
   if (args.force !== undefined && typeof args.force !== "boolean") {
@@ -92,18 +94,26 @@ export async function installModelsImpl(
   const budget = resolveNetworkForCall(callPolicy(ctx, args.policy)).modelDownload;
   return completed(await withVerbLogger(ctx, "model", opts, async (logger) => {
     const installed: InstalledModel[] = [];
+    const failures: ModelInstallFailure[] = [];
     for (const key of keys) {
-      throwIfAborted(opts.signal);
+      // Models installed before a cancellation stay installed.
+      if (opts.signal?.aborted) throw cancelledError(opts.signal.reason, installed.length > 0 ? "unknown" : "none");
       const entry = MODELS[key];
-      const installedPath = await ensureModel(entry, modelsDir, {
-        force: args.force,
-        budget,
-        signal: opts.signal,
-        logger,
-      });
-      installed.push({ key, name: entry.name, path: installedPath, forced: args.force ?? false });
+      try {
+        const installedPath = await ensureModel(entry, modelsDir, {
+          force: args.force,
+          budget,
+          signal: opts.signal,
+          logger,
+        });
+        installed.push({ key, name: entry.name, path: installedPath, forced: args.force ?? false });
+      } catch (err) {
+        // A batch reports each model's outcome; a cancellation still ends it, as does a single install's failure.
+        if (!batch || !(err instanceof GptImgError) || err.code === "cancelled") throw err;
+        failures.push({ key, name: entry.name, code: err.code, effect: err.effect, message: err.message });
+      }
     }
-    return { status: "completed" as const, installed };
+    return { status: "completed" as const, installed, failures };
   }));
 }
 
@@ -115,7 +125,7 @@ export async function installModelImpl(ctx: SdkContext, args: ModelInstallArgs, 
 
 /** Install every model the SDK uses. */
 export async function installAllModelsImpl(ctx: SdkContext, args: ModelInstallAllArgs = {}, opts: VerbCallOptions = {}): Promise<ModelInstallResult> {
-  return installModelsImpl(ctx, Object.keys(MODELS) as ModelKey[], checkArgs("model installAll", args, ["force", "modelsDir", "policy"]), opts);
+  return installModelsImpl(ctx, Object.keys(MODELS) as ModelKey[], checkArgs("model installAll", args, ["force", "modelsDir", "policy"]), opts, true);
 }
 
 export async function listModelsImpl(ctx: SdkContext, args: ModelListArgs = {}, opts: VerbCallOptions = {}): Promise<ModelListResult> {

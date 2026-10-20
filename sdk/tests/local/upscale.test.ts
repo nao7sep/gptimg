@@ -249,6 +249,19 @@ describe("runUpscale", () => {
     expect(res.kernel).toBe("nearest");
     expect(res.tile).toBe(256); // default
     expect(res.tiles).toBe(1);
+    // What the output depends on, so a different result can be explained.
+    expect(res.inference).toMatchObject({
+      model: { key: "swin2sr", name: expect.any(String), sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      runtime: { name: "onnxruntime-node", version: expect.stringMatching(/^\d+\.\d+/) },
+      executionProviders: ["cpu"],
+    });
+    expect(res.inference.intraOpThreads).toBeGreaterThanOrEqual(1);
+    const tuned = await runUpscale(
+      { in: inPath, out: path.join(tmp, "tuned.png"), toSize: 32, kernel: "nearest" },
+      tmp,
+      { upscaler: nearestX4, onnx: { intraOpThreads: 3, executionProviders: ["coreml", "cpu"] } },
+    );
+    expect(tuned.inference).toMatchObject({ executionProviders: ["coreml", "cpu"], intraOpThreads: 3 });
 
     const out = await readRGBA(outPath);
     expect(out.width).toBe(32);

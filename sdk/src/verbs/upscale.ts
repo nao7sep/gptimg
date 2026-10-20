@@ -87,6 +87,7 @@ export async function upscaleImpl(
       kernel: result.kernel,
       tile: result.tile,
       tiles: result.tiles,
+      inference: result.inference,
       status: "completed" as const,
     };
   });

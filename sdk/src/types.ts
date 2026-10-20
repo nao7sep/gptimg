@@ -558,6 +558,19 @@ export interface ChromaMaskStats {
   height: number;
 }
 
+/**
+ * What a local model's output depends on, so a different output from the same
+ * input can be explained: the model's pin, the runtime and its version, and how
+ * it ran. A model's output is not promised to match across runtimes or machines.
+ */
+export interface InferenceRecord {
+  model: { key: string; name: string; sha256: string | null };
+  runtime: { name: "onnxruntime-node"; version: string };
+  /** The execution providers asked for, in priority order. */
+  executionProviders: string[];
+  intraOpThreads: number;
+}
+
 export interface AiMaskStats {
   method: "ai";
   model: "birefnet";
@@ -565,6 +578,7 @@ export interface AiMaskStats {
   removedFraction: number;
   width: number;
   height: number;
+  inference: InferenceRecord;
 }
 
 export type MaskStats = ChromaMaskStats | AiMaskStats;
@@ -887,6 +901,7 @@ export interface UpscaleResult {
   tile: number;
   /** Number of model passes (tiles) the source was split into. */
   tiles: number;
+  inference: InferenceRecord;
 }
 
 // ----- resize -----
@@ -1328,10 +1343,25 @@ export interface InstalledModel {
   forced: boolean;
 }
 
-/** Result of `model install` and `installAll`: every model the call installed. */
+/** A model `installAll` could not install, with its own code and effect; the others still installed. */
+export interface ModelInstallFailure {
+  key: string;
+  name: string;
+  code: ErrorCode;
+  /** `unknown` when a file may have been written. */
+  effect: ErrorEffect;
+  message: string;
+}
+
+/**
+ * Result of `model install` and `installAll`: every model the call installed,
+ * and for `installAll` every one it could not. `install` of one model throws
+ * when that model fails, since nothing else was asked for.
+ */
 export interface ModelInstallResult {
   status: "completed";
   installed: InstalledModel[];
+  failures: ModelInstallFailure[];
 }
 
 /** One known model and its cache state, from `model list`. */

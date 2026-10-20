@@ -93,6 +93,22 @@ describe("model verb result shapes", () => {
     expect(Array.isArray(result)).toBe(false);
     expect(result.installed.map((m) => m.key)).toEqual(keys);
     expect(result.installed.every((m) => m.forced === false)).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
+  it("installAll reports a model it cannot install and keeps the ones it did", async () => {
+    const modelsDir = path.join(tmp, "partial");
+    await mkdir(modelsDir, { recursive: true });
+    const first = MODELS[keys[0]!];
+    await writeFile(path.join(modelsDir, first.name), Buffer.alloc(0));
+    await truncate(path.join(modelsDir, first.name), first.byteSize);
+    // A file where the staging folder goes fails every download before any request.
+    await writeFile(path.join(modelsDir, "temp"), "not a folder");
+
+    const result = await new GptImg({ modelsDir }).model.installAll();
+    expect(result.installed.map((m) => m.key)).toEqual([keys[0]]);
+    expect(result.failures.map((f) => f.key)).toEqual(keys.slice(1));
+    expect(result.failures[0]).toMatchObject({ code: expect.stringMatching(/^fs\./), effect: "none" });
   });
 
   it("list wraps entries in a single { models } object carrying cache state", async () => {

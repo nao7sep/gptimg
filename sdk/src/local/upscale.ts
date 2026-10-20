@@ -17,7 +17,9 @@ import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { fitLongerSide } from "../image/aspect.ts";
 import { loadRawRGBA, readImageSize, resizeSingleChannel, writeRGBA } from "../image/bridge.ts";
 import type { Logger } from "../events/index.ts";
-import type { EncodingArgs, OnnxPolicy, ResampleKernel } from "../types.ts";
+import type { EncodingArgs, InferenceRecord, OnnxPolicy, ResampleKernel } from "../types.ts";
+import { SWIN2SR_X4 } from "./models/registry.ts";
+import { inferenceRecord } from "./models/session.ts";
 import {
   runSwin2srX4,
   SWIN2SR_DEFAULT_TILE,
@@ -87,6 +89,7 @@ export interface UpscaleRunResult {
   kernel: ResampleKernel;
   tile: number;
   tiles: number;
+  inference: InferenceRecord;
 }
 
 function splitRGBA(
@@ -189,5 +192,6 @@ export async function runUpscale(
     kernel,
     tile,
     tiles: up.tiles ?? 1,
+    inference: await inferenceRecord({ key: "swin2sr", ...SWIN2SR_X4 }, opts.onnx),
   };
 }

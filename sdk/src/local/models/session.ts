@@ -12,7 +12,7 @@ import os from "node:os";
 import type * as Ort from "onnxruntime-node";
 import { GptImgError, cancelledError } from "../../errors.ts";
 import { isAbortError } from "../../network/failure.ts";
-import type { OnnxPolicy } from "../../types.ts";
+import type { InferenceRecord, OnnxPolicy } from "../../types.ts";
 
 // One creation per model path and tuning: concurrent first callers await the
 // same promise instead of each loading its own copy of the weights.
@@ -65,6 +65,17 @@ function intraOpThreadCount(onnx: OnnxPolicy | undefined): number {
  */
 function executionProviders(onnx: OnnxPolicy | undefined): string[] {
   return onnx?.executionProviders ?? ["cpu"];
+}
+
+/** What an inference with `model` and this tuning depends on, for the result that reports it. */
+export async function inferenceRecord(model: { key: string; name: string; sha256?: string | undefined }, onnx?: OnnxPolicy): Promise<InferenceRecord> {
+  const ort = await onnxRuntime();
+  return {
+    model: { key: model.key, name: model.name, sha256: model.sha256 ?? null },
+    runtime: { name: "onnxruntime-node", version: ort.env.versions.common ?? "unknown" },
+    executionProviders: executionProviders(onnx),
+    intraOpThreads: intraOpThreadCount(onnx),
+  };
 }
 
 /**

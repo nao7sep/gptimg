@@ -3,23 +3,16 @@
  * layer can dispatch on `method` without caring about the producer details.
  */
 
-import type { OnnxPolicy } from "../types.ts";
+import type { AiMaskStats, OnnxPolicy } from "../types.ts";
 import { throwIfAborted } from "../errors.ts";
 import { loadRawRGBA } from "../image/bridge.ts";
 import type { Logger } from "../events/index.ts";
 import { runBirefnet } from "./models/birefnet.ts";
+import { BIREFNET } from "./models/registry.ts";
+import { inferenceRecord } from "./models/session.ts";
 
 export interface AiMaskRunArgs {
   in: string;
-}
-
-export interface AiMaskStats {
-  method: "ai";
-  model: "birefnet";
-  removedPixels: number;
-  removedFraction: number;
-  width: number;
-  height: number;
 }
 
 export interface AiMaskResult {
@@ -64,6 +57,7 @@ export async function aiMaskFromFile(
       removedFraction,
       width: result.width,
       height: result.height,
+      inference: await inferenceRecord({ key: "birefnet", ...BIREFNET }, opts.onnx),
     },
   };
 }
