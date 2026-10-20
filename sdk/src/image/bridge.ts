@@ -1,4 +1,5 @@
-import sharp, { type Sharp } from "sharp";
+import type { Sharp } from "sharp";
+import sharp from "./sharp.ts";
 import { GptImgError, fsError, processingError } from "../errors.ts";
 import { writeOutputBytes } from "../internal/output-files.ts";
 import type { EncodingArgs, PngEncodingArgs, ResampleKernel } from "../types.ts";

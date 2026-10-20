@@ -1,4 +1,5 @@
-import sharp, { type Sharp } from "sharp";
+import type { Sharp } from "sharp";
+import sharp from "./sharp.ts";
 
 /**
  * The capture facts of a source image that a derived output keeps: when and
