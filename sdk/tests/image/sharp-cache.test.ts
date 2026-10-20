@@ -10,7 +10,7 @@ import "../../src/index.ts";
 
 describe("sharp as the SDK loads it", () => {
   it("keeps no file open in libvips's cache", () => {
-    expect(sharpDirect.cache()).toMatchObject({ files: { max: 0 }, items: { max: 0 } });
+    expect(sharpDirect.cache()).toMatchObject({ files: { max: 0 } });
   });
 
   it("is the only way the SDK's source loads sharp, so no module reads files before the cache is off", () => {

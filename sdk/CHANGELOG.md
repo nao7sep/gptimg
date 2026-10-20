@@ -36,7 +36,7 @@ The SDK was redesigned under the fleet's SDK conventions. Every change under Cha
 - A `gptimgsdk/testing` entry: `startOpenAIDouble()` runs a local stand-in for OpenAI that the SDK reaches through `baseURL`, with scripted answers (success with chosen usage, a refusal, the content filter, moderation, an expired conversation, a missing picture, any HTTP error, a call that never answers), so a consumer's tests meet them without paying.
 - `model.release()` frees the loaded local models' memory once inference in flight has finished; the next call that needs a model loads it again.
 - A paid verb checks its arguments, policy and the chosen model's values before it asks for the key, so a wrong value is reported as such without one.
-- On Windows, an image the SDK wrote and read back (`encode` checks what it wrote) no longer stays locked while the process runs: libvips's cache, which held the file open, is off.
+- On Windows, an image the SDK wrote and read back (`encode` checks what it wrote) no longer stays locked while the process runs: libvips keeps no files open in its cache.
 - `model.list` with a `modelsDir` that is a file fails with the filesystem's code on every platform; on Windows it had reported nothing installed.
 - The constructor takes `baseURL`, the OpenAI API's base URL, for a proxy or another endpoint that speaks OpenAI's API; without it, OpenAI's own.
 - Every verb that writes an image can write JPEG (`format: "jpeg"`, `.jpg`, with `quality`), and can fill transparency with a caller-chosen `background` colour. A JPEG of an image with translucent pixels and no `background` is refused as `image.notOpaque`; `background` with `opaque` is `args.invalid`.
