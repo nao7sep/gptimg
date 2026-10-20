@@ -17,7 +17,6 @@ import { normalizeHex, parseHex } from "../../color.ts";
 import { GptImgError, throwIfAborted } from "../../errors.ts";
 import { loadRawRGBA } from "../../image/bridge.ts";
 import type { ChromaKeySource, ChromaMaskStats } from "../../types.ts";
-import { CHROMA_DEFAULTS } from "./defaults.ts";
 import { loadKeyFromSidecar } from "./sidecar-key.ts";
 import {
   analyzeKey,
@@ -27,6 +26,7 @@ import {
   spillAlpha,
   type KeyTopology,
 } from "./spill.ts";
+import { CHROMA_DEFAULTS } from "../../defaults.ts";
 
 export type ChromaKeySpec = "auto" | "from-sidecar" | string;
 

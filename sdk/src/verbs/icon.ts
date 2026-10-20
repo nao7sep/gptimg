@@ -9,10 +9,11 @@ import { outputStemLocation,
   withVerbLogger,
 } from "../internal/local-verb.ts";
 import { ensureOutputDir } from "../internal/output-files.ts";
-import { ICON_DEFAULTS, planIconOutputs, runIcon } from "../local/icon.ts";
+import { planIconOutputs, runIcon } from "../local/icon.ts";
 import type { IconArgs, IconResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateIconArgs } from "./schemas.ts";
+import { ICON_DEFAULTS } from "../defaults.ts";
 
 export type IconContext = SdkContext;
 

@@ -41,12 +41,7 @@ import type {
   FrameEdgeContact,
   FrameMargins,
 } from "../types.ts";
-
-export const FRAMECHECK_DEFAULTS = {
-  threshold: 128,
-  tolerance: 2,
-  axes: "horizontal" as FramecheckAxes,
-} as const;
+import { FRAMECHECK_DEFAULTS } from "../defaults.ts";
 
 export interface FramecheckRunArgs {
   in: string;

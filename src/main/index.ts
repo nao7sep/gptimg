@@ -28,6 +28,7 @@ import { isSessionId, listSessions, readSession, renameSession, SessionError, se
 import { chatIdOf } from "../shared/session.ts";
 import type { RecordQuery, RecordRef } from "../shared/records.ts";
 import { TurnRunner } from "./turns.ts";
+import { windowBackground } from "./window-background.ts";
 
 declare const __APP_VERSION__: string;
 
@@ -271,7 +272,7 @@ async function showStartupFailure(error: unknown): Promise<void> {
       resizable: false,
       show: false,
       title: t.t("startup.title"),
-      backgroundColor: nativeTheme.shouldUseDarkColors ? "#141517" : "#f6f3ee",
+      backgroundColor: windowBackground(),
       webPreferences: { preload: join(here, "../preload/index.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false },
     });
     harden(win);
@@ -345,7 +346,7 @@ function createWindow(state: State): void {
     minHeight: min.height,
     show: false,
     title: "GptImg",
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#141517" : "#f6f3ee",
+    backgroundColor: windowBackground(),
     // Windows and Linux paint a window icon; on macOS the bundle's icons own the Dock (app-chrome-conventions).
     ...(process.platform !== "darwin" && { icon: join(process.resourcesPath ?? "", "icon.png") }),
     webPreferences: {

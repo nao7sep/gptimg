@@ -4,6 +4,7 @@
 // and is told when a record is stored, at most once a second.
 import { BrowserWindow, nativeTheme } from "electron";
 import { join } from "node:path";
+import { windowBackground } from "./window-background.ts";
 
 const RECORDS_WINDOW = { width: 1240, height: 820, minWidth: 720, minHeight: 440 } as const;
 const REFRESH_MS = 1000;
@@ -39,7 +40,7 @@ export class RecordsWindow {
       minHeight: RECORDS_WINDOW.minHeight,
       show: false,
       title: this.#deps.title(),
-      backgroundColor: nativeTheme.shouldUseDarkColors ? "#141517" : "#f6f3ee",
+      backgroundColor: windowBackground(),
       webPreferences: { preload: this.#deps.preload, sandbox: true, contextIsolation: true, nodeIntegration: false },
     });
     this.#window = win;

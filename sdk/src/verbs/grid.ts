@@ -13,6 +13,7 @@ import type { GridArgs, GridResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateGridArgs } from "./schemas.ts";
 import { extensionFor } from "../image/formats.ts";
+import { ENCODING_DEFAULTS } from "../defaults.ts";
 
 export type GridContext = SdkContext;
 
@@ -31,7 +32,7 @@ export async function gridImpl(
     const outPath = await resolveOutputPath(args, {
       inputForDir: args.inputs[0]!,
       stem: "grid",
-      ext: extensionFor(args.format ?? "png"),
+      ext: extensionFor(args.format ?? ENCODING_DEFAULTS.format),
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 

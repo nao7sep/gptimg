@@ -11,10 +11,7 @@ import { throwIfAborted } from "../errors.ts";
 import { decodeImage, readImageSize, writeImageFile } from "../image/bridge.ts";
 import { fitLongerSide } from "../image/aspect.ts";
 import type { EncodingArgs, ResampleKernel } from "../types.ts";
-
-export const RESIZE_DEFAULTS = {
-  kernel: "lanczos3" as ResampleKernel,
-} as const;
+import { RESIZE_DEFAULTS } from "../defaults.ts";
 
 export interface ResizeRunArgs extends EncodingArgs {
   in: string;

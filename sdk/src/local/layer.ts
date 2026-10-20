@@ -21,10 +21,7 @@ import sharp from "../image/sharp.ts";
 import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { decodeImage, decodeInProfileOf, inputImageError, readImageSize, writeImageFile } from "../image/bridge.ts";
 import type { EncodingArgs, LayerGravity, LayerOffset } from "../types.ts";
-
-export const LAYER_DEFAULTS = {
-  gravity: "center" as LayerGravity,
-} as const;
+import { LAYER_DEFAULTS } from "../defaults.ts";
 
 /**
  * Top-left pixel where a `topW × topH` overlay anchors on a `baseW × baseH`

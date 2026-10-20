@@ -16,15 +16,7 @@ import { normalizeHex, parseHex } from "../color.ts";
 import { processingError, throwIfAborted } from "../errors.ts";
 import { decodeImage, inputImageError, loadRawRGBA, writeImageFile } from "../image/bridge.ts";
 import type { EncodingArgs, ShadowOffset } from "../types.ts";
-
-export const SHADOW_DEFAULTS = {
-  blur: 12,
-  offset: { x: 0, y: 8 } as ShadowOffset,
-  color: "#000000",
-  opacity: 0.35,
-  spread: 0,
-  keepCanvas: false,
-} as const;
+import { SHADOW_DEFAULTS } from "../defaults.ts";
 
 export interface ShadowRunArgs extends EncodingArgs {
   in: string;

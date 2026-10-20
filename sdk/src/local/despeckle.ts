@@ -23,13 +23,7 @@ import { throwIfAborted } from "../errors.ts";
 import { loadRawRGBA, writeRGBA } from "../image/bridge.ts";
 import { computeAlphaBBox } from "./trim.ts";
 import type { AlphaBBox, DespeckleKeep, EncodingArgs } from "../types.ts";
-
-export const DESPECKLE_DEFAULTS = {
-  threshold: 5,
-  minArea: 0,
-  connectivity: 8,
-  keep: "all",
-} as const;
+import { DESPECKLE_DEFAULTS } from "../defaults.ts";
 
 export interface DespeckleRunArgs extends EncodingArgs {
   in: string;

@@ -11,11 +11,7 @@
 import { GptImgError, throwIfAborted } from "../errors.ts";
 import { decodeImage, loadRawRGBA, writeImageFile } from "../image/bridge.ts";
 import type { AlphaBBox, EncodingArgs } from "../types.ts";
-
-export const TRIM_DEFAULTS = {
-  margin: 0.08,
-  square: false,
-} as const;
+import { TRIM_DEFAULTS } from "../defaults.ts";
 
 /**
  * Tightest rect of pixels where alpha > 0. Returns null when the entire image

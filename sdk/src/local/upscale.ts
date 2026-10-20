@@ -21,13 +21,9 @@ import type { EncodingArgs, InferenceRecord, OnnxPolicy, ResampleKernel } from "
 import { SWIN2SR_X4 } from "./models/registry.ts";
 import { inferenceRecord } from "./models/session.ts";
 import { runSwin2srX4 } from "./models/swin2sr.ts";
-import { SWIN2SR_DEFAULT_TILE, SWIN2SR_SCALE } from "./models/swin2sr-constants.ts";
+import { SWIN2SR_SCALE } from "./models/swin2sr-constants.ts";
+import { UPSCALE_DEFAULTS } from "../defaults.ts";
 
-export const UPSCALE_DEFAULTS = {
-  toSize: 1024,
-  kernel: "lanczos3" as ResampleKernel,
-  tile: SWIN2SR_DEFAULT_TILE,
-} as const;
 
 /**
  * The largest raw image sharp resamples by default (its `limitInputPixels`).

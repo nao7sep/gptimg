@@ -108,19 +108,18 @@ describe("output naming and slot padding", () => {
           expect(names[0]).toBe(`${s}.${ext}`);
           return;
         }
-        names.forEach((name, i) => {
-          expect(name.startsWith(`${s}-`)).toBe(true);
-          expect(name.endsWith(`.${ext}`)).toBe(true);
+        // Plain comparisons per name and one assertion per run: up to 1,500 names a run,
+        // and an expect() per name made the property cost seconds.
+        const width = indexWidth(n);
+        const wrong = names.filter((name, i) => {
           const digits = name.slice(s.length + 1, name.length - ext.length - 1);
-          expect(digits).toMatch(/^\d+$/);
-          expect(digits.length).toBe(indexWidth(n));
-          expect(Number(digits)).toBe(i + 1);
+          return !name.startsWith(`${s}-`) || !name.endsWith(`.${ext}`) || !/^\d+$/.test(digits) || digits.length !== width || Number(digits) !== i + 1;
         });
+        expect(wrong).toEqual([]);
       }),
       { numRuns: 200 },
     );
-    // Pure arithmetic over runs of up to 1,500 names: several seconds on a slower runner.
-  }, 30_000);
+  });
 });
 
 // ----- output group membership -----

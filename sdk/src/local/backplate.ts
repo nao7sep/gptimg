@@ -14,14 +14,7 @@ import { normalizeHex } from "../color.ts";
 import { throwIfAborted } from "../errors.ts";
 import { writeImageFile } from "../image/bridge.ts";
 import type { BackplateShape, EncodingArgs } from "../types.ts";
-
-export const BACKPLATE_DEFAULTS = {
-  size: 1024,
-  content: 0.8,
-  radius: 0.225,
-  angle: 135,
-  shape: "rect" as BackplateShape,
-} as const;
+import { BACKPLATE_DEFAULTS } from "../defaults.ts";
 
 /**
  * SVG path "d" for a centered square rounded-rectangle.

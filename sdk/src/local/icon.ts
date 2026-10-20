@@ -23,11 +23,7 @@ import { publishStaged, stageFile, syncDirectory } from "../internal/atomic-file
 import { refuse } from "../refusal.ts";
 import type { Logger } from "../events/index.ts";
 import type { PngEncodingArgs } from "../types.ts";
-
-export const ICON_DEFAULTS = {
-  name: "icon",
-  pngs: false,
-} as const;
+import { ICON_DEFAULTS } from "../defaults.ts";
 
 /** Smallest accepted master edge: the largest entry we emit is native, not upscaled. */
 const MIN_MASTER = 1024;

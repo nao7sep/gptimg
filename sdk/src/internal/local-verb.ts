@@ -23,6 +23,7 @@ import { refuseCaseOnlyRename } from "./output-group.ts";
 import { containOutOfMemory } from "./out-of-memory.ts";
 import { imageFileName } from "./output-naming.ts";
 import type { EncodingArgs, PngEncodingArgs, VerbName } from "../types.ts";
+import { ENCODING_DEFAULTS } from "../defaults.ts";
 
 /** Stem (basename without extension) of a file path. `foo/bar.png` → `bar`. */
 export function inferStem(filePath: string): string {
@@ -297,7 +298,7 @@ export function pngEncodingOf(args: PngEncodingArgs): PngEncodingArgs {
 /** The encoding fields a verb's start event carries; an option left unset is reported as null. */
 export function encodingEventFields(args: EncodingArgs): Record<string, unknown> {
   return {
-    format: args.format ?? "png",
+    format: args.format ?? ENCODING_DEFAULTS.format,
     quality: args.quality ?? null,
     lossless: args.lossless ?? null,
     smartSubsample: args.smartSubsample ?? null,

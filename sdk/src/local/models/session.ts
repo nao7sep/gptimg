@@ -13,6 +13,7 @@ import type * as Ort from "onnxruntime-node";
 import { GptImgError, cancelledError } from "../../errors.ts";
 import { isAbortError } from "../../network/failure.ts";
 import type { InferenceRecord, OnnxPolicy } from "../../types.ts";
+import { ONNX_DEFAULTS } from "../../defaults.ts";
 
 // One creation per model path and tuning: concurrent first callers await the
 // same promise instead of each loading its own copy of the weights.
@@ -64,7 +65,7 @@ function intraOpThreadCount(onnx: OnnxPolicy | undefined): number {
  * fails at session creation.
  */
 function executionProviders(onnx: OnnxPolicy | undefined): string[] {
-  return onnx?.executionProviders ?? ["cpu"];
+  return onnx?.executionProviders ?? [...ONNX_DEFAULTS.executionProviders];
 }
 
 /** What an inference with `model` and this tuning depends on, for the result that reports it. */

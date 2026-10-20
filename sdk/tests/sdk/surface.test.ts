@@ -76,6 +76,22 @@ describe("GptImg SDK surface", () => {
       "modelsFor",
       "readSidecar",
       "validatePolicy",
+      // Every verb's defaults, which the public types refer to.
+      "BACKPLATE_DEFAULTS",
+      "CHROMA_DEFAULTS",
+      "DESPECKLE_DEFAULTS",
+      "ENCODING_DEFAULTS",
+      "FRAMECHECK_DEFAULTS",
+      "GRID_DEFAULTS",
+      "ICON_DEFAULTS",
+      "KEYCHECK_DEFAULTS",
+      "LAYER_DEFAULTS",
+      "ONNX_DEFAULTS",
+      "RESIZE_DEFAULTS",
+      "SHADOW_DEFAULTS",
+      "TRIM_DEFAULTS",
+      "UPSCALE_DEFAULTS",
+      "VISION_DEFAULTS",
     ].sort());
   });
 

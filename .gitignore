@@ -2,8 +2,6 @@
 node_modules/
 dist/
 out/
-# npm pack output
-*.tgz
 
 # Local environment variables
 .env

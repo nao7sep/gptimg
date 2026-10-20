@@ -5,7 +5,7 @@
 import { findModelRow, type ImageModelRow, type VisionModelRow } from "../ai-models.ts";
 import { GptImgError } from "../errors.ts";
 import type { VisionDetail } from "../types.ts";
-import { VISION_DEFAULTS } from "../verbs/defaults.ts";
+import { VISION_DEFAULTS } from "../defaults.ts";
 
 type ImageSection = "generate" | "edit" | "chat";
 

@@ -149,6 +149,5 @@ describe("local verbs are deterministic", () => {
     for (const [file, bytes] of a) {
       expect(bytes.equals(b.get(file)!), `${name}: ${file} differs between runs`).toBe(true);
     }
-    // Two CPU-heavy runs (icon renders every size twice); a loaded machine needs more than the default.
-  }, 30_000);
+  });
 });

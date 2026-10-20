@@ -76,7 +76,7 @@ export interface VisionPolicy {
 export interface ChromaPolicy {
   /** Chroma key color, "#rrggbb". Also recorded in the sidecar when `generate` runs. */
   color?: string;
-  /** When true, interior key-colored regions are kept opaque. Default false. */
+  /** When true, interior key-colored regions are kept opaque. Default `CHROMA_DEFAULTS.preserveInterior`. */
   preserveInterior?: boolean;
   /** Border-sample depth in pixels for `key: "auto"`. */
   borderSample?: number;
@@ -126,7 +126,7 @@ export interface PartialImage {
 export interface OnnxPolicy {
   /** Intra-op threads per session. Default half the CPU cores, at least one. */
   intraOpThreads?: number;
-  /** Execution providers in priority order, e.g. `["coreml", "cpu"]`. Default `["cpu"]`. */
+  /** Execution providers in priority order, e.g. `["coreml", "cpu"]`. Default `ONNX_DEFAULTS.executionProviders`. */
   executionProviders?: string[];
 }
 
@@ -666,7 +666,7 @@ export interface AlphaBBox {
 
 export interface TrimArgs extends EncodingArgs {
   in: string;
-  /** Margin to re-pad, as a fraction of the longer bbox side. 0..1. Default 0.08. */
+  /** Margin to re-pad, as a fraction of the longer bbox side. 0..1. Default `TRIM_DEFAULTS.margin`. */
   margin?: number;
   /** Extend the shorter axis with transparent pixels to make the output square. */
   square?: boolean;
@@ -700,19 +700,19 @@ export interface TrimResult {
 // ----- backplate -----
 
 export interface BackplateArgs extends EncodingArgs {
-  /** Output PNG side length in pixels. Default 1024. */
+  /** Output PNG side length in pixels. Default `BACKPLATE_DEFAULTS.size`. */
   size?: number;
-  /** Content side length as a fraction of `size` (the squircle occupies this). Default 0.80. */
+  /** Content side length as a fraction of `size` (the squircle occupies this). Default `BACKPLATE_DEFAULTS.content`. */
   content?: number;
-  /** Corner radius as a fraction of the content side (0..0.5). Default 0.225. */
+  /** Corner radius as a fraction of the content side (0..0.5). Default `BACKPLATE_DEFAULTS.radius`. */
   radius?: number;
   /** Gradient start color, "#rrggbb". Required. */
   from: string;
   /** Gradient end color, "#rrggbb". Required. */
   to: string;
-  /** CSS-style gradient angle in degrees (0 = bottom→top, 90 = left→right, 180 = top→bottom). Default 135. */
+  /** CSS-style gradient angle in degrees (0 = bottom→top, 90 = left→right, 180 = top→bottom). Default `BACKPLATE_DEFAULTS.angle`. */
   angle?: number;
-  /** Corner shape. Default "rect". */
+  /** Corner shape. Default `BACKPLATE_DEFAULTS.shape`. */
   shape?: BackplateShape;
   /** Required unless outName is an absolute output stem. */
   outDir?: string;
@@ -765,7 +765,7 @@ export interface LayerArgs extends EncodingArgs {
    * content). The output is always the base's size.
    */
   scale?: number;
-  /** Placement anchor. Default "center". Ignored when `topOffset` is given. */
+  /** Placement anchor. Default `LAYER_DEFAULTS.gravity`. Ignored when `topOffset` is given. */
   gravity?: LayerGravity;
   /** Explicit pixel offset of the top image (overrides `gravity`). May bleed off-canvas; see {@link LayerOffset}. */
   topOffset?: LayerOffset;
@@ -806,19 +806,19 @@ export interface ShadowOffset {
 export interface ShadowArgs extends EncodingArgs {
   /** RGBA image with transparency; its alpha shape casts the shadow. */
   in: string;
-  /** Gaussian blur sigma for the shadow edge, in pixels. Default 12. */
+  /** Gaussian blur sigma for the shadow edge, in pixels. Default `SHADOW_DEFAULTS.blur`. */
   blur?: number;
-  /** Shadow displacement from the subject. Default { x: 0, y: 8 }. */
+  /** Shadow displacement from the subject. Default `SHADOW_DEFAULTS.offset`. */
   offset?: ShadowOffset;
-  /** Shadow color, "#rrggbb". Default "#000000". */
+  /** Shadow color, "#rrggbb". Default `SHADOW_DEFAULTS.color`. */
   color?: string;
-  /** Peak shadow opacity, (0, 1]. Default 0.35. */
+  /** Peak shadow opacity, (0, 1]. Default `SHADOW_DEFAULTS.opacity`. */
   opacity?: number;
-  /** Grow the shadow shape outward by this many pixels before blurring. Default 0. */
+  /** Grow the shadow shape outward by this many pixels before blurring. Default `SHADOW_DEFAULTS.spread`. */
   spread?: number;
   /**
    * Keep the output canvas at the input's dimensions, clipping any shadow that
-   * falls outside. Default false → the canvas grows so the shadow is never cut.
+   * falls outside. Default `SHADOW_DEFAULTS.keepCanvas`: the canvas grows so the shadow is never cut.
    */
   keepCanvas?: boolean;
   outDir?: string;
@@ -857,14 +857,14 @@ export interface ShadowResult {
 export interface UpscaleArgs extends EncodingArgs {
   /** Input RGBA image (e.g. a trimmed content cutout). */
   in: string;
-  /** Final output longer-side length in px (aspect preserved). Default 1024. */
+  /** Final output longer-side length in px (aspect preserved). Default `UPSCALE_DEFAULTS.toSize`. */
   toSize?: number;
-  /** Resampling kernel for the resize after the model's ×4. Default "lanczos3". */
+  /** Resampling kernel for the resize after the model's ×4. Default `UPSCALE_DEFAULTS.kernel`. */
   kernel?: ResampleKernel;
   /**
-   * Max model-input edge per pass — the memory knob. Default 256 (about 3 GB
-   * peak); memory grows with the tile's area, so 512 needs about four times as
-   * much. A tile too large for the machine fails as `memory.exhausted`.
+   * Max model-input edge per pass — the memory knob. Default `UPSCALE_DEFAULTS.tile`,
+   * which peaks at about 3 GB; memory grows with the tile's area, so twice the
+   * edge needs about four times as much. A tile too large for the machine fails as `memory.exhausted`.
    */
   tile?: number;
   /** The models folder for this call; default the instance's, then `~/.gptimgsdk/models`. */
@@ -909,7 +909,7 @@ export interface ResizeArgs extends EncodingArgs {
   in: string;
   /** Output longer-side length in px (aspect preserved). Required. */
   toSize: number;
-  /** Resampling kernel. Default "lanczos3". */
+  /** Resampling kernel. Default `RESIZE_DEFAULTS.kernel`. */
   kernel?: ResampleKernel;
   outDir?: string;
   outName?: string;
@@ -957,7 +957,7 @@ export interface PngEncodingArgs {
  * is `args.invalid`.
  */
 export interface EncodingArgs extends PngEncodingArgs {
-  /** Output encoding; the output extension follows it (`.jpg` for JPEG). PNG is always lossless. Default "png". */
+  /** Output encoding; the output extension follows it (`.jpg` for JPEG). PNG is always lossless. Default `ENCODING_DEFAULTS.format`. */
   format?: EncodeFormat;
   /** WebP and JPEG: lossy quality, an integer 1..100. Unset, the encoder's default applies. Not with `lossless`. */
   quality?: number;
@@ -1027,9 +1027,9 @@ export interface IconArgs extends PngEncodingArgs {
    * the backplate/layer pipeline. Smaller sizes are downsampled from it.
    */
   in: string;
-  /** The outputs' stem: a bare name in `outDir`, or an absolute stem that also chooses the folder. Default "icon" → icon.icns/.ico/.png. */
+  /** The outputs' stem: a bare name in `outDir`, or an absolute stem that also chooses the folder. Default `ICON_DEFAULTS.name` (`<name>.icns`, `.ico`, `.png`). */
   outName?: string;
-  /** Also emit the loose sized-PNG set `<name>-<size>.png` (16…1024). Default false. */
+  /** Also emit the loose sized-PNG set `<name>-<size>.png` (16…1024). Default `ICON_DEFAULTS.pngs`. */
   pngs?: boolean;
   /** Output directory. Default: same as `in`. */
   outDir?: string;
@@ -1081,13 +1081,13 @@ export interface CombineResult {
 export interface DespeckleArgs extends EncodingArgs {
   /** Input RGBA cutout whose alpha matte is cleaned. */
   in: string;
-  /** Keep alpha ≥ threshold; zero below (the floor, and the component on-level). Integer 0..255. Default 5. */
+  /** Keep alpha ≥ threshold; zero below (the floor, and the component on-level). Integer 0..255. Default `DESPECKLE_DEFAULTS.threshold`. */
   threshold?: number;
-  /** Remove connected components smaller than this many pixels. 0 = remove none. Integer ≥ 0. Default 0. */
+  /** Remove connected components smaller than this many pixels. 0 = remove none. Integer ≥ 0. Default `DESPECKLE_DEFAULTS.minArea`. */
   minArea?: number;
-  /** Pixel neighbourhood for components: 4 or 8. Default 8. */
+  /** Pixel neighbourhood for components: 4 or 8. Default `DESPECKLE_DEFAULTS.connectivity`. */
   connectivity?: number;
-  /** "all" = remove components below minArea; "largest" = keep only the biggest. Default "all". */
+  /** "all" = remove components below minArea; "largest" = keep only the biggest. Default `DESPECKLE_DEFAULTS.keep`. */
   keep?: DespeckleKeep;
   outDir?: string;
   outName?: string;
@@ -1147,15 +1147,15 @@ export interface KeycheckArgs extends EncodingArgs {
   in: string;
   /** Key color to scan for: "from-sidecar" (read the generate sidecar beside `in`) or "#rrggbb". Required — keycheck does not guess a key. */
   key: string;
-  /** Max hue distance (degrees, 0..180) from the key hue for a pixel to count as residue. Default 20. */
+  /** Max hue distance (degrees, 0..180) from the key hue for a pixel to count as residue. Default `KEYCHECK_DEFAULTS.hueTolerance`. */
   hueTolerance?: number;
-  /** Min HSV saturation (0..1] for a pixel to count as residue — gates out near-gray pixels. Default 0.35. */
+  /** Min HSV saturation (0..1] for a pixel to count as residue — gates out near-gray pixels. Default `KEYCHECK_DEFAULTS.minSaturation`. */
   minSaturation?: number;
-  /** Min HSV value (0..1] for a pixel to count as residue — gates out near-black pixels. Default 0.25. */
+  /** Min HSV value (0..1] for a pixel to count as residue — gates out near-black pixels. Default `KEYCHECK_DEFAULTS.minValue`. */
   minValue?: number;
-  /** Verdict is "residue" once edgeResidueFraction exceeds this. Default 0.02. */
+  /** Verdict is "residue" once edgeResidueFraction exceeds this. Default `KEYCHECK_DEFAULTS.maxEdgeResidueFraction`. */
   maxEdgeResidueFraction?: number;
-  /** Verdict is "residue" once interiorResiduePixels exceeds this. Default 0. */
+  /** Verdict is "residue" once interiorResiduePixels exceeds this. Default `KEYCHECK_DEFAULTS.maxInteriorResiduePixels`. */
   maxInteriorResiduePixels?: number;
   /** Also write a debug heatmap PNG marking residue pixels. Default false. */
   heatmap?: boolean;
@@ -1247,11 +1247,11 @@ export interface FrameDeltas {
 export interface FramecheckArgs {
   /** RGBA image to inspect. */
   in: string;
-  /** Alpha at/above which a pixel is the opaque "solid" body. Integer 1..255 (1 = any shipping pixel). Default 128. */
+  /** Alpha at/above which a pixel is the opaque "solid" body. Integer 1..255 (1 = any shipping pixel). Default `FRAMECHECK_DEFAULTS.threshold`. */
   threshold?: number;
-  /** Max margin-pair asymmetry, in pixels, for the verdict to be "centered". Default 2. */
+  /** Max margin-pair asymmetry, in pixels, for the verdict to be "centered". Default `FRAMECHECK_DEFAULTS.tolerance`. */
   tolerance?: number;
-  /** Which axis/axes the verdict enforces. Both deltas are always reported. Default "horizontal". */
+  /** Which axis/axes the verdict enforces. Both deltas are always reported. Default `FRAMECHECK_DEFAULTS.axes`. */
   axes?: FramecheckAxes;
 }
 
@@ -1287,11 +1287,11 @@ export interface GridArgs extends EncodingArgs {
   inputs: string[];
   /** Number of columns. Default ceil(sqrt(count of readable inputs)). */
   cols?: number;
-  /** Square cell side in pixels; each image is contain-fit into it. Default 256. */
+  /** Square cell side in pixels; each image is contain-fit into it. Default `GRID_DEFAULTS.cell`. */
   cell?: number;
-  /** Gap between cells (and the outer border) in pixels. Default 16. */
+  /** Gap between cells (and the outer border) in pixels. Default `GRID_DEFAULTS.gap`. */
   gap?: number;
-  /** Sheet background: "transparent" or "#rrggbb". Default "transparent". */
+  /** Sheet background: "transparent" or "#rrggbb". Default `GRID_DEFAULTS.background`. */
   background?: string;
   outDir?: string;
   outName?: string;
@@ -1584,6 +1584,7 @@ export interface GptImgOptions {
 // `gptimgsdk/types` entry alone can map codes to its own text and fill its
 // pickers without loading sharp, ONNX Runtime or the OpenAI client.
 export { ERROR_CODES, ERROR_EFFECTS, ERROR_KINDS, isGptImgErrorData } from "./errors.ts";
+export * from "./defaults.ts";
 export { OPENAI_BASE_URL } from "./providers/openai/endpoint.ts";
 export type { ErrorCode, ErrorDetails, ErrorEffect, ErrorKind, GptImgErrorData, GptImgErrorOptions, SerializedCause } from "./errors.ts";
 export { REFUSAL_CODES } from "./refusal.ts";

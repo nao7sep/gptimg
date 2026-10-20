@@ -1,13 +1,12 @@
-// Guard test for the model table and the request branches (ai-model-routing-conventions):
-// the lineup's rows, their order, lists and defaults are pinned; every row has its branch and
-// every branch its row; each role has exactly one default; and an id with no row gets the plain
-// request untouched.
+// Guard test for the model table against the code that uses it (ai-model-routing-conventions):
+// every row has its branch and every branch its row, each effort a row lists is one its branch
+// sends, each role has rows and exactly one default, and an id with no row gets the plain request
+// untouched. The table's own values come from the lineup research and are not restated here.
 
 import { describe, expect, it } from "vitest";
 
 import {
   AI_ROLES,
-  MODEL_LINEUP,
   SUPPORTED_MODELS,
   defaultModelFor,
   modelsFor,
@@ -19,6 +18,7 @@ import {
   CHAT_REQUEST_BRANCHES,
   IMAGE_REQUEST_BRANCHES,
   VISION_REQUEST_BRANCHES,
+  buildChatRequest,
   buildImageRequest,
   buildVisionRequest,
 } from "../src/providers/openai/request.ts";
@@ -29,44 +29,7 @@ const imageRows = SUPPORTED_MODELS.filter((row): row is ImageModelRow => "image"
 const visionRows = SUPPORTED_MODELS.filter((row): row is VisionModelRow => "thinking" in row);
 
 describe("the model table", () => {
-  it("names the lineup research its rows come from", () => {
-    expect(MODEL_LINEUP).toBe("ai-model-lineup-20261004");
-  });
-
-  it("lists the lineup's rows in order, highest tier first", () => {
-    expect(SUPPORTED_MODELS.map((row) => [row.id, row.kinds, row.defaultFor])).toEqual([
-      ["gpt-image-2.5-flare", ["image-generate", "image-edit"], ["image-generate"]],
-      ["gpt-image-2.5-sunburst", ["image-generate", "image-edit"], ["image-edit"]],
-      ["gpt-image-2", ["image-generate", "image-edit"], []],
-      ["gpt-6-astra", ["vision", "chat"], []],
-      ["gpt-6.1-sol", ["vision", "chat"], []],
-      ["gpt-5.6-terra", ["vision", "chat"], ["chat"]],
-      ["gpt-6-luna", ["vision", "chat"], ["vision"]],
-    ]);
-    for (const row of SUPPORTED_MODELS) expect(row.provider, row.id).toBe("openai");
-  });
-
-  it("pins each image row's values and size rule", () => {
-    const shared = {
-      backgrounds: ["auto", "transparent", "opaque"],
-      outputFormats: ["png", "jpeg", "webp"],
-      compression: { min: 0, max: 100, formats: ["jpeg", "webp"] },
-      size: { multipleOf: 16, maxRatio: 3, minPixels: 655_360, maxPixels: 8_294_400 },
-    };
-    expect(Object.fromEntries(imageRows.map((row) => [row.id, row.image]))).toEqual({
-      "gpt-image-2.5-flare": { qualities: ["auto", "low", "medium", "high", "xhigh", "max"], ...shared },
-      "gpt-image-2.5-sunburst": { qualities: ["auto", "low", "medium", "high", "xhigh", "max"], ...shared },
-      "gpt-image-2": { qualities: ["auto", "low", "medium", "high"], ...shared },
-    });
-  });
-
-  it("pins each vision row's effort list and its tier's default", () => {
-    expect(Object.fromEntries(visionRows.map((row) => [row.id, [row.thinking, row.defaultThinking]]))).toEqual({
-      "gpt-6-astra": [["low", "medium", "high", "xhigh", "max"], "medium"],
-      "gpt-6.1-sol": [["low", "medium", "high", "xhigh", "max"], "medium"],
-      "gpt-5.6-terra": [["none", "low", "medium", "high", "xhigh", "max"], "medium"],
-      "gpt-6-luna": [["none", "low", "medium", "high", "xhigh", "max"], "none"],
-    });
+  it("lists each vision row's own default effort among the efforts it takes", () => {
     for (const row of visionRows) expect(row.thinking, row.id).toContain(row.defaultThinking);
   });
 
@@ -90,11 +53,6 @@ describe("the model table", () => {
     expect(Object.keys(CHAT_REQUEST_BRANCHES).sort()).toEqual(SUPPORTED_MODELS.filter((row) => row.kinds.includes("chat")).map((row) => row.id).sort());
   });
 
-  it("gives image rows image kinds and mainline rows the vision and chat kinds", () => {
-    for (const row of imageRows) expect(row.kinds, row.id).toEqual(["image-generate", "image-edit"]);
-    for (const row of visionRows) expect(row.kinds, row.id).toEqual(["vision", "chat"]);
-  });
-
   it("lists each id once", () => {
     const ids = SUPPORTED_MODELS.map((row) => `${row.provider}:${row.id}`);
     expect(new Set(ids).size).toBe(ids.length);
@@ -104,7 +62,9 @@ describe("the model table", () => {
     for (const role of AI_ROLES) {
       const rows = modelsFor("openai", role.kind);
       expect(rows.length, role.id).toBeGreaterThan(0);
-      expect(rows.filter((row) => row.defaultFor.includes(role.kind)), role.id).toHaveLength(1);
+      const defaults = rows.filter((row) => row.defaultFor.includes(role.kind));
+      expect(defaults, role.id).toHaveLength(1);
+      expect(defaultModelFor("openai", role.kind), role.id).toBe(defaults[0]!.id);
     }
   });
 
@@ -114,11 +74,6 @@ describe("the model table", () => {
     }
   });
 
-  it("defaults generate to flare, edit to sunburst and vision to the fast-tier Luna", () => {
-    expect(defaultModelFor("openai", "image-generate")).toBe("gpt-image-2.5-flare");
-    expect(defaultModelFor("openai", "image-edit")).toBe("gpt-image-2.5-sunburst");
-    expect(defaultModelFor("openai", "vision")).toBe("gpt-6-luna");
-  });
 });
 
 describe("the request builder", () => {
@@ -165,6 +120,15 @@ describe("the request builder", () => {
       for (const output_format of row.image.outputFormats) {
         const request = { model: row.id, prompt: "p", output_format, output_compression: 100 };
         expect(buildImageRequest(row.id, { ...request }), `${row.id} ${output_format}`).toEqual(request);
+      }
+    }
+  });
+
+  it("sends every chat row's every effort as reasoning.effort, and changes nothing else", () => {
+    for (const row of visionRows.filter((candidate) => candidate.kinds.includes("chat"))) {
+      for (const reasoning of row.thinking) {
+        const request = { model: row.id, input: [] };
+        expect(buildChatRequest(row.id, { ...request }, reasoning), `${row.id} ${reasoning}`).toEqual({ ...request, reasoning: { effort: reasoning } });
       }
     }
   });

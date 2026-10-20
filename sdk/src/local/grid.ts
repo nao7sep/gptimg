@@ -19,13 +19,7 @@ import { inputImageError, writeImageFile } from "../image/bridge.ts";
 import type { Logger } from "../events/index.ts";
 import { parseHex } from "../color.ts";
 import type { EncodingArgs, GridSkip } from "../types.ts";
-
-
-export const GRID_DEFAULTS = {
-  cell: 256,
-  gap: 16,
-  background: "transparent",
-} as const;
+import { GRID_DEFAULTS } from "../defaults.ts";
 
 export interface GridRunArgs extends EncodingArgs {
   inputs: string[];

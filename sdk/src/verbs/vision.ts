@@ -31,8 +31,7 @@ import type { VerbCallOptions } from "./options.ts";
 import { validateVisionArgs } from "./schemas.ts";
 import { defaultStem } from "../internal/paths.ts";
 import { responseIdOf, usageOf } from "../usage.ts";
-
-import { VISION_DEFAULTS } from "./defaults.ts";
+import { VISION_DEFAULTS } from "../defaults.ts";
 
 export type VisionContext = SdkContext;
 

@@ -1,5 +1,13 @@
 import { configDefaults, defineConfig } from "vitest/config";
 
+// Every test worker loads sharp, whose libvips pool is otherwise one thread per core
+// in each worker: with a worker per core that is cores × cores threads, and CPU-heavy
+// tests slow several-fold when the suite runs together. One libvips thread per worker
+// keeps a test's time what it is alone; workers already use every core. Set before any
+// worker starts, so they and the processes tests spawn inherit it.
+process.env.VIPS_CONCURRENCY ??= "1";
+
+
 export default defineConfig({
   test: {
     // Two projects, so `vitest` at the repository root runs both suites and a

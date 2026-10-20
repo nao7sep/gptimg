@@ -8,6 +8,7 @@ export type { ModelInstallAllArgs, ModelInstallArgs, ModelListArgs, ModelRelease
 export type { VerbCallOptions } from "./verbs/options.ts";
 export { VERSION } from "./version.ts";
 export { OPENAI_BASE_URL } from "./providers/openai/endpoint.ts";
+export * from "./defaults.ts";
 export type { ModelKey } from "./local/models/registry.ts";
 export { readSidecar } from "./sidecar/read.ts";
 export { validatePolicy } from "./policy/schemas.ts";

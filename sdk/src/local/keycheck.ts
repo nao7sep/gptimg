@@ -29,14 +29,7 @@ import { GptImgError, throwIfAborted } from "../errors.ts";
 import { loadRawRGBA, writeRGBA } from "../image/bridge.ts";
 import { parseHex } from "../color.ts";
 import type { AlphaBBox, EncodingArgs } from "../types.ts";
-
-export const KEYCHECK_DEFAULTS = {
-  hueTolerance: 20,
-  minSaturation: 0.35,
-  minValue: 0.25,
-  maxEdgeResidueFraction: 0.02,
-  maxInteriorResiduePixels: 0,
-} as const;
+import { KEYCHECK_DEFAULTS } from "../defaults.ts";
 
 /**
  * RGB (0..255) → HSV. Hue in [0, 360) or NaN for an achromatic pixel (delta 0);

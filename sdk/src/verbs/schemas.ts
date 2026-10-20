@@ -64,6 +64,7 @@ import type {
   VerifyArgs,
   VisionArgs,
 } from "../types.ts";
+import { ENCODING_DEFAULTS } from "../defaults.ts";
 
 // ----- numeric limits: the validator owns the bounds it enforces -----
 
@@ -478,7 +479,7 @@ function check<T>(schema: z.ZodObject, args: T, verb: string): T {
 /** The format-dependent rules of the encoder options, for a verb that takes all of them. */
 function checkEncoding<T extends EncodingArgs>(schema: z.ZodObject, args: T, verb: string): T {
   check(schema, args, verb);
-  const format = args.format ?? "png";
+  const format = args.format ?? ENCODING_DEFAULTS.format;
   if (format === "png" && (args.quality !== undefined || args.lossless !== undefined || args.smartSubsample !== undefined)) {
     throw new GptImgError(
       "args.invalid",
