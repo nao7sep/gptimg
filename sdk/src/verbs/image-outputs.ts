@@ -127,6 +127,11 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
 
   const plan = planGenerateOutputs(n, stem, detected);
   const { suffixCount } = plan;
+  for (const { index, extension } of plan.mixed) {
+    const message = `Image ${index} came back as ${extension}, but this group's images are ${plan.groupExtension}; one group holds one format.`;
+    failures.push({ index, code: "provider.invalidResponse", effect: "unknown", message });
+    logger.emit("warn", "write", { event: "image.unpublished", index, error: message });
+  }
   const planned = plan.images.map((img) => ({
     index: img.index,
     data: detected[img.index - 1]!.data!,

@@ -16,12 +16,14 @@ export interface NetworkBudget {
 
 export type NetworkBudgetName =
   | "imageGenerate"
+  | "chat"
   | "imageVision"
   | "imageDownload"
   | "modelDownload";
 
 export const NETWORK_BUDGET_NAMES: readonly NetworkBudgetName[] = [
   "imageGenerate",
+  "chat",
   "imageVision",
   "imageDownload",
   "modelDownload",
@@ -42,6 +44,7 @@ export type ResendPolicy = "transient" | "unprocessed";
 
 export const BUDGET_RESEND_POLICY: Record<NetworkBudgetName, ResendPolicy> = {
   imageGenerate: "unprocessed",
+  chat: "unprocessed",
   imageVision: "unprocessed",
   imageDownload: "transient",
   modelDownload: "transient",
@@ -49,6 +52,8 @@ export const BUDGET_RESEND_POLICY: Record<NetworkBudgetName, ResendPolicy> = {
 
 export const NETWORK_DEFAULTS: Record<NetworkBudgetName, NetworkBudget> = {
   imageGenerate: { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
+  // A chat turn may write and draw an image; a streamed turn's timeout bounds its silence.
+  chat:          { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageVision:   { timeout: 120_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageDownload: { timeout:  30_000, maxRetries: 2, retryIntervals: [  500, 1_500] },
   // Large one-shot file (the BiRefNet weights are ~490 MB). For model downloads,
@@ -59,6 +64,7 @@ export const NETWORK_DEFAULTS: Record<NetworkBudgetName, NetworkBudget> = {
 
 export interface NetworkConfig {
   imageGenerate: NetworkBudget;
+  chat: NetworkBudget;
   imageVision: NetworkBudget;
   imageDownload: NetworkBudget;
   modelDownload: NetworkBudget;

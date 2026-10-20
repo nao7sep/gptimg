@@ -54,8 +54,13 @@ describe("parseOverColor", () => {
     });
   });
 
+  it("returns the transparent spec for \"transparent\"", () => {
+    expect(parseOverColor("transparent")).toEqual({ kind: "transparent" });
+  });
+
   it("rejects a bare 6-hex value (forgotten #) instead of treating it as a path", () => {
     expect(() => parseOverColor("aabbcc")).toThrow(/missing the leading "#"/);
+    expect(() => parseOverColor("bg.png")).toThrow(expect.objectContaining({ details: expect.objectContaining({ field: "over" }) }));
   });
 });
 

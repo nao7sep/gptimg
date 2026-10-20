@@ -5,6 +5,7 @@ import { GptImgError } from "../../src/errors.ts";
 import { NETWORK_DEFAULTS, fetchWithBudget, resolveNetworkForCall } from "../../src/network/index.ts";
 import { formatZodError } from "../../src/internal/zodError.ts";
 import { NetworkSchema } from "../../src/network/schema.ts";
+import { validatePolicy } from "../../src/policy/schemas.ts";
 
 function listen(
   handler: http.RequestListener,
@@ -47,12 +48,12 @@ describe("resolveNetworkForCall", () => {
       ],
     ];
     for (const [name, recipe] of cases) {
-      expect(() => resolveNetworkForCall(recipe as Parameters<typeof resolveNetworkForCall>[0]), name).toThrow(GptImgError);
+      expect(() => validatePolicy(recipe), name).toThrow(GptImgError);
     }
   });
 
   it("returns defaults when no recipe.network is provided", () => {
-    const cfg = resolveNetworkForCall(undefined);
+    const cfg = resolveNetworkForCall({});
     expect(cfg).toEqual(NETWORK_DEFAULTS);
   });
 });

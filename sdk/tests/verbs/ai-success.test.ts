@@ -560,7 +560,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect((await readdir(outDir)).sort()).toEqual(["bar.json", "bar.png", "foo-1.json", "foo-1.png", "foo-2.json", "foo-2.png"]);
   });
 
-  it("releases a reservation after a provider failure, a publication failure and cancellation", async () => {
+  it("releases a reservation after a provider failure and cancellation, and fails a mixed-format image alone", async () => {
     const outDir = path.join(tmp, "release-out");
     const one = { raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] };
 
@@ -572,9 +572,11 @@ describe("AI verb implementations with mocked provider", () => {
       raw: { data: [{ b64_json: "x" }, { b64_json: "x" }] },
       images: [{ data: png }, { data: jpeg }],
     });
-    await expect(
-      sdk.generate({ prompt: "mixed formats", outDir, outName: "same", policy: { generate: { n: 2 } } }),
-    ).rejects.toMatchObject({ code: "provider.invalidResponse", effect: "unknown" });
+    // A paid response with mixed formats keeps the response and fails only the odd image.
+    const mixed = done(await sdk.generate({ prompt: "mixed formats", outDir, outName: "mixed", policy: { generate: { n: 2 } } }));
+    expect(mixed.files.map((file) => [file.index, file.format])).toEqual([[1, "png"]]);
+    expect(mixed.failures).toMatchObject([{ index: 2, code: "provider.invalidResponse", effect: "unknown" }]);
+    expect(mixed.response).toBeDefined();
 
     const ctrl = new AbortController();
     providerCalls.generate.mockImplementationOnce(
@@ -1179,13 +1181,30 @@ describe("AI verb implementations with mocked provider", () => {
     const outDir = path.join(tmp, "moderation-unlisted");
     for (const model of ["some-future-image-model", "gpt-image-1.5", "not a model"]) {
       providerCalls.generate.mockClear();
-      const chosen = { model, quality: "xhigh", style: "vivid" };
+      const chosen = { model, quality: "xhigh" };
       const outName = `gen-${model.replaceAll(/\W/g, "-")}`;
       const result = done(await sdk.generate({ prompt: "a disk", outDir, outName, policy: { generate: chosen } }));
       expect(providerCalls.generate.mock.calls[0]?.[0].params, outName).toEqual(chosen);
       const sidecar = JSON.parse(await readFile(result.files[0]!.sidecarPath, "utf-8")) as { request: Record<string, unknown> };
       expect(sidecar.request, outName).not.toHaveProperty("moderation");
     }
+  });
+
+  it("refuses a misspelt image or vision field before any provider call, instead of sending it", async () => {
+    const outDir = path.join(tmp, "strict-sections");
+    for (const policy of [{ generate: { qualty: "high" } }, { edit: { style: "vivid" } }, { vision: { temperature: 0 } }]) {
+      const section = Object.keys(policy)[0]!;
+      const call =
+        section === "generate"
+          ? sdk.generate({ prompt: "a disk", outDir, policy: policy as never })
+          : section === "edit"
+            ? sdk.edit({ in: fixture("green-disk.png"), prompt: "blue", outDir, policy: policy as never })
+            : sdk.vision({ inputs: [fixture("green-disk.png")], check: "a disk?", outDir, policy: policy as never });
+      await expect(call, section).rejects.toMatchObject({ code: "policy.invalid", details: { section } });
+    }
+    expect(providerCalls.generate).not.toHaveBeenCalled();
+    expect(providerCalls.edit).not.toHaveBeenCalled();
+    expect(providerCalls.vision).not.toHaveBeenCalled();
   });
 
   it("edit sends no moderation, for a supported model or any other id", async () => {

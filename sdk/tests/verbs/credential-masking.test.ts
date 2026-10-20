@@ -189,7 +189,9 @@ describe("credential masking across every sink", () => {
     if (verb === "vision") {
       expect(sidecar.response.verdict.reasons).toEqual(["echo [REDACTED]"]);
       expect((result as VisionResult).reasons).toEqual([`echo ${FAKE}`]);
-      expect((result as VisionResult).raw).toMatchObject({ echo: { credential: FAKE } });
+      // The provider's raw reply in the result is the record's masked copy, as generate's response is.
+      expect((result as VisionResult).raw).toMatchObject({ echo: { credential: "[REDACTED]" } });
+      expect(JSON.stringify((result as VisionResult).raw)).not.toContain(FAKE);
     } else {
       expect(sidecar.response.data[0].revised_prompt).toBe("echo [REDACTED]");
       expect(sidecar.response.data[0].b64_json).toBeNull();

@@ -58,9 +58,8 @@ import { keycheckImpl } from "./verbs/keycheck.ts";
 import { layerImpl } from "./verbs/layer.ts";
 import { maskImpl } from "./verbs/mask.ts";
 import { shadowImpl } from "./verbs/shadow.ts";
-import { installAllModelsImpl, installModelImpl, listModelsImpl, verifyModelsImpl } from "./verbs/model.ts";
-import { releaseSessions } from "./local/models/session.ts";
-import type { ModelInstallAllArgs, ModelInstallArgs, ModelListArgs, ModelVerifyArgs } from "./verbs/model.ts";
+import { installAllModelsImpl, installModelImpl, listModelsImpl, releaseModelsImpl, verifyModelsImpl } from "./verbs/model.ts";
+import type { ModelInstallAllArgs, ModelInstallArgs, ModelListArgs, ModelReleaseArgs, ModelVerifyArgs } from "./verbs/model.ts";
 import type { VerbCallOptions } from "./verbs/options.ts";
 import { encodeImpl } from "./verbs/encode.ts";
 import { resizeImpl } from "./verbs/resize.ts";
@@ -73,7 +72,7 @@ import { chatImpl } from "./verbs/chat.ts";
 import type { ModelInstallResult, ModelListResult, ModelReleaseResult, ModelVerifyResult } from "./types.ts";
 
 export type { VerbCallOptions } from "./verbs/options.ts";
-export type { ModelInstallAllArgs, ModelInstallArgs, ModelListArgs, ModelVerifyArgs } from "./verbs/model.ts";
+export type { ModelInstallAllArgs, ModelInstallArgs, ModelListArgs, ModelReleaseArgs, ModelVerifyArgs } from "./verbs/model.ts";
 
 export class GptImg {
   readonly #ctx: SdkContext;
@@ -92,7 +91,7 @@ export class GptImg {
      * Free the loaded models' memory once any inference in flight finishes. Loaded models are
      * shared by every instance in the process; the next call that needs one loads it again.
      */
-    release: async (): Promise<ModelReleaseResult> => ({ status: "completed", released: await releaseSessions() }),
+    release: (args?: ModelReleaseArgs, opts?: VerbCallOptions): Promise<ModelReleaseResult> => releaseModelsImpl(this.#ctx, args, opts),
   };
 
   /**

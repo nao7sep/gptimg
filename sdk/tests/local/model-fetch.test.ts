@@ -185,6 +185,15 @@ describe("ensureModel", () => {
     }
   });
 
+  it("reports a models folder it cannot create as a file-system failure, not an unexpected one", async () => {
+    const file = path.join(tmp, "a-file");
+    await writeFile(file, "x");
+    const entry: ModelEntry = { name: "test.bin", url: "https://example.com/model.bin", inputSize: 0 };
+    const err = await ensureModel(entry, path.join(file, "models")).catch((e: unknown) => e);
+    expect(err).toMatchObject({ name: "GptImgError", kind: "unavailable", effect: "none", subject: path.join(file, "models") });
+    expect((err as { code: string }).code).toMatch(/^fs\./);
+  });
+
   it("refuses a non-https remote URL before any byte is fetched", async () => {
     const entry: ModelEntry = {
       name: "insecure.bin",

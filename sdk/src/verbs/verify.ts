@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SdkContext } from "../context.ts";
 import { GptImgError, fsError, throwIfAborted } from "../errors.ts";
+import sharp from "../image/sharp.ts";
 import { detectFormat } from "../image/detectFormat.ts";
 import { hash } from "../image/hash.ts";
 import { withVerbLogger } from "../internal/local-verb.ts";
@@ -59,6 +60,8 @@ export async function verifyImpl(
     let format: string | null = null;
     try {
       format = (await detectFormat(bytes)).format;
+      // The header alone passes a truncated or damaged file; decoding every pixel does not.
+      await sharp(bytes).raw().toBuffer();
     } catch (err) {
       findings.push({ code: "image.undecodable", message: `${imagePath} does not decode: ${(err as Error).message}` });
     }

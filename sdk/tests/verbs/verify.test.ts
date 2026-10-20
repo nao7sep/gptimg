@@ -63,6 +63,15 @@ describe("verify", () => {
     expect(done(await img.verify({ in: image })).findings.map((f) => f.code)).toEqual(["image.undecodable"]);
   });
 
+  it("finds a truncated image whose header is intact", async () => {
+    const whole = await readFile(image);
+    const cut = whole.subarray(0, Math.floor(whole.length / 2));
+    await writeFile(image, cut);
+    sha256 = createHash("sha256").update(cut).digest("hex");
+    await sidecar("raw.png", {});
+    expect(done(await img.verify({ in: image })).findings.map((f) => f.code)).toEqual(["image.undecodable"]);
+  });
+
   it("fails only when the image itself cannot be read, and refuses a relative path", async () => {
     await expect(img.verify({ in: path.join(tmp, "missing.png") })).rejects.toMatchObject({ code: "fs.notFound" });
     await expect(img.verify({ in: "raw.png" })).rejects.toMatchObject({ code: "args.invalid" });

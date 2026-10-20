@@ -10,7 +10,6 @@ import {
   withVerbLogger,
 } from "../internal/local-verb.ts";
 import { runUpscale } from "../local/upscale.ts";
-import { validateOnnxSection } from "../policy/schemas.ts";
 import type { UpscaleArgs, UpscaleResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateUpscaleArgs } from "./schemas.ts";
@@ -38,7 +37,7 @@ export async function upscaleImpl(
     });
     assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
-    const onnx = validateOnnxSection(callPolicy(ctx, args.policy).onnx);
+    const onnx = callPolicy(ctx, args.policy).onnx ?? {};
     const modelsDir = callModelsDir(ctx, args.modelsDir);
 
     logger.emit("info", "resolve", verbStart({

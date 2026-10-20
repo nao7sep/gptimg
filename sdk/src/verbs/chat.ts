@@ -11,11 +11,10 @@ import { ensureOutputDir } from "../internal/output-files.ts";
 import { assertStemAvailable, createOutputGroup, reserveOutputGroup } from "../internal/output-group.ts";
 import { defaultStem } from "../internal/paths.ts";
 import { multiline } from "../internal/textCleanup.ts";
-import type { Logger } from "../events/index.ts";
+import { dispatchHook, type Logger } from "../events/index.ts";
 import { maskDiagnosticCopy } from "../events/mask.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { checkImageParams, resolveChatModeration, resolveVisionReasoning } from "../policy/model-check.ts";
-import { validateChatSection } from "../policy/schemas.ts";
 import { getProvider } from "../providers/index.ts";
 import { resolveModel } from "../providers/openai/client.ts";
 import { OPENAI_CHAT_INSTRUCTIONS } from "../providers/openai/defaults.ts";
@@ -164,11 +163,10 @@ async function loadHistory(history: readonly ChatTurn[], logger: Logger): Promis
  * image writes its record alone as `<stem>.json`, since its answer was paid
  * for too.
  */
-/** What a chat turn would send, resolved and checked with no disk, network or key (see `planGenerate`). */
-export function planChat(ctx: SdkContext, args: ChatArgs) {
-  validateChatArgs(args);
+/** What a chat turn would send, resolved and checked with no disk, network or key, from checked arguments. */
+function planChat(ctx: SdkContext, args: ChatArgs) {
   const policy = callPolicy(ctx, args.policy);
-  const section = validateChatSection(policy.chat);
+  const section = policy.chat ?? {};
   // The assistant, its effort and the image tool's values are settled and checked before the
   // call, so the events and the records name what is sent.
   const model = resolveModel(section.model, defaultModelFor("openai", "chat"));
@@ -194,11 +192,7 @@ function partialHandler(opts: VerbCallOptions, format: string) {
   const calls: string[] = [];
   return ({ callId, index, data }: { callId: string; index: number; data: Uint8Array }) => {
     if (!calls.includes(callId)) calls.push(callId);
-    try {
-      opts.onPartialImage?.({ image: calls.indexOf(callId), index, data, format });
-    } catch {
-      // The hook's failure is the caller's; the call goes on.
-    }
+    dispatchHook(opts.onPartialImage, { image: calls.indexOf(callId), index, data, format });
   };
 }
 
@@ -239,7 +233,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
       loadHistory: () => loadHistory(args.history ?? [], logger),
       params: { model, reasoning, instructions, tool },
       credentials,
-      network: { primary: network.imageGenerate, download: network.imageDownload, logger, signal: opts.signal },
+      network: { primary: network.chat, download: network.imageDownload, logger, signal: opts.signal },
       ...(tool.partial_images !== undefined && { onPartialImage: partialHandler(opts, String(tool.output_format ?? "png")) }),
     });
     logger.emit("info", "response", {

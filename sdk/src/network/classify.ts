@@ -2,8 +2,7 @@ import { GptImgError, type ErrorEffect, cancelledError, isCancelled } from "../e
 import { maskCredentials } from "../events/mask.ts";
 import { refuse } from "../refusal.ts";
 import { BUDGET_RESEND_POLICY, type NetworkBudgetName } from "./defaults.ts";
-import { DROPPED_CODES, UNREACHABLE_CODES, isConnectionError, isTimeout, networkCode } from "./failure.ts";
-import { isAbortError } from "./retry.ts";
+import { DROPPED_CODES, UNREACHABLE_CODES, isAbortError, isConnectionError, isTimeout, networkCode } from "./failure.ts";
 
 /** The provider's machine-readable error code, as the OpenAI client exposes it. */
 export function providerCode(err: unknown): string | undefined {

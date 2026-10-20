@@ -50,7 +50,7 @@ const MESSAGES: Readonly<Record<SdkEventName, string>> = {
  * never breaks the verb and is never reported through the hook that failed
  * (sdk-conventions, *Events, progress and cancellation*).
  */
-function dispatchHook<T>(hook: ((value: T) => unknown) | undefined, value: T): void {
+export function dispatchHook<T>(hook: ((value: T) => unknown) | undefined, value: T): void {
   if (!hook) return;
   try {
     // Callers may return a promise despite the void callback type; observe its rejection.

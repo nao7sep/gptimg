@@ -4,15 +4,7 @@ import { VISION_DETAILS } from "../enums.ts";
 import { GptImgError } from "../errors.ts";
 import { firstZodIssue, formatZodError } from "../internal/zodError.ts";
 import { NetworkSchema } from "../network/schema.ts";
-import type {
-  ChatPolicy,
-  ChromaPolicy,
-  EditPolicy,
-  GeneratePolicy,
-  OnnxPolicy,
-  Policy,
-  VisionPolicy,
-} from "../types.ts";
+import type { Policy } from "../types.ts";
 
 // A supported model's values are checked against its row (policy/model-check.ts); here only
 // their types are.
@@ -31,9 +23,11 @@ const IMAGE_PARAMS_SHAPE = {
     .optional(),
 };
 
-const GeneratePolicySchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
+// Strict, like every section: a request is built from these fields, so a misspelt one would be
+// sent to OpenAI and paid for, or silently fall back to a default.
+const GeneratePolicySchema = z.object(IMAGE_PARAMS_SHAPE).strict();
 
-const EditPolicySchema = z.object(IMAGE_PARAMS_SHAPE).passthrough();
+const EditPolicySchema = z.object(IMAGE_PARAMS_SHAPE).strict();
 
 const VisionShrinkSchema = z.object({
   width: z.number().int().positive(),
@@ -52,7 +46,7 @@ const VisionPolicySchema = z
       .optional(),
     systemPrompt: z.string().optional(),
   })
-  .passthrough();
+  .strict();
 
 const ChromaPolicySchema = z
   .object({
@@ -107,54 +101,17 @@ export function policyError(section: string, err: z.ZodError): GptImgError {
   });
 }
 
-export function validateGenerateSection(input: unknown): GeneratePolicy {
-  const r = GeneratePolicySchema.safeParse(input ?? {});
-  if (!r.success) {
-    throw policyError("generate", r.error);
-  }
-  return r.data as GeneratePolicy;
-}
-
-export function validateEditSection(input: unknown): EditPolicy {
-  const r = EditPolicySchema.safeParse(input ?? {});
-  if (!r.success) {
-    throw policyError("edit", r.error);
-  }
-  return r.data as EditPolicy;
-}
-
-export function validateVisionSection(input: unknown): VisionPolicy {
-  const r = VisionPolicySchema.safeParse(input ?? {});
-  if (!r.success) {
-    throw policyError("vision", r.error);
-  }
-  return r.data as VisionPolicy;
-}
-
-export function validateChatSection(input: unknown): ChatPolicy {
-  const r = ChatPolicySchema.safeParse(input ?? {});
-  if (!r.success) throw policyError("chat", r.error);
-  return r.data as ChatPolicy;
-}
-
-export function validateChromaSection(input: unknown): ChromaPolicy {
-  const r = ChromaPolicySchema.safeParse(input ?? {});
-  if (!r.success) {
-    throw policyError("chroma", r.error);
-  }
-  return r.data as ChromaPolicy;
-}
-
 /**
- * Check a whole policy: unknown sections are refused, and each section is
- * checked as its verb will check it. The constructor and each call check the
- * policy they are given, so a misspelt section or field fails where it was
- * written.
+ * Check a whole policy and return it as checked: unknown sections and fields
+ * are refused. The constructor checks the instance's policy and each call the
+ * policy it is given, once, so a misspelt section or field fails where it was
+ * written; the verbs read the checked sections without checking them again.
  */
 export function validatePolicy(input: unknown): Policy {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw new GptImgError("policy.invalid", "policy must be an object.", { details: { section: "policy", constraint: "object" } });
   }
+  const checked: Record<string, unknown> = {};
   for (const [section, value] of Object.entries(input)) {
     if (value === undefined) continue;
     if (!Object.hasOwn(SECTION_SCHEMAS, section)) {
@@ -166,12 +123,7 @@ export function validatePolicy(input: unknown): Policy {
     }
     const r = SECTION_SCHEMAS[section as keyof Policy].safeParse(value);
     if (!r.success) throw policyError(section, r.error);
+    checked[section] = r.data;
   }
-  return input as Policy;
-}
-
-export function validateOnnxSection(input: unknown): OnnxPolicy {
-  const r = OnnxPolicySchema.safeParse(input ?? {});
-  if (!r.success) throw policyError("onnx", r.error);
-  return r.data;
+  return checked as Policy;
 }

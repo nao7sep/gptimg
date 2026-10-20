@@ -18,7 +18,7 @@ export const OPS: Record<SdkOp, (sdk: GptImg, args: never, options: OpOptions) =
   upscale: (sdk, args, o) => sdk.upscale(args, o),
   modelList: (sdk, _args, o) => sdk.model.list({}, o),
   modelInstall: (sdk, args: { key: "swin2sr" | "birefnet" }, o) => sdk.model.install({ key: args.key }, o),
-  modelRelease: (sdk) => sdk.model.release(),
+  modelRelease: (sdk, _args, o) => sdk.model.release({}, o),
 };
 
 /** One GptImg per key and endpoint, made again when either changes. */

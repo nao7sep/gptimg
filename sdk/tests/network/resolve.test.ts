@@ -1,4 +1,4 @@
-import { resolveNetworkForCall } from "../../src/network/index.ts";
+import { validatePolicy } from "../../src/policy/schemas.ts";
 import { describe, expect, it } from "vitest";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.ts";
 import { resolveNetworkConfig } from "../../src/network/resolve.ts";
@@ -43,10 +43,11 @@ describe("resolveNetworkConfig", () => {
     ["a fractional retry count", { maxRetries: 0.5 }],
     ["a disabled timeout", { timeout: 0 }],
     ["a timeout longer than a timer can hold", { timeout: 2_147_000_001 }],
+    ["more retries than the cap", { maxRetries: 11 }],
     ["a non-numeric retry interval", { retryIntervals: [1, "bad"] }],
     ["an unknown field", { retries: 3 }],
   ])("refuses %s in policy.network before any request", (_label, budget) => {
-    expect(() => resolveNetworkForCall({ network: { modelDownload: budget as never } })).toThrow(
+    expect(() => validatePolicy({ network: { modelDownload: budget as never } })).toThrow(
       expect.objectContaining({ code: "policy.invalid", details: expect.objectContaining({ section: "network" }) }),
     );
   });

@@ -70,7 +70,7 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
   if (opts.debug !== undefined && typeof opts.debug !== "boolean") {
     throw new GptImgError("args.invalid", "debug must be a boolean.", { details: { field: "debug", constraint: "boolean" } });
   }
-  if (opts.policy !== undefined) validatePolicy(opts.policy);
+  const policy = opts.policy !== undefined ? validatePolicy(opts.policy) : {};
   let app: SdkContext["app"];
   if (opts.app !== undefined) {
     const name = optionalString(opts.app?.name, "app.name");
@@ -90,7 +90,7 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
     modelsDir: opts.modelsDir ?? defaultModelsDir(),
     debug: opts.debug ?? false,
     startup: { emitted: false },
-    policy: opts.policy ?? {},
+    policy,
     ...(app !== undefined && { app }),
   };
 }
@@ -108,11 +108,14 @@ export function requireCredentials(ctx: SdkContext): Credentials {
   };
 }
 
-/** The policy one call runs with: the call's over the instance's (last wins). */
+/**
+ * The policy one call runs with: the call's over the instance's (last wins).
+ * Each is checked once, the instance's when it was built and the call's here;
+ * two checked policies merge into a checked one, since no rule spans fields.
+ */
 export function callPolicy(ctx: SdkContext, policy: Policy | undefined): Policy {
   if (policy === undefined) return ctx.policy;
-  validatePolicy(policy);
-  return mergePolicies(ctx.policy, policy);
+  return mergePolicies(ctx.policy, validatePolicy(policy));
 }
 
 /** The models folder one call uses: its own, then the instance's. */

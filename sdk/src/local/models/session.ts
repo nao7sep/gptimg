@@ -11,7 +11,7 @@
 import os from "node:os";
 import type * as Ort from "onnxruntime-node";
 import { GptImgError, cancelledError } from "../../errors.ts";
-import { isAbortError } from "../../network/retry.ts";
+import { isAbortError } from "../../network/failure.ts";
 import type { OnnxPolicy } from "../../types.ts";
 
 // One creation per model path and tuning: concurrent first callers await the

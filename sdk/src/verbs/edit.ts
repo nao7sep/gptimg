@@ -17,7 +17,6 @@ import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
 import { multiline } from "../internal/textCleanup.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { checkImageParams } from "../policy/model-check.ts";
-import { validateEditSection } from "../policy/schemas.ts";
 import { getProvider } from "../providers/index.ts";
 import type { EditArgs, EditResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
@@ -40,11 +39,10 @@ async function readImageSha256(filePath: string, label: string): Promise<string>
   }
 }
 
-/** What an edit call would send, resolved and checked with no disk, network or key (see `planGenerate`). */
-export function planEdit(ctx: SdkContext, args: EditArgs) {
-  validateEditArgs(args);
+/** What an edit call would send, resolved and checked with no disk, network or key, from checked arguments. */
+function planEdit(ctx: SdkContext, args: EditArgs) {
   const policy = callPolicy(ctx, args.policy);
-  const section = validateEditSection(policy.edit);
+  const section = policy.edit ?? {};
   // The model is settled and its values checked before the call, so the events and the sidecar
   // name what is sent.
   const params: Record<string, unknown> = {

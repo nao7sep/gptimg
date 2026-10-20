@@ -14,7 +14,6 @@ import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
 import { multiline } from "../internal/textCleanup.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { checkImageParams, resolveGenerateModeration } from "../policy/model-check.ts";
-import { validateChromaSection, validateGenerateSection } from "../policy/schemas.ts";
 import { getProvider } from "../providers/index.ts";
 import type { GenerateArgs, GenerateRequestRecord, GenerateResult } from "../types.ts";
 import type { VerbCallOptions } from "./options.ts";
@@ -26,13 +25,12 @@ export type GenerateContext = SdkContext;
 
 /**
  * What a generate call would send, resolved and checked against the model's row with no disk,
- * network or key: the verb runs it first, and `GptImg.check` exposes it.
+ * network or key, from arguments the verb has already checked.
  */
-export function planGenerate(ctx: SdkContext, args: GenerateArgs) {
-  validateGenerateArgs(args);
+function planGenerate(ctx: SdkContext, args: GenerateArgs) {
   const policy = callPolicy(ctx, args.policy);
-  const section = validateGenerateSection(policy.generate);
-  const chromaSection = validateChromaSection(policy.chroma);
+  const section = policy.generate ?? {};
+  const chromaSection = policy.chroma ?? {};
   // The model, its moderation and its values are settled before the call, so the events and
   // the sidecar name what is sent.
   const model = resolveModel(section.model, defaultModelFor("openai", "image-generate"));

@@ -141,6 +141,10 @@ describe("runGrid", () => {
     await runGrid({ inputs: [tile], out: clear, cell: CELL, gap: GAP });
     const clearSheet = await readRGBA(clear);
     expect(pxAt(clearSheet, 0, 0)[3]).toBe(0); // transparent by default
+
+    const explicit = path.join(tmp, "explicit.png");
+    await runGrid({ inputs: [tile], out: explicit, cell: CELL, gap: GAP, background: "transparent" });
+    expect(pxAt(await readRGBA(explicit), 0, 0)[3]).toBe(0); // and when asked for, not filled black
   });
 
   it("honours an explicit column count", async () => {

@@ -295,6 +295,12 @@ describe("withVerbLogger", () => {
     });
   });
 
+  it("accepts the same call options on every verb, onPartialImage included", async () => {
+    const opts = { signal: new AbortController().signal, onEvent: () => {}, onProgress: () => {}, onPartialImage: () => {} };
+    await expect(withVerbLogger(ctx(), "encode", opts, async () => 1)).resolves.toBe(1);
+    await expect(withVerbLogger(ctx(), "model", opts, async () => 1)).resolves.toBe(1);
+  });
+
   it("emits the startup event once, to the first call that listens", async () => {
     const shared = ctx({ startup: { emitted: false } });
     await withVerbLogger(shared, "trim", {}, async () => 1);

@@ -13,7 +13,6 @@ import {
 } from "../internal/local-verb.ts";
 import { aiMaskFromFile } from "../local/ai-mask.ts";
 import { chromaMaskFromFile } from "../local/chroma/mask.ts";
-import { validateChromaSection, validateOnnxSection } from "../policy/schemas.ts";
 import type {
   MaskArgs,
   MaskResult,
@@ -58,7 +57,7 @@ export async function maskImpl(
     let stats: MaskStats;
 
     if (method === "chroma") {
-      const chromaSection = validateChromaSection(policy.chroma);
+      const chromaSection = policy.chroma ?? {};
       const resolved = applyChromaPolicyDefaults(args, chromaSection);
 
       logger.emit("info", "resolve", verbStart({
@@ -84,7 +83,7 @@ export async function maskImpl(
       height = result.height;
       stats = result.stats;
     } else if (method === "ai") {
-      const onnx = validateOnnxSection(policy.onnx);
+      const onnx = policy.onnx ?? {};
       logger.emit("info", "resolve", verbStart({
         input: args.in,
         method,

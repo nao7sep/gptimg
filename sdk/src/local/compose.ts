@@ -56,7 +56,9 @@ export interface ComposeArgs extends EncodingArgs {
   removeBleed?: string;
 }
 
+/** The `over` argument as a flatten target: "transparent", a #rrggbb colour, or an absolute image path. */
 export function parseOverColor(value: string): ComposeOver {
+  if (value === "transparent") return { kind: "transparent" };
   if (isHexColor(value)) {
     const [r, g, b] = parseHex(value);
     return { kind: "color", r, g, b };
@@ -66,11 +68,11 @@ export function parseOverColor(value: string): ComposeOver {
   if (/^[0-9a-fA-F]{6}$/.test(value)) {
     throw new GptImgError(
       "args.invalid",
-      `compose: --over "${value}" looks like a hex color but is missing the leading "#"; use "#${value}".`,
-      { details: { field: "over", constraint: "#rrggbb hex color or absolute path" } },
+      `compose: over "${value}" looks like a hex color but is missing the leading "#"; use "#${value}".`,
+      { details: { field: "over", constraint: "transparent, #rrggbb hex color or absolute path" } },
     );
   }
-  assertAbsolutePath(value, "compose: over");
+  assertAbsolutePath(value, "over", "compose");
   return { kind: "image", path: value };
 }
 

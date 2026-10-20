@@ -1,8 +1,8 @@
 import type { Logger } from "../events/index.ts";
 import type { AttemptFields, FailedAttemptFields } from "../types.ts";
-import { cancelledError, isCancelled } from "../errors.ts";
+import { cancelledError } from "../errors.ts";
 import { isQuotaExhausted } from "./classify.ts";
-import { UNREACHABLE_CODES, isConnectionError, isTimeout, networkCode } from "./failure.ts";
+import { UNREACHABLE_CODES, isAbortError, isConnectionError, isTimeout, networkCode } from "./failure.ts";
 import {
   BUDGET_RESEND_POLICY,
   type NetworkBudget,
@@ -34,13 +34,6 @@ const RETRYABLE_NETWORK_CODES = new Set([
   "UND_ERR_SOCKET",
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
-
-export function isAbortError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  if (isCancelled(err) || err.name === "AbortError") return true;
-  const code = (err as { code?: string }).code;
-  return code === "ABORT_ERR" || code === "ERR_ABORTED";
-}
 
 function statusFromError(err: unknown): number | null {
   if (!err || typeof err !== "object") return null;

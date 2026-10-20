@@ -85,7 +85,7 @@ describe("drafts while an image is drawn", () => {
       img.chat({
         message: "a fox",
         outDir: tmp,
-        policy: { chat: { partial_images: 1 }, network: { imageGenerate: { timeout: 300, maxRetries: 0 } } },
+        policy: { chat: { partial_images: 1 }, network: { chat: { timeout: 300, maxRetries: 0 } } },
       }),
     ).rejects.toMatchObject({ code: "provider.timeout", effect: "unknown" });
     expect(openai.requests).toHaveLength(1);

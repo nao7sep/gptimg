@@ -1,4 +1,3 @@
-import { GptImgError } from "../errors.ts";
 import type { DetectedFormat } from "../image/detectFormat.ts";
 import { imageFileName } from "../internal/output-naming.ts";
 
@@ -30,6 +29,8 @@ export interface GenerateOutputPlan {
   /** Zero-pad width driver: the larger of the requested n and what came back. */
   suffixCount: number;
   images: PlannedImage[];
+  /** Images in another format than the group's first, which the group cannot hold; each is an item failure. */
+  mixed: Array<{ index: number; extension: string }>;
   /** The single extension the artifact group uses; "png" when nothing succeeded. */
   groupExtension: string;
 }
@@ -37,8 +38,10 @@ export interface GenerateOutputPlan {
 /**
  * The pure naming/grouping decision behind `generate`: reconcile the requested
  * count with the provider's actual return, assign each successful image a stable
- * suffixed filename, and enforce the single-format invariant for the group.
- * Format detection (I/O) happens in the caller; this function only decides.
+ * suffixed filename, and keep the group to one format: the first decoded
+ * image's, any image in another format becoming an item failure, since the
+ * response was paid for and the rest of it must still publish. Format
+ * detection (I/O) happens in the caller; this function only decides.
  */
 export function planGenerateOutputs(
   n: number,
@@ -49,10 +52,16 @@ export function planGenerateOutputs(
   // width must cover whichever is larger so indices never outrun their padding.
   const suffixCount = Math.max(n, detected.length);
   const images: PlannedImage[] = [];
+  const mixed: GenerateOutputPlan["mixed"] = [];
+  const groupExtension = detected.find((item) => item.format)?.format?.extension ?? "png";
 
   detected.forEach((item, i) => {
     if (!item.format) return;
     const index = i + 1;
+    if (item.format.extension !== groupExtension) {
+      mixed.push({ index, extension: item.format.extension });
+      return;
+    }
     images.push({
       index,
       format: item.format,
@@ -60,16 +69,5 @@ export function planGenerateOutputs(
     });
   });
 
-  const extensions = new Set(images.map((img) => img.format.extension));
-  if (extensions.size > 1) {
-    // The paid response arrived but cannot form one artifact group.
-    throw new GptImgError(
-      "provider.invalidResponse",
-      `Provider returned images with mixed extensions (${[...extensions].join(", ")}); the artifact group requires a single image format.`,
-      { effect: "unknown" },
-    );
-  }
-
-  const groupExtension = images[0]?.format.extension ?? "png";
-  return { suffixCount, images, groupExtension };
+  return { suffixCount, images, mixed, groupExtension };
 }

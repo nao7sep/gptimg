@@ -1,8 +1,9 @@
 // Which code may import what: the renderer never reaches Node, Electron or the
-// main side; only the SDK's worker loads the SDK itself; nothing reaches into
-// the SDK's files. Derived from the source tree, with a planted violation.
+// main side; only the SDK's worker loads the SDK itself; nothing in the app or
+// its tests reaches into the SDK's files, only its public entries
+// (sdk-conventions). Derived from the source and test trees, with planted violations.
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -24,10 +25,21 @@ export function specifiers(source: string): string[] {
   return found;
 }
 
+// The SDK's public entries, as its package.json exports them.
+const SDK_ENTRIES = ["gptimgsdk", "gptimgsdk/types", "gptimgsdk/testing"];
+const SDK_DIR = join(ROOT, "sdk");
+
 function violations(file: string, imported: string): string | null {
+  if (imported.startsWith("gptimgsdk/") && !SDK_ENTRIES.includes(imported)) return "deep SDK import";
+  // Any path that lands in the SDK's package, however it is spelled.
+  const target = imported.startsWith(".") ? resolve(ROOT, dirname(file), imported) : resolve(imported);
+  if ((imported.startsWith(".") || imported.startsWith("/") || /^[A-Za-z]:/.test(imported)) && (target === SDK_DIR || target.startsWith(SDK_DIR + sep))) {
+    return "path into the SDK's package";
+  }
+  if (/(^|\/)sdk\/(src|tests|package\.json)/.test(imported)) return "path into the SDK's package";
+  // The layering below is the app's own; tests may load what they test.
+  if (!file.startsWith("src/")) return null;
   const area = file.split("/")[1];
-  if (imported.startsWith("gptimgsdk/") && imported !== "gptimgsdk/types") return "deep SDK import";
-  if (imported.includes("sdk/src")) return "SDK source import";
   if (area === "renderer" || area === "shared") {
     if (imported.startsWith("node:") || imported === "electron") return "Node or Electron in the browser side";
     if (imported === "gptimgsdk") return "the SDK's runtime in the browser side";
@@ -48,12 +60,17 @@ describe("import boundaries", () => {
     expect(violations("src/main/index.ts", "gptimgsdk")).not.toBeNull();
     expect(violations("src/main/index.ts", "./sdk-ops.ts")).not.toBeNull();
     expect(violations("src/main/sdk-worker.ts", "gptimgsdk/src/verbs/chat.ts")).not.toBeNull();
+    expect(violations("tests/main/export.test.ts", "../../sdk/src/errors.ts")).not.toBeNull();
+    expect(violations("tests/helpers/in-process-host.ts", "../../sdk/package.json")).not.toBeNull();
+    expect(violations("src/main/index.ts", "../../sdk/src/index.ts")).not.toBeNull();
+    expect(violations("tests/main/turn-sdk.test.ts", "gptimgsdk/testing")).toBeNull();
+    expect(violations("tests/main/turn-sdk.test.ts", "gptimgsdk")).toBeNull();
   });
 
-  it("holds across the app's source", () => {
+  it("holds across the app's source and tests", () => {
     const found: string[] = [];
-    const sources = files("src");
-    expect(sources.length).toBeGreaterThan(20);
+    const sources = [...files("src"), ...files("tests")];
+    expect(sources.length).toBeGreaterThan(40);
     for (const file of sources) {
       const rel = relative(ROOT, join(ROOT, file));
       for (const imported of specifiers(readFileSync(join(ROOT, file), "utf8"))) {

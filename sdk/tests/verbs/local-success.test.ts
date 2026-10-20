@@ -238,6 +238,11 @@ describe("local verbs success path (via GptImg SDK)", () => {
     const last = (W * H - 1) * 4;
     expect(composed[last + 3]).toBe(255);
     expect(composed[last]).toBe(200);
+
+    // over: "transparent", as documented, gives the same result as leaving it out.
+    const explicit = done(await sdk.compose({ in: inPath, mask: maskPath, outName: "explicit", over: "transparent" }));
+    expect(explicit.over).toBe("transparent");
+    expect(new Uint8Array(await sharp(explicit.output).ensureAlpha().raw().toBuffer())).toEqual(composed);
   });
 
   it("icon: writes icns, ico and png from a 1024 master", async () => {

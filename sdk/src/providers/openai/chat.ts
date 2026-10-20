@@ -129,8 +129,8 @@ export async function openaiChat(args: ChatProviderArgs): Promise<ProviderChatRe
     const request = { headers: clientHeaders(client), body: { ...buildRequest(history, false), ...(streaming && { stream: true }) } };
     return (
       await callWithRetry(
-        // A chat turn is paid like an image generation: resent only when provably unprocessed.
-        { budgetName: "imageGenerate", budget: primary, signal, logger, request, response: recordedResponse },
+        // A chat turn is paid: resent only when provably unprocessed.
+        { budgetName: "chat", budget: primary, signal, logger, request, response: recordedResponse },
         () =>
           streaming
             ? streamed(params)
@@ -181,7 +181,7 @@ export async function openaiChat(args: ChatProviderArgs): Promise<ProviderChatRe
         }
       }
       if (!final) {
-        throw Object.assign(new Error("The response stream ended before the response completed."), { code: "ECONNRESET" });
+        throw new GptImgError("provider.connectionLost", "The response stream ended before the response completed.", { effect: "unknown" });
       }
       return { data: final, response, request_id };
     } catch (err) {
@@ -193,7 +193,7 @@ export async function openaiChat(args: ChatProviderArgs): Promise<ProviderChatRe
     }
   };
   const fail = (err: unknown): never => {
-    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.credentials.apiKey]), "imageGenerate", "OpenAI responses.create", [args.credentials.apiKey]);
+    throw classifyRequestFailure(maskDiagnosticCopy(err, [args.credentials.apiKey]), "chat", "OpenAI responses.create", [args.credentials.apiKey]);
   };
 
   let resumed: ProviderChatResult["resumed"] = null;

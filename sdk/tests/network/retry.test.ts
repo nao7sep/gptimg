@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { GptImgError } from "../../src/errors.ts";
-import { callWithRetry, isAbortError } from "../../src/network/retry.ts";
+import { isAbortError } from "../../src/network/failure.ts";
+import { callWithRetry } from "../../src/network/retry.ts";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../src/network/defaults.ts";
 import type { Logger } from "../../src/events/index.ts";
 

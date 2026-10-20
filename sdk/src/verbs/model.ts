@@ -2,9 +2,10 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { callModelsDir, callPolicy, type SdkContext } from "../context.ts";
 import { fsError, GptImgError, throwIfAborted } from "../errors.ts";
-import { withVerbLogger } from "../internal/local-verb.ts";
+import { CALL_OPTION_NAMES, withVerbLogger } from "../internal/local-verb.ts";
 import { ensureModel, fileSha256, inspectCachedModel } from "../local/models/fetch.ts";
 import { MODELS, type ModelKey } from "../local/models/registry.ts";
+import { releaseSessions } from "../local/models/session.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import type { RefusedResult } from "../refusal.ts";
 import type {
@@ -12,6 +13,7 @@ import type {
   ModelInstallResult,
   ModelIntegrity,
   ModelListResult,
+  ModelReleaseResult,
   ModelVerifyEntry,
   ModelVerifyResult,
   Policy,
@@ -40,6 +42,9 @@ export interface ModelListArgs {
 
 export type ModelVerifyArgs = ModelListArgs;
 
+/** `model.release` takes no arguments; the object is there so every verb has the same shape. */
+export type ModelReleaseArgs = Record<string, never>;
+
 /** Model verbs never refuse; the envelope's refused branch cannot occur. */
 function completed<T>(result: T | RefusedResult): T {
   if ((result as { status?: unknown }).status === "refused") {
@@ -56,7 +61,7 @@ function checkArgs<T extends object>(operation: string, args: T, known: readonly
   const given = args as Record<string, unknown>;
   const unknown = Object.keys(given).find((key) => given[key] !== undefined && !known.includes(key));
   if (unknown !== undefined) {
-    const callOption = ["signal", "onEvent", "onProgress"].includes(unknown);
+    const callOption = (CALL_OPTION_NAMES as readonly string[]).includes(unknown);
     const hint = callOption ? `${unknown} is a call option and goes in the second argument` : `it takes ${known.join(", ")}`;
     throw new GptImgError("args.invalid", `${operation}: ${unknown} is not accepted; ${hint}.`, {
       details: { field: unknown, constraint: callOption ? "call option" : "known argument" },
@@ -115,24 +120,38 @@ export async function installAllModelsImpl(ctx: SdkContext, args: ModelInstallAl
 
 export async function listModelsImpl(ctx: SdkContext, args: ModelListArgs = {}, opts: VerbCallOptions = {}): Promise<ModelListResult> {
   checkArgs("model list", args, ["modelsDir"]);
-  throwIfAborted(opts.signal);
   const modelsDir = callModelsDir(ctx, args.modelsDir);
-  // A path below a file is ENOTDIR on macOS and Linux but ENOENT on Windows, which would read as nothing installed.
-  assertFolderOrMissing(modelsDir);
-  const models = (Object.keys(MODELS) as ModelKey[]).map((key) => {
-    const entry = MODELS[key];
-    const filePath = path.join(modelsDir, entry.name);
-    const cache = inspectCachedModel(filePath, entry.byteSize);
-    return {
-      key,
-      name: entry.name,
-      path: filePath,
-      cached: cache.usable,
-      sizeBytes: cache.sizeBytes,
-      downloadBytes: entry.byteSize ?? null,
-    };
-  });
-  return { status: "completed", models };
+  return completed(await withVerbLogger(ctx, "model", opts, async () => {
+    throwIfAborted(opts.signal);
+    // A path below a file is ENOTDIR on macOS and Linux but ENOENT on Windows, which would read as nothing installed.
+    assertFolderOrMissing(modelsDir);
+    const models = (Object.keys(MODELS) as ModelKey[]).map((key) => {
+      const entry = MODELS[key];
+      const filePath = path.join(modelsDir, entry.name);
+      const cache = inspectCachedModel(filePath, entry.byteSize);
+      return {
+        key,
+        name: entry.name,
+        path: filePath,
+        cached: cache.usable,
+        sizeBytes: cache.sizeBytes,
+        downloadBytes: entry.byteSize ?? null,
+      };
+    });
+    return { status: "completed" as const, models };
+  }));
+}
+
+/**
+ * Free the loaded models' memory once any inference in flight finishes. Loaded models are
+ * shared by every instance in the process; the next call that needs one loads it again.
+ */
+export async function releaseModelsImpl(ctx: SdkContext, args: ModelReleaseArgs = {}, opts: VerbCallOptions = {}): Promise<ModelReleaseResult> {
+  checkArgs("model release", args, []);
+  return completed(await withVerbLogger(ctx, "model", opts, async () => {
+    throwIfAborted(opts.signal);
+    return { status: "completed" as const, released: await releaseSessions() };
+  }));
 }
 
 /**

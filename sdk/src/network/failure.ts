@@ -4,6 +4,17 @@
  * two never disagree about the same failure.
  */
 
+import { isCancelled } from "../errors.ts";
+
+/** True for a cancellation: the SDK's own, or an abort surfaced by fetch or the OpenAI client. */
+export function isAbortError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (isCancelled(err) || err.name === "AbortError") return true;
+  const code = (err as { code?: string }).code;
+  return code === "ABORT_ERR" || code === "ERR_ABORTED";
+}
+
+
 /** System codes that prove the request never reached the provider: it could not be resolved or connected. */
 export const UNREACHABLE_CODES: ReadonlySet<string> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]);
 

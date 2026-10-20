@@ -11,11 +11,10 @@
  *     budget (per-edge idle timeout + bounded retries, inside one size-scaled
  *     operation deadline) into a deletable `temp/`
  *     dir under the cache root (a per-download-unique name), then published to
- *     the final name via `link()`, which is atomic and fails with EEXIST
- *     if another concurrent caller published first. Concurrent callers waste
- *     bandwidth (each downloads its own staged copy) but never corrupt the
- *     cache: only the winning `link()` becomes the final file, all losers unlink
- *     their staged copy and return the published path. Staging in temp/ (not as
+ *     the final name by an atomic rename, never a hard link, which some volumes
+ *     refuse. Concurrent callers waste bandwidth (each downloads its own staged
+ *     copy) but never corrupt the cache: each verified copy replaces the last
+ *     whole, and the last complete copy stands. Staging in temp/ (not as
  *     a sibling of the kept model) keeps a crashed download's partial out of the
  *     model dir, in a clearly-disposable area, and the next ensureModel
  *     removes any staged file whose owning process is gone.
@@ -34,7 +33,7 @@
  */
 
 import { createReadStream, createWriteStream, statSync } from "node:fs";
-import { link, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
+import { mkdir, open, readdir, rename, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -44,7 +43,8 @@ import { GptImgError, cancelledError, fsError, throwIfAborted } from "../../erro
 import type { Logger } from "../../events/index.ts";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.ts";
 import { combineSignals, HttpStatusError } from "../../network/http.ts";
-import { callWithRetry, isAbortError } from "../../network/retry.ts";
+import { isAbortError } from "../../network/failure.ts";
+import { callWithRetry } from "../../network/retry.ts";
 import { MODELS, type ModelEntry } from "./registry.ts";
 
 export async function fileSha256(
@@ -137,6 +137,15 @@ async function syncFile(filePath: string, signal: AbortSignal | undefined): Prom
     await handle.close();
   }
   throwIfAborted(signal);
+}
+
+/** A folder the models need, created when missing; failing to is a file-system failure. */
+async function makeFolder(dirPath: string): Promise<void> {
+  try {
+    await mkdir(dirPath, { recursive: true });
+  } catch (err) {
+    throw fsError(err, "Failed to create the models folder", dirPath);
+  }
 }
 
 async function syncDirectory(dirPath: string): Promise<void> {
@@ -367,7 +376,7 @@ export function hostTag(): string {
 }
 
 // A per-download staging path inside the deletable temp/ dir under the cache
-// root — same filesystem as the final path, so publish by link()/rename() stays
+// root — same filesystem as the final path, so publish by rename() stays
 // atomic, and a leftover temp file lands in temp/, not beside the kept models.
 // Named `<stem>-<hostTag>-<pid>-<random>.tmp` per the derived-filename grammar:
 // the model's own stem (so a leftover is traceable to its target), hyphen-joined
@@ -518,7 +527,7 @@ async function acquireModel(
   throwIfAborted(operationSignal);
   assertSafeUrl(entry.url);
 
-  await mkdir(cacheDir, { recursive: true });
+  await makeFolder(cacheDir);
   await sweepAbandonedStaging(cacheDir);
   const finalPath = path.join(cacheDir, entry.name);
 
@@ -526,12 +535,11 @@ async function acquireModel(
   if (!force && initialCache.usable) {
     return finalPath;
   }
-  const replaceExisting = initialCache.present;
   // Announce the one-time download and its size before any request, so a
   // caller watching progress learns why the first AI mask or upscale waits.
   logger?.emit("info", "download", { event: "model.download.needed", name: entry.name });
 
-  await mkdir(path.join(cacheDir, TEMP_DIR), { recursive: true });
+  await makeFolder(path.join(cacheDir, TEMP_DIR));
   let partialPath: string;
   try {
     partialPath = await callWithRetry(
@@ -586,44 +594,29 @@ async function acquireModel(
 
     await syncFile(partialPath, operationSignal);
     throwIfAborted(operationSignal);
-    if (force || replaceExisting) {
-      // Deliberate reinstall: atomically replace whatever is there.
-      try {
-        await rename(partialPath, finalPath);
-        namespacePublished = true;
-      } catch (err) {
-        throw fsError(err, "Failed to publish model at", finalPath);
-      }
-      await syncDirectory(cacheDir);
-      return finalPath;
-    }
-
-    // link() is atomic on supported filesystems: it succeeds (the final name
-    // now references our staged file) or fails with EEXIST when another caller
-    // published first. Either way the staged name is no longer needed.
+    // Rename in, replacing whatever is there: a deliberate reinstall, a damaged copy, or another
+    // caller's verified copy of the same pin that published first, which ours equals. No hard
+    // link, which some volumes (exFAT) refuse. Windows refuses to replace a model a session has
+    // open; a usable copy already there is then the published model.
     try {
-      await link(partialPath, finalPath);
+      await rename(partialPath, finalPath);
       namespacePublished = true;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code === "EEXIST" && !inspectCachedModel(finalPath, entry.byteSize).usable) {
-        throwIfAborted(operationSignal);
-        await rename(partialPath, finalPath);
-        namespacePublished = true;
-      } else if (code !== "EEXIST") {
+      const locked = code === "EPERM" || code === "EACCES" || code === "EBUSY";
+      if (!(locked && !force && inspectCachedModel(finalPath, entry.byteSize).usable)) {
         throw fsError(err, "Failed to publish model at", finalPath);
       }
-      // Another concurrent caller won the publish race — drop our copy.
     }
     await syncDirectory(cacheDir);
   } catch (err) {
     await unlink(partialPath).catch(() => undefined);
-    // A successful rename/link is the cancellation commit point. A later
+    // A successful rename is the cancellation commit point. A later
     // directory-sync error remains an error, but cancellation cannot relabel
     // an artifact that was already published as cancelled or timed out.
     if (namespacePublished) {
-      if (err instanceof GptImgError) throw err;
-      throw fsError(err, `Published ${entry.name}, but failed to sync`, cacheDir);
+      // The model is in place, but its folder entry may not have reached the disk.
+      throw fsError(err, `Published ${entry.name}, but failed to sync`, cacheDir, "unknown");
     }
     if (signal?.aborted) throw cancelledError(signal.reason);
     if (operationSignal.aborted) {

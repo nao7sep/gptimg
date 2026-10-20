@@ -1,14 +1,13 @@
-import { Buffer } from "node:buffer";
 import path from "node:path";
-import { cancelledError, processingError } from "../../errors.ts";
+import { processingError } from "../../errors.ts";
 import { maskDiagnosticCopy } from "../../events/mask.ts";
 import { classifyRequestFailure } from "../../network/classify.ts";
-import { fetchWithBudget } from "../../network/fetch.ts";
-import { callWithRetry, isAbortError } from "../../network/retry.ts";
+import { callWithRetry } from "../../network/retry.ts";
 import type { EditProviderArgs, ProviderImageResult } from "../types.ts";
 import { buildOpenAIClient, clientHeaders, recordedResponse, resolveModel } from "./client.ts";
 import { defaultModelFor } from "../../ai-models.ts";
 import { buildImageRequest } from "./request.ts";
+import { materializeImages } from "./images.ts";
 import { imageFileForEditUpload } from "./upload.ts";
 
 export async function openaiEdit(
@@ -67,31 +66,5 @@ export async function openaiEdit(
     throw classifyRequestFailure(maskDiagnosticCopy(err, [args.credentials.apiKey]), "imageGenerate", "OpenAI images.edit", [args.credentials.apiKey]);
   }
 
-  const data = response.data ?? [];
-  const images = await Promise.all(
-    data.map(async (item) => {
-      if (typeof item.b64_json === "string" && item.b64_json.length > 0) {
-        return { data: new Uint8Array(Buffer.from(item.b64_json, "base64")) };
-      }
-      if (typeof item.url === "string" && item.url.length > 0) {
-        try {
-          const bytes = await fetchWithBudget(item.url, download, {
-            signal,
-            logger,
-          });
-          return { data: bytes };
-        } catch (err) {
-          // The images were paid for; stopping now may lose them.
-          if (isAbortError(err)) throw cancelledError(err, "unknown");
-          return {
-            data: null,
-            error: `Failed to fetch image from URL: ${(err as Error).message}`,
-          };
-        }
-      }
-      return { data: null, error: "Response item contained neither b64_json nor url" };
-    }),
-  );
-
-  return { raw: response, images };
+  return { raw: response, images: await materializeImages(response.data ?? [], download, signal, logger) };
 }

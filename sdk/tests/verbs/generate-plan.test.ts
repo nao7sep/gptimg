@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { GptImgError } from "../../src/errors.ts";
 import { planGenerateOutputs, type DetectedImage } from "../../src/verbs/generate-plan.ts";
 import type { DetectedFormat } from "../../src/image/detectFormat.ts";
 
@@ -58,14 +57,10 @@ describe("planGenerateOutputs", () => {
     expect(plan.groupExtension).toBe("png");
   });
 
-  it("rejects a group whose surviving images carry mixed extensions", () => {
-    let caught: unknown;
-    try {
-      planGenerateOutputs(2, "shot", [ok("png"), ok("jpg")]);
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(GptImgError);
-    expect((caught as GptImgError).code).toBe("provider.invalidResponse");
+  it("keeps the first image's format for the group and sets apart images in another, without throwing", () => {
+    const plan = planGenerateOutputs(3, "shot", [fail, ok("jpg"), ok("png")]);
+    expect(plan.groupExtension).toBe("jpg");
+    expect(plan.images.map((img) => img.index)).toEqual([2]);
+    expect(plan.mixed).toEqual([{ index: 3, extension: "png" }]);
   });
 });

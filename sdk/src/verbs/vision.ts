@@ -16,7 +16,6 @@ import type { Logger } from "../events/index.ts";
 import { maskDiagnosticCopy } from "../events/mask.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { resolveVisionDetail, resolveVisionReasoning } from "../policy/model-check.ts";
-import { validateVisionSection } from "../policy/schemas.ts";
 import { writeSidecar } from "../sidecar/write.ts";
 import { getProvider } from "../providers/index.ts";
 import { detectFormat } from "../image/detectFormat.ts";
@@ -93,11 +92,10 @@ async function prepareImage(
   };
 }
 
-/** What a vision call would send, resolved and checked with no disk, network or key (see `planGenerate`). */
-export function planVision(ctx: SdkContext, args: VisionArgs) {
-  validateVisionArgs(args);
+/** What a vision call would send, resolved and checked with no disk, network or key, from checked arguments. */
+function planVision(ctx: SdkContext, args: VisionArgs) {
   const policy = callPolicy(ctx, args.policy);
-  const section = validateVisionSection(policy.vision);
+  const section = policy.vision ?? {};
   const { shrink: configuredShrink, detail: configuredDetail, reasoning: configuredReasoning, ...sectionParams } = section;
   // The model, its effort and its detail are settled, and the effort checked against the
   // model's row, before the call, so the events and the sidecar name what is sent.
@@ -208,7 +206,8 @@ export async function visionImpl(
       ok: providerResult.verdict.ok,
       score: providerResult.verdict.score,
       reasons: providerResult.verdict.reasons,
-      raw: providerResult.raw,
+      // The record's copy, credentials masked, as generate's response is.
+      raw: record.response.raw,
       sidecarPath,
       sidecar,
       record,

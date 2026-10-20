@@ -48,7 +48,6 @@ export interface GeneratePolicy {
   n?: number;
   /** Not settable: generate sends moderation "low" for a supported model, none for any other id. */
   moderation?: never;
-  [key: string]: unknown;
 }
 
 /** As {@link GeneratePolicy}; the edit endpoint takes no moderation. */
@@ -62,7 +61,6 @@ export interface EditPolicy {
   n?: number;
   /** Not settable: moderation is not exposed. */
   moderation?: never;
-  [key: string]: unknown;
 }
 
 export interface VisionPolicy {
@@ -81,7 +79,6 @@ export interface VisionPolicy {
   /** Not settable: the effort is set with `reasoning`. */
   reasoning_effort?: never;
   systemPrompt?: string;
-  [key: string]: unknown;
 }
 
 /** The `chroma` policy section: defaults for `mask` with `method: "chroma"`, and the backdrop key `generate` asks for and records. */
@@ -163,6 +160,7 @@ export interface Policy {
   /** Per-category network budgets. See src/network/defaults.ts. */
   network?: {
     imageGenerate?: NetworkBudgetPolicy;
+    chat?: NetworkBudgetPolicy;
     imageVision?: NetworkBudgetPolicy;
     imageDownload?: NetworkBudgetPolicy;
     modelDownload?: NetworkBudgetPolicy;

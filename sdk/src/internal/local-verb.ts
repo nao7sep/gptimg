@@ -159,10 +159,9 @@ function serializeThrownError(
   return serialized;
 }
 
-// The call options; an unknown one is refused, as an unknown argument is.
-const CALL_OPTION_NAMES = ["signal", "onEvent", "onProgress"];
-// Options only one verb reads: refused on every other verb, as any unknown option is.
-const VERB_CALL_OPTIONS: Partial<Record<VerbName, string[]>> = { chat: ["onPartialImage"] };
+// The call options, the same for every verb: a verb with nothing to send through a hook never
+// calls it. An unknown one is refused, as an unknown argument is.
+export const CALL_OPTION_NAMES = ["signal", "onEvent", "onProgress", "onPartialImage"] as const;
 
 /**
  * The single envelope for every verb:
@@ -182,7 +181,7 @@ export async function withVerbLogger<T>(
   opts: VerbCallOptions,
   body: (logger: Logger) => Promise<T>,
 ): Promise<T | RefusedResult> {
-  const known = [...CALL_OPTION_NAMES, ...(VERB_CALL_OPTIONS[verbName] ?? [])];
+  const known: readonly string[] = CALL_OPTION_NAMES;
   const unknown = Object.keys(opts ?? {}).find((key) => (opts as Record<string, unknown>)[key] !== undefined && !known.includes(key));
   if (unknown !== undefined) {
     const hint = unknown === "log" ? "the SDK writes no log; store the events onEvent receives" : `the call options are ${known.join(", ")}`;
