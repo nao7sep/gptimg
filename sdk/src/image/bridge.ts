@@ -1,6 +1,8 @@
 import type { Sharp } from "sharp";
 import sharp from "./sharp.ts";
 import { GptImgError, fsError, processingError } from "../errors.ts";
+import { writeFile, unlink } from "node:fs/promises";
+import { stagingPathFor } from "../internal/atomic-file.ts";
 import { writeOutputBytes } from "../internal/output-files.ts";
 import type { EncodingArgs, PngEncodingArgs, ResampleKernel } from "../types.ts";
 import { embedSourceMetadata, readSourceMetadata, type SourceMetadata } from "./source-metadata.ts";
@@ -13,6 +15,30 @@ import { embedSourceMetadata, readSourceMetadata, type SourceMetadata } from "./
  */
 export function decodeImage(input: string | Buffer): Sharp {
   return sharp(input).keepIccProfile();
+}
+
+/**
+ * A secondary input (compose's over-image, layer's top) decoded into the main
+ * input's colour profile, so it keeps its colours beside the main input's
+ * pixels, which stay in their own profile; without an RGB profile on the main
+ * input, into sRGB, which a main input without one is taken to be. sharp takes
+ * a target profile only as a file, so the main input's profile is staged beside
+ * the output while `use` runs, and removed after.
+ */
+export async function decodeInProfileOf<T>(input: string, main: string, besideOutput: string, use: (image: Sharp) => Promise<T>): Promise<T> {
+  const { icc } = await readSourceMetadata(main);
+  if (!icc || icc.toString("latin1", 16, 20) !== "RGB ") return use(sharp(input));
+  const iccPath = stagingPathFor(besideOutput);
+  try {
+    await writeFile(iccPath, icc, { flag: "wx" });
+  } catch (err) {
+    throw fsError(err, "Failed to stage the colour profile at", iccPath);
+  }
+  try {
+    return await use(sharp(input).withIccProfile(iccPath));
+  } finally {
+    await unlink(iccPath).catch(() => undefined);
+  }
 }
 
 export interface RawImage {

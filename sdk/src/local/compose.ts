@@ -31,7 +31,7 @@
 import { isHexColor, parseHex } from "../color.ts";
 import { GptImgError, throwIfAborted } from "../errors.ts";
 import { assertAbsolutePath } from "../internal/absolute-path.ts";
-import { loadMaskPNG, loadRawRGBA, writeRGBA } from "../image/bridge.ts";
+import { decodeInProfileOf, inputImageError, loadMaskPNG, loadRawRGBA, writeRGBA } from "../image/bridge.ts";
 import type { EncodingArgs } from "../types.ts";
 import {
   SRGB_TO_LINEAR_LUT,
@@ -76,19 +76,26 @@ export function parseOverColor(value: string): ComposeOver {
   return { kind: "image", path: value };
 }
 
+/** The over-image's pixels in the input's colour profile, so its colours hold beside the input's. */
 async function loadOverImage(
   path: string,
+  args: ComposeArgs,
   width: number,
   height: number,
 ): Promise<Uint8Array> {
-  const img = await loadRawRGBA(path);
-  if (img.width !== width || img.height !== height) {
+  let img;
+  try {
+    img = await decodeInProfileOf(path, args.in, args.out, (image) => image.ensureAlpha().raw().toBuffer({ resolveWithObject: true }));
+  } catch (err) {
+    throw inputImageError(err, "Failed to decode image at", path);
+  }
+  if (img.info.width !== width || img.info.height !== height) {
     throw new GptImgError(
       "image.sizeMismatch",
-      `over-image size ${img.width}x${img.height} does not match input ${width}x${height}.`,
+      `over-image size ${img.info.width}x${img.info.height} does not match input ${width}x${height}.`,
     );
   }
-  return img.data;
+  return new Uint8Array(img.data);
 }
 
 export interface ComposeResult {
@@ -254,7 +261,7 @@ export async function runCompose(
   const over: ComposeOver = args.over ?? { kind: "transparent" };
   let overData: Uint8Array | null = null;
   if (over.kind === "image") {
-    overData = await loadOverImage(over.path, width, height);
+    overData = await loadOverImage(over.path, args, width, height);
   }
 
   const out = new Uint8Array(n * 4);

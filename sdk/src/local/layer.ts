@@ -19,7 +19,7 @@
 
 import sharp from "../image/sharp.ts";
 import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
-import { inputImageError, readImageSize, writeImageFile } from "../image/bridge.ts";
+import { decodeImage, decodeInProfileOf, inputImageError, readImageSize, writeImageFile } from "../image/bridge.ts";
 import type { EncodingArgs, LayerGravity, LayerOffset } from "../types.ts";
 
 export const LAYER_DEFAULTS = {
@@ -97,7 +97,6 @@ export async function runLayer(
   // Resize top to scale * min(base.shorter, ...) if requested. We preserve
   // aspect ratio explicitly above the resize call, then pass fit:"fill" so
   // sharp uses the integer pixel dimensions we computed without rounding.
-  let topPipeline = sharp(args.top).ensureAlpha();
   let topWidth = topMeta.width;
   let topHeight = topMeta.height;
   if (args.scale !== undefined) {
@@ -119,12 +118,17 @@ export async function runLayer(
       topHeight = targetLonger;
       topWidth = Math.max(1, Math.round(targetLonger * aspect));
     }
-    topPipeline = topPipeline.resize(topWidth, topHeight, { fit: "fill" });
   }
 
+  // The top's pixels in the base's colour profile, raw so nothing converts them again; the base
+  // keeps its own, and the output keeps the base's metadata.
+  const resize = topWidth !== topMeta.width || topHeight !== topMeta.height;
   let topBuffer: Buffer;
   try {
-    topBuffer = await topPipeline.png().toBuffer();
+    topBuffer = await decodeInProfileOf(args.top, args.base, args.out, (image) => {
+      const top = image.ensureAlpha();
+      return (resize ? top.resize(topWidth, topHeight, { fit: "fill" }) : top).raw().toBuffer();
+    });
   } catch (err) {
     throw inputImageError(err, "layer: failed to resize top", args.top);
   }
@@ -184,9 +188,9 @@ export async function runLayer(
   let placed = topBuffer;
   if (srcX > 0 || srcY > 0 || visW < topWidth || visH < topHeight) {
     try {
-      placed = await sharp(topBuffer)
+      placed = await sharp(topBuffer, { raw: { width: topWidth, height: topHeight, channels: 4 } })
         .extract({ left: srcX, top: srcY, width: visW, height: visH })
-        .png()
+        .raw()
         .toBuffer();
     } catch (err) {
       throw processingError(err, "layer: failed to clip top", args.top, "none");
@@ -194,10 +198,11 @@ export async function runLayer(
     throwIfAborted(signal);
   }
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "layer", args, () =>
-    sharp(args.base)
+  const placedSize = placed === topBuffer ? { width: topWidth, height: topHeight } : { width: visW, height: visH };
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.base }, "layer", args, () =>
+    decodeImage(args.base)
       .ensureAlpha()
-      .composite([{ input: placed, left: dstX, top: dstY }]),
+      .composite([{ input: placed, raw: { ...placedSize, channels: 4 }, left: dstX, top: dstY }]),
   );
 
   return {

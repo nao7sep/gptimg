@@ -86,6 +86,48 @@ describe("a portrait phone photo through the local verbs", () => {
   });
 });
 
+describe("a secondary input in another profile", () => {
+  // An sRGB picture with no profile beside the P3 photo: it must keep its colours, so its pixels
+  // are converted into the photo's profile, which the output carries.
+  const RED = { r: 200, g: 40, b: 30 };
+  let srgb: string;
+  let expectedInP3: Buffer;
+
+  beforeAll(async () => {
+    srgb = path.join(tmp, "srgb-red.png");
+    await sharp({ create: { width: 96, height: 64, channels: 3, background: RED } }).png().toFile(srgb);
+    expectedInP3 = (await sharp(srgb).withIccProfile("p3").raw().toBuffer()).subarray(0, 3);
+  });
+
+  async function expectRedKept(output: string, x: number, y: number): Promise<void> {
+    const meta = await sharp(output).metadata();
+    expect(meta.icc?.equals(source.icc!), "the photo's profile").toBe(true);
+    expect(meta.orientation, "the photo's orientation").toBe(6);
+    const at = (y * meta.width! + x) * meta.channels!;
+    const stored = await sharp(output).keepIccProfile().raw().toBuffer();
+    const seen = await sharp(output).toColourspace("srgb").raw().toBuffer();
+    for (let c = 0; c < 3; c++) {
+      expect(Math.abs(stored[at + c]! - expectedInP3[c]!), `stored channel ${c}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(seen[at + c]! - [RED.r, RED.g, RED.b][c]!), `shown channel ${c}`).toBeLessThanOrEqual(3);
+    }
+  }
+
+  it("compose converts its over-image into the input's profile", async () => {
+    const clear = path.join(tmp, "clear-mask.png");
+    await sharp({ create: { width: 96, height: 64, channels: 3, background: "#000000" } }).png().toFile(clear);
+    const out = done(await img.compose({ in: portrait, mask: clear, over: srgb, outName: "over-srgb" }));
+    await expectRedKept(out.output, 10, 10);
+  });
+
+  it("layer converts its top into the base's profile and keeps the base's metadata", async () => {
+    const top = path.join(tmp, "srgb-top.png");
+    await sharp({ create: { width: 16, height: 16, channels: 3, background: RED } }).png().toFile(top);
+    const out = done(await img.layer({ base: portrait, top, outName: "layered", gravity: "center" }));
+    await expectRedKept(out.output, 48, 32);
+    expect(readExifTags((await sharp(out.output).metadata()).exif!).ifd0.get(0x010f)).toBe("Phone");
+  });
+});
+
 /** A little-endian TIFF block: IFD0 with Make, then IFD1 pointing at a JPEG thumbnail. */
 function tiffWithPreview(preview: Buffer): Buffer {
   const ifd0 = 8;
