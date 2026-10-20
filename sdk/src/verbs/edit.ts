@@ -23,6 +23,7 @@ import type { VerbCallOptions } from "./options.ts";
 import { publishProviderImages } from "./image-outputs.ts";
 import { validateEditArgs } from "./schemas.ts";
 import { defaultStem } from "../internal/paths.ts";
+import { responseIdOf, usageOf } from "../usage.ts";
 
 export type EditContext = SdkContext;
 
@@ -131,6 +132,8 @@ export async function editImpl(
       failures,
       leftovers,
       response,
+      usage: usageOf(response),
+      responseId: responseIdOf(response),
     };
   });
 }

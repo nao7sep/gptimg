@@ -23,8 +23,9 @@ import type { RefusedResult } from "../refusal.ts";
 import { nullBase64InResponse } from "../sidecar/nullBase64.ts";
 import { writeSidecar } from "../sidecar/write.ts";
 import { sidecarWriter } from "../sidecar/writer.ts";
-import type { ChatArgs, ChatRequestRecord, ChatResult, ChatSidecar, ChatTurn } from "../types.ts";
-import { publishProviderImages } from "./image-outputs.ts";
+import type { ChatArgs, ChatRequestRecord, ChatResult, ChatSidecar, ChatTurn, FilePublication } from "../types.ts";
+import { failedPublication, publishProviderImages } from "./image-outputs.ts";
+import { usageOf } from "../usage.ts";
 import type { VerbCallOptions } from "./options.ts";
 import { validateChatArgs } from "./schemas.ts";
 
@@ -268,6 +269,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
 
     // With no image published, the turn's paid answer is kept beside nothing: `<stem>.json`.
     let recordPath: string | null = null;
+    let recordPublication: FilePublication | null = null;
     if (published.files.length === 0) {
       const record = maskDiagnosticCopy({
         formatVersion: 2,
@@ -281,7 +283,9 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
       try {
         await writeSidecar(target, record, { overwrite });
         recordPath = target;
+        recordPublication = { status: "published" };
       } catch (err) {
+        recordPublication = failedPublication(err);
         logger.emit("warn", "write", { event: "sidecar.unpublished", index: null, path: target, error: (err as Error).message });
       }
     }
@@ -298,10 +302,12 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
       failures: published.failures,
       leftovers: published.leftovers,
       recordPath,
+      recordPublication,
       responseId: result.responseId,
       resumed: result.resumed,
       incomplete: result.incomplete,
       response: published.response,
+      usage: usageOf(published.response),
     };
   });
 }

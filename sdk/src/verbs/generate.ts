@@ -20,6 +20,7 @@ import type { VerbCallOptions } from "./options.ts";
 import { publishProviderImages } from "./image-outputs.ts";
 import { validateGenerateArgs } from "./schemas.ts";
 import { defaultStem } from "../internal/paths.ts";
+import { responseIdOf, usageOf } from "../usage.ts";
 
 export type GenerateContext = SdkContext;
 
@@ -121,6 +122,8 @@ export async function generateImpl(
       failures,
       leftovers,
       response,
+      usage: usageOf(response),
+      responseId: responseIdOf(response),
     };
   });
 }

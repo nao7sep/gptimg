@@ -1,7 +1,7 @@
 // SDK failures as the app's own words (error-handling-conventions): an error's
 // code or a refusal's code picks catalogue text; the SDK's English message is
 // never shown. A refusal's provider reason goes beneath, as the provider's.
-import type { ErrorCode, ErrorKind, GptImgErrorData, Refusal, RefusalCode } from "gptimgsdk/types";
+import { isGptImgErrorData, type ErrorCode, type ErrorKind, type GptImgErrorData, type Refusal, type RefusalCode } from "gptimgsdk/types";
 import type { AppFailure } from "./api.ts";
 import { message, type MessageKey } from "./i18n/translator.ts";
 
@@ -61,6 +61,15 @@ const REFUSAL_TEXT: Partial<Record<RefusalCode, MessageKey>> = {
 
 /** Retrying cannot help a rejected input; it can help the network or a busy provider. */
 const RETRYABLE_KINDS: ReadonlySet<ErrorKind> = new Set(["unavailable", "internal"]);
+
+/**
+ * A failure received from the SDK's process as the SDK's error data, checked
+ * with the SDK's own guard; anything else is reported as its internal failure.
+ */
+export function errorDataOf(value: unknown): GptImgErrorData {
+  if (isGptImgErrorData(value)) return value;
+  return { name: "GptImgError", code: "internal.unexpected", kind: "internal", effect: "unknown", message: "The SDK's process reported a failure in an unknown shape." };
+}
 
 export function failureFromError(error: GptImgErrorData): AppFailure {
   if (error.code === "refused" && error.details?.refusal) return failureFromRefusal(error.details.refusal);

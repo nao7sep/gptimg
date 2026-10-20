@@ -12,7 +12,7 @@ export interface ProviderImageResult {
    * mapping to file indices is preserved. `code` marks an item the
    * provider's moderation blocked, as against one that went missing.
    */
-  images: Array<{ data: Uint8Array | null; error?: string; code?: "provider.moderationBlocked" }>;
+  images: Array<{ data: Uint8Array | null; error?: string; code?: "provider.moderationBlocked"; safeReason?: string | null }>;
 }
 
 export interface ProviderVisionResult {

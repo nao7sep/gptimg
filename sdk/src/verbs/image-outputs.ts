@@ -64,7 +64,8 @@ function itemFailure(index: number, err: unknown): ItemFailure {
   return { index, code: "internal.unexpected", effect: "unknown", message: (err as Error)?.message ?? String(err) };
 }
 
-function failedPublication(err: unknown): FilePublication {
+/** A record or file that could not be published, as its result reports it. */
+export function failedPublication(err: unknown): FilePublication {
   const f = itemFailure(0, err);
   return { status: "failed", code: f.code as Exclude<ItemFailure["code"], "provider.noImage">, effect: f.effect, message: f.message };
 }
@@ -110,7 +111,13 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
       limit(async (): Promise<{ data: Uint8Array | null } & DetectedImage> => {
         const index = i + 1;
         if (!item.data) {
-          failures.push({ index, code: item.code ?? "provider.noImage", effect: "unknown", message: item.error ?? `The provider returned no image for item ${index}.` });
+          failures.push({
+            index,
+            code: item.code ?? "provider.noImage",
+            effect: "unknown",
+            message: item.error ?? `The provider returned no image for item ${index}.`,
+            ...(item.safeReason !== undefined && { safeReason: item.safeReason }),
+          });
           logger.emit("warn", "write", { event: "image.missing", index, error: item.error ?? null });
           return { data: null, format: null };
         }

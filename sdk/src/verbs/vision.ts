@@ -30,6 +30,7 @@ import type {
 import type { VerbCallOptions } from "./options.ts";
 import { validateVisionArgs } from "./schemas.ts";
 import { defaultStem } from "../internal/paths.ts";
+import { responseIdOf, usageOf } from "../usage.ts";
 
 import { VISION_DEFAULTS } from "./defaults.ts";
 
@@ -208,6 +209,8 @@ export async function visionImpl(
       reasons: providerResult.verdict.reasons,
       // The record's copy, credentials masked, as generate's response is.
       raw: record.response.raw,
+      usage: usageOf(record.response.raw),
+      responseId: responseIdOf(record.response.raw),
       sidecarPath,
       sidecar,
       record,

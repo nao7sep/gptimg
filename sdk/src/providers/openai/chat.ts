@@ -279,6 +279,8 @@ function readResponse(
           data: null,
           code: "provider.moderationBlocked" as const,
           error: `The provider's moderation blocked image tool call ${item.id ?? ""}${categories ? ` (${categories}${stage})` : ""}.`,
+          // The provider's own words, from its documented field only, made safe to present.
+          safeReason: typeof item.error.message === "string" ? safeReasonText(item.error.message, ctx.credentials) : null,
         };
       }
       return { data: null, error: `The image tool call ${item.id ?? ""} ended ${item.status ?? "without a status"}${item.error?.message ? `: ${item.error.message}` : ""}.` };

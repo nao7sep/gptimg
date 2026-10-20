@@ -54,6 +54,7 @@ const completed = (outDir: string, responseId: string, file = "img.png"): CallSe
     resumed: null,
     incomplete: null,
     response: { id: responseId, usage: { input_tokens: 12, output_tokens: 34 } },
+    usage: { input: 12, output: 34 },
   },
 });
 
@@ -93,7 +94,7 @@ describe("a turn", () => {
   it("keeps the message and reports a refusal with the provider's reason, never retryable", async () => {
     const t = setup(() => ({
       kind: "result",
-      result: { status: "refused", refusal: { code: "provider.moderationBlocked", message: "SDK English", safeReason: "Not allowed." }, response: { id: "resp_x" } },
+      result: { status: "refused", refusal: { code: "provider.moderationBlocked", message: "SDK English", safeReason: "Not allowed." }, response: { id: "resp_x" }, usage: null, responseId: "resp_x" },
     }));
     const outcome = await t.runner.send(request(null, "something"));
     expect(outcome.ok).toBe(false);

@@ -460,6 +460,8 @@ export interface ItemFailure {
   /** `unknown`: the paid request had taken effect, and a write may have begun. */
   effect: ErrorEffect;
   message: string;
+  /** The provider's documented reason, safe to present beneath the consumer's own copy, when it declined the item. */
+  safeReason?: string | null;
 }
 
 export interface GenerateArgs {
@@ -471,6 +473,20 @@ export interface GenerateArgs {
   /** Policy for this call, merged over the instance's (last wins). */
   policy?: Policy;
   overwrite?: boolean;
+}
+
+/**
+ * The tokens a paid call spent, read from the provider's response: the model's
+ * input and output, and in a chat turn the image tool's own. A field the
+ * response did not report is absent; the whole is null when it reported no usage.
+ */
+export interface Usage {
+  input: number;
+  output: number;
+  /** The image tool's input tokens in a chat turn. */
+  imageInput?: number;
+  /** The image tool's output tokens in a chat turn. */
+  imageOutput?: number;
 }
 
 export interface GenerateResult {
@@ -487,6 +503,10 @@ export interface GenerateResult {
    * call, also when no image was published, so what the call spent is never lost.
    */
   response: Record<string, unknown>;
+  /** The tokens the call spent, from `response`. */
+  usage: Usage | null;
+  /** The provider's id for the response; null for the images endpoint, which gives none. */
+  responseId: string | null;
 }
 
 export interface EditArgs extends Omit<GenerateArgs, "outDir"> {
@@ -519,7 +539,12 @@ export interface VisionVerdict {
 
 export interface VisionResult extends VisionVerdict {
   status: "completed";
+  /** The provider's response as recorded (credentials masked). */
   raw: unknown;
+  /** The tokens the call spent. */
+  usage: Usage | null;
+  /** The provider's id for the response. */
+  responseId: string | null;
   sidecarPath: string;
   sidecar: FilePublication;
   /** The record the sidecar holds, also here so a caller keeps it when the sidecar could not be written. */
@@ -572,6 +597,11 @@ export interface MaskArgs extends PngEncodingArgs {
   policy?: Policy;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -601,6 +631,11 @@ export interface ComposeArgs extends EncodingArgs {
   removeBleed?: string;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -634,6 +669,11 @@ export interface TrimArgs extends EncodingArgs {
   square?: boolean;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -674,6 +714,11 @@ export interface BackplateArgs extends EncodingArgs {
   /** Required unless outName is an absolute output stem. */
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -723,6 +768,11 @@ export interface LayerArgs extends EncodingArgs {
   topOffset?: LayerOffset;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -770,6 +820,11 @@ export interface ShadowArgs extends EncodingArgs {
   keepCanvas?: boolean;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -815,6 +870,11 @@ export interface UpscaleArgs extends EncodingArgs {
   policy?: Policy;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -849,6 +909,11 @@ export interface ResizeArgs extends EncodingArgs {
   kernel?: ResampleKernel;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -924,6 +989,11 @@ export interface EncodeArgs extends EncodingArgs {
   format: EncodeFormat;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -985,6 +1055,11 @@ export interface CombineArgs extends PngEncodingArgs {
   radius?: number;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -1012,6 +1087,11 @@ export interface DespeckleArgs extends EncodingArgs {
   keep?: DespeckleKeep;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -1077,6 +1157,11 @@ export interface KeycheckArgs extends EncodingArgs {
   heatmap?: boolean;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -1206,6 +1291,11 @@ export interface GridArgs extends EncodingArgs {
   background?: string;
   outDir?: string;
   outName?: string;
+  /**
+   * The exact output file (absolute), instead of `outDir` and `outName`; its extension
+   * must be the format's. With `overwrite` it replaces a file there whole.
+   */
+  out?: string;
   overwrite?: boolean;
 }
 
@@ -1382,8 +1472,14 @@ export interface ChatResult {
   /** Every image the turn produced that yielded no published file. */
   failures: ItemFailure[];
   leftovers: string[];
-  /** The turn's record when it produced no image (`<stem>.json`); null when its images carry it. */
+  /** The turn's record when it produced no image (`<stem>.json`); null when its images carry it or it could not be written. */
   recordPath: string | null;
+  /**
+   * Whether that record was written, when the turn produced no image; null when
+   * its images carry it, each file saying so in its own `sidecar`. The record
+   * stays in `response` either way.
+   */
+  recordPublication: FilePublication | null;
   /** Pass as the next turn's `previousResponseId`. */
   responseId: string;
   /** "chain": OpenAI's copy carried the conversation; "resent": it was gone and the history was resent; null: no previous response was given. */
@@ -1392,6 +1488,8 @@ export interface ChatResult {
   incomplete: string | null;
   /** The provider's response as recorded (image data removed, credentials masked), with its token `usage`. */
   response: Record<string, unknown>;
+  /** The tokens the turn spent, the image tool's included. */
+  usage: Usage | null;
 }
 
 export interface InspectArgs {

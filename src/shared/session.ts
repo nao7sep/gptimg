@@ -1,5 +1,6 @@
 // A session as it is kept in its folder's session.json, and the pure rules
 // around it: naming, titles, the history a turn sends, token totals.
+import type { Usage } from "gptimgsdk/types";
 
 export const SESSION_FORMAT = 1;
 export const SESSION_FILE = "session.json";
@@ -25,12 +26,8 @@ export function backgroundOf(options: TurnOptions): Background {
 }
 
 /** A turn's tokens: the assistant model's, and the image tool's apart, since the two are billed at different rates. */
-export interface TokenUsage {
-  input: number;
-  output: number;
-  imageInput?: number;
-  imageOutput?: number;
-}
+/** A turn's tokens, as the SDK reports them on its result. */
+export type TokenUsage = Usage;
 
 export interface UserTurn {
   id: string;
@@ -186,26 +183,6 @@ export function summarize(id: string, doc: SessionDoc): SessionSummary {
   }
   const last = doc.turns[doc.turns.length - 1];
   return { id, title: doc.title, createdAt: doc.createdAt, updatedAt: last?.at ?? doc.createdAt, cover, imageCount };
-}
-
-function tokens(record: unknown, field: string): number | undefined {
-  const value = record && typeof record === "object" ? (record as Record<string, unknown>)[field] : undefined;
-  return typeof value === "number" ? value : undefined;
-}
-
-/** Reads a Responses API answer's tokens: `usage` for the assistant, `tool_usage.image_gen` for the image tool. */
-export function usageOf(response: Record<string, unknown>): TokenUsage | null {
-  const usage = response.usage;
-  if (!usage || typeof usage !== "object") return null;
-  const image = (response.tool_usage as Record<string, unknown> | undefined)?.image_gen;
-  const imageInput = tokens(image, "input_tokens");
-  const imageOutput = tokens(image, "output_tokens");
-  return {
-    input: tokens(usage, "input_tokens") ?? 0,
-    output: tokens(usage, "output_tokens") ?? 0,
-    ...(imageInput !== undefined && { imageInput }),
-    ...(imageOutput !== undefined && { imageOutput }),
-  };
 }
 
 function isString(value: unknown): value is string {

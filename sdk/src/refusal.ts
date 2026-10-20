@@ -1,4 +1,5 @@
 import { GptImgError } from "./errors.ts";
+import type { Usage } from "./types.ts";
 
 /**
  * Refusals (sdk-conventions, *A refusal is a result*). When the SDK, or a
@@ -86,6 +87,10 @@ export interface RefusedResult {
    * masked; absent when the call was refused before or without one.
    */
   response?: Record<string, unknown>;
+  /** The tokens that paid answer spent, when there was one. */
+  usage?: Usage | null;
+  /** The provider's id for that answer, when there was one and it has an id. */
+  responseId?: string | null;
 }
 
 /**

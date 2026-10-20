@@ -25,7 +25,7 @@ describe("the SDK worker", () => {
   });
 
   function runner() {
-    return new ExportRunner({ host, records, app: { name: "GptImg", version: "test" }, stagingRoot: mkdtempSync(join(tmpdir(), "gptimg-worker-")), progress() {} });
+    return new ExportRunner({ host, records, app: { name: "GptImg", version: "test" }, progress() {} });
   }
 
   it("inspects and exports an image", async () => {

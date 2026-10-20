@@ -110,6 +110,16 @@ describe("blocked images", () => {
     expect(result.files).toHaveLength(1);
     expect(result.failures.map((f) => f.code)).toEqual(["provider.moderationBlocked", "provider.moderationBlocked"]);
     expect(result.failures[0]!.message).toContain("(sexual, judged on the output)");
+    expect(result.failures[0]!.safeReason).toBe("Your request was rejected by the safety system.");
+    expect(result.recordPublication).toBeNull();
+    expect(result.usage).toMatchObject({ input: expect.any(Number), output: expect.any(Number) });
+  });
+
+  it("says whether a turn's record was written when it produced no image", async () => {
+    openai.reply({ kind: "success", images: 0 });
+    const saved = done(await img.chat({ message: "just words", outDir: tmp, outName: "words" }));
+    expect(saved.recordPublication).toEqual({ status: "published" });
+    expect(saved.recordPath).toBe(path.join(tmp, "words.json"));
   });
 });
 

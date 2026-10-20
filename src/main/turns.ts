@@ -4,9 +4,9 @@
 // session at a time.
 import { randomUUID } from "node:crypto";
 import { relative, sep } from "node:path";
-import type { ChatResult, GptImgErrorData, RefusedResult } from "gptimgsdk/types";
+import type { ChatResult, RefusedResult } from "gptimgsdk/types";
 import type { AppFailure, OpenedSession, SendRequest, TurnOutcome } from "../shared/api.ts";
-import { failureFromError, failureFromRefusal, lostWorkerFailure } from "../shared/failures.ts";
+import { errorDataOf, failureFromError, failureFromRefusal, lostWorkerFailure } from "../shared/failures.ts";
 import { message } from "../shared/i18n/translator.ts";
 import {
   backgroundOf,
@@ -15,7 +15,6 @@ import {
   historyBefore,
   previousResponseBefore,
   titleFrom,
-  usageOf,
   type AssistantTurn,
   type SessionDoc,
   type UserTurn,
@@ -216,7 +215,7 @@ export class TurnRunner {
       return plain(lostWorkerFailure(), opened(doc));
     }
     if (settlement.kind === "error") {
-      const error = settlement.error as unknown as GptImgErrorData;
+      const error = errorDataOf(settlement.error);
       const status = error.code === "cancelled" ? "cancelled" : "failed";
       this.deps.records.turn({ chatId: chat.id, sessionFolder: id, turnId: turn.id, model, status, responseId: null, inputTokens: null, outputTokens: null, body: error });
       this.deps.records.log(status === "cancelled" ? "info" : "warn", status === "cancelled" ? "turn.cancelled" : "turn.failed", { chatId: chat.id, turnId: turn.id, code: error.code });
@@ -224,7 +223,7 @@ export class TurnRunner {
     }
     const result = settlement.result as unknown as ChatResult | RefusedResult;
     if (result.status === "refused") {
-      const usage = result.response ? usageOf(result.response) : null;
+      const usage = result.usage ?? null;
       this.deps.records.log("warn", "turn.failed", { chatId: chat.id, turnId: turn.id, refusal: result.refusal.code });
       this.deps.records.turn({
         chatId: chat.id,
@@ -232,7 +231,7 @@ export class TurnRunner {
         turnId: turn.id,
         model,
         status: "refused",
-        responseId: typeof result.response?.id === "string" ? result.response.id : null,
+        responseId: result.responseId ?? null,
         inputTokens: usage?.input ?? null,
         outputTokens: usage?.output ?? null,
         body: { refusal: result.refusal, response: result.response ?? null },
@@ -240,7 +239,7 @@ export class TurnRunner {
       return plain(failureFromRefusal(result.refusal), opened(doc));
     }
 
-    const usage = usageOf(result.response);
+    const usage = result.usage;
     const reply: AssistantTurn = {
       id: randomUUID(),
       role: "assistant",

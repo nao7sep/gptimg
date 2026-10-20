@@ -98,12 +98,23 @@ export function exportName(sourcePath: string, prefs: ExportPrefs, size: { width
   return `${stem}${sized}.${extensionOf(prefs.format)}`;
 }
 
-/** The SDK verb and its arguments that make the export into `outDir/outName`. */
+/**
+ * The file an export writes for the path the user chose: that path, or, when
+ * its extension is not the format's (a name typed past the dialog's filter),
+ * the path with the format's extension added, which the user did not agree to
+ * replace.
+ */
+export function exportTarget(chosen: string, format: ExportFormat): { path: string; replace: boolean } {
+  const given = /\.([^.\\/]+)$/.exec(chosen)?.[1]?.toLowerCase();
+  const accepted = format === "jpeg" ? ["jpg", "jpeg"] : [extensionOf(format)];
+  return given !== undefined && accepted.includes(given) ? { path: chosen, replace: true } : { path: `${chosen}.${extensionOf(format)}`, replace: false };
+}
+
+/** The SDK verb and its arguments that write the export at `target`, replacing a file there when `replace`. */
 export function exportCall(
   request: ExportRequest,
   info: ImageInfo,
-  outDir: string,
-  outName: string,
+  target: { path: string; replace: boolean },
 ): { op: "encode" | "resize" | "upscale"; args: Record<string, unknown> } {
   const fill = fillFor(request, info.transparent);
   const lossy = request.format === "jpeg" || (request.format === "webp" && !request.lossless);
@@ -113,10 +124,10 @@ export function exportCall(
     ...(request.format === "webp" && request.lossless && { lossless: true }),
     ...(fill && { background: fill }),
   };
-  const common = { in: request.path, outDir, outName, ...encoding };
+  const common = { in: request.path, out: target.path, overwrite: target.replace, ...encoding };
   if (request.size.kind === "original") return { op: "encode", args: common };
-  const target = outputSize(info.width, info.height, request.size);
-  const toSize = Math.max(target.width, target.height);
+  const size = outputSize(info.width, info.height, request.size);
+  const toSize = Math.max(size.width, size.height);
   if (request.size.kind === "upscale") return { op: "upscale", args: { ...common, toSize } };
   return { op: "resize", args: { ...common, toSize } };
 }

@@ -1,6 +1,6 @@
 // What each SDK operation runs, shared by the utility process and by tests
 // that run the SDK in their own process.
-import { GptImg } from "gptimgsdk";
+import { GptImg, GptImgError } from "gptimgsdk";
 import type { PartialDraft, SdkOp } from "./sdk-protocol.ts";
 
 export type OpOptions = {
@@ -34,9 +34,7 @@ export function sdkCache(app: { name: string; version: string }) {
 
 /** A thrown failure as plain data: a GptImgError's own form, anything else as internal.unexpected. */
 export function errorData(error: unknown): Record<string, unknown> {
-  if (error && typeof error === "object" && "toJSON" in error && (error as { name?: string }).name === "GptImgError") {
-    return (error as { toJSON(): Record<string, unknown> }).toJSON();
-  }
+  if (error instanceof GptImgError) return error.toJSON() as unknown as Record<string, unknown>;
   return {
     name: "GptImgError",
     code: "internal.unexpected",

@@ -124,7 +124,6 @@ async function start(): Promise<void> {
       host,
       records,
       app: { name: "GptImg", version: __APP_VERSION__ },
-      stagingRoot: paths.staging,
       progress: (progress) => state.window?.webContents.send("progress", progress),
     }),
     recordsWindow: new RecordsWindow({

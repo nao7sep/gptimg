@@ -10,11 +10,13 @@
 import path from "node:path";
 import { readdirSync } from "node:fs";
 import { GptImgError, fsError } from "../errors.ts";
+import { assertAbsolutePath } from "./absolute-path.ts";
 import { createLogger, type Logger } from "../events/index.ts";
 import type { SdkContext } from "../context.ts";
 import { VERSION } from "../version.ts";
 import { failedResponseFields } from "../network/retry.ts";
 import { RefusalSignal, refuse, type RefusedResult } from "../refusal.ts";
+import { responseIdOf, usageOf } from "../usage.ts";
 import type { VerbCallOptions } from "../verbs/options.ts";
 import { ensureOutputDir } from "./output-files.ts";
 import { refuseCaseOnlyRename } from "./output-group.ts";
@@ -85,13 +87,18 @@ export function assertSingleFileAvailable(
  * absolute stem overrides outDir entirely.
  */
 export async function resolveOutputPath(
-  args: { outDir?: string | undefined; outName?: string | undefined },
+  args: { outDir?: string | undefined; outName?: string | undefined; out?: string | undefined },
   defaults: {
     inputForDir?: string | undefined;
     stem: string;
     ext: string;
   },
 ): Promise<string> {
+  if (args.out !== undefined) {
+    const output = exactOutputPath(args, defaults.ext);
+    await ensureOutputDir(path.dirname(output));
+    return output;
+  }
   const stem = args.outName ?? defaults.stem;
   assertOutputStem(stem);
   const fileName = imageFileName(stem, 1, 1, defaults.ext);
@@ -105,6 +112,30 @@ export async function resolveOutputPath(
   const output = path.isAbsolute(fileName) ? fileName : path.join(outDir!, fileName);
   await ensureOutputDir(path.dirname(output));
   return output;
+}
+
+/**
+ * The exact output file a caller named with `out`: absolute, not combined with
+ * the folder-and-stem form, and carrying the extension of the format the verb
+ * writes (either spelling of JPEG's), so a file is never named as another format.
+ */
+function exactOutputPath(args: { outDir?: string | undefined; outName?: string | undefined; out?: string | undefined }, ext: string): string {
+  const out = args.out!;
+  assertAbsolutePath(out, "out");
+  if (args.outDir !== undefined || args.outName !== undefined) {
+    throw new GptImgError("args.invalid", "out names the exact output file; leave out outDir and outName.", {
+      details: { field: "out", constraint: "not with outDir or outName" },
+    });
+  }
+  const given = path.extname(out).slice(1).toLowerCase();
+  const accepted = ext === "jpg" || ext === "jpeg" ? ["jpg", "jpeg"] : [ext];
+  if (!accepted.includes(given)) {
+    throw new GptImgError("args.invalid", `out must end in .${ext} for the format written; got ${JSON.stringify(path.basename(out))}.`, {
+      subject: out,
+      details: { field: "out", constraint: `.${accepted.join(" or .")} extension` },
+    });
+  }
+  return out;
 }
 
 /**
@@ -217,7 +248,11 @@ export async function withVerbLogger<T>(
       return {
         status: "refused",
         refusal: thrown.refusal,
-        ...(thrown.response !== undefined && { response: thrown.response }),
+        ...(thrown.response !== undefined && {
+          response: thrown.response,
+          usage: usageOf(thrown.response),
+          responseId: responseIdOf(thrown.response),
+        }),
       };
     }
     const err = toSdkError(verbName, thrown);

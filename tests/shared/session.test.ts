@@ -8,7 +8,6 @@ import {
   previousResponseBefore,
   sessionTotals,
   titleFrom,
-  usageOf,
   type Turn,
 } from "../../src/shared/session.ts";
 
@@ -82,14 +81,3 @@ describe("session.json validation", () => {
   });
 });
 
-describe("token usage", () => {
-  it("keeps the image tool's tokens apart from the assistant's", () => {
-    const response = {
-      usage: { input_tokens: 1766, output_tokens: 105 },
-      tool_usage: { image_gen: { input_tokens: 78, output_tokens: 196 }, web_search: { num_requests: 0 } },
-    };
-    expect(usageOf(response)).toEqual({ input: 1766, output: 105, imageInput: 78, imageOutput: 196 });
-    expect(usageOf({ usage: { input_tokens: 5, output_tokens: 6 } })).toEqual({ input: 5, output: 6 });
-    expect(usageOf({})).toBeNull();
-  });
-});

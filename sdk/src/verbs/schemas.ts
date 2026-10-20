@@ -130,14 +130,20 @@ const OUTPUT_FIELDS = {
   overwrite: z.boolean().optional(),
 };
 
+// A verb that writes one file also takes its exact path; `out` is checked where it is resolved.
+const FILE_OUTPUT_FIELDS = {
+  ...OUTPUT_FIELDS,
+  out: requiredPath("out").optional(),
+};
+
 // A per-call policy; its sections are checked by `validatePolicy` where the call merges it.
 const policyField = z.record(z.string(), z.unknown()).optional();
 const modelsDirField = requiredPath("modelsDir").optional();
 
 // The verbs with no input folder to default to need a destination: a folder, or an absolute stem.
 const DESTINATION_REQUIRED = {
-  check: (args: { outDir?: string | undefined; outName?: string | undefined }) =>
-    args.outDir !== undefined || (args.outName !== undefined && path.isAbsolute(args.outName)),
+  check: (args: { outDir?: string | undefined; outName?: string | undefined; out?: string | undefined }) =>
+    args.out !== undefined || args.outDir !== undefined || (args.outName !== undefined && path.isAbsolute(args.outName)),
   message: { path: ["outDir"], message: "choose an output directory, or use an absolute outName" },
 };
 
@@ -178,7 +184,7 @@ const MaskArgsSchema = z.object({
   borderSample: positiveInt("must be a positive integer").optional(),
   saturationRatio: z.number().refine((v) => v > 0 && v <= 1, "must be in (0..1]").optional(),
   preserveInterior: z.boolean().optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
   modelsDir: modelsDirField,
   policy: policyField,
 });
@@ -188,7 +194,7 @@ const ComposeArgsSchema = z.object({
   in: requiredPath("in"),
   mask: requiredPath("mask"),
   removeBleed: hexColor("removeBleed").optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
   // "transparent" | #hex | <path>, resolved against the filesystem at runtime.
   over: z.string().min(1).optional(),
 });
@@ -201,7 +207,7 @@ const CombineArgsSchema = z.object({
     .number()
     .refine((v) => v >= 0, "must be >= 0")
     .optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
 });
 
 const TrimArgsSchema = z.object({
@@ -209,7 +215,7 @@ const TrimArgsSchema = z.object({
   in: requiredPath("in"),
   margin: z.number().refine((v) => v >= 0 && v <= 1, "must be in [0..1]").optional(),
   square: z.boolean().optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
 });
 
 const DespeckleArgsSchema = z.object({
@@ -225,7 +231,7 @@ const DespeckleArgsSchema = z.object({
     .optional(),
   connectivity: z.number().refine((v) => v === 4 || v === 8, "must be 4 or 8").optional(),
   keep: oneOf(DESPECKLE_KEEP, "keep").optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
 });
 
 const KeycheckArgsSchema = z.object({
@@ -251,7 +257,7 @@ const KeycheckArgsSchema = z.object({
     .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
     .optional(),
   heatmap: z.boolean().optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
 });
 
 const FramecheckArgsSchema = z.object({
@@ -279,7 +285,7 @@ const GridArgsSchema = z.object({
     .number()
     .refine((v) => Number.isInteger(v) && v >= 0, "must be a non-negative integer")
     .optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
   background: z
     .string()
     .refine((v) => v === "transparent" || HEX_RE.test(v), "must be 'transparent' or a #rrggbb hex color")
@@ -288,7 +294,7 @@ const GridArgsSchema = z.object({
 
 const BackplateArgsSchema = z.object({
   ...ENCODING_FIELDS,
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
   from: hexColor("from"),
   to: hexColor("to"),
   size: positiveInt("must be a positive integer").optional(),
@@ -308,7 +314,7 @@ const LayerArgsSchema = z.object({
     .object({ x: z.number(), y: z.number() })
     .refine((o) => Number.isInteger(o.x) && Number.isInteger(o.y), "topOffset must be integers")
     .optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
 });
 
 const ShadowArgsSchema = z.object({
@@ -335,7 +341,7 @@ const ShadowArgsSchema = z.object({
     )
     .optional(),
   keepCanvas: z.boolean().optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
 });
 
 const UpscaleArgsSchema = z.object({
@@ -356,7 +362,7 @@ const UpscaleArgsSchema = z.object({
       `must be an integer >= ${SWIN2SR_MIN_TILE}`,
     )
     .optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
   modelsDir: modelsDirField,
   policy: policyField,
 });
@@ -371,14 +377,14 @@ const ResizeArgsSchema = z.object({
       "must be an integer >= 1",
     ),
   kernel: oneOf(RESAMPLE_KERNELS, "kernel").optional(),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
 });
 
 const EncodeArgsSchema = z.object({
   in: requiredPath("in"),
   ...ENCODING_FIELDS,
   format: oneOf(ENCODE_FORMATS, "format"),
-  ...OUTPUT_FIELDS,
+  ...FILE_OUTPUT_FIELDS,
 });
 
 const ChatTurnSchema = z.strictObject({

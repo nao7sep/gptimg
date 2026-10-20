@@ -143,6 +143,7 @@ export type {
   TrimResult,
   UpscaleArgs,
   UpscaleResult,
+  Usage,
   VerifyArgs,
   VerifyFinding,
   VerifyFindingCode,
