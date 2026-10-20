@@ -183,6 +183,15 @@ describe("runIcon", () => {
     expect(await readFile(existing, "utf8")).toBe("keep");
   });
 
+  it("with overwrite replaces the whole set from staged files and leaves none of them behind", async () => {
+    const outDir = path.join(tmp, "again");
+    await mkdir(outDir);
+    for (const name of ["app.icns", "app.ico", "app.png"]) await writeFile(path.join(outDir, name), "old");
+    await runIcon({ in: master, outDir, name: "app", overwrite: true });
+    expect((await readdir(outDir)).sort()).toEqual(["app.icns", "app.ico", "app.png"]);
+    for (const name of ["app.icns", "app.ico", "app.png"]) expect(await readFile(path.join(outDir, name), "utf8")).not.toBe("old");
+  });
+
   it("stops publishing when cancelled part-way and leaves no file of the set behind", async () => {
     const outDir = path.join(tmp, "cancelled");
     await mkdir(outDir);

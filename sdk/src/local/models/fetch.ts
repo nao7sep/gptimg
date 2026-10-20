@@ -34,6 +34,7 @@
 
 import { createReadStream, createWriteStream, statSync } from "node:fs";
 import { mkdir, open, readdir, rename, unlink } from "node:fs/promises";
+import { syncDirectory } from "../../internal/atomic-file.ts";
 import { hostname } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -148,15 +149,6 @@ async function makeFolder(dirPath: string): Promise<void> {
   }
 }
 
-async function syncDirectory(dirPath: string): Promise<void> {
-  if (process.platform === "win32") return;
-  const handle = await open(dirPath, "r");
-  try {
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 10;

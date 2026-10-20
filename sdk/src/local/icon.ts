@@ -15,12 +15,12 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
-import sharp from "../image/sharp.ts";
 import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
-import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
-import { encodeImage, inputImageError, readImageSize } from "../image/bridge.ts";
-import { readCaptureMetadata, type CaptureMetadata } from "../image/capture.ts";
-import { writeOutputBytes } from "../internal/output-files.ts";
+import { fsError, GptImgError, processingError, throwIfAborted } from "../errors.ts";
+import { decodeImage, encodeImage, inputImageError, readImageSize } from "../image/bridge.ts";
+import { readSourceMetadata, type SourceMetadata } from "../image/source-metadata.ts";
+import { publishStaged, stageFile, syncDirectory } from "../internal/atomic-file.ts";
+import { refuse } from "../refusal.ts";
 import type { Logger } from "../events/index.ts";
 import type { PngEncodingArgs } from "../types.ts";
 
@@ -150,10 +150,10 @@ export async function runIcon(
   // Decode the master once; every entry is a downscale of these bytes. Cache
   // per size so overlapping icns/ico/png-set sizes render only once.
   let master: Buffer;
-  let capture: CaptureMetadata;
+  let source: SourceMetadata;
   try {
-    master = await sharp(args.in).ensureAlpha().png().toBuffer();
-    capture = await readCaptureMetadata(args.in);
+    master = await decodeImage(args.in).ensureAlpha().png().toBuffer();
+    source = await readSourceMetadata(args.in);
   } catch (err) {
     throw inputImageError(err, "icon: failed to decode", args.in);
   }
@@ -163,10 +163,10 @@ export async function runIcon(
     let p = cache.get(size);
     if (!p) {
       p = encodeImage(
-        sharp(master).resize(size, size, { fit: "fill", kernel: "lanczos3" }),
+        decodeImage(master).resize(size, size, { fit: "fill", kernel: "lanczos3" }),
         args,
         "icon",
-        capture,
+        source,
       );
       cache.set(size, p);
     }
@@ -201,22 +201,43 @@ export async function runIcon(
     throw processingError(err, "icon: failed to build icons from", args.in, "none");
   }
 
-  // Publish the set together: each file appears whole, and a failure or a
-  // cancellation part-way removes the files this call created, never a file
-  // that existed before it (an overwrite has already replaced those).
+  // Publish the set together: every file is staged beside its target first, so
+  // a failure to write any leaves the folder as it was; then each is renamed
+  // in. A failure or a cancellation while renaming removes the files this call
+  // created, never a file that existed before it (an overwrite has already
+  // replaced those), so old and new sizes mix only if a rename itself fails.
   const overwrite = args.overwrite ?? false;
+  const staged: Array<{ path: string; temp: string }> = [];
+  try {
+    for (const file of files) {
+      throwIfAborted(signal);
+      staged.push({ path: file.path, temp: await stageFile(file.path, file.bytes) });
+    }
+  } catch (err) {
+    for (const { temp } of staged) await unlink(temp).catch(() => undefined);
+    throw processingError(err, "icon: failed to stage icons from", args.in, "none");
+  }
   const created: string[] = [];
   let replaced = false;
   try {
-    for (const [i, file] of files.entries()) {
+    for (const [i, file] of staged.entries()) {
       throwIfAborted(signal);
       const existed = existsSync(file.path);
-      await writeOutputBytes(file.path, file.bytes, overwrite);
+      try {
+        await publishStaged(file.temp, file.path, { overwrite });
+      } catch (err) {
+        if (!overwrite && (err as NodeJS.ErrnoException).code === "EEXIST") {
+          refuse("output.exists", `Output exists: ${file.path}. Set overwrite: true to allow.`, { subject: file.path });
+        }
+        throw fsError(err, "icon: failed to publish", file.path, "unknown");
+      }
       if (existed) replaced = true;
       else created.push(file.path);
-      opts.logger?.progress("write", i + 1, files.length, "renditions");
+      opts.logger?.progress("write", i + 1, staged.length, "renditions");
     }
+    for (const dir of new Set(staged.map((file) => path.dirname(file.path)))) await syncDirectory(dir);
   } catch (err) {
+    for (const { temp } of staged) await unlink(temp).catch(() => undefined);
     for (const filePath of created) await unlink(filePath).catch(() => undefined);
     const failure = processingError(err, "icon: failed to publish icons from", args.in);
     // With the created files removed, only replaced files are left changed.

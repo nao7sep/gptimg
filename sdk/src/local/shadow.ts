@@ -14,7 +14,7 @@
 import sharp from "../image/sharp.ts";
 import { normalizeHex, parseHex } from "../color.ts";
 import { processingError, throwIfAborted } from "../errors.ts";
-import { inputImageError, loadRawRGBA, writeImageFile } from "../image/bridge.ts";
+import { decodeImage, inputImageError, loadRawRGBA, writeImageFile } from "../image/bridge.ts";
 import type { EncodingArgs, ShadowOffset } from "../types.ts";
 
 export const SHADOW_DEFAULTS = {
@@ -170,7 +170,7 @@ export async function runShadow(
   let subjectPng: Buffer;
   try {
     shadowPng = await shadowPipe.png().toBuffer();
-    subjectPng = await sharp(args.in).ensureAlpha().png().toBuffer();
+    subjectPng = await decodeImage(args.in).ensureAlpha().png().toBuffer();
   } catch (err) {
     throw inputImageError(err, "shadow: failed to render layers from", args.in);
   }
@@ -209,8 +209,8 @@ export async function runShadow(
   throwIfAborted(signal);
 
   const finalPipe = keepCanvas
-    ? sharp(composed).extract({ left: subjX, top: subjY, width: w, height: h })
-    : sharp(composed);
+    ? decodeImage(composed).extract({ left: subjX, top: subjY, width: w, height: h })
+    : decodeImage(composed);
   await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "shadow", args, () => finalPipe);
 
   return {

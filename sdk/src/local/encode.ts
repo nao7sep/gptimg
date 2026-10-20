@@ -10,7 +10,7 @@
 import { stat } from "node:fs/promises";
 import sharp from "../image/sharp.ts";
 import { throwIfAborted } from "../errors.ts";
-import { readImageSize, writeImageFile } from "../image/bridge.ts";
+import { decodeImage, readImageSize, writeImageFile } from "../image/bridge.ts";
 import type { EncodeFormat, EncodingArgs } from "../types.ts";
 
 export interface EncodeRunArgs extends EncodingArgs {
@@ -43,7 +43,7 @@ export async function runEncode(
   throwIfAborted(signal);
 
   const lossless = args.format === "png" || (args.lossless ?? false);
-  await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "encode", args, () => sharp(args.in));
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "encode", args, () => decodeImage(args.in));
 
   const [source, written, meta] = await Promise.all([stat(args.in), stat(args.out), sharp(args.out).metadata()]);
   return {

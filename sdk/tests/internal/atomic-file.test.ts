@@ -106,7 +106,7 @@ describe("writeFileAtomic", () => {
     expect(await readdir(tmp)).toEqual(["claimed.txt"]);
   });
 
-  it("falls back to exclusive copy when the filesystem rejects hard links", async () => {
+  it("renames the staged file in once the name is free when the filesystem has no hard links, never copying", async () => {
     const temp = path.join(tmp, "fallback.tmp");
     const target = path.join(tmp, "fallback.txt");
     await writeFile(temp, "winner", "utf-8");
@@ -116,8 +116,9 @@ describe("writeFileAtomic", () => {
       });
     });
 
-    await publishFileNoClobber(temp, target, unsupportedLink);
+    await expect(publishFileNoClobber(temp, target, unsupportedLink)).resolves.toEqual({ tempRemains: false });
     expect(await readFile(target, "utf-8")).toBe("winner");
+    expect(await readdir(tmp)).toEqual(["fallback.txt"]);
 
     await writeFile(temp, "loser", "utf-8");
     await expect(publishFileNoClobber(temp, target, unsupportedLink)).rejects.toMatchObject({ code: "EEXIST" });

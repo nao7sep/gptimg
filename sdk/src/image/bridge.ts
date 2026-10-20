@@ -3,7 +3,17 @@ import sharp from "./sharp.ts";
 import { GptImgError, fsError, processingError } from "../errors.ts";
 import { writeOutputBytes } from "../internal/output-files.ts";
 import type { EncodingArgs, PngEncodingArgs, ResampleKernel } from "../types.ts";
-import { readCaptureMetadata, withCaptureMetadata, type CaptureMetadata } from "./capture.ts";
+import { embedSourceMetadata, readSourceMetadata, type SourceMetadata } from "./source-metadata.ts";
+
+/**
+ * An input image whose pixels a derived output keeps: decoded as stored, in its
+ * own orientation and colour profile, not rotated or converted to sRGB, so the
+ * source's metadata the output keeps stays true (see `source-metadata.ts`).
+ * A profile sharp cannot keep (CMYK) is still converted to sRGB.
+ */
+export function decodeImage(input: string | Buffer): Sharp {
+  return sharp(input).keepIccProfile();
+}
 
 export interface RawImage {
   data: Uint8Array;
@@ -49,7 +59,7 @@ export function inputImageError(err: unknown, what: string, subject: string): Er
 
 /**
  * Where a local op publishes its image, whether it may replace a file there,
- * and the one source image it is derived from, whose capture facts it keeps.
+ * and the one source image it is derived from, whose metadata it keeps.
  */
 export interface ImageTarget {
   path: string;
@@ -75,14 +85,15 @@ async function publishImage(target: ImageTarget, bytes: Buffer, failure: string)
  * lossless options, because sharp's `palette`, `quality` and `effort` quantize. With
  * `background` transparency is filled with the caller's colour. With `opaque`, or for JPEG without
  * `background`, the pixels are checked first and a translucent one is refused as
- * `image.notOpaque`, never flattened onto a colour the SDK would invent. `failure` prefixes that refusal's message. `capture` is written into the encoded
- * image last, so it survives the opaque check's re-read.
+ * `image.notOpaque`, never flattened onto a colour the SDK would invent. `failure` prefixes that refusal's message. `source` is the
+ * metadata of the input the image derives from, written into the encoded file in place of
+ * whatever the encoder put there.
  */
 export async function encodeImage(
   pipeline: Sharp,
   encoding: EncodingArgs,
   failure: string,
-  capture?: CaptureMetadata,
+  source?: SourceMetadata,
 ): Promise<Buffer> {
   let image = pipeline;
   if (encoding.background !== undefined) {
@@ -93,7 +104,7 @@ export async function encodeImage(
     // called `ensureAlpha` keeps its alpha channel through a later `removeAlpha`. A PNG rather than
     // raw pixels keeps the source's density, so an opaque file's bytes stay what they were.
     const rendered = await pipeline.clone().ensureAlpha().png().toBuffer();
-    const data = await sharp(rendered).raw().toBuffer();
+    const data = await decodeImage(rendered).raw().toBuffer();
     let translucent = 0;
     for (let i = 3; i < data.length; i += 4) {
       if (data[i]! < 255) translucent += 1;
@@ -106,7 +117,7 @@ export async function encodeImage(
           : `${failure}: ${translucent} pixel(s) are not fully opaque; an opaque encoding would turn them solid.`,
       );
     }
-    image = sharp(rendered).removeAlpha();
+    image = decodeImage(rendered).removeAlpha();
   }
   if (encoding.format === "jpeg") {
     image.jpeg({ ...(encoding.quality !== undefined && { quality: encoding.quality }) });
@@ -122,12 +133,12 @@ export async function encodeImage(
       ...(encoding.adaptiveFiltering !== undefined && { adaptiveFiltering: encoding.adaptiveFiltering }),
     });
   }
-  if (capture) withCaptureMetadata(image, capture);
-  return image.toBuffer();
+  const bytes = await image.toBuffer();
+  return source ? embedSourceMetadata(bytes, source) : bytes;
 }
 
 /**
- * Builds the sharp pipeline, encodes it with the capture facts of `target.source` (see
+ * Builds the sharp pipeline, encodes it with the metadata of `target.source` (see
  * `encodeImage`) and publishes it at `target` (see `publishImage`). Anything that fails while
  * building or encoding names its cause, with `failure` as its message prefix; a refusal
  * the encoding itself raises keeps its code.
@@ -140,8 +151,8 @@ async function encodeAndPublish(
 ): Promise<void> {
   let bytes: Buffer;
   try {
-    const capture = target.source === undefined ? undefined : await readCaptureMetadata(target.source);
-    bytes = await encodeImage(build(), encoding, failure, capture);
+    const source = target.source === undefined ? undefined : await readSourceMetadata(target.source);
+    bytes = await encodeImage(build(), encoding, failure, source);
   } catch (err) {
     // Encoding happens before any write, so nothing has taken effect yet.
     throw processingError(err, failure, target.path, "none");
@@ -165,7 +176,7 @@ export async function writeImageFile(
 export async function loadRawRGBA(path: string): Promise<RawImage> {
   let out;
   try {
-    out = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    out = await decodeImage(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   } catch (err) {
     throw inputImageError(err, "Failed to decode image at", path);
   }

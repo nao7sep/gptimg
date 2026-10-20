@@ -7,9 +7,8 @@
  * for `upscale` when enlarging small content and you want the learned ×4.
  */
 
-import sharp from "../image/sharp.ts";
 import { throwIfAborted } from "../errors.ts";
-import { readImageSize, writeImageFile } from "../image/bridge.ts";
+import { decodeImage, readImageSize, writeImageFile } from "../image/bridge.ts";
 import { fitLongerSide } from "../image/aspect.ts";
 import type { EncodingArgs, ResampleKernel } from "../types.ts";
 
@@ -51,7 +50,7 @@ export async function runResize(
   const { w, h } = fitLongerSide(meta.width, meta.height, args.toSize);
 
   await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "resize", args, () =>
-    sharp(args.in)
+    decodeImage(args.in)
       .ensureAlpha()
       .resize(w, h, { fit: "fill", kernel }),
   );

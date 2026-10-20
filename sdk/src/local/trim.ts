@@ -8,9 +8,8 @@
  * stamp/icon the same *visual* breathing room regardless of raw subject size.
  */
 
-import sharp from "../image/sharp.ts";
 import { GptImgError, throwIfAborted } from "../errors.ts";
-import { loadRawRGBA, writeImageFile } from "../image/bridge.ts";
+import { decodeImage, loadRawRGBA, writeImageFile } from "../image/bridge.ts";
 import type { AlphaBBox, EncodingArgs } from "../types.ts";
 
 export const TRIM_DEFAULTS = {
@@ -107,7 +106,7 @@ export async function runTrim(
   const finalH = bbox.height + padTop + padBottom;
 
   await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "trim", args, () => {
-    const pipeline = sharp(args.in).extract({
+    const pipeline = decodeImage(args.in).extract({
       left: bbox.x,
       top: bbox.y,
       width: bbox.width,
