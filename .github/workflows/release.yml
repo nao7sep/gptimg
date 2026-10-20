@@ -1,13 +1,17 @@
 name: Release
 
-# GptImg is the GUI app that carries GptImgSdk (sdk/). Until the
-# app exists there is no artifact to build: a tag runs the test gate on every
-# supported OS and checks that the tag matches the version. The SDK is never
-# packed or published on its own; it is consumed from source and released
-# inside the app (sdk-conventions, Packaging).
+# Per the app-release-conventions: test → package → attach to a DRAFT release.
+# GptImg carries GptImgSdk (sdk/), which is never packed or published on its
+# own: it is consumed from source and released inside the app (sdk-conventions,
+# Packaging). CI stays minimal; the packaging lives in electron-builder.yml and
+# the `dist` script. Nothing is published automatically: a draft is created for
+# the pushed tag, verified, then published by hand (gh release edit --draft=false).
 #
-#   - push a tag `v*` -> test on Ubuntu and Windows, then verify the tag.
-#   - manual dispatch -> test only, a smoke check.
+# macOS (Apple Silicon) and Windows (x64) both run the whole suite and package.
+# The paid lane (npm run test:live) stays out of CI: it is a local gate.
+#
+#   - push a tag `v*` -> test and package on both, attach the builds to one draft release.
+#   - manual dispatch -> test and package only (no release), a smoke check.
 
 on:
   push:
@@ -19,11 +23,12 @@ permissions:
   contents: read
 
 jobs:
+  # Gate: a failing test suite means no release is built.
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -33,18 +38,68 @@ jobs:
           cache: npm
       - run: npm install --global npm@12.2.0
       - run: npm ci
+      - name: Verify tag matches the app version
+        if: github.ref_type == 'tag'
+        env:
+          GPTIMG_RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run check:release-tag -- "$GPTIMG_RELEASE_TAG"
+        shell: bash
       - run: npm test
 
-  tag:
+  build:
     needs: test
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false # a Windows failure never cancels the macOS build
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
-      - name: Verify tag matches the app version
+          cache: npm
+      - run: npm install --global npm@12.2.0
+      - run: npm ci
+
+      # electron-vite build, then electron-builder with --publish never: it builds, uploads nothing.
+      # CSC_IDENTITY_AUTO_DISCOVERY=false only blocks real-certificate discovery; the ad-hoc
+      # seal comes from the mac `identity: "-"` in electron-builder.yml.
+      - name: Package
+        run: npm run dist
         env:
-          GPTIMG_RELEASE_TAG: ${{ github.ref_name }}
-        run: npm run check:release-tag -- "$GPTIMG_RELEASE_TAG"
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # A manual run keeps the builds as workflow artifacts, to try before any release.
+      - name: Keep the builds
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          name: gptimg-${{ runner.os }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.zip
+
+      # Only the real artifacts, never electron-builder's auto-update byproducts (latest*.yml, *.blockmap).
+      - name: Attach to draft release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          body: |
+            **GptImg ${{ github.ref_name }}** for Apple Silicon Macs and 64-bit Windows
+
+            These builds are unsigned, so the OS warns on first launch:
+            - **macOS**: right-click the app → **Open** (or `xattr -dr com.apple.quarantine GptImg.app`)
+            - **Windows**: SmartScreen → **More info** → **Run anyway**
+          files: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.zip

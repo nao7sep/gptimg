@@ -26,6 +26,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck:app && electron-vite build",
+    "dist": "npm run build && electron-builder --publish never",
     "typecheck": "tsc -p tsconfig.node.json --noEmit --composite false && tsc -p tsconfig.web.json --noEmit --composite false && tsc -p tsconfig.test.json --noEmit --composite false",
     "typecheck:app": "tsc -p tsconfig.node.json --noEmit --composite false && tsc -p tsconfig.web.json --noEmit --composite false",
     "test": "npm run typecheck && npm run typecheck -w gptimgsdk && vitest run",
