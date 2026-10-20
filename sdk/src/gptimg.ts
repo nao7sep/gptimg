@@ -182,6 +182,13 @@ export class GptImg {
     return inspectImpl(this.#ctx, args, opts);
   }
 
+  /**
+   * One turn of a conversation, for an app that holds conversations: the
+   * caller keeps the conversation and passes it with each turn, and the SDK
+   * sends that turn and publishes its images with their records, keeping
+   * nothing between turns. A script that makes or changes images uses
+   * `generate` and `edit`.
+   */
   chat(args: ChatArgs, opts?: VerbCallOptions): Promise<ChatResult | RefusedResult> {
     return chatImpl(this.#ctx, args, opts);
   }

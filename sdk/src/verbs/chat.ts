@@ -155,8 +155,9 @@ async function loadHistory(history: readonly ChatTurn[], logger: Logger): Promis
 
 /**
  * One turn of a conversation with an assistant that answers in words and
- * generates or edits images (OpenAI's Responses API with its image tool). The
- * SDK keeps no conversation: the caller passes the earlier turns and the
+ * generates or edits images (OpenAI's Responses API with its image tool), for
+ * an app that holds conversations; scripts use generate and edit. The SDK
+ * keeps no conversation: the caller passes the earlier turns and the
  * previous turn's `responseId`; while OpenAI holds that response only the new
  * turn is sent, and when it is gone the history is resent. Each image is
  * written into `outDir` with its sidecar, image first; a turn that produced no

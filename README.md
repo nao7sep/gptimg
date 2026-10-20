@@ -69,6 +69,8 @@ The SDK reads no environment variable, configuration file or working directory: 
 
 The public types, the exported code tables, the tests and [`sdk/CHANGELOG.md`](sdk/CHANGELOG.md) are the API reference.
 
+`chat` is one turn of a conversation, for an app that holds conversations, as the GptImg app does: the caller keeps the conversation (its earlier turns, the previous turn's `responseId`, which images to attach) and passes it with each turn, and the SDK sends that one turn to OpenAI and publishes the turn's images with their records, like any other paid verb. A script that makes or changes images uses `generate` and `edit`.
+
 AI matting (`mask` with `method: "ai"`) and `upscale` run local models that are installed only on request (`img.model.install`), into `~/.gptimgsdk/models` unless a call or the constructor names another folder. They run offline once installed, but need memory: an AI mask peaks at about 11 GB, an upscale at about 3 GB with its default tile.
 
 ## Third-party models
