@@ -8,6 +8,9 @@ cd "$ROOT"
 require_command npm
 log_step "Installing dependencies"
 npm install --no-audit --no-fund
+# electron-vite reads Electron's binary location without installing it; Electron's
+# installer fetches the binary if it is missing and does nothing otherwise.
+node node_modules/electron/install.js
 log_step "Replacing a running GptImg"
 stop_running
 DEV_PORT=$(node -p "require('./package.json').config.devPort")

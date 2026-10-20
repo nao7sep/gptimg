@@ -3,7 +3,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell } from "electron";
 import type { AppFailure, BootInfo, GptImgApi, MenuCommand, Outcome, SendRequest } from "../shared/api.ts";
 import type { PartialDraft } from "./sdk-protocol.ts";
@@ -33,7 +32,7 @@ import { windowBackground } from "./window-background.ts";
 declare const __APP_VERSION__: string;
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
-const here = fileURLToPath(new URL(".", import.meta.url));
+const here = import.meta.dirname;
 
 app.setName("GptImg");
 registerImageScheme();
