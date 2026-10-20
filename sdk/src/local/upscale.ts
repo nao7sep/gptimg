@@ -12,7 +12,7 @@
  * native ×2 path, by design.
  */
 
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { fitLongerSide } from "../image/aspect.ts";
 import { loadRawRGBA, readImageSize, resizeSingleChannel, writeRGBA } from "../image/bridge.ts";

@@ -9,7 +9,7 @@
  * curved edge; no separate feather pass is needed for the v1 default look.
  */
 
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { normalizeHex } from "../color.ts";
 import { throwIfAborted } from "../errors.ts";
 import { writeImageFile } from "../image/bridge.ts";

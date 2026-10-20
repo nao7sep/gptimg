@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { defaultModelFor } from "../ai-models.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
 import { fsError, GptImgError } from "../errors.ts";

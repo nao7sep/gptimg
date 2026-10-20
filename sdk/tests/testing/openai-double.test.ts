@@ -2,6 +2,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GptImg } from "../../src/index.ts";
 import { startOpenAIDouble, type OpenAIDouble } from "../../src/testing/index.ts";
@@ -77,7 +78,7 @@ describe("the OpenAI double", () => {
 
   it("answers a vision check with the scripted verdict", async () => {
     openai.reply({ kind: "verdict", ok: false, reasons: ["two donuts"] });
-    const picture = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "fixtures", "donut.png");
+    const picture = fileURLToPath(new URL("../fixtures/donut.png", import.meta.url));
     const result = await img.vision({ inputs: [picture], check: "one donut", outDir: out });
     expect(result).toMatchObject({ status: "completed", ok: false, reasons: ["two donuts"] });
   });

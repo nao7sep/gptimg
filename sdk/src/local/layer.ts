@@ -17,7 +17,7 @@
  * two RGBA images and preserves the base's transparency outside the top.
  */
 
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { inputImageError, readImageSize, writeImageFile } from "../image/bridge.ts";
 import type { EncodingArgs, LayerGravity, LayerOffset } from "../types.ts";

@@ -8,7 +8,7 @@
  */
 
 import { stat } from "node:fs/promises";
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { throwIfAborted } from "../errors.ts";
 import { readImageSize, writeImageFile } from "../image/bridge.ts";
 import type { EncodeFormat, EncodingArgs } from "../types.ts";

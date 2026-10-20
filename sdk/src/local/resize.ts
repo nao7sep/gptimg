@@ -7,7 +7,7 @@
  * for `upscale` when enlarging small content and you want the learned ×4.
  */
 
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { throwIfAborted } from "../errors.ts";
 import { readImageSize, writeImageFile } from "../image/bridge.ts";
 import { fitLongerSide } from "../image/aspect.ts";

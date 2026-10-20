@@ -1,6 +1,7 @@
+import { statSync } from "node:fs";
 import path from "node:path";
 import { callModelsDir, callPolicy, type SdkContext } from "../context.ts";
-import { GptImgError, throwIfAborted } from "../errors.ts";
+import { fsError, GptImgError, throwIfAborted } from "../errors.ts";
 import { withVerbLogger } from "../internal/local-verb.ts";
 import { ensureModel, fileSha256, inspectCachedModel } from "../local/models/fetch.ts";
 import { MODELS, type ModelKey } from "../local/models/registry.ts";
@@ -116,6 +117,8 @@ export async function listModelsImpl(ctx: SdkContext, args: ModelListArgs = {}, 
   checkArgs("model list", args, ["modelsDir"]);
   throwIfAborted(opts.signal);
   const modelsDir = callModelsDir(ctx, args.modelsDir);
+  // A path below a file is ENOTDIR on macOS and Linux but ENOENT on Windows, which would read as nothing installed.
+  assertFolderOrMissing(modelsDir);
   const models = (Object.keys(MODELS) as ModelKey[]).map((key) => {
     const entry = MODELS[key];
     const filePath = path.join(modelsDir, entry.name);
@@ -178,4 +181,17 @@ export async function verifyModelsImpl(
     }
     return { status: "completed" as const, models };
   }));
+}
+
+function assertFolderOrMissing(dir: string): void {
+  let stats;
+  try {
+    stats = statSync(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw fsError(err, "Failed to inspect the models folder", dir);
+  }
+  if (!stats.isDirectory()) {
+    throw fsError(Object.assign(new Error("not a directory"), { code: "ENOTDIR" }), "Failed to inspect the models folder", dir);
+  }
 }

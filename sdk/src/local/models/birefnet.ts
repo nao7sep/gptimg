@@ -13,7 +13,7 @@
  */
 
 import type * as Ort from "onnxruntime-node";
-import sharp from "sharp";
+import sharp from "../../image/sharp.ts";
 import { GptImgError, throwIfAborted } from "../../errors.ts";
 import { resizeSingleChannel } from "../../image/bridge.ts";
 import type { Logger } from "../../events/index.ts";

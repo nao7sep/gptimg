@@ -1,0 +1,2 @@
+# Every checkout keeps LF line endings, so byte-exact checks (sidecar fixtures) match on Windows.
+* text=auto eol=lf

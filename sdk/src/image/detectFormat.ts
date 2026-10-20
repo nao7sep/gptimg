@@ -1,4 +1,4 @@
-import sharp from "sharp";
+import sharp from "./sharp.ts";
 import { GptImgError } from "../errors.ts";
 import { FORMAT_TO_EXT } from "./formats.ts";
 

@@ -13,7 +13,7 @@
  * annotate the sheet themselves.
  */
 
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { GptImgError, throwIfAborted } from "../errors.ts";
 import { inputImageError, writeImageFile } from "../image/bridge.ts";
 import type { Logger } from "../events/index.ts";

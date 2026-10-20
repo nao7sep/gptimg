@@ -11,7 +11,7 @@
  * shadow is never clipped; `keepCanvas` keeps the input size instead.
  */
 
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { normalizeHex, parseHex } from "../color.ts";
 import { processingError, throwIfAborted } from "../errors.ts";
 import { inputImageError, loadRawRGBA, writeImageFile } from "../image/bridge.ts";

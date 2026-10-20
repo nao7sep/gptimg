@@ -15,7 +15,7 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
 import { GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { encodeImage, inputImageError, readImageSize } from "../image/bridge.ts";

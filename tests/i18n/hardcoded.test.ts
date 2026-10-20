@@ -2,10 +2,11 @@
 // straight into JSX or into a read attribute. Reads the renderer's syntax trees.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
 import { describe, expect, it } from "vitest";
 
-const RENDERER = new URL("../../src/renderer/src/", import.meta.url).pathname;
+const RENDERER = fileURLToPath(new URL("../../src/renderer/src/", import.meta.url));
 /** Text that is not interface copy: the product name and the copyright holder. */
 const LITERALS = new Set(["GptImg"]);
 

@@ -8,7 +8,7 @@
  * stamp/icon the same *visual* breathing room regardless of raw subject size.
  */
 
-import sharp from "sharp";
+import sharp from "../image/sharp.ts";
 import { GptImgError, throwIfAborted } from "../errors.ts";
 import { loadRawRGBA, writeImageFile } from "../image/bridge.ts";
 import type { AlphaBBox, EncodingArgs } from "../types.ts";

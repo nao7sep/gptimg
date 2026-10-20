@@ -119,7 +119,8 @@ describe("output naming and slot padding", () => {
       }),
       { numRuns: 200 },
     );
-  });
+    // Pure arithmetic over runs of up to 1,500 names: several seconds on a slower runner.
+  }, 30_000);
 });
 
 // ----- output group membership -----

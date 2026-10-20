@@ -25,7 +25,7 @@
  */
 
 import type * as Ort from "onnxruntime-node";
-import sharp from "sharp";
+import sharp from "../../image/sharp.ts";
 import { GptImgError, throwIfAborted } from "../../errors.ts";
 import type { Logger } from "../../events/index.ts";
 import { requireInstalledModel } from "./fetch.ts";
