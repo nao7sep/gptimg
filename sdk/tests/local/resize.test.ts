@@ -202,8 +202,6 @@ describe("runResize", () => {
     expect(meta.channels).toBe(3);
   });
 
-  // to-size range and kernel-enum rejections now live in verbs/schemas.ts
-  // (validateResizeArgs) and are covered by tests/verbs/schemas.test.ts.
   it("reports a clean error when the input cannot be read", async () => {
     await expect(
       runResize({ in: path.join(tmp, "missing.png"), out: path.join(tmp, "o.png"), toSize: 32 }),

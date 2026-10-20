@@ -74,7 +74,7 @@ async function readMask(filePath: string, first: ChatImage): Promise<ChatImage &
  * equal to its own alpha, so what is kept is opaque white and where the image
  * may change is transparent black. Masking is prompt-based, so the model looks
  * at the mask's colours too, and a mask that was opaque black where nothing
- * should change came back with that area painted black (observed 2026-10-19).
+ * should change came back with that area painted black.
  * For the assistant, which writes the image request but is not shown the
  * tool's mask: the same shape opaque, black where the image may change, with
  * the area's bounds in words, so it can say where the change goes.

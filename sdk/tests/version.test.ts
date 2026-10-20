@@ -6,7 +6,7 @@ import * as publicApi from "../src/index.ts";
 
 // gptimg is an SDK consumed from source, so a caller cannot ask npm which build
 // it holds — the app-release-conventions therefore require an exported VERSION.
-// It is read from package.json by a JSON import (src/version.ts); these pin that
+// It is read from package.json by a JSON import; these pin that
 // it equals the manifest's version and that the package entry exports it.
 
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/;

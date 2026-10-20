@@ -123,9 +123,6 @@ describe("runShadow", () => {
     expect(alpha).toBeGreaterThan(0);
   });
 
-  // Argument-bound rejections (opacity, spread, offset, blur ranges) now live in
-  // verbs/schemas.ts and are covered by tests/verbs/schemas.test.ts. runShadow
-  // trusts the validated args it is handed.
   it("accepts blur 0 as 'no blur'", async () => {
     const src = path.join(tmp, "src.png");
     await writeCenteredSquare(src, 64, 32);

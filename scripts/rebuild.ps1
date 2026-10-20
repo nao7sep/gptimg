@@ -7,10 +7,8 @@ Invoke-Launcher "rebuild" {
   Invoke-Native npm @("install", "--no-audit", "--no-fund")
   Write-Step "Removing the previous build"
   Remove-Item -Recurse -Force out, dist -ErrorAction SilentlyContinue
-  Write-Step "Type-checking the shipped sources"
-  Invoke-Native npm @("run", "typecheck:app")
-  Write-Step "Bundling"
-  Invoke-Native npx @("electron-vite", "build")
+  Write-Step "Type-checking and bundling"
+  Invoke-Native npm @("run", "build")
   Write-Step "Assembling the app"
   Invoke-Native npx @("electron-builder", "--dir", "--win", "--x64")
   Write-Step "Launching"

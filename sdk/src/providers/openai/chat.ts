@@ -84,8 +84,8 @@ function historyItems(history: readonly ChatHistoryTurn[], withBytes: boolean): 
 /**
  * OpenAI no longer holds the response a chained request names: it expired
  * (stored responses are kept for at least 30 days) or was never stored.
- * OpenAI answers 400 with `previous_response_not_found` (observed
- * 2026-10-19); the 404 and the message are kept as fallbacks. Nothing was
+ * OpenAI answers 400 with `previous_response_not_found`; the 404 and the
+ * message are kept as fallbacks. Nothing was
  * processed, so the turn can be resent with its history.
  */
 function previousResponseGone(err: unknown): boolean {

@@ -68,10 +68,8 @@ describe("chromaMask: green disk fixture", () => {
   });
 
   it("from-sidecar does not strip non-index `-NN` suffixes (date-stamped names)", async () => {
-    // Regression: previously a regex stripped trailing -\d+, so
-    // `donut-2024-05-28.png` looked up `donut-2024-05.json`. The
-    // per-image-sidecar contract removes the regex; the sidecar must
-    // exist at the literal stem.
+    // A date in the name is not an image index: `donut-2024-05-28.png`'s
+    // sidecar is `donut-2024-05-28.json`, at the literal stem.
     const tmp = await mkdtemp(path.join(tmpdir(), "gptimg-mask-sidecar-date-"));
     try {
       const input = path.join(tmp, "donut-2024-05-28.png");
@@ -182,8 +180,6 @@ describe("chromaMask: spill formula", () => {
     expect(res.alpha[subject]).toBe(255);
   });
 
-  // The saturationRatio (0..1] bound now lives in verbs/schemas.ts
-  // (validateMaskArgs) and is covered by tests/verbs/schemas.test.ts.
   it("handles a magenta (secondary) key correctly", async () => {
     const W = 32;
     const H = 32;

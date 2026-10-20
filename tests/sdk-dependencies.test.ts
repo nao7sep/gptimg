@@ -11,6 +11,7 @@ const read = (relative: string) =>
   JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
+    engines?: Record<string, string>;
   };
 
 describe("the SDK's runtime dependencies", () => {
@@ -21,5 +22,14 @@ describe("the SDK's runtime dependencies", () => {
     const missing = Object.entries(sdk.dependencies ?? {}).filter(([name, range]) => declared[name] !== range);
     expect(missing.map(([name, range]) => `${name}@${range} (app: ${declared[name] ?? "none"})`)).toEqual([]);
     for (const native of ["sharp", "onnxruntime-node"]) expect(app.dependencies?.[native], native).toBe(sdk.dependencies?.[native]);
+  });
+
+  it("share one Node engine and the same range of every tool both packages use", () => {
+    const app = read("../package.json");
+    const sdk = read("../sdk/package.json");
+    expect(sdk.engines).toEqual(app.engines);
+    const shared = Object.entries(sdk.devDependencies ?? {}).filter(([name]) => app.devDependencies?.[name] !== undefined);
+    expect(shared.length).toBeGreaterThan(0);
+    expect(shared.filter(([name, range]) => app.devDependencies![name] !== range)).toEqual([]);
   });
 });

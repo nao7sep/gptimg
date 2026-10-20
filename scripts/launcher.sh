@@ -5,7 +5,6 @@ SCRIPT_DIR="${0:A:h}"
 ROOT="${SCRIPT_DIR:h}"
 APP="$ROOT/dist/mac-arm64/GptImg.app"
 DEV_ELECTRON="$ROOT/node_modules/electron/dist/Electron.app"
-DEV_PORT=25793
 
 log_step() { print -P "\n%F{208}==>%f %B$1%b" }
 

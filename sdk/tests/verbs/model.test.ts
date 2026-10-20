@@ -188,7 +188,7 @@ describe("model.verify integrity check", () => {
     const homeDir = path.join(tmp, "home");
     const modelsDir = path.join(homeDir, "models");
     await mkdir(modelsDir, { recursive: true });
-    // A real model is ~0.5 GB; a few wrong bytes prove the hash is recomputed and
+    // A real model is hundreds of megabytes; a few wrong bytes prove the hash is recomputed and
     // compared, not trusted from presence alone.
     await writeFile(path.join(modelsDir, MODELS[key].name), Buffer.from([1, 2, 3]));
 

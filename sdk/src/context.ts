@@ -3,6 +3,7 @@ import { assertAbsolutePath } from "./internal/absolute-path.ts";
 import { defaultModelsDir } from "./internal/resource-home.ts";
 import { validatePolicy } from "./policy/schemas.ts";
 import { mergePolicies } from "./policy/merge.ts";
+import { NO_LOG_HINT } from "./verbs/options.ts";
 import type { Credentials } from "./providers/types.ts";
 import type { GptImgOptions, Policy } from "./types.ts";
 
@@ -23,14 +24,25 @@ export interface SdkContext {
   app?: { name: string; version: string };
 }
 
-// The constructor's options, so an unknown one is refused as a verb refuses an unknown argument.
-const OPTION_NAMES = ["apiKey", "organization", "project", "baseURL", "modelsDir", "debug", "policy", "app"];
+// The constructor's options, so an unknown one is refused as a verb refuses an unknown argument;
+// typed by GptImgOptions, so the list cannot miss or invent one.
+const OPTIONS: Record<keyof GptImgOptions, true> = {
+  apiKey: true,
+  organization: true,
+  project: true,
+  baseURL: true,
+  modelsDir: true,
+  debug: true,
+  policy: true,
+  app: true,
+};
+const OPTION_NAMES: readonly string[] = Object.keys(OPTIONS);
 
 // Options earlier versions took, with where their value now goes.
 const RETIRED_OPTIONS: Record<string, string> = {
   profile: "profiles are retired; pass apiKey and the other settings here directly",
   profileDir: "there is no profile folder; pass modelsDir",
-  logDir: "the SDK writes no log; store the events onEvent receives",
+  logDir: NO_LOG_HINT,
 };
 
 function optionalString(value: unknown, field: string): string | undefined {

@@ -84,8 +84,8 @@ export function checkImageParams(section: ImageSection, params: Readonly<Record<
 }
 
 /**
- * The moderation a generate call sends: "low", the most permissive value
- * (ai-model-lineup-20261004), for a supported model; none for an id with no row.
+ * The moderation a generate call sends: "low", the most permissive value, so
+ * ordinary requests are not blocked, for a supported model; none for an id with no row.
  */
 export function resolveGenerateModeration(model: string): "low" | undefined {
   return imageRow(model) ? "low" : undefined;
@@ -106,7 +106,7 @@ export function resolveVisionReasoning(model: string, chosen: string | undefined
 
 /**
  * The moderation the chat's image tool sends: "low", as `generate` sends, for a supported image
- * model (ai-model-lineup-20261004); none for an id with no row.
+ * model; none for an id with no row.
  */
 export function resolveChatModeration(imageModel: string): "low" | undefined {
   return resolveGenerateModeration(imageModel);

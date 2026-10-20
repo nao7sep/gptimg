@@ -7,6 +7,7 @@ Invoke-Launcher "run-dev" {
   Invoke-Native npm @("install", "--no-audit", "--no-fund")
   Write-Step "Replacing a running GptImg"
   Stop-Running
+  $DevPort = [int](node -p "require('./package.json').config.devPort")
   if (Get-NetTCPConnection -LocalPort $DevPort -State Listen -ErrorAction SilentlyContinue) { throw "Port $DevPort is held by another process; GptImg's dev server needs it." }
   Write-Step "Starting the dev server"
   Invoke-Native npx @("electron-vite", "dev")

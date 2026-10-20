@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg } from "../../src/index.ts";
 
 // mask's AI method is mocked so the order-of-checks test below never loads the
-// real ~0.5 GB BiRefNet model or runs inference — it only needs to prove the
+// real BiRefNet model or runs inference — it only needs to prove the
 // producer is never called when the output already exists.
 const aiMaskFromFile = vi.fn();
 vi.mock("../../src/local/ai-mask.ts", () => ({
@@ -16,9 +16,8 @@ vi.mock("../../src/local/ai-mask.ts", () => ({
 
 /**
  * Verb-level integration tests for the shared overwrite check. The pure ops
- * (runTrim / runBackplate / runLayer) don't consult --overwrite — the verb
- * impls do, via assertSingleFileAvailable in src/internal/local-verb.ts. These
- * tests prove the helper is wired into every new local verb.
+ * (runTrim / runBackplate / runLayer) don't consult overwrite; the verbs do,
+ * before any work. These tests prove every local verb checks it.
  */
 
 async function writeRawPng(

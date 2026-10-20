@@ -69,10 +69,10 @@ export const SUPPORTED_MODELS: readonly SupportedModel[] = [
     provider: "openai", id: "gpt-image-2", kinds: ["image-generate", "image-edit"], defaultFor: [],
     image: { qualities: ["auto", "low", "medium", "high"], backgrounds: IMAGE_BACKGROUNDS, outputFormats: IMAGE_FORMATS, compression: IMAGE_COMPRESSION, size: IMAGE_SIZE },
   },
-  // Each mainline row lists image_generation among its Responses API tools (its model page, 2026-10-19), so it can lead a chat.
+  // Each mainline model takes the Responses API's image_generation tool, so it can lead a chat.
   { provider: "openai", id: "gpt-6-astra", kinds: ["vision", "chat"], defaultFor: [], thinking: ["low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
   { provider: "openai", id: "gpt-6.1-sol", kinds: ["vision", "chat"], defaultFor: [], thinking: ["low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
-  // lineup-departure: the chat role is newer than ai-model-lineup-20261004, which gave gptimg none; balanced suits an assistant that phrases image requests and follows a long conversation.
+  // The chat default: the balanced tier suits an assistant that phrases image requests and follows a long conversation.
   { provider: "openai", id: "gpt-5.6-terra", kinds: ["vision", "chat"], defaultFor: ["chat"], thinking: ["none", "low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
   { provider: "openai", id: "gpt-6-luna", kinds: ["vision", "chat"], defaultFor: ["vision"], thinking: ["none", "low", "medium", "high", "xhigh", "max"], defaultThinking: "none" },
 ];

@@ -16,6 +16,7 @@ import {
   type VisionModelRow,
 } from "../src/ai-models.ts";
 import {
+  CHAT_REQUEST_BRANCHES,
   IMAGE_REQUEST_BRANCHES,
   VISION_REQUEST_BRANCHES,
   buildImageRequest,
@@ -23,13 +24,12 @@ import {
 } from "../src/providers/openai/request.ts";
 
 const IMAGE_KINDS: readonly AiKind[] = ["image-generate", "image-edit"];
-const REMOVED_VISION_IDS = ["gpt-5.6-sol", "gpt-5.6-luna"] as const;
 
 const imageRows = SUPPORTED_MODELS.filter((row): row is ImageModelRow => "image" in row);
 const visionRows = SUPPORTED_MODELS.filter((row): row is VisionModelRow => "thinking" in row);
 
 describe("the model table", () => {
-  it("rests on the 2026-10-04 lineup", () => {
+  it("names the lineup research its rows come from", () => {
     expect(MODEL_LINEUP).toBe("ai-model-lineup-20261004");
   });
 
@@ -70,13 +70,6 @@ describe("the model table", () => {
     for (const row of visionRows) expect(row.thinking, row.id).toContain(row.defaultThinking);
   });
 
-  it("no longer lists the removed vision models", () => {
-    for (const id of REMOVED_VISION_IDS) {
-      expect(SUPPORTED_MODELS.some((row) => row.id === id), id).toBe(false);
-      expect(VISION_REQUEST_BRANCHES[id], id).toBeUndefined();
-    }
-  });
-
   it("gives every image row an image branch and every vision row a vision branch", () => {
     for (const row of SUPPORTED_MODELS) {
       if (row.kinds.some((kind) => IMAGE_KINDS.includes(kind))) {
@@ -85,12 +78,16 @@ describe("the model table", () => {
       if (row.kinds.includes("vision")) {
         expect(VISION_REQUEST_BRANCHES[row.id], `${row.id} vision branch`).toBeTypeOf("function");
       }
+      if (row.kinds.includes("chat")) {
+        expect(CHAT_REQUEST_BRANCHES[row.id], `${row.id} chat branch`).toBeTypeOf("function");
+      }
     }
   });
 
   it("has a row for every branch", () => {
     expect(Object.keys(IMAGE_REQUEST_BRANCHES).sort()).toEqual(imageRows.map((row) => row.id).sort());
     expect(Object.keys(VISION_REQUEST_BRANCHES).sort()).toEqual(visionRows.map((row) => row.id).sort());
+    expect(Object.keys(CHAT_REQUEST_BRANCHES).sort()).toEqual(SUPPORTED_MODELS.filter((row) => row.kinds.includes("chat")).map((row) => row.id).sort());
   });
 
   it("gives image rows image kinds and mainline rows the vision and chat kinds", () => {
@@ -149,8 +146,8 @@ describe("the request builder", () => {
     expect(buildVisionRequest("some-future-chat-model", { ...vision }, undefined)).toEqual(vision);
   });
 
-  it("sends an unlisted or removed vision id the plain request, plus only the caller's own effort", () => {
-    for (const id of ["some-future-chat-model", ...REMOVED_VISION_IDS]) {
+  it("sends an unlisted vision id the plain request, plus only the caller's own effort", () => {
+    for (const id of ["some-future-chat-model", "gpt-5.6-sol"]) {
       const vision = { model: id, messages: [], response_format: { type: "json_schema" } };
       expect(buildVisionRequest(id, { ...vision }, undefined), id).toEqual(vision);
       expect(buildVisionRequest(id, { ...vision }, "low"), id).toEqual({ ...vision, reasoning_effort: "low" });

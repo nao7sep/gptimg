@@ -5,7 +5,6 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $App = Join-Path $Root "dist\win-unpacked\GptImg.exe"
 $DevElectron = Join-Path $Root "node_modules\electron\dist\electron.exe"
-$DevPort = 25793
 
 # Runs a native command and stops on a non-zero exit, which PowerShell 5.1 does not do itself.
 function Invoke-Native([string]$Command, [string[]]$Arguments) {

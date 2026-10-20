@@ -13,10 +13,9 @@ export interface AtomicWriteOptions {
  * written, flushed to disk and then atomically published by rename or hard link. Same-directory
  * placement is load-bearing — both operations stay on one filesystem, so
  * staging anywhere else (a central temp dir) could degrade to a non-atomic
- * cross-volume copy for a relocated target. The discriminator is the fleet's
- * established `nanoid()` (also used for staged model downloads in
- * `local/models/fetch.ts`), which is enough to keep two concurrent writers of
- * the same target from sharing a temp file.
+ * cross-volume copy for a relocated target. The `nanoid()` discriminator is
+ * enough to keep two concurrent writers of the same target from sharing a temp
+ * file.
  */
 export function stagingPathFor(filePath: string): string {
   const dir = path.dirname(filePath);

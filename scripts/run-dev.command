@@ -10,6 +10,7 @@ log_step "Installing dependencies"
 npm install --no-audit --no-fund
 log_step "Replacing a running GptImg"
 stop_running
+DEV_PORT=$(node -p "require('./package.json').config.devPort")
 if lsof -nP -iTCP:$DEV_PORT -sTCP:LISTEN >/dev/null 2>&1; then
   print -u2 "Port $DEV_PORT is held by another process; GptImg's dev server needs it."
   lsof -nP -iTCP:$DEV_PORT -sTCP:LISTEN

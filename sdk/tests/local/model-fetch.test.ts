@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,8 +13,17 @@ import {
   modelWholeTimeoutMs,
   stagingPathFor,
 } from "../../src/local/models/fetch.ts";
-import { MODELS, type ModelEntry } from "../../src/local/models/registry.ts";
+import { BIREFNET, type ModelEntry } from "../../src/local/models/registry.ts";
 import type { Logger } from "../../src/events/index.ts";
+
+/** The pins of a body a test serves. */
+const pinned = (body: Buffer | string) => {
+  const bytes = Buffer.from(body);
+  return { byteSize: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+};
+/** A digest for an entry whose download never reaches the hash check. */
+const UNREACHED = "0".repeat(64);
+const NOT_FETCHED = { byteSize: 4, sha256: UNREACHED };
 
 function listen(handler: http.RequestListener): Promise<{
   server: http.Server;
@@ -62,8 +71,8 @@ describe("stagingPathFor", () => {
 describe("modelWholeTimeoutMs", () => {
   it("is finite and scales with artifact size and possible attempts", () => {
     const small = modelWholeTimeoutMs(1024, 0);
-    const large = modelWholeTimeoutMs(489_666_272, 0);
-    const retried = modelWholeTimeoutMs(489_666_272, 2);
+    const large = modelWholeTimeoutMs(BIREFNET.byteSize, 0);
+    const retried = modelWholeTimeoutMs(BIREFNET.byteSize, 2);
     expect(Number.isSafeInteger(small)).toBe(true);
     expect(large).toBeGreaterThan(small);
     expect(retried).toBeGreaterThan(large);
@@ -120,7 +129,7 @@ describe("ensureModel", () => {
     const stderrSpy = vi.fn(() => true);
     process.stderr.write = stderrSpy as unknown as typeof process.stderr.write;
     try {
-      const entry: ModelEntry = { name: "prog.bin", url: baseURL, inputSize: 0 };
+      const entry: ModelEntry = { name: "prog.bin", url: baseURL, inputSize: 0, ...pinned(body) };
       await ensureModel(entry, tmp, { logger });
     } finally {
       await closeServer(server);
@@ -152,7 +161,7 @@ describe("ensureModel", () => {
     await writeFile(path.join(tmp, "cached.bin"), "12345");
 
     // A cache hit still sweeps, so leftovers go even when nothing downloads.
-    const entry: ModelEntry = { name: "cached.bin", url: "https://example.invalid/m", inputSize: 0, byteSize: 5 };
+    const entry: ModelEntry = { name: "cached.bin", url: "https://example.invalid/m", inputSize: 0, byteSize: 5, sha256: UNREACHED };
     await expect(ensureModel(entry, tmp)).resolves.toBe(path.join(tmp, "cached.bin"));
     expect((await readdir(tempDir)).sort()).toEqual(
       [ours, parents, otherHostAbandoned, unrelated].sort(),
@@ -170,6 +179,7 @@ describe("ensureModel", () => {
         name: "test.bin",
         url: baseURL,
         inputSize: 0,
+        ...pinned(body),
       };
       const finalPath = await ensureModel(entry, tmp);
       expect(finalPath).toBe(path.join(tmp, "test.bin"));
@@ -188,7 +198,7 @@ describe("ensureModel", () => {
   it("reports a models folder it cannot create as a file-system failure, not an unexpected one", async () => {
     const file = path.join(tmp, "a-file");
     await writeFile(file, "x");
-    const entry: ModelEntry = { name: "test.bin", url: "https://example.com/model.bin", inputSize: 0 };
+    const entry: ModelEntry = { name: "test.bin", url: "https://example.com/model.bin", inputSize: 0, ...NOT_FETCHED };
     const err = await ensureModel(entry, path.join(file, "models")).catch((e: unknown) => e);
     expect(err).toMatchObject({ name: "GptImgError", kind: "unavailable", effect: "none", subject: path.join(file, "models") });
     expect((err as { code: string }).code).toMatch(/^fs\./);
@@ -199,6 +209,7 @@ describe("ensureModel", () => {
       name: "insecure.bin",
       url: "http://example.com/model.bin",
       inputSize: 0,
+      ...NOT_FETCHED,
     };
     await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
       code: "model.insecureUrl",
@@ -218,6 +229,7 @@ describe("ensureModel", () => {
       name: "redirected-insecure.bin",
       url: "https://example.com/model.bin",
       inputSize: 0,
+      ...NOT_FETCHED,
     };
 
     await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
@@ -247,6 +259,7 @@ describe("ensureModel", () => {
         name: "redirected-safe.bin",
         url: `${baseURL}/start`,
         inputSize: 0,
+        ...pinned(body),
       };
       const finalPath = await ensureModel(entry, tmp);
       expect(await readFile(finalPath)).toEqual(body);
@@ -268,6 +281,7 @@ describe("ensureModel", () => {
         url: baseURL,
         inputSize: 0,
         byteSize: 4,
+        sha256: UNREACHED,
       };
       await writeFile(path.join(tmp, entry.name), Buffer.from([5, 5, 5, 5]));
       const finalPath = await ensureModel(entry, tmp);
@@ -288,6 +302,7 @@ describe("ensureModel", () => {
         name: "missing.bin",
         url: baseURL,
         inputSize: 0,
+        ...NOT_FETCHED,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
         code: "model.httpStatus",
@@ -307,7 +322,7 @@ describe("ensureModel", () => {
       res.end(detail);
     });
     try {
-      const entry: ModelEntry = { name: "missing-body.bin", url: baseURL, inputSize: 0 };
+      const entry: ModelEntry = { name: "missing-body.bin", url: baseURL, inputSize: 0, ...NOT_FETCHED };
       const err = (await ensureModel(entry, tmp).then(
         () => expect.fail("the download should fail"),
         (e: unknown) => e,
@@ -332,6 +347,7 @@ describe("ensureModel", () => {
         url: baseURL,
         inputSize: 0,
         sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+        byteSize: body.length,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
         code: "model.integrity",
@@ -376,6 +392,7 @@ describe("ensureModel", () => {
         url: baseURL,
         inputSize: 0,
         byteSize: body.length + 1,
+        sha256: UNREACHED,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
         code: "model.integrity",
@@ -397,6 +414,7 @@ describe("ensureModel", () => {
         url: baseURL,
         inputSize: 0,
         byteSize: 4,
+        sha256: UNREACHED,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
         code: "model.integrity",
@@ -418,6 +436,7 @@ describe("ensureModel", () => {
         url: baseURL,
         inputSize: 0,
         byteSize: 4,
+        sha256: UNREACHED,
       };
       await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
         code: "model.integrity",
@@ -461,6 +480,7 @@ describe("ensureModel", () => {
       url: "https://example.com/model.bin",
       inputSize: 0,
       byteSize: 4,
+      sha256: UNREACHED,
     };
     await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.integrity" });
     expect(existsSync(path.join(tmp, entry.name))).toBe(false);
@@ -476,6 +496,7 @@ describe("ensureModel", () => {
       name: "bad-length.bin",
       url: "https://example.com/model.bin",
       inputSize: 0,
+      ...pinned("body"),
     };
     await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.integrity" });
     expect(existsSync(path.join(tmp, entry.name))).toBe(false);
@@ -487,6 +508,7 @@ describe("ensureModel", () => {
       name: "no-location.bin",
       url: "https://example.com/model.bin",
       inputSize: 0,
+      ...NOT_FETCHED,
     };
     await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.badRedirect" });
   });
@@ -502,6 +524,7 @@ describe("ensureModel", () => {
       name: "redirect-loop.bin",
       url: "https://example.com/model.bin",
       inputSize: 0,
+      ...NOT_FETCHED,
     };
     await expect(ensureModel(entry, tmp)).rejects.toMatchObject({
       code: "model.badRedirect",
@@ -532,6 +555,7 @@ describe("ensureModel", () => {
         url: baseURL,
         inputSize: 0,
         sha256: sha,
+        byteSize: body.length,
       };
       await expect(ensureModel(entry, tmp, { signal: ctrl.signal, logger })).rejects.toMatchObject({
         code: "cancelled",
@@ -564,6 +588,7 @@ describe("ensureModel", () => {
       url: baseURL,
       inputSize: 0,
       byteSize: replacement.length,
+      sha256: pinned(replacement).sha256,
     };
     await writeFile(path.join(tmp, entry.name), previous);
     try {
@@ -582,16 +607,19 @@ describe("ensureModel", () => {
     const { server, baseURL } = await listen((_req, res) => {
       hits += 1;
       res.writeHead(200);
-      res.end(Buffer.from(hits === 1 ? "AAAA" : "BBBB"));
+      res.end(Buffer.from("AAAA"));
     });
     try {
-      const entry: ModelEntry = { name: "force.bin", url: baseURL, inputSize: 0 };
+      const entry: ModelEntry = { name: "force.bin", url: baseURL, inputSize: 0, ...pinned("AAAA") };
       const p1 = await ensureModel(entry, tmp);
       expect((await readFile(p1)).toString()).toBe("AAAA");
-      await ensureModel(entry, tmp); // cached: no new fetch
+      // A file of the right size is a cache hit, damaged or not, until force replaces it.
+      await writeFile(p1, "ZZZZ");
+      await ensureModel(entry, tmp);
       expect(hits).toBe(1);
+      expect((await readFile(p1)).toString()).toBe("ZZZZ");
       const p2 = await ensureModel(entry, tmp, { force: true });
-      expect((await readFile(p2)).toString()).toBe("BBBB");
+      expect((await readFile(p2)).toString()).toBe("AAAA");
       expect(hits).toBe(2);
     } finally {
       await closeServer(server);
@@ -604,7 +632,7 @@ describe("ensureModel", () => {
       res.writeHead(200);
       res.end(body);
     });
-    const entry: ModelEntry = { name: "blocked.bin", url: baseURL, inputSize: 0 };
+    const entry: ModelEntry = { name: "blocked.bin", url: baseURL, inputSize: 0, ...pinned(body) };
     await mkdir(path.join(tmp, entry.name));
     try {
       // Renaming over a folder fails with the filesystem's own cause.
@@ -616,164 +644,6 @@ describe("ensureModel", () => {
       expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
     } finally {
       await closeServer(server);
-    }
-  });
-});
-
-describe("superseded model retirement", () => {
-  let tmp: string;
-
-  beforeEach(async () => {
-    tmp = await mkdtemp(path.join(tmpdir(), "gptimg-model-retire-"));
-  });
-
-  afterEach(async () => {
-    await rm(tmp, { recursive: true, force: true });
-  });
-
-  it("deletes an earlier pin once the new one is downloaded and verified, and nothing else", async () => {
-    const body = Buffer.from([3, 1, 4, 1, 5]);
-    const { server, baseURL } = await listen((_req, res) => {
-      res.writeHead(200);
-      res.end(body);
-    });
-    try {
-      await writeFile(path.join(tmp, "model-v1.onnx"), "old");
-      await writeFile(path.join(tmp, "other-model-v1.onnx"), "unrelated");
-      const events: Array<Record<string, unknown>> = [];
-      const logger: Logger = { verb: "model", emit: (_level, _stage, body) => void events.push(body as unknown as Record<string, unknown>), progress: () => {}, addCredential: () => {} };
-      const entry: ModelEntry = {
-        name: "model-v2.onnx",
-        supersedes: ["model-v1.onnx"],
-        url: baseURL,
-        inputSize: 0,
-        byteSize: body.length,
-        sha256: createHash("sha256").update(body).digest("hex"),
-      };
-      await ensureModel(entry, tmp, { logger });
-      expect((await readdir(tmp)).sort()).toEqual(["model-v2.onnx", "other-model-v1.onnx", "temp"]);
-      expect(events).toContainEqual({ event: "model.superseded.deleted", name: "model-v1.onnx", replacement: "model-v2.onnx" });
-    } finally {
-      await closeServer(server);
-    }
-  });
-
-  it("deletes an earlier pin when the current one is already cached", async () => {
-    await writeFile(path.join(tmp, "model-v1.onnx"), "old");
-    await writeFile(path.join(tmp, "model-v2.onnx"), Buffer.from([1, 2]));
-    const entry: ModelEntry = {
-      name: "model-v2.onnx",
-      supersedes: ["model-v1.onnx", "model-v0.onnx"],
-      url: "https://example.invalid/model",
-      inputSize: 0,
-      byteSize: 2,
-    };
-    await ensureModel(entry, tmp);
-    expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(false);
-    expect(existsSync(path.join(tmp, "model-v2.onnx"))).toBe(true);
-  });
-
-  it("keeps the earlier pin when the new one fails verification", async () => {
-    const { server, baseURL } = await listen((_req, res) => {
-      res.writeHead(200);
-      res.end(Buffer.from([9, 9]));
-    });
-    try {
-      await writeFile(path.join(tmp, "model-v1.onnx"), "old");
-      const entry: ModelEntry = {
-        name: "model-v2.onnx",
-        supersedes: ["model-v1.onnx"],
-        url: baseURL,
-        inputSize: 0,
-        sha256: "0".repeat(64),
-      };
-      await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code: "model.integrity" });
-      expect(await readFile(path.join(tmp, "model-v1.onnx"), "utf8")).toBe("old");
-    } finally {
-      await closeServer(server);
-    }
-  });
-
-  it("logs and keeps going when an earlier pin cannot be deleted", async () => {
-    // A directory under the old name makes unlink fail with a non-ENOENT code
-    // on every platform, standing in for Windows refusing an open file.
-    await mkdir(path.join(tmp, "model-v1.onnx"));
-    await writeFile(path.join(tmp, "model-v0.onnx"), "old");
-    await writeFile(path.join(tmp, "model-v2.onnx"), Buffer.from([1, 2]));
-    const warnings: Array<Record<string, unknown>> = [];
-    const logger: Logger = {
-      verb: "model",
-      emit: (level, _stage, body) => void (level === "warn" && warnings.push(body as unknown as Record<string, unknown>)),
-      progress: () => {},
-      addCredential: () => {},
-    };
-    const entry: ModelEntry = {
-      name: "model-v2.onnx",
-      supersedes: ["model-v1.onnx", "model-v0.onnx"],
-      url: "https://example.invalid/model",
-      inputSize: 0,
-      byteSize: 2,
-    };
-
-    await expect(ensureModel(entry, tmp, { logger })).resolves.toBe(path.join(tmp, "model-v2.onnx"));
-    expect(warnings).toEqual([expect.objectContaining({ event: "model.superseded.kept", name: "model-v1.onnx", replacement: "model-v2.onnx" })]);
-    expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(true);
-    expect(existsSync(path.join(tmp, "model-v0.onnx"))).toBe(false);
-
-    // Once the obstacle is gone, the next acquisition finishes the deletion.
-    await rm(path.join(tmp, "model-v1.onnx"), { recursive: true });
-    await writeFile(path.join(tmp, "model-v1.onnx"), "old");
-    await ensureModel(entry, tmp, { logger });
-    expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(false);
-    expect(warnings).toHaveLength(1);
-  });
-
-  it.skipIf(process.platform === "win32")("deletes an earlier pin another process holds open on POSIX, which keeps the open file readable", async () => {
-    await writeFile(path.join(tmp, "model-v1.onnx"), "old");
-    await writeFile(path.join(tmp, "model-v2.onnx"), Buffer.from([1, 2]));
-    const entry: ModelEntry = {
-      name: "model-v2.onnx",
-      supersedes: ["model-v1.onnx"],
-      url: "https://example.invalid/model",
-      inputSize: 0,
-      byteSize: 2,
-    };
-    const held = await open(path.join(tmp, "model-v1.onnx"), "r");
-    try {
-      await ensureModel(entry, tmp);
-      expect(existsSync(path.join(tmp, "model-v1.onnx"))).toBe(false);
-      expect(await held.readFile("utf8")).toBe("old");
-    } finally {
-      await held.close();
-    }
-  });
-
-  it("never deletes outside the cache root or a current pin's file", async () => {
-    const cacheDir = path.join(tmp, "models");
-    await mkdir(cacheDir);
-    await writeFile(path.join(tmp, "outside.onnx"), "keep");
-    await writeFile(path.join(cacheDir, MODELS.swin2sr.name), "keep");
-    await writeFile(path.join(cacheDir, "model-v2.onnx"), Buffer.from([1]));
-    const entry: ModelEntry = {
-      name: "model-v2.onnx",
-      supersedes: ["../outside.onnx", MODELS.swin2sr.name, "model-v2.onnx", ".."],
-      url: "https://example.invalid/model",
-      inputSize: 0,
-      byteSize: 1,
-    };
-    await ensureModel(entry, cacheDir);
-    expect(existsSync(path.join(tmp, "outside.onnx"))).toBe(true);
-    expect(existsSync(path.join(cacheDir, MODELS.swin2sr.name))).toBe(true);
-    expect(existsSync(path.join(cacheDir, "model-v2.onnx"))).toBe(true);
-  });
-
-  it("lists only plain earlier filenames in the shipped registry", () => {
-    const current = new Set(Object.values(MODELS).map((model) => model.name));
-    for (const model of Object.values(MODELS) as ModelEntry[]) {
-      for (const name of model.supersedes ?? []) {
-        expect(path.basename(name), name).toBe(name);
-        expect(current.has(name), name).toBe(false);
-      }
     }
   });
 });

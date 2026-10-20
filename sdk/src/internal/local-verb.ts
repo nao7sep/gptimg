@@ -17,7 +17,7 @@ import { VERSION } from "../version.ts";
 import { failedResponseFields } from "../network/retry.ts";
 import { RefusalSignal, refuse, type RefusedResult } from "../refusal.ts";
 import { responseIdOf, usageOf } from "../usage.ts";
-import type { VerbCallOptions } from "../verbs/options.ts";
+import { NO_LOG_HINT, type VerbCallOptions } from "../verbs/options.ts";
 import { ensureOutputDir } from "./output-files.ts";
 import { refuseCaseOnlyRename } from "./output-group.ts";
 import { containOutOfMemory } from "./out-of-memory.ts";
@@ -192,7 +192,9 @@ function serializeThrownError(
 
 // The call options, the same for every verb: a verb with nothing to send through a hook never
 // calls it. An unknown one is refused, as an unknown argument is.
-export const CALL_OPTION_NAMES = ["signal", "onEvent", "onProgress", "onPartialImage"] as const;
+// Typed by VerbCallOptions, so the list cannot miss or invent one.
+const CALL_OPTIONS: Record<keyof VerbCallOptions, true> = { signal: true, onEvent: true, onProgress: true, onPartialImage: true };
+export const CALL_OPTION_NAMES: readonly string[] = Object.keys(CALL_OPTIONS);
 
 /**
  * The single envelope for every verb:
@@ -215,7 +217,7 @@ export async function withVerbLogger<T>(
   const known: readonly string[] = CALL_OPTION_NAMES;
   const unknown = Object.keys(opts ?? {}).find((key) => (opts as Record<string, unknown>)[key] !== undefined && !known.includes(key));
   if (unknown !== undefined) {
-    const hint = unknown === "log" ? "the SDK writes no log; store the events onEvent receives" : `the call options are ${known.join(", ")}`;
+    const hint = unknown === "log" ? NO_LOG_HINT : `the call options are ${known.join(", ")}`;
     throw new GptImgError("args.invalid", `${verbName}: ${unknown} is not a call option; ${hint}.`, {
       details: { field: unknown, constraint: unknown === "log" ? "retired" : "known call option" },
     });

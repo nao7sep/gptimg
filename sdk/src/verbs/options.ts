@@ -1,5 +1,8 @@
 import type { PartialImage, ProgressUpdate, SdkEvent } from "../types.ts";
 
+/** Where a retired log option's value now goes, for the refusal that names it. */
+export const NO_LOG_HINT = "the SDK writes no log; store the events onEvent receives";
+
 export interface VerbCallOptions {
   /**
    * Stop the call at its next safe boundary with a `cancelled` error whose

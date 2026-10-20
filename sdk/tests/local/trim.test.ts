@@ -291,6 +291,4 @@ describe("runTrim", () => {
     expect(alphaAt(14, 10)).toBe(0); // first column of the 6-px right pad
   });
 
-  // The margin [0..1] bound now lives in verbs/schemas.ts (validateTrimArgs)
-  // and is covered by tests/verbs/schemas.test.ts.
 });

@@ -4,12 +4,8 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertUpscaleSourceSize, runUpscale, type RgbUpscaler } from "../../src/local/upscale.ts";
-import {
-  planTiles,
-  tileAndStitch,
-  SWIN2SR_SCALE,
-  type PaddedModelRun,
-} from "../../src/local/models/swin2sr.ts";
+import { planTiles, tileAndStitch, type PaddedModelRun } from "../../src/local/models/swin2sr.ts";
+import { SWIN2SR_SCALE } from "../../src/local/models/swin2sr-constants.ts";
 import type { Logger } from "../../src/events/index.ts";
 
 /** Minimal Logger that records the progress counts forwarded to it. */
@@ -290,9 +286,6 @@ describe("runUpscale", () => {
     expect(res.height).toBe(40); // longer side
     expect(res.width).toBe(20); // 40 * 10/20
   });
-
-  // to-size / kernel / tile argument rejections now live in verbs/schemas.ts
-  // (validateUpscaleArgs) and are covered by tests/verbs/schemas.test.ts.
 
   it("reports fs.notFound for a missing input even with valid args", async () => {
     // Valid args pass validation; the failure must come from loadRawRGBA,

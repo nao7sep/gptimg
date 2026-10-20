@@ -25,7 +25,7 @@ import type {
 
 /**
  * The `images.generate` / `images.edit` parameters a policy sets; any other field is refused
- * as `policy.invalid`, never sent. For a supported model (`src/ai-models.ts`), `quality`, `background`,
+ * as `policy.invalid`, never sent. For a supported model, `quality`, `background`,
  * `output_format`, `output_compression` and `size` are checked against its row before any paid
  * call; any other model id is sent unchecked, with nothing added.
  */
@@ -148,7 +148,7 @@ export interface Policy {
   vision?: VisionPolicy;
   chat?: ChatPolicy;
   chroma?: ChromaPolicy;
-  /** Per-category network budgets. See src/network/defaults.ts. */
+  /** Per-category network budgets; each unset field keeps its default (`NETWORK_DEFAULTS`). */
   network?: {
     imageGenerate?: NetworkBudgetPolicy;
     chat?: NetworkBudgetPolicy;
@@ -388,8 +388,6 @@ export type SdkEventBody =
   | { event: "model.download.needed"; name: string }
   | { event: "model.download.start"; name: string }
   | { event: "model.download.done"; name: string; bytes: number }
-  | { event: "model.superseded.deleted"; name: string; replacement: string }
-  | { event: "model.superseded.kept"; name: string; replacement: string; error: string }
   | { event: "model.infer.start"; model: string; settings: Record<string, unknown> }
   | { event: "model.infer.done"; model: string; stats: Record<string, unknown> }
   | { event: "model.verify.start"; key: string; name: string; sizeBytes: number | null }
@@ -1374,7 +1372,7 @@ export interface ModelListEntry {
   /** The size of the file on disk, when there is one. */
   sizeBytes?: number;
   /** The size an install downloads, for a free-space check before it starts. */
-  downloadBytes: number | null;
+  downloadBytes: number;
 }
 
 /** Result of `model.release()`: how many loaded models were freed. */
@@ -1394,9 +1392,8 @@ export interface ModelListResult {
  *   "ok"           — present and its sha256 matches the pinned value.
  *   "mismatch"     — present but the wrong hash (corrupt or swapped on disk).
  *   "missing"      — not cached.
- *   "unverifiable" — the registry entry pins no sha256 (ad-hoc entries only).
  */
-export const MODEL_INTEGRITIES = ["ok", "mismatch", "missing", "unverifiable"] as const;
+export const MODEL_INTEGRITIES = ["ok", "mismatch", "missing"] as const;
 export type ModelIntegrity = (typeof MODEL_INTEGRITIES)[number];
 
 /** One model's integrity result, from `model verify`. */
@@ -1405,9 +1402,9 @@ export interface ModelVerifyEntry {
   name: string;
   path: string;
   integrity: ModelIntegrity;
-  /** The pinned hash expected — absent only for an entry with no pinned sha256. */
-  expectedSha256?: string;
-  /** The hash computed from the cached file — absent when missing or unverifiable. */
+  /** The pinned hash expected. */
+  expectedSha256: string;
+  /** The hash computed from the cached file — absent when missing. */
   actualSha256?: string;
 }
 
@@ -1571,7 +1568,7 @@ export interface GptImgOptions {
   apiKey?: string;
   organization?: string;
   project?: string;
-  /** The OpenAI API's base URL (`https://…`); default `https://api.openai.com/v1`. A proxy or another endpoint that speaks OpenAI's API goes here. */
+  /** The OpenAI API's base URL (`https://…`); default `OPENAI_BASE_URL`, OpenAI's own. A proxy or another endpoint that speaks OpenAI's API goes here. */
   baseURL?: string;
   /** The models folder (absolute). Default `~/.gptimgsdk/models`. */
   modelsDir?: string;
@@ -1587,6 +1584,7 @@ export interface GptImgOptions {
 // `gptimgsdk/types` entry alone can map codes to its own text and fill its
 // pickers without loading sharp, ONNX Runtime or the OpenAI client.
 export { ERROR_CODES, ERROR_EFFECTS, ERROR_KINDS, isGptImgErrorData } from "./errors.ts";
+export { OPENAI_BASE_URL } from "./providers/openai/endpoint.ts";
 export type { ErrorCode, ErrorDetails, ErrorEffect, ErrorKind, GptImgErrorData, GptImgErrorOptions, SerializedCause } from "./errors.ts";
 export { REFUSAL_CODES } from "./refusal.ts";
 export type { Refusal, RefusalCode, RefusedResult } from "./refusal.ts";

@@ -246,8 +246,4 @@ describe("runBackplate", () => {
       code: "args.invalid",
     });
   });
-
-  // size/content/radius/angle range rejections now live in verbs/schemas.ts and
-  // are covered by tests/verbs/schemas.test.ts. runBackplate still normalizes
-  // and rejects a malformed hex (above), since that is its own transform.
 });

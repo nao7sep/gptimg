@@ -7,8 +7,8 @@ import { parse } from "@babel/parser";
 import { describe, expect, it } from "vitest";
 
 const RENDERER = fileURLToPath(new URL("../../src/renderer/src/", import.meta.url));
-/** Text that is not interface copy: the product name and the copyright holder. */
-const LITERALS = new Set(["GptImg"]);
+/** Text that is not interface copy: the product name, as package.json gives it. */
+const LITERALS = new Set([(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { productName: string }).productName]);
 
 function tsxFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

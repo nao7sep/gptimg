@@ -1,7 +1,8 @@
 // The main window: the session rail, the open conversation and its composer,
 // and the one modal host. App is the single writer of the window's state; the
 // panes receive what they show and report what the user did.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { PANES } from "../../shared/layout.ts";
 import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedSession, TurnOutcome } from "../../shared/api.ts";
 import type { SessionSummary, TurnOptions } from "../../shared/session.ts";
 import type { Settings } from "../../shared/settings.ts";
@@ -20,6 +21,13 @@ import { ExportModal } from "./modals/ExportModal.tsx";
 import { ViewerModal } from "./modals/ViewerModal.tsx";
 import { MaskModal } from "./modals/MaskModal.tsx";
 import { applyFonts } from "./fonts.ts";
+
+// The pane minimums main hands the OS, given to the stylesheet so the layout uses the same numbers.
+const paneSizes = {
+  "--pane-conversation-min": `${PANES.conversation.minWidth}px`,
+  "--pane-header": `${PANES.header.height}px`,
+  "--pane-transcript-min": `${PANES.transcript.minHeight}px`,
+} as CSSProperties;
 
 type ModalSpec =
   | { kind: "settings" }
@@ -310,7 +318,7 @@ export function App({ boot }: { boot: BootInfo }) {
   const paneShown = ui.imagesPane && currentId !== NEW && opened !== null;
 
   return (
-    <div className="shell">
+    <div className="shell" style={paneSizes}>
       <Rail
         sessions={sessions}
         currentId={currentId}

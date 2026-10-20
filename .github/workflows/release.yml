@@ -36,7 +36,9 @@ jobs:
         with:
           node-version: lts/*
           cache: npm
-      - run: npm install --global npm@12.2.0
+      # The npm that package.json's packageManager names, read rather than repeated.
+      - run: npm install --global "$(node -p "require('./package.json').packageManager")"
+        shell: bash
       - run: npm ci
       - name: Verify tag matches the app version
         if: github.ref_type == 'tag'
@@ -61,7 +63,9 @@ jobs:
         with:
           node-version: lts/*
           cache: npm
-      - run: npm install --global npm@12.2.0
+      # The npm that package.json's packageManager names, read rather than repeated.
+      - run: npm install --global "$(node -p "require('./package.json').packageManager")"
+        shell: bash
       - run: npm ci
 
       # electron-vite build, then electron-builder with --publish never: it builds, uploads nothing.

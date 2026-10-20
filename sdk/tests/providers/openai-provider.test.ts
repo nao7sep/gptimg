@@ -186,9 +186,7 @@ describe("OpenAI provider implementations", () => {
   });
 
   // The url branch is kept on its own merit: a response is not ours to predict, and
-  // handling one costs nothing. Note this no longer pins a model name — it used to
-  // say "dall-e-3", which does not exist any more ("400 The model 'dall-e-3' does
-  // not exist"), so the test was describing a path no real call could reach.
+  // handling one costs nothing.
   it("downloads the image when the API returns a url instead of base64", async () => {
     const { server, url } = await listen((_req, res) => {
       res.writeHead(200, { "content-type": "image/png" });
@@ -392,7 +390,7 @@ describe("OpenAI provider implementations", () => {
         network,
       }),
     ).rejects.toMatchObject({
-      // Surfaced verbatim from imageFileForEditUpload (upload.ts), not rewrapped.
+      // The upload preparation's own error, not rewrapped.
       code: "fs.notFound",
       message: /Failed to read input image .*does-not-exist\.png/,
     });
@@ -434,9 +432,8 @@ describe("OpenAI provider implementations", () => {
   });
 
   it("edit reports an upload preparation failure it cannot classify as internal.unexpected", async () => {
-    // toFile (the SDK upload step) is mocked; make it reject with a plain Error
-    // so imageFileForEditUpload throws something that is *not* a GptImgError.
-    // edit.ts must wrap that into a GptImgError("image.readFailed").
+    // The OpenAI client's toFile rejects with a plain Error, which the edit must
+    // wrap into a GptImgError.
     openaiMock.toFile.mockRejectedValueOnce(new Error("toFile blew up"));
 
     await expect(
@@ -527,9 +524,8 @@ describe("OpenAI provider implementations", () => {
     });
   });
 
-  // Every VISION_DETAILS value reaches the wire as given on every supported vision row;
-  // "original" was tested on all four (ai-model-lineup-20261004). Pinned per value and
-  // row so a model-keyed gate on detail fails here.
+  // Every VISION_DETAILS value reaches the wire as given on every supported vision row, each of
+  // which takes them all. Pinned per value and row so a model-keyed gate on detail fails here.
   it.each(["low", "high", "original", "auto"] as const)(
     "passes detail=%s through untouched on every supported vision model",
     async (detail) => {

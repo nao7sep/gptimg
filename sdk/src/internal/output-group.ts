@@ -228,9 +228,8 @@ export function refuseCaseOnlyRename(existing: string, planned: string, director
 /**
  * Group-scoped output assertion.
  *
- * - Without `allowOverwrite`: any existing group sibling blocks. This is
- *   stricter than the previous plan-scoped check by design — a stem that
- *   carries any prior-run artifact is not safe to write into without an
+ * - Without `allowOverwrite`: any existing group sibling blocks: a stem that
+ *   carries any earlier run's artifact is not safe to write into without an
  *   explicit overwrite intent.
  *
  * - With `allowOverwrite`: planned artifact slots may exist (they will be

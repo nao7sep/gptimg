@@ -37,6 +37,7 @@ import { GptImgError } from "../errors.ts";
 import { assertAbsolutePath } from "../internal/absolute-path.ts";
 import { firstZodIssue, formatZodError } from "../internal/zodError.ts";
 import { MODELS } from "../local/models/registry.ts";
+import { NO_LOG_HINT } from "./options.ts";
 import { SWIN2SR_MIN_TILE } from "../local/models/swin2sr-constants.ts";
 import type {
   BackplateArgs,
@@ -436,7 +437,7 @@ const RETIRED_ARGS: Record<string, string> = {
   recipe: "recipe files are retired; pass policy per call or per instance",
   overrides: "overrides is now policy",
   profile: "profiles are retired; pass apiKey and the other settings to the GptImg constructor",
-  log: "the SDK writes no log; store the events onEvent receives",
+  log: NO_LOG_HINT,
   dryRun: "mask no longer has dryRun",
 };
 

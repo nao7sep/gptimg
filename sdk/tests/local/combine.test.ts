@@ -101,8 +101,6 @@ describe("runCombine", () => {
     expect(existsSync(out)).toBe(false);
   });
 
-  // Op/arity rejections now live in verbs/schemas.ts (validateCombineArgs) and
-  // are covered by tests/verbs/schemas.test.ts.
   it("rejects mismatched input sizes", async () => {
     const a = path.join(tmp, "a.png");
     const b = path.join(tmp, "b.png");

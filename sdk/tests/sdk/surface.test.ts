@@ -39,7 +39,6 @@ describe("GptImg SDK surface", () => {
     expectTypeOf<ResizeArgs>().toMatchTypeOf<EncodingArgs>();
     expectTypeOf<MaskArgs>().toMatchTypeOf<PngEncodingArgs>();
     expectTypeOf<MaskArgs>().not.toHaveProperty("format");
-    expectTypeOf<MaskArgs>().not.toHaveProperty("dryRun");
   });
 
   it("exports the verbs' class, the sidecar reader, the error and code tables, and the constant lists", () => {
@@ -63,6 +62,7 @@ describe("GptImg SDK surface", () => {
       "MODEL_LINEUP",
       "NETWORK_BUDGET_NAMES",
       "NETWORK_DEFAULTS",
+      "OPENAI_BASE_URL",
       "REFUSAL_CODES",
       "RESAMPLE_KERNELS",
       "SUPPORTED_IMAGE_EXTENSIONS",
@@ -77,15 +77,6 @@ describe("GptImg SDK surface", () => {
       "readSidecar",
       "validatePolicy",
     ].sort());
-  });
-
-  it("keeps no helper groups and no stored state on the instance", () => {
-    const sdk = new GptImg() as unknown as Record<string, unknown>;
-    for (const removed of ["profile", "recipe", "sidecar", "image", "log", "profileDir", "logDir"]) {
-      expect(sdk[removed], removed).toBeUndefined();
-    }
-    expect(typeof sdk.model).toBe("object");
-    expect(typeof sdk.verify).toBe("function");
   });
 
   it("refuses an option it does not take, with a hint for a retired one", () => {

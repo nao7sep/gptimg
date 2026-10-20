@@ -5,6 +5,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "@babel/parser";
 import { describe, expect, it } from "vitest";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -17,16 +18,25 @@ function files(dir: string): string[] {
   });
 }
 
-/** Every module specifier a source imports or re-exports, static or dynamic. */
+/** Every module specifier a source imports or re-exports, static or dynamic, read from its syntax tree. */
 export function specifiers(source: string): string[] {
   const found: string[] = [];
-  const patterns = [/\b(?:import|export)\s[^"'`;]*?from\s*["']([^"']+)["']/g, /\bimport\s*["']([^"']+)["']/g, /\bimport\(\s*["']([^"']+)["']\s*\)/g];
-  for (const pattern of patterns) for (const match of source.matchAll(pattern)) found.push(match[1]!);
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node || typeof node !== "object") return;
+    const n = node as { type?: string; source?: { type?: string; value?: unknown } | null; [key: string]: unknown };
+    const linked = n.type === "ImportDeclaration" || n.type === "ExportNamedDeclaration" || n.type === "ExportAllDeclaration" || n.type === "ImportExpression";
+    if (linked && n.source?.type === "StringLiteral" && typeof n.source.value === "string") found.push(n.source.value);
+    for (const [key, value] of Object.entries(n)) if (key !== "loc" && value && typeof value === "object") visit(value);
+  };
+  visit(parse(source, { sourceType: "module", plugins: ["typescript", "jsx", "importAttributes"], createImportExpressions: true }).program);
   return found;
 }
 
-// The SDK's public entries, as its package.json exports them.
-const SDK_ENTRIES = ["gptimgsdk", "gptimgsdk/types", "gptimgsdk/testing"];
+// The SDK's public entries, read from its package.json exports.
+const SDK_ENTRIES = Object.keys(
+  (JSON.parse(readFileSync(join(ROOT, "sdk", "package.json"), "utf8")) as { exports: Record<string, string> }).exports,
+).map((entry) => (entry === "." ? "gptimgsdk" : `gptimgsdk/${entry.slice(2)}`));
 const SDK_DIR = join(ROOT, "sdk");
 
 function violations(file: string, imported: string): string | null {
@@ -55,7 +65,12 @@ function violations(file: string, imported: string): string | null {
 
 describe("import boundaries", () => {
   it("finds a planted violation", () => {
-    expect(specifiers('import { x } from "node:fs";\nconst y = await import("gptimgsdk");')).toEqual(["node:fs", "gptimgsdk"]);
+    expect(specifiers('import { x } from "node:fs";\nimport type { Y } from "gptimgsdk/types";\nexport * from "./z.ts";\nconst y = await import("gptimgsdk");')).toEqual([
+      "node:fs",
+      "gptimgsdk/types",
+      "./z.ts",
+      "gptimgsdk",
+    ]);
     expect(violations("src/renderer/src/App.tsx", "node:fs")).not.toBeNull();
     expect(violations("src/main/index.ts", "gptimgsdk")).not.toBeNull();
     expect(violations("src/main/index.ts", "./sdk-ops.ts")).not.toBeNull();

@@ -35,16 +35,11 @@ import { float32Tensor, loadSession, runSession } from "./session.ts";
 import { packNchw01, unpackChwToU8 } from "./swin2sr-tensor.ts";
 import {
   SWIN2SR_DEFAULT_TILE,
-  SWIN2SR_MIN_TILE,
   SWIN2SR_OVERLAP as OVERLAP,
   SWIN2SR_SCALE,
   SWIN2SR_WINDOW as WINDOW,
 } from "./swin2sr-constants.ts";
 
-// Re-exported so callers that historically import these from the model module
-// (e.g. the upscale verb) keep working; the definitions live, dependency-free,
-// in swin2sr-constants.ts.
-export { SWIN2SR_DEFAULT_TILE, SWIN2SR_MIN_TILE, SWIN2SR_SCALE };
 
 const ceilTo = (n: number, m: number): number => Math.ceil(n / m) * m;
 

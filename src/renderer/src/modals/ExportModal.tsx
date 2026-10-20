@@ -10,6 +10,7 @@ import {
   fillFor,
   LONG_SIDE,
   outputSize,
+  QUALITY_RANGE,
   UPSCALE_FACTORS,
   validLongSide,
   type ExportPrefs,
@@ -179,8 +180,8 @@ export function ExportModal({ path, prefs: initial, onClose, onExported }: Expor
           <span className="field-label">{t("export.quality", { value: prefs.quality })}</span>
           <input
             type="range"
-            min={1}
-            max={100}
+            min={QUALITY_RANGE.min}
+            max={QUALITY_RANGE.max}
             value={prefs.quality}
             disabled={task !== null}
             onChange={(e) => set({ quality: Number(e.target.value) })}

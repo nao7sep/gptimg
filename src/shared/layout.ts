@@ -1,6 +1,6 @@
 // The main window's pane minimums, and the window minimum derived from them
-// (window-conventions): the renderer lays panes out with these numbers and
-// main hands their sum to the OS, so the two cannot disagree.
+// (window-conventions): the renderer hands them to the stylesheet as CSS
+// variables and main hands their sum to the OS, so the two cannot disagree.
 import { RAIL_WIDTH } from "./ui-state.ts";
 
 export const PANES = {

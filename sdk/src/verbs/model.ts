@@ -62,7 +62,7 @@ function checkArgs<T extends object>(operation: string, args: T, known: readonly
   const given = args as Record<string, unknown>;
   const unknown = Object.keys(given).find((key) => given[key] !== undefined && !known.includes(key));
   if (unknown !== undefined) {
-    const callOption = (CALL_OPTION_NAMES as readonly string[]).includes(unknown);
+    const callOption = CALL_OPTION_NAMES.includes(unknown);
     const hint = callOption ? `${unknown} is a call option and goes in the second argument` : `it takes ${known.join(", ")}`;
     throw new GptImgError("args.invalid", `${operation}: ${unknown} is not accepted; ${hint}.`, {
       details: { field: unknown, constraint: callOption ? "call option" : "known argument" },
@@ -145,7 +145,7 @@ export async function listModelsImpl(ctx: SdkContext, args: ModelListArgs = {}, 
         path: filePath,
         cached: cache.usable,
         sizeBytes: cache.sizeBytes,
-        downloadBytes: entry.byteSize ?? null,
+        downloadBytes: entry.byteSize,
       };
     });
     return { status: "completed" as const, models };
@@ -169,7 +169,7 @@ export async function releaseModelsImpl(ctx: SdkContext, args: ModelReleaseArgs 
  * installation cannot give on later runs. Using a model does not re-hash it, so
  * a model corrupted or swapped after download is otherwise used unverified;
  * this is the explicit, on-demand check. Kept separate from `list` (a cheap
- * presence check): hashing a ~0.5 GB model is slow, so it runs only when asked.
+ * presence check): hashing a model of hundreds of megabytes is slow, so it runs only when asked.
  */
 export async function verifyModelsImpl(
   ctx: SdkContext,
@@ -189,8 +189,6 @@ export async function verifyModelsImpl(
       const cache = inspectCachedModel(filePath, entry.byteSize);
       if (!cache.present) {
         integrity = "missing";
-      } else if (!entry.sha256) {
-        integrity = "unverifiable";
       } else {
         logger.emit("info", "resolve", { event: "model.verify.start", key, name: entry.name, sizeBytes: cache.sizeBytes ?? null });
         actualSha256 = await fileSha256(filePath, opts.signal, (done) =>

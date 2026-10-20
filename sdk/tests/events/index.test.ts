@@ -145,5 +145,6 @@ describe("events through the public verbs", () => {
     expect(stderr).toBe("");
     expect(JSON.parse(stdout)).toMatchObject({ outputs: 2, events: 3 });
     if (scenario === "pending-progress") expect(JSON.parse(stdout).pendingAtFinish).toBe(true);
-  });
+    // A fresh Node process that loads the SDK and sharp; a loaded machine needs more than the default.
+  }, 30_000);
 });

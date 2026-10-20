@@ -1,5 +1,4 @@
 appId: io.github.nao7sep.gptimg
-productName: GptImg
 copyright: Copyright © Yoshinao Inoguchi
 directories:
   output: dist
@@ -11,9 +10,8 @@ files:
 extraResources:
   - from: LICENSE
     to: LICENSE
-  # The Tahoe "Liquid Glass" icon: a pre-compiled asset catalog, built in company/assets by the
-  # liquid-glass-icon tool. CFBundleIconName points macOS 26 at it; older macOS reads
-  # CFBundleIconFile, the classic build/icon.icns (mac.icon). Building needs no Xcode.
+  # The Tahoe "Liquid Glass" icon as a pre-compiled asset catalog, so building needs no Xcode.
+  # CFBundleIconName points macOS 26 at it; older macOS reads CFBundleIconFile (mac.icon).
   - from: build/Assets.car
     to: Assets.car
   # The window icon Windows and Linux paint in the title bar and taskbar.
@@ -37,7 +35,7 @@ mac:
   # No notarization, so the hardened runtime would only add library-validation
   # failures for an ad-hoc seal.
   hardenedRuntime: false
-  # Electron's own strings in the app's ten languages only.
+  # Electron's own strings in the app's languages only.
   electronLanguages: [en, de, es, fr, it, pt_BR, ru, ja, ko, zh_CN]
   target:
     - target: dmg

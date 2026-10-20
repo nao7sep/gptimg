@@ -2,7 +2,7 @@
 node_modules/
 dist/
 out/
-# npm pack output (the release tarball, produced transiently by scripts/CI)
+# npm pack output
 *.tgz
 
 # Local environment variables
@@ -16,4 +16,3 @@ out/
 *.log
 coverage/
 .vitest/
-validation-results/

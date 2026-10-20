@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Records } from "../../src/main/records.ts";
 import type { CallSettlement, SdkHost } from "../../src/main/sdk-host.ts";
 import { readSession } from "../../src/main/sessions.ts";
@@ -138,7 +138,7 @@ describe("a turn", () => {
       release = () => resolve(call.cancelled ? { kind: "error", error: { name: "GptImgError", code: "cancelled", kind: "cancelled", effect: "unknown", message: "x" } } : { kind: "lost" });
     }));
     const pending = t.runner.send(request(null, "slow"));
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.waitFor(() => expect(readdirSync(t.root)).toHaveLength(1));
     const sessionId = readdirSync(t.root)[0]!;
     expect(t.runner.isRunning(sessionId)).toBe(true);
     t.runner.cancel(sessionId);

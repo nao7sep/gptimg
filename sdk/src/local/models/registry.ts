@@ -3,9 +3,6 @@
  *
  * Each entry pins:
  *   name      — cache filename. Bump the suffix when changing models.
- *   supersedes — cache filenames of this model's earlier pins. When a pin
- *               changes, add the old `name` here: acquiring the new file
- *               deletes the old one once the new one is verified on disk.
  *   url       — single source of truth, fetched by `model.install`. Prefer
  *               commit-pinned HuggingFace URLs (`/resolve/<commit-sha>/...`)
  *               over `/resolve/main/...`.
@@ -27,46 +24,27 @@
  * download, so a changed or tampered file fails the install. Revisit if an
  * author-published ONNX or a fleet-owned export becomes available.
  *
- * Pin currency: as of 2026-06-27 both entries were confirmed to sit on their
- * repo's latest commit (checked against the HuggingFace API), so neither is a
- * stale mid-history pin. What remains open is model *selection* quality — whether
- * these are the best models for matting/upscale versus newer alternatives — which
- * is gated on re-validating output against the test images, not on a commit bump
- * (see each entry's note).
+ * Whether these are the best models for matting and upscaling is open; changing
+ * one is gated on re-validating output against the test images, not on novelty.
  */
 
 export interface ModelEntry {
   name: string;
   url: string;
   inputSize: number;
-  /** Filenames of this model's earlier pins, deleted once this pin is on disk. */
-  supersedes?: readonly string[];
-  /** Exact artifact bytes. Shipped pinned assets always set this. */
-  byteSize?: number;
-  /**
-   * Pinned content hash, verified after download. Optional so ad-hoc entries
-   * (e.g. tests) can omit it; every shipped model sets it.
-   */
-  sha256?: string;
+  /** Exact artifact bytes, enforced before and during acquisition. */
+  byteSize: number;
+  /** Pinned content hash, verified before publication. */
+  sha256: string;
 }
 
 /**
  * BiRefNet (general) ONNX. Community-exported ONNX of the MIT-licensed
  * upstream BiRefNet (https://huggingface.co/ZhengPeng7/BiRefNet). FP16
- * variant — about 490 MB, quality close to FP32 for matting work.
+ * variant, half the size of FP32 with quality close to it for matting work.
  *
- * Pinned to an immutable commit so the download is reproducible. The file at
- * this commit is sha256
- * 3654c741eb80bd926ada8fed1713b506ccf8d30eb1f6487e87eb9f234f33df09
- * (489,666,272 bytes) — verified byte-identical to the version this build was
- * validated against. To adopt a new revision, bump `name`, repin `url` to the
- * new commit and list the old name in `supersedes`.
- *
- * This is the model we have verified, not necessarily the best one available.
- * Newer BiRefNet exports (or other matting models entirely) may give better
- * cutouts; treat swapping it as an open option, but re-validate against the
- * test images before changing the pin — output quality is the gate, not
- * novelty.
+ * Pinned to an immutable commit so the download is reproducible. To adopt a
+ * new revision, bump `name` and repin `url`, `byteSize` and `sha256`.
  */
 export const BIREFNET: ModelEntry = {
   name: "birefnet-general-fp16-v1.onnx",
@@ -84,12 +62,8 @@ export const BIREFNET: ModelEntry = {
  * not hallucinate texture the way a perceptual GAN (e.g. Real-ESRGAN x4plus)
  * does — the right trade for clean icon/logo/illustration content.
  *
- * Pinned to an immutable commit so the download is reproducible. The fp32 file
- * at this commit is sha256
- * 987d88b356554161cbb8f67b7a8f4162cad6dc147839c344e3d5142140f25d6f
- * (53,827,735 bytes) — verified here against the version the upscaler was
- * built and seam-tested against. To adopt a new revision, bump `name`, repin
- * `url` to the new commit and list the old name in `supersedes`, then
+ * Pinned to an immutable commit so the download is reproducible. To adopt a
+ * new revision, bump `name` and repin `url`, `byteSize` and `sha256`, then
  * re-validate output quality.
  *
  * `inputSize` is 0: the graph has dynamic spatial dims. It only requires H and

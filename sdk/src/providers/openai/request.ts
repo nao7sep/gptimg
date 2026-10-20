@@ -1,6 +1,6 @@
 // One branch per supported model id, holding exactly what that model needs beyond the plain
 // request of its endpoint (ai-model-routing-conventions). A supported model's moderation,
-// effort and detail are settled before the call (policy/model-check.ts), so the sidecar
+// effort and detail are settled before the call, so the sidecar
 // records them. An id with no branch gets the plain request plus only what the caller set
 // explicitly, and OpenAI's answer at call time is the verdict on it.
 

@@ -3,8 +3,12 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 
-const version = (JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string }).version;
-export const DEV_PORT = 25793;
+const manifest = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
+  version: string;
+  dependencies: Record<string, string>;
+  config: { devPort: number };
+};
+const version = manifest.version;
 const define = { __APP_VERSION__: JSON.stringify(version) };
 
 export default defineConfig({
@@ -19,7 +23,8 @@ export default defineConfig({
           index: resolve("src/main/index.ts"),
           "sdk-worker": resolve("src/main/sdk-worker.ts"),
         },
-        external: ["sharp", "onnxruntime-node"],
+        // The app's own dependencies are the native modules, shipped beside the bundle.
+        external: Object.keys(manifest.dependencies),
       },
     },
   },
@@ -33,6 +38,6 @@ export default defineConfig({
     define,
     plugins: [react()],
     // GptImg's fixed development endpoint; strict, so it never drifts to another app's port.
-    server: { host: "127.0.0.1", port: DEV_PORT, strictPort: true },
+    server: { host: "127.0.0.1", port: manifest.config.devPort, strictPort: true },
   },
 });

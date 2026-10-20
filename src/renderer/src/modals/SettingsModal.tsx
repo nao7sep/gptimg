@@ -63,6 +63,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const row = chatRow(draft["openai.chat"]);
   const invalid = SET_KEYS.filter((key) => validateSet(key, draft[key]) !== null);
+  const fontProblem = validateSet("contentFont", draft.contentFont);
   const keyChanged = newKey.trim() !== "" || clearKey;
   const dirty = keyChanged || JSON.stringify(draft) !== JSON.stringify(props.settings);
   const builtIn = builtInSettings();
@@ -209,7 +210,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     onChange={(lineHeight) => set("contentFont", { ...draft.contentFont, lineHeight })}
                   />
                 </div>
-                {validateSet("contentFont", draft.contentFont) && <span className="field-error">{t(validateSet("contentFont", draft.contentFont) as never)}</span>}
+                {fontProblem && <span className="field-error">{t(fontProblem as never, fontProblem === "settings.error.lineHeight" ? CONTENT_LINE_HEIGHT : CONTENT_SIZE)}</span>}
               </section>
 
               <section className="settings-group">

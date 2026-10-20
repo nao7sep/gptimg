@@ -20,9 +20,6 @@
  *     removes any staged file whose owning process is gone.
  *   - Each retry attempt downloads to a fresh staged file, so a half-written
  *     file from a failed attempt never poisons the next one.
- *   - Once the current file is on disk, files of the model's earlier pins
- *     (`entry.supersedes`) are deleted from the cache root, so a pin change
- *     does not leave the replaced model behind.
  *   - Download progress is reported through the logger (and thus the caller's
  *     onProgress sink) — never written to a stream directly, so the SDK stays
  *     stream-silent.
@@ -43,10 +40,11 @@ import { nanoid } from "nanoid";
 import { GptImgError, cancelledError, fsError, throwIfAborted } from "../../errors.ts";
 import type { Logger } from "../../events/index.ts";
 import { NETWORK_DEFAULTS, type NetworkBudget } from "../../network/defaults.ts";
+import { MAX_TIMEOUT_MS } from "../../network/schema.ts";
 import { combineSignals, HttpStatusError } from "../../network/http.ts";
 import { isAbortError } from "../../network/failure.ts";
 import { callWithRetry } from "../../network/retry.ts";
-import { MODELS, type ModelEntry } from "./registry.ts";
+import type { ModelEntry } from "./registry.ts";
 
 export async function fileSha256(
   filePath: string,
@@ -282,15 +280,13 @@ async function downloadAttempt(
 }
 
 const TEMP_DIR = "temp";
-const MAX_MODEL_BYTES = 1024 * 1024 * 1024;
 const MIN_TRANSFER_BYTES_PER_SECOND = 32 * 1024;
 const MODEL_OPERATION_OVERHEAD_MS = 15 * 60_000;
-const MAX_TIMER_MS = 2_147_000_000;
 
 export function modelWholeTimeoutMs(byteLimit: number, maxRetries: number): number {
   const attempts = Math.max(1, maxRetries + 1);
   return Math.min(
-    MAX_TIMER_MS,
+    MAX_TIMEOUT_MS,
     MODEL_OPERATION_OVERHEAD_MS +
       Math.ceil((byteLimit * attempts * 1000) / MIN_TRANSFER_BYTES_PER_SECOND),
   );
@@ -299,7 +295,7 @@ export function modelWholeTimeoutMs(byteLimit: number, maxRetries: number): numb
 /**
  * The path of `entry` in `modelsDir` when it is installed, or `model.notInstalled`
  * naming the install call. Nothing installs implicitly (sdk-conventions): a
- * 490 MB download never starts inside a masking or upscaling call.
+ * large download never starts inside a masking or upscaling call.
  */
 export function requireInstalledModel(entry: ModelEntry, key: string, modelsDir: string): string {
   const filePath = path.join(modelsDir, entry.name);
@@ -315,13 +311,13 @@ export function requireInstalledModel(entry: ModelEntry, key: string, modelsDir:
 
 export function inspectCachedModel(
   filePath: string,
-  expectedBytes: number | undefined,
+  expectedBytes: number,
 ): { present: boolean; usable: boolean; sizeBytes?: number } {
   try {
     const stat = statSync(filePath);
     return {
       present: true,
-      usable: stat.isFile() && (expectedBytes === undefined || stat.size === expectedBytes),
+      usable: stat.isFile() && stat.size === expectedBytes,
       sizeBytes: stat.size,
     };
   } catch (err) {
@@ -468,42 +464,7 @@ export async function ensureModel(
   cacheDir: string,
   opts: EnsureModelOptions = {},
 ): Promise<string> {
-  const finalPath = await acquireModel(entry, cacheDir, opts);
-  await retireSupersededModels(entry, cacheDir, opts.logger);
-  return finalPath;
-}
-
-/**
- * Delete the files of `entry`'s earlier pins (data-lifecycle-conventions:
- * derived data is deleted when replaced). Runs only after the current file is
- * published or found usable, so the replacement is verified first. A session
- * this process loaded can only hold a current pin, since pins are compiled in;
- * another process still running an older GptImg keeps its open file on POSIX,
- * while Windows refuses to delete a file another process holds without delete
- * sharing (a model ONNX Runtime has mapped), which is skipped and retried
- * on the next acquisition. Best effort: a refused deletion never fails the call
- * that needed the current model. A plain name is required so a registry entry
- * can never reach outside the cache root, and a name any current pin uses is
- * never deleted.
- */
-async function retireSupersededModels(
-  entry: ModelEntry,
-  cacheDir: string,
-  logger: Logger | undefined,
-): Promise<void> {
-  const currentNames = new Set([entry.name, ...Object.values(MODELS).map((model) => model.name)]);
-  for (const name of entry.supersedes ?? []) {
-    if (currentNames.has(name) || path.basename(name) !== name || name === "." || name === "..") continue;
-    const filePath = path.join(cacheDir, name);
-    try {
-      await unlink(filePath);
-      logger?.emit("info", "download", { event: "model.superseded.deleted", name, replacement: entry.name });
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") continue;
-      logger?.emit("warn", "download", { event: "model.superseded.kept", name, replacement: entry.name, error: (err as Error).message });
-    }
-  }
+  return acquireModel(entry, cacheDir, opts);
 }
 
 async function acquireModel(
@@ -514,7 +475,7 @@ async function acquireModel(
   const { signal, logger } = opts;
   const force = opts.force ?? false;
   const budget = opts.budget ?? NETWORK_DEFAULTS.modelDownload;
-  const byteLimit = entry.byteSize ?? MAX_MODEL_BYTES;
+  const byteLimit = entry.byteSize;
   const operationSignal = combineSignals(signal, modelWholeTimeoutMs(byteLimit, budget.maxRetries));
   throwIfAborted(operationSignal);
   assertSafeUrl(entry.url);
@@ -569,19 +530,16 @@ async function acquireModel(
     // Verify the pinned hash before publishing. A mismatch means the pinned URL
     // changed or the download is corrupt — fail loudly rather than cache bad
     // bytes. Non-retryable: a fully-downloaded-but-wrong file won't fix itself.
-    if (entry.sha256) {
-      const size = entry.byteSize;
-      const got = await fileSha256(partialPath, operationSignal, (done) =>
-        logger?.progress("hash", done, size ?? done, "bytes", entry.name),
+    const got = await fileSha256(partialPath, operationSignal, (done) =>
+      logger?.progress("hash", done, entry.byteSize, "bytes", entry.name),
+    );
+    if (got !== entry.sha256) {
+      throw new GptImgError(
+        "model.integrity",
+        `Downloaded ${entry.name} has sha256 ${got}, expected ${entry.sha256}. ` +
+          `The pinned URL may have changed or the download is corrupt.`,
+        { subject: entry.url, details: { expected: entry.sha256, actual: got } },
       );
-      if (got !== entry.sha256) {
-        throw new GptImgError(
-          "model.integrity",
-          `Downloaded ${entry.name} has sha256 ${got}, expected ${entry.sha256}. ` +
-            `The pinned URL may have changed or the download is corrupt.`,
-          { subject: entry.url, details: { expected: entry.sha256, actual: got } },
-        );
-      }
     }
 
     await syncFile(partialPath, operationSignal);

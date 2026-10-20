@@ -6,10 +6,9 @@ import { firstZodIssue, formatZodError } from "../internal/zodError.ts";
 import { NetworkSchema } from "../network/schema.ts";
 import type { Policy } from "../types.ts";
 
-// A supported model's values are checked against its row (policy/model-check.ts); here only
-// their types are.
-// Moderation is not exposed (ai-model-lineup-20261004): generate sends "low" for a supported
-// model, so neither section takes it.
+// A supported model's values are checked against its row before the call; here only their
+// types are. Moderation is not a choice: generate sends "low" for a supported model, so neither
+// section takes it.
 const IMAGE_PARAMS_SHAPE = {
   model: z.string().optional(),
   size: z.string().optional(),
@@ -74,8 +73,7 @@ const ChatPolicySchema = z
   })
   .strict();
 
-// ONNX Runtime tuning, formerly the GPTIMG_ONNX_INTRA_OP_THREADS and
-// GPTIMG_ONNX_EP environment variables: the SDK reads no environment.
+// ONNX Runtime tuning, given by the caller since the SDK reads no environment.
 const OnnxPolicySchema = z
   .object({
     intraOpThreads: z.number().int().positive().optional(),

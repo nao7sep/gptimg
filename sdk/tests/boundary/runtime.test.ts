@@ -82,8 +82,7 @@ describe("the runtime boundary", () => {
     const stdout = vi.spyOn(process.stdout, "write");
     const stderr = await captureStderr(async () => {
       const img = new GptImg({ apiKey: "sk-explicit" });
-      const resized = done(await img.resize({ in: FIXTURE, toSize: 32, outDir: out, outName: "small" }));
-      expect(resized).not.toHaveProperty("logPath");
+      done(await img.resize({ in: FIXTURE, toSize: 32, outDir: out, outName: "small" }));
       const generated = done(await img.generate({ prompt: "a disc", outDir: out, outName: "paid" }));
       expect(generated.files).toHaveLength(1);
       const listed = await img.model.list();

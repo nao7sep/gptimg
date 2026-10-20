@@ -4,7 +4,7 @@
 // (text-input-ime-conventions); Shift+Enter starts a new line.
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import { imageUrl } from "../../../shared/api.ts";
-import { parseSize, sizeProblem, sizeRuleOf } from "../../../shared/image-size.ts";
+import { DEFAULT_SIZE_RULE, parseSize, sizeProblem, sizeRuleOf } from "../../../shared/image-size.ts";
 import { BACKGROUNDS, backgroundOf, type Background, type TurnOptions } from "../../../shared/session.ts";
 import { imageRow } from "../../../shared/settings.ts";
 import { QUALITIES, SIZES } from "../../../shared/ui-state.ts";
@@ -326,6 +326,8 @@ function SizePopover({
   const [height, setHeight] = useState(String(initial.height));
   const panel = useRef<HTMLDivElement>(null);
   const rule = sizeRuleOf(model);
+  // A model the app does not list is checked by OpenAI; the fields still step as the default model's do.
+  const shown = rule ?? DEFAULT_SIZE_RULE;
   const w = Number(width);
   const h = Number(height);
   const problem = sizeProblem(w, h, rule);
@@ -368,23 +370,23 @@ function SizePopover({
       <div className="size-fields">
         <label>
           <span>{t("composer.size.width")}</span>
-          <input type="number" inputMode="numeric" min={16} step={16} value={width} onChange={(e) => setWidth(e.target.value)} />
+          <input type="number" inputMode="numeric" min={shown.multipleOf} step={shown.multipleOf} value={width} onChange={(e) => setWidth(e.target.value)} />
         </label>
         <span className="size-times" aria-hidden="true">
           {"\u00d7"}
         </span>
         <label>
           <span>{t("composer.size.height")}</span>
-          <input type="number" inputMode="numeric" min={16} step={16} value={height} onChange={(e) => setHeight(e.target.value)} />
+          <input type="number" inputMode="numeric" min={shown.multipleOf} step={shown.multipleOf} value={height} onChange={(e) => setHeight(e.target.value)} />
         </label>
       </div>
       <p className={`size-rule${problem ? " problem" : ""}`} role={problem ? "alert" : undefined}>
         {problem
           ? t(`composer.size.problem.${problem}`, {
-              multiple: rule?.multipleOf ?? 16,
-              ratio: rule?.maxRatio ?? 3,
-              min: megapixels(rule?.minPixels ?? 0),
-              max: megapixels(rule?.maxPixels ?? 0),
+              multiple: shown.multipleOf,
+              ratio: shown.maxRatio,
+              min: megapixels(shown.minPixels),
+              max: megapixels(shown.maxPixels),
             })
           : t("composer.size.ok", { megapixels: megapixels(w * h) })}
       </p>

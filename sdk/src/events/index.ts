@@ -37,8 +37,6 @@ const MESSAGES: Readonly<Record<SdkEventName, string>> = {
   "model.download.needed": "the model is not on disk; downloading it",
   "model.download.start": "model download started",
   "model.download.done": "model download finished",
-  "model.superseded.deleted": "a superseded model file was deleted",
-  "model.superseded.kept": "a superseded model file could not be deleted",
   "model.infer.start": "model inference started",
   "model.infer.done": "model inference finished",
   "model.verify.start": "model verification started",

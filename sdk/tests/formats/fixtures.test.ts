@@ -14,7 +14,7 @@ const FORMATS = fileURLToPath(new URL("../fixtures/formats/", import.meta.url));
 const fixture = (name: string): string => path.join(FORMATS, name);
 
 describe("sidecar fixtures", () => {
-  it("reads the real unmarked v0.1.0 sidecar from company/assets as a format-1 generate record", async () => {
+  it("reads a real unmarked v0.1.0 sidecar as a format-1 generate record", async () => {
     const record = await readSidecar(fixture("sidecar-v0.1.0-generate.json"));
     expect(record).toMatchObject({
       formatVersion: 1,

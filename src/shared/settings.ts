@@ -2,6 +2,7 @@
 // key and a built-in in code; config.json holds a set only while the user's
 // copy differs from its built-in. Everything here is pure, so main validates
 // what it loads and the renderer validates a draft with the same rules.
+import { OPENAI_BASE_URL } from "gptimgsdk/types";
 import { defaultModelFor, findModelRow, modelSpelling, type ChatModelRow, type ImageModelRow } from "./ai-models.ts";
 import { LANGUAGE_PREFERENCES, type LanguagePreference } from "./i18n/languages.ts";
 
@@ -40,7 +41,8 @@ export interface Settings {
 
 export const DRAFT_COUNTS = [0, 1, 2, 3] as const;
 
-export const OPENAI_ENDPOINT = "https://api.openai.com/v1";
+/** OpenAI's own address, the SDK's default; the endpoint setting starts with it. */
+export const OPENAI_ENDPOINT = OPENAI_BASE_URL;
 
 /** An endpoint the app can send to: an http(s) URL with a host. */
 export function isEndpoint(value: string): boolean {

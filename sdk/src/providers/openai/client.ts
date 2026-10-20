@@ -1,13 +1,12 @@
 import OpenAI from "openai";
 import { findModelRow } from "../../ai-models.ts";
+import { OPENAI_BASE_URL } from "./endpoint.ts";
 import { nullBase64InResponse } from "../../sidecar/nullBase64.ts";
 import type { Credentials } from "../types.ts";
 
-// Retry policy is owned by callWithRetry; maxRetries=0 disables the SDK's
-// built-in retries. Per-request `{ timeout }` is passed at the call site,
-// driven by the network category budgets in src/network/defaults.ts.
+// Retries are the SDK's own (callWithRetry), so the client's are off; each request's
+// timeout comes from its network budget at the call site.
 
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 /**
  * The OpenAI client with every option it would otherwise fill from the process
@@ -21,7 +20,7 @@ const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export function buildOpenAIClient(credentials: Credentials): OpenAI {
   const opts: Record<string, unknown> = {
     apiKey: credentials.apiKey,
-    baseURL: credentials.baseURL ?? DEFAULT_BASE_URL,
+    baseURL: credentials.baseURL ?? OPENAI_BASE_URL,
     organization: null,
     project: null,
     adminAPIKey: null,

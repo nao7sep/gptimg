@@ -56,7 +56,7 @@ export const NETWORK_DEFAULTS: Record<NetworkBudgetName, NetworkBudget> = {
   chat:          { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageVision:   { timeout: 120_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
   imageDownload: { timeout:  30_000, maxRetries: 2, retryIntervals: [  500, 1_500] },
-  // Large one-shot file (the BiRefNet weights are ~490 MB). For model downloads,
+  // Large one-shot files (a model is hundreds of megabytes). For model downloads,
   // `timeout` bounds an idle network edge; the acquisition layer adds a separate
   // size-scaled deadline around the complete transaction.
   modelDownload: { timeout: 600_000, maxRetries: 2, retryIntervals: [2_000, 5_000] },
