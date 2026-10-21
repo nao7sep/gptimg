@@ -2,7 +2,7 @@
 // (storage-path-conventions): ~/.gptimg, or GPTIMG_DATA_DIR when set.
 import { chmodSync, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 export const DATA_DIR_ENV = "GPTIMG_DATA_DIR";
 
@@ -31,9 +31,22 @@ export interface AppPaths {
 }
 
 export function dataRoot(env: NodeJS.ProcessEnv = process.env): { dir: string; fromEnv: boolean } {
+  const home = homedir();
   const override = env[DATA_DIR_ENV]?.trim();
-  if (override) return { dir: isAbsolute(override) ? override : resolve(override), fromEnv: true };
-  return { dir: join(homedir(), ".gptimg"), fromEnv: false };
+  if (!override) return { dir: join(home, ".gptimg"), fromEnv: false };
+  try {
+    // Expand only this authored override, once. Picker and stored collection paths stay literal.
+    let expanded = override.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|%([A-Za-z_][A-Za-z0-9_]*)%/g, (_reference, braced: string | undefined, dollar: string | undefined, percent: string | undefined) => {
+      const name = (braced ?? dollar ?? percent)!;
+      const value = env[name];
+      if (!value) throw new Error(`Storage folder environment variable is empty or unset: ${name}`);
+      return value;
+    });
+    if (expanded === "~" || /^~[/\\]/.test(expanded)) expanded = home + expanded.slice(1);
+    return { dir: resolve(home, expanded), fromEnv: true };
+  } catch (error) {
+    throw new DataDirError(override, true, error);
+  }
 }
 
 export function pathsUnder(root: string): AppPaths {
