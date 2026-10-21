@@ -71,7 +71,7 @@ export async function listSessions(root: string): Promise<{ sessions: SessionSum
         sessions.push(summarize(entry.name, doc));
       }),
   );
-  sessions.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : a.id < b.id ? 1 : -1));
+  sessions.sort((a, b) => (a.sentAt < b.sentAt ? 1 : a.sentAt > b.sentAt ? -1 : a.id < b.id ? 1 : -1));
   return { sessions, unreadable };
 }
 

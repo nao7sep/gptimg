@@ -84,6 +84,13 @@ export interface SessionSummary {
   createdAt: string;
   /** The last turn's time, else the creation time. */
   updatedAt: string;
+  /**
+   * The last message the user sent, else the creation time: what the session
+   * list orders by (developer decision, as ChatGPT orders chats). Sending moves
+   * a session to the top; a reply arriving later, even while the user has since
+   * sent in another session, does not move it.
+   */
+  sentAt: string;
   /** Session-relative path of the latest image, if any. */
   cover: string | null;
   imageCount: number;
@@ -182,7 +189,8 @@ export function summarize(id: string, doc: SessionDoc): SessionSummary {
     }
   }
   const last = doc.turns[doc.turns.length - 1];
-  return { id, title: doc.title, createdAt: doc.createdAt, updatedAt: last?.at ?? doc.createdAt, cover, imageCount };
+  const lastSent = doc.turns.findLast((turn) => turn.role === "user");
+  return { id, title: doc.title, createdAt: doc.createdAt, updatedAt: last?.at ?? doc.createdAt, sentAt: lastSent?.at ?? doc.createdAt, cover, imageCount };
 }
 
 function isString(value: unknown): value is string {
