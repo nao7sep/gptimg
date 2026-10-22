@@ -1797,3 +1797,23 @@ input[type="range"] {
   justify-content: flex-end;
   margin-top: auto;
 }
+
+/* The export or upscaler download while its dialog is closed, between the transcript and the composer. */
+.task-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 6px 28px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.task-strip.failed {
+  color: var(--danger);
+}
+.task-strip-text {
+  flex: 1 1 auto;
+}

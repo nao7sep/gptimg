@@ -1,8 +1,10 @@
 // Export: save a print as PNG, JPEG or WebP, at its own size, at a chosen
 // longest side, or upscaled 2× or 4× by the SDK's local model, with
 // transparency kept or filled. The choices are remembered for next time.
-import { useEffect, useState } from "react";
-import { imageUrl, type AppFailure, type TaskProgress, type UpscalerStatus } from "../../../shared/api.ts";
+// The export and the upscaler download belong to the window (export-tasks.ts):
+// closing the dialog, by any path, hides it and leaves a running task running.
+import { useEffect, useRef, useState } from "react";
+import { imageUrl, type AppFailure, type UpscalerStatus } from "../../../shared/api.ts";
 import {
   DEFAULT_FILL,
   EXPORT_FORMATS,
@@ -18,12 +20,15 @@ import {
   type ImageInfo,
 } from "../../../shared/export.ts";
 import { api } from "../api.ts";
+import type { ExportTasks } from "../export-tasks.ts";
 import { useI18n } from "../i18n.tsx";
 import { Modal } from "./Modal.tsx";
 
 interface ExportModalProps {
   path: string;
   prefs: ExportPrefs;
+  /** The window's export and download, which outlive the dialog. */
+  tasks: ExportTasks;
   onClose: () => void;
   onExported: (prefs: ExportPrefs, savedTo: string, dir: string | null) => void;
 }
@@ -34,15 +39,14 @@ function sizeKind(size: ExportSize): SizeKind {
   return size.kind === "upscale" ? (size.factor === 2 ? "upscale2" : "upscale4") : size.kind;
 }
 
-export function ExportModal({ path, prefs: initial, onClose, onExported }: ExportModalProps) {
+export function ExportModal({ path, prefs: initial, tasks, onClose, onExported }: ExportModalProps) {
   const { t, of, translator } = useI18n();
   const [info, setInfo] = useState<ImageInfo | null>(null);
   const [failure, setFailure] = useState<AppFailure | null>(null);
   const [prefs, setPrefs] = useState<ExportPrefs>(initial);
   const [longSide, setLongSide] = useState(initial.size.kind === "longSide" ? String(initial.size.px) : "");
   const [upscaler, setUpscaler] = useState<UpscalerStatus | null>(null);
-  const [task, setTask] = useState<"export" | "install" | null>(null);
-  const [progress, setProgress] = useState<TaskProgress | null>(null);
+  const { task, progress, outcome } = tasks;
 
   useEffect(() => {
     void api.inspectImage(path).then((outcome) => {
@@ -52,10 +56,24 @@ export function ExportModal({ path, prefs: initial, onClose, onExported }: Expor
       } else setFailure(outcome.failure);
     });
     void api.upscalerStatus().then(setUpscaler);
-    return api.onProgress(setProgress);
     // Loads once per dialog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
+
+  // A download that ends, here or while the dialog was closed, changes what Export can do.
+  const wasInstalling = useRef(task?.kind === "install");
+  useEffect(() => {
+    if (wasInstalling.current && task === null) void api.upscalerStatus().then(setUpscaler);
+    wasInstalling.current = task?.kind === "install";
+  }, [task]);
+
+  // An outcome shown here needs no repeat in the task strip.
+  const { markSeen } = tasks;
+  useEffect(() => {
+    if (outcome && !outcome.seen) markSeen();
+  }, [outcome, markSeen]);
+  const taskFailure = outcome && !outcome.stopped ? outcome.failure : null;
+  const shownFailure = failure ?? taskFailure;
 
   const set = (next: Partial<ExportPrefs>) => setPrefs((p) => ({ ...p, ...next }));
   const upscaling = prefs.size.kind === "upscale";
@@ -73,34 +91,14 @@ export function ExportModal({ path, prefs: initial, onClose, onExported }: Expor
     else set({ size: { kind: "upscale", factor: kind === "upscale2" ? 2 : 4 } });
   };
 
-  const install = async () => {
-    setTask("install");
-    setFailure(null);
-    setProgress(null);
-    const outcome = await api.installUpscaler();
-    setTask(null);
-    setProgress(null);
-    if (!outcome.ok) setFailure(outcome.failure);
-    setUpscaler(await api.upscalerStatus());
-  };
-
-  const run = async () => {
+  const run = () => {
     if (!info || !out) return;
     const final: ExportPrefs = { ...prefs, size };
-    setTask("export");
-    setFailure(null);
-    setProgress(null);
-    const outcome = await api.exportImage({ ...final, path }, exportName(path, final, out, info));
-    setTask(null);
-    setProgress(null);
-    if (!outcome.ok) setFailure(outcome.failure);
-    else if (outcome.savedTo) onExported(final, outcome.savedTo, outcome.dir);
+    void tasks.exportImage({ ...final, path }, exportName(path, final, out, info), upscaling, (savedTo, dir) => onExported(final, savedTo, dir));
   };
 
-  const close = () => {
-    if (task) api.cancelTask();
-    onClose();
-  };
+  // Every close path ends here: it hides the dialog and never stops the task, which has its own Stop.
+  const close = () => onClose();
 
   const megabytes = (bytes: number) => translator.number(bytes / 1_000_000, { maximumFractionDigits: 1 });
   // Pixel sizes read as plain digits ("2048 × 2048"), never with thousands separators.
@@ -115,27 +113,26 @@ export function ExportModal({ path, prefs: initial, onClose, onExported }: Expor
       footer={
         <>
           {task && (
-            <span className="task-status" role="status">
-              {t(task === "export" ? (upscaling ? "export.upscaling" : "export.working") : "export.downloading")}
-              {progressText && ` ${progressText}`}
-            </span>
+            <>
+              <span className="task-status" role="status">
+                {t(task.kind === "export" ? (task.upscaling ? "export.upscaling" : "export.working") : "export.downloading")}
+                {progressText && ` ${progressText}`}
+              </span>
+              <button type="button" className="button" onClick={tasks.stop}>
+                {t("export.stop")}
+              </button>
+            </>
           )}
-          {failure && !task && (
+          {shownFailure && !task && (
             <span className="foot-error" role="alert">
-              {of(failure.message)}
+              {of(shownFailure.message)}
             </span>
           )}
           <span className="spacer" />
-          {task ? (
-            <button type="button" className="button" onClick={() => api.cancelTask()}>
-              {t("export.stop")}
-            </button>
-          ) : (
-            <button type="button" className="button" onClick={onClose}>
-              {t("common.cancel")}
-            </button>
-          )}
-          <button type="button" className="button primary" disabled={!canExport} onClick={() => void run()}>
+          <button type="button" className="button" onClick={close}>
+            {t("common.cancel")}
+          </button>
+          <button type="button" className="button primary" disabled={!canExport} onClick={run}>
             {t("export.confirm")}
           </button>
         </>
@@ -229,7 +226,7 @@ export function ExportModal({ path, prefs: initial, onClose, onExported }: Expor
                 ? t("export.upscalerNeeded", { size: megabytes(upscaler.downloadBytes) })
                 : t("export.upscalerNeededUnknown")}
             </span>
-            <button type="button" className="button" disabled={task !== null} onClick={() => void install()}>
+            <button type="button" className="button" disabled={task !== null} onClick={() => void tasks.download()}>
               {t("export.download")}
             </button>
           </div>

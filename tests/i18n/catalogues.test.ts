@@ -161,6 +161,9 @@ describe("catalogue files", () => {
     expect(Object.entries(ENGLISH).filter(([, v]) => v.includes("…")).map(([k]) => k)).toEqual([
       "export.downloading",
       "export.reading",
+      "export.strip.downloading",
+      "export.strip.exporting",
+      "export.strip.upscaling",
       "export.upscaling",
       "export.working",
       "rail.working",

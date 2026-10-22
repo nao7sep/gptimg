@@ -9,8 +9,12 @@ afterEach(cleanup);
 async function open() {
   const api = fakeApi();
   const { ExportModal } = await import("../../src/renderer/src/modals/ExportModal.tsx");
+  const { useExportTasks } = await import("../../src/renderer/src/export-tasks.ts");
   const onExported = vi.fn();
-  await renderInApp(() => <ExportModal path="/chats/c/fox.png" prefs={defaultExportPrefs()} onClose={() => {}} onExported={onExported} />);
+  function Host() {
+    return <ExportModal path="/chats/c/fox.png" prefs={defaultExportPrefs()} tasks={useExportTasks()} onClose={() => {}} onExported={onExported} />;
+  }
+  await renderInApp(() => <Host />);
   await screen.findByText("PNG, 2 MB");
   return { api, onExported };
 }

@@ -18,6 +18,8 @@ import { SettingsModal } from "./modals/SettingsModal.tsx";
 import { SetupModal } from "./modals/SetupModal.tsx";
 import { AboutModal, ConfirmModal, RenameModal, ShortcutsModal } from "./modals/SmallModals.tsx";
 import { ExportModal } from "./modals/ExportModal.tsx";
+import { TaskStrip } from "./components/TaskStrip.tsx";
+import { useExportTasks } from "./export-tasks.ts";
 import { ViewerModal } from "./modals/ViewerModal.tsx";
 import { MaskModal } from "./modals/MaskModal.tsx";
 import { applyFonts } from "./fonts.ts";
@@ -62,6 +64,9 @@ export function App({ boot }: { boot: BootInfo }) {
   const [settingsProblem, setSettingsProblem] = useState(boot.settingsProblem);
   const [keyStatus, setKeyStatus] = useState<KeyStatus>(boot.key);
   const [ui, setUi] = useState<UiState>(boot.state);
+  // The latest UI state, for a task that finishes after the render that started it.
+  const uiRef = useRef(ui);
+  uiRef.current = ui;
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [unreadable, setUnreadable] = useState(0);
   const [listFailure, setListFailure] = useState<AppFailure | null>(null);
@@ -72,6 +77,7 @@ export function App({ boot }: { boot: BootInfo }) {
   const [failures, setFailures] = useState<Record<string, AppFailure>>({});
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [exported, setExported] = useState<{ path: string; count: number } | null>(null);
+  const exportTasks = useExportTasks();
   const [modals, setModals] = useState<ModalSpec[]>(() =>
     boot.settings.sessionsDir === "" ? [{ kind: "setup" }] : [],
   );
@@ -355,6 +361,7 @@ export function App({ boot }: { boot: BootInfo }) {
           exported={exported}
           onReuse={(path) => setDraft({ ...draft, references: [...draft.references.filter((r) => r.path !== path), { path, absolute: absoluteIn(opened, path) }] })}
         />
+        {front?.kind !== "export" && <TaskStrip tasks={exportTasks} />}
         <Composer
           draft={draft}
           onDraft={setDraft}
@@ -446,10 +453,12 @@ export function App({ boot }: { boot: BootInfo }) {
         <ExportModal
           path={front.path}
           prefs={ui.export}
+          tasks={exportTasks}
           onClose={popModal}
           onExported={(prefs, _savedTo, dir) => {
-            saveUi({ ...ui, export: prefs, exportDir: dir ?? ui.exportDir });
-            popModal();
+            saveUi({ ...uiRef.current, export: prefs, exportDir: dir ?? uiRef.current.exportDir });
+            // The export may finish after its dialog was closed: close it only if it is still open.
+            setModals((m) => (m[m.length - 1]?.kind === "export" ? m.slice(0, -1) : m));
             setExported((e) => ({ path: front.path, count: (e?.count ?? 0) + 1 }));
           }}
         />
