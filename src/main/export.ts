@@ -32,19 +32,6 @@ function settledFailure(settlement: CallSettlement): { failure: AppFailure; canc
   return null;
 }
 
-function cleanupError(error: unknown, seen = new Set<Error>()): unknown {
-  if (!(error instanceof Error)) return error;
-  if (seen.has(error)) return "[Circular]";
-  seen.add(error);
-  return {
-    ...error,
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    ...(error.cause !== undefined && { cause: cleanupError(error.cause, seen) }),
-  };
-}
-
 export class ExportRunner {
   readonly #deps: ExportDeps;
   #cancel: (() => void) | null = null;
@@ -87,19 +74,10 @@ export class ExportRunner {
   }
 
   async #release(): Promise<void> {
-    try {
-      const call = this.#deps.host.call("modelRelease", this.#deps.app, {}, {
-        onEvent: (event) => this.#deps.records.sdkEvent(null, event),
-      });
-      const settlement = await call.done;
-      if (settledFailure(settlement)) this.#deps.records.log("warn", "model.releaseFailed", { settlement });
-      else if (settlement.kind === "result") {
-        const { released } = settlement.result as { released: number };
-        if (released > 0) this.#deps.records.log("info", "model.released", { released });
-      }
-    } catch (error) {
-      this.#deps.records.log("warn", "model.releaseFailed", { error: cleanupError(error) });
-    }
+    // The export already succeeded or failed on its own; a model that will not unload is only recorded.
+    const outcome = await this.#run<{ released: number }>("modelRelease", {}, null);
+    if (!outcome.ok) this.#deps.records.log("warn", "model.releaseFailed", { failure: outcome.failure });
+    else if (outcome.value.released > 0) this.#deps.records.log("info", "model.released", { released: outcome.value.released });
   }
 
   async inspect(path: string): Promise<Settled<ImageInfo>> {

@@ -55,32 +55,19 @@ describe("export", () => {
     expect(existsSync(target)).toBe(false);
   });
 
-  it.each(["settlement", "rejection"] as const)("keeps a completed export successful and records cleanup %s failure", async (mode) => {
+  it("keeps a completed upscale export successful and records a model that will not unload", async () => {
     let finish!: (value: CallSettlement) => void;
-    let reject!: (error: Error) => void;
-    const cleanup = new Promise<CallSettlement>((resolve, fail) => { finish = resolve; reject = fail; });
-    const testRecords = { ...records } as Records;
-    testRecords.log = vi.fn();
-    let deepestCause = new Error("deep native cause");
-    for (let depth = 0; depth < 6; depth++) deepestCause = new Error(`native wrapper ${depth}`, { cause: deepestCause });
-    const nativeCause = new Error("native dispose failed", { cause: deepestCause });
-    const cause = new Error("cleanup failed", { cause: nativeCause });
+    const release = new Promise<CallSettlement>((resolve) => (finish = resolve));
+    const testRecords = { ...records, log: vi.fn() } as unknown as Records;
     const host = { call: (op: string) => ({
-      done: op === "modelRelease" ? cleanup : Promise.resolve({ kind: "result", result: { status: "completed", output: "/out/fox.png" } }),
+      done: op === "modelRelease" ? release : Promise.resolve({ kind: "result", result: { status: "completed", output: "/out/fox.png" } }),
       cancel() {},
     }) } as unknown as SdkHost;
     const exports = new ExportRunner({ host, records: testRecords, app: { name: "GptImg", version: "0" }, progress() {} });
     const outcome = await exports.export({ ...defaultExportPrefs(), path: "/s/fox.png", size: { kind: "upscale", factor: 2 } }, info, "/out/fox.png");
     expect(outcome).toEqual({ ok: true, value: "/out/fox.png" });
-    if (mode === "rejection") reject(cause);
-    else finish({ kind: "error", error: { name: "GptImgError", code: "internal.unexpected", kind: "internal", effect: "none", message: "native release failed" } });
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    if (mode === "rejection") {
-      expect(JSON.stringify(vi.mocked(testRecords.log).mock.calls)).toContain("deep native cause");
-    }
-    expect(testRecords.log).toHaveBeenCalledWith("warn", "model.releaseFailed", mode === "rejection"
-      ? { error: expect.objectContaining({ message: "cleanup failed", stack: cause.stack, cause: expect.objectContaining({ message: "native dispose failed", stack: nativeCause.stack }) }) }
-      : { settlement: expect.objectContaining({ kind: "error", error: expect.objectContaining({ message: "native release failed" }) }) });
+    finish({ kind: "error", error: { name: "GptImgError", code: "internal.unexpected", kind: "internal", effect: "unknown", message: "native release failed" } });
+    await vi.waitFor(() => expect(testRecords.log).toHaveBeenCalledWith("warn", "model.releaseFailed", { failure: expect.objectContaining({ retryable: true }) }));
   });
 
   it("reports whether the upscaling model is installed", async () => {

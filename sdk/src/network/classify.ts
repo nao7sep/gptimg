@@ -31,7 +31,7 @@ export function safeProviderReason(err: unknown, credentials: readonly string[])
 export function safeReasonText(text: string, credentials: readonly string[]): string | null {
   const cleaned = maskCredentials(text, new Set(credentials))
     .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")
-    .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g, " ")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   return cleaned.length > 0 ? cleaned : null;

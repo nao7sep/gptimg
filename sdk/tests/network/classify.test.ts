@@ -45,7 +45,7 @@ describe("classifyRequestFailure", () => {
   });
 
   it("turns a moderation block into a refusal carrying only the documented reason, safely", () => {
-    const err = apiError(400, "moderation_blocked", `Blocked for ${KEY}\u001b[31m‮\n\tsafety`);
+    const err = apiError(400, "moderation_blocked", `Blocked for ${KEY}\u001b[31m\u202e\n\tsafety`);
     let thrown: unknown;
     try {
       classifyRequestFailure(err, "imageGenerate", "generate", [KEY]);
@@ -74,7 +74,7 @@ describe("classifyRequestFailure", () => {
 
 describe("safe reasons", () => {
   it("strips control, bidi and escape sequences, collapses whitespace and masks credentials", () => {
-    expect(safeReasonText(`  I can’t ${KEY}\u0007\u001b[2J⁦x⁩  \r\n verify. `, [KEY])).toBe("I can’t [REDACTED] x verify.");
+    expect(safeReasonText(`  I can’t ${KEY}\u0007\u001b[2J\u2066x\u2069  \r\n verify. `, [KEY])).toBe("I can’t [REDACTED] x verify.");
     expect(safeReasonText("\u0000\u001f   ", [])).toBeNull();
   });
 
