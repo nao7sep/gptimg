@@ -1,7 +1,7 @@
 import type { Sharp } from "sharp";
 import sharp from "./sharp.ts";
-import { GptImgError, fsError, processingError } from "../errors.ts";
-import { writeFile, unlink } from "node:fs/promises";
+import { GptImgError, fsError, processingError, throwIfAborted } from "../errors.ts";
+import { open, unlink } from "node:fs/promises";
 import { stagingPathFor } from "../internal/atomic-file.ts";
 import { writeOutputBytes } from "../internal/output-files.ts";
 import type { EncodingArgs, PngEncodingArgs, ResampleKernel } from "../types.ts";
@@ -29,12 +29,23 @@ export async function decodeInProfileOf<T>(input: string, main: string, besideOu
   const { icc } = await readSourceMetadata(main);
   if (!icc || icc.toString("latin1", 16, 20) !== "RGB ") return use(sharp(input));
   const iccPath = stagingPathFor(besideOutput);
+  let profile;
   try {
-    await writeFile(iccPath, icc, { flag: "wx" });
+    profile = await open(iccPath, "wx");
   } catch (err) {
+    // An exclusive-open failure never establishes ownership of this path.
     throw fsError(err, "Failed to stage the colour profile at", iccPath);
   }
   try {
+    try {
+      try {
+        await profile.writeFile(icc);
+      } finally {
+        await profile.close();
+      }
+    } catch (err) {
+      throw fsError(err, "Failed to stage the colour profile at", iccPath);
+    }
     return await use(sharp(input).withIccProfile(iccPath));
   } finally {
     await unlink(iccPath).catch(() => undefined);
@@ -91,6 +102,7 @@ export interface ImageTarget {
   path: string;
   overwrite?: boolean | undefined;
   source?: string | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 /**
@@ -183,6 +195,9 @@ async function encodeAndPublish(
     // Encoding happens before any write, so nothing has taken effect yet.
     throw processingError(err, failure, target.path, "none");
   }
+  // Native encoding has settled; cancellation can still prevent publication.
+  // Once publication starts, its filesystem work must settle normally.
+  throwIfAborted(target.signal);
   await publishImage(target, bytes, failure);
 }
 

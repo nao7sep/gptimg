@@ -211,7 +211,7 @@ export async function runDespeckle(
   const { data: outputData, ...summary } = result;
 
   throwIfAborted(signal);
-  await writeRGBA(outputData, width, height, { path: args.out, overwrite: args.overwrite, source: args.in }, args);
+  await writeRGBA(outputData, width, height, { path: args.out, overwrite: args.overwrite, signal, source: args.in }, args);
 
   return {
     ...summary,

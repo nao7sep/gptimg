@@ -46,9 +46,9 @@ describe("OutputGroup", () => {
     );
   });
 
-  it("siblingsOnDisk returns empty when the directory does not exist", () => {
+  it("siblingsOnDisk returns empty when the directory does not exist", async () => {
     const group = createOutputGroup(path.join(tmp, "missing"), "stem", "png");
-    expect(siblingsOnDisk(group)).toEqual([]);
+    expect(await siblingsOnDisk(group)).toEqual([]);
   });
 
   it("matches stem.<ext>, stem-<digits>.<ext>, stem.json, and stem-<digits>.json; ignores unrelated names", async () => {
@@ -71,7 +71,7 @@ describe("OutputGroup", () => {
     }
     const group = createOutputGroup(tmp, "stem", "png");
     expect(
-      siblingsOnDisk(group)
+      (await siblingsOnDisk(group))
         .map((p) => path.basename(p))
         .sort(),
     ).toEqual([
@@ -93,7 +93,7 @@ describe("OutputGroup", () => {
     }
     const group = createOutputGroup(tmp, "Photo", "png");
     expect(
-      siblingsOnDisk(group)
+      (await siblingsOnDisk(group))
         .map((p) => path.basename(p))
         .sort(),
     ).toEqual(["PHOTO-1.png", "Photo.json", "photo.png"]);
@@ -113,11 +113,11 @@ describe("OutputGroup", () => {
       expected.normalize("NFC") === name.normalize("NFC"),
     ));
     const group = createOutputGroup(tmp, planned, "png");
-    expect(siblingsOnDisk(group)).toEqual(discovered.map((name) => path.join(tmp, name)).sort());
-    expect(() => assertStemAvailable(tmp, planned, 1, false)).toThrow(
+    expect(await siblingsOnDisk(group)).toEqual(discovered.map((name) => path.join(tmp, name)).sort());
+    await expect(assertStemAvailable(tmp, planned, 1, false)).rejects.toThrow(
       expect.objectContaining({ code: "output.exists" }),
     );
-    expect(() => assertStemAvailable(tmp, planned, 1, true)).toThrow(
+    await expect(assertStemAvailable(tmp, planned, 1, true)).rejects.toThrow(
       expect.objectContaining({ code: "output.staleSiblings" }),
     );
   });
@@ -135,15 +135,15 @@ describe("OutputGroup", () => {
     const requestedSpelling = statSync(path.join(tmp, `${planned}-1.jpg`), { throwIfNoEntry: false });
     const actualFile = statSync(path.join(tmp, `${existing}-1.jpg`));
     if (requestedSpelling?.ino === actualFile.ino && requestedSpelling.dev === actualFile.dev) {
-      expect(() => assertOutputGroupAvailable(group, files, true)).not.toThrow();
+      await expect(assertOutputGroupAvailable(group, files, true)).resolves.toBeUndefined();
     } else {
-      expect(() => assertOutputGroupAvailable(group, files, true)).toThrow(
+      await expect(assertOutputGroupAvailable(group, files, true)).rejects.toThrow(
         expect.objectContaining({ code: "output.normalizationConflict" }),
       );
     }
     const caseChangedGroup = createOutputGroup(tmp, planned.toUpperCase(), "png");
     const caseChangedFiles = files.map((file) => path.join(tmp, path.basename(file).toUpperCase()));
-    expect(() => assertOutputGroupAvailable(caseChangedGroup, caseChangedFiles, true)).toThrow(
+    await expect(assertOutputGroupAvailable(caseChangedGroup, caseChangedFiles, true)).rejects.toThrow(
       expect.objectContaining({ code: "output.caseConflict" }),
     );
   });
@@ -155,13 +155,13 @@ describe("OutputGroup", () => {
     const group = createOutputGroup(tmp, "caf\u00e9", "png");
     if (statSync(planned, { throwIfNoEntry: false }) === undefined) {
       await link(existing, planned);
-      expect(() => assertOutputGroupAvailable(group, [planned], true)).toThrow(
+      await expect(assertOutputGroupAvailable(group, [planned], true)).rejects.toThrow(
         expect.objectContaining({ code: "output.normalizationConflict" }),
       );
       expect(await readdir(tmp)).toHaveLength(2);
     } else {
       // This volume treats the two spellings as one actual directory entry.
-      expect(() => assertOutputGroupAvailable(group, [planned], true)).not.toThrow();
+      await expect(assertOutputGroupAvailable(group, [planned], true)).resolves.toBeUndefined();
       expect(await readdir(tmp)).toHaveLength(1);
     }
   });
@@ -175,21 +175,21 @@ describe("OutputGroup", () => {
     if (lstatSync(planned, { throwIfNoEntry: false }) === undefined) {
       // Two entries stay distinct even when both symlinks name one target.
       await symlink(missing, planned);
-      expect(() => assertOutputGroupAvailable(group, [planned], true)).toThrow(
+      await expect(assertOutputGroupAvailable(group, [planned], true)).rejects.toThrow(
         expect.objectContaining({ code: "output.normalizationConflict" }),
       );
       expect(await readdir(tmp)).toHaveLength(2);
     } else {
-      expect(() => assertOutputGroupAvailable(group, [planned], true)).not.toThrow();
+      await expect(assertOutputGroupAvailable(group, [planned], true)).resolves.toBeUndefined();
       expect(await readdir(tmp)).toHaveLength(1);
     }
   });
 
-  it("classifies a metadata inspection failure and preserves its filesystem cause", () => {
+  it("classifies a metadata inspection failure and preserves its filesystem cause", async () => {
     const existing = path.join(tmp, "cafe\u0301.png");
     const planned = path.join(tmp, "caf\u00e9.png");
     // The directory snapshot can precede another writer removing the entry.
-    expect(() => refuseCaseOnlyRename(existing, planned, [path.basename(existing)])).toThrow(
+    await expect(refuseCaseOnlyRename(existing, planned, [path.basename(existing)])).rejects.toThrow(
       expect.objectContaining({ code: "fs.notFound", cause: expect.objectContaining({ code: "ENOENT" }) }),
     );
   });
@@ -198,7 +198,7 @@ describe("OutputGroup", () => {
     await writeFile(path.join(tmp, "a.b.png"), "");
     await writeFile(path.join(tmp, "axb.png"), "");
     const group = createOutputGroup(tmp, "a.b", "png");
-    expect(siblingsOnDisk(group).map((p) => path.basename(p))).toEqual(["a.b.png"]);
+    expect((await siblingsOnDisk(group)).map((p) => path.basename(p))).toEqual(["a.b.png"]);
   });
 
   it("refuses an overlapping reservation for the same case-folded stem until it is released", async () => {
@@ -258,18 +258,18 @@ describe("OutputGroup", () => {
   });
 
   describe("assertOutputGroupAvailable", () => {
-    it("passes when the group is empty on disk", () => {
+    it("passes when the group is empty on disk", async () => {
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem.png"), path.join(tmp, "stem.json")];
-      expect(() => assertOutputGroupAvailable(group, planned, false)).not.toThrow();
-      expect(() => assertOutputGroupAvailable(group, planned, true)).not.toThrow();
+      await expect(assertOutputGroupAvailable(group, planned, false)).resolves.toBeUndefined();
+      await expect(assertOutputGroupAvailable(group, planned, true)).resolves.toBeUndefined();
     });
 
     it("throws output.exists without overwrite when any group sibling is present", async () => {
       await writeFile(path.join(tmp, "stem.png"), "");
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem.png"), path.join(tmp, "stem.json")];
-      expect(() => assertOutputGroupAvailable(group, planned, false)).toThrow(/Output exists/);
+      await expect(assertOutputGroupAvailable(group, planned, false)).rejects.toThrow(/Output exists/);
     });
 
     it("blocks --overwrite when stale siblings exist that the plan would not replace", async () => {
@@ -278,7 +278,7 @@ describe("OutputGroup", () => {
       }
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem-1.png"), path.join(tmp, "stem.json")];
-      expect(() => assertOutputGroupAvailable(group, planned, true)).toThrow(/output\.staleSiblings|stale|prior run|staleSiblings/);
+      await expect(assertOutputGroupAvailable(group, planned, true)).rejects.toThrow(/output\.staleSiblings|stale|prior run|staleSiblings/);
     });
 
     it("allows --overwrite when the plan supersedes every existing sibling", async () => {
@@ -287,7 +287,7 @@ describe("OutputGroup", () => {
       }
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem-1.png"), path.join(tmp, "stem-2.png"), path.join(tmp, "stem.json")];
-      expect(() => assertOutputGroupAvailable(group, planned, true)).not.toThrow();
+      await expect(assertOutputGroupAvailable(group, planned, true)).resolves.toBeUndefined();
     });
 
     it("allows --overwrite to supersede the same image slot in another supported format", async () => {
@@ -295,15 +295,13 @@ describe("OutputGroup", () => {
       await writeFile(path.join(tmp, "stem.json"), "");
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem.png"), path.join(tmp, "stem.json")];
-      expect(() => assertOutputGroupAvailable(group, planned, true)).not.toThrow();
+      await expect(assertOutputGroupAvailable(group, planned, true)).resolves.toBeUndefined();
     });
 
     it("does not let a sidecar-only plan absorb an orphan image under overwrite", async () => {
       await writeFile(path.join(tmp, "stem.png"), "");
       const group = createOutputGroup(tmp, "stem", "json");
-      expect(() =>
-        assertOutputGroupAvailable(group, [path.join(tmp, "stem.json")], true),
-      ).toThrow(/prior run/);
+      await expect(assertOutputGroupAvailable(group, [path.join(tmp, "stem.json")], true)).rejects.toThrow(/prior run/);
     });
 
     it("refuses under --overwrite to replace a member whose name differs only in case", async () => {
@@ -311,7 +309,7 @@ describe("OutputGroup", () => {
       await writeFile(path.join(tmp, "Photo.json"), "{}");
       const group = createOutputGroup(tmp, "photo", "png");
       const planned = [path.join(tmp, "photo.png"), path.join(tmp, "photo.json")];
-      expect(() => assertOutputGroupAvailable(group, planned, true)).toThrow(
+      await expect(assertOutputGroupAvailable(group, planned, true)).rejects.toThrow(
         expect.objectContaining({ code: "output.caseConflict" }),
       );
     });
@@ -320,18 +318,16 @@ describe("OutputGroup", () => {
       await writeFile(path.join(tmp, "stem.PNG"), "");
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem.png"), path.join(tmp, "stem.json")];
-      expect(() => assertOutputGroupAvailable(group, planned, true)).toThrow(
+      await expect(assertOutputGroupAvailable(group, planned, true)).rejects.toThrow(
         expect.objectContaining({ code: "output.caseConflict" }),
       );
-      expect(() =>
-        assertOutputGroupAvailable(group, [path.join(tmp, "stem.webp"), path.join(tmp, "stem.json")], true),
-      ).not.toThrow();
+      await expect(assertOutputGroupAvailable(group, [path.join(tmp, "stem.webp"), path.join(tmp, "stem.json")], true)).resolves.toBeUndefined();
     });
 
     it("rejects internal duplicates in the planned set", async () => {
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem-1.png"), path.join(tmp, "stem-1.png")];
-      expect(() => assertOutputGroupAvailable(group, planned, true)).toThrow(/Multiple planned outputs/);
+      await expect(assertOutputGroupAvailable(group, planned, true)).rejects.toThrow(/Multiple planned outputs/);
     });
 
     it("ignores chroma-derived siblings (-mask, -cutout) as not group members", async () => {
@@ -341,30 +337,30 @@ describe("OutputGroup", () => {
       }
       const group = createOutputGroup(tmp, "stem", "png");
       const planned = [path.join(tmp, "stem.png"), path.join(tmp, "stem.json")];
-      expect(() => assertOutputGroupAvailable(group, planned, false)).not.toThrow();
-      expect(() => assertOutputGroupAvailable(group, planned, true)).not.toThrow();
+      await expect(assertOutputGroupAvailable(group, planned, false)).resolves.toBeUndefined();
+      await expect(assertOutputGroupAvailable(group, planned, true)).resolves.toBeUndefined();
     });
   });
 
   describe("assertStemAvailable (pre-call fail-fast)", () => {
-    it("passes when no sidecars exist", () => {
-      expect(() => assertStemAvailable(tmp, "stem", 2, false)).not.toThrow();
+    it("passes when no sidecars exist", async () => {
+      await expect(assertStemAvailable(tmp, "stem", 2, false)).resolves.toBeUndefined();
     });
 
     it("throws output.exists without overwrite when a sidecar is present", async () => {
       await writeFile(path.join(tmp, "stem.json"), "");
-      expect(() => assertStemAvailable(tmp, "stem", 1, false)).toThrow(/Output exists/);
+      await expect(assertStemAvailable(tmp, "stem", 1, false)).rejects.toThrow(/Output exists/);
     });
 
     it("throws output.exists without overwrite when only an image remnant is present", async () => {
       await writeFile(path.join(tmp, "stem.webp"), "");
-      expect(() => assertStemAvailable(tmp, "stem", 1, false)).toThrow(/Output exists/);
+      await expect(assertStemAvailable(tmp, "stem", 1, false)).rejects.toThrow(/Output exists/);
     });
 
     it("throws on stale prior sidecars under overwrite when the plan shrinks", async () => {
       await writeFile(path.join(tmp, "stem-1.json"), "");
       await writeFile(path.join(tmp, "stem-2.json"), "");
-      expect(() => assertStemAvailable(tmp, "stem", 1, true)).toThrow(/prior run/);
+      await expect(assertStemAvailable(tmp, "stem", 1, true)).rejects.toThrow(/prior run/);
     });
   });
 });

@@ -1,3 +1,4 @@
+import { throwIfAborted } from "../errors.ts";
 import type { RefusedResult } from "../refusal.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
 import { sidecarWriter } from "../sidecar/writer.ts";
@@ -67,7 +68,8 @@ export async function editImpl(
     const overwrite = args.overwrite ?? false;
     using _outputReservation = await reserveOutputGroup(createOutputGroup(outDir, stem, "json"));
     // Fail before the paid provider call when this stem already conflicts.
-    assertStemAvailable(outDir, stem, n, overwrite);
+    await assertStemAvailable(outDir, stem, n, overwrite);
+    throwIfAborted(opts.signal);
 
     logger.emit("info", "resolve", { event: "verb.start", input: args.in, output: path.join(outDir, stem), settings: { mask: args.mask ?? null, n, overwrite } });
     logger.emit("info", "request", { event: "provider.call", operation: "edit", model: (params.model as string | undefined) ?? null, settings: { ...params, n } });

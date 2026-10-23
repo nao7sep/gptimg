@@ -34,7 +34,7 @@ export async function gridImpl(
       stem: "grid",
       ext: extensionFor(args.format ?? ENCODING_DEFAULTS.format),
     });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    await assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     logger.emit("info", "resolve", verbStart({
       out: outPath,

@@ -185,10 +185,12 @@ async function downloadAttempt(
       }
       if (!REDIRECT_STATUSES.has(response.status)) break;
       if (redirects === MAX_REDIRECTS) {
+        await response.body?.cancel().catch(() => undefined);
         throw new GptImgError("model.badRedirect", `Too many redirects downloading ${url}.`, { subject: url });
       }
       const location = response.headers.get("location");
       if (!location) {
+        await response.body?.cancel().catch(() => undefined);
         throw new GptImgError("model.badRedirect", `Redirect downloading ${currentUrl} did not include a Location header.`, {
           subject: currentUrl,
         });
@@ -206,18 +208,24 @@ async function downloadAttempt(
       throw new HttpStatusError(response.status, response.headers, body);
     }
 
-    const total = advertisedLength(response.headers);
-    if (total !== undefined && total > maxBytes) {
-      await response.body.cancel();
-      throw new GptImgError("model.integrity", `Refusing ${name}: advertised ${total} bytes exceeds the ${maxBytes}-byte limit.`, {
-        details: { expected: maxBytes, actual: total },
-      });
-    }
-    if (expectedBytes !== undefined && total !== undefined && total !== expectedBytes) {
-      await response.body.cancel();
-      throw new GptImgError("model.integrity", `Refusing ${name}: advertised ${total} bytes, expected exactly ${expectedBytes}.`, {
-        details: { expected: expectedBytes, actual: total },
-      });
+    let total: number | undefined;
+    try {
+      total = advertisedLength(response.headers);
+      if (total !== undefined && total > maxBytes) {
+        throw new GptImgError("model.integrity", `Refusing ${name}: advertised ${total} bytes exceeds the ${maxBytes}-byte limit.`, {
+          details: { expected: maxBytes, actual: total },
+        });
+      }
+      if (expectedBytes !== undefined && total !== undefined && total !== expectedBytes) {
+        throw new GptImgError("model.integrity", `Refusing ${name}: advertised ${total} bytes, expected exactly ${expectedBytes}.`, {
+          details: { expected: expectedBytes, actual: total },
+        });
+      }
+    } catch (err) {
+      // Header refusal still owns the acquired body; cleanup must not replace
+      // the refusal that explains why the download stopped.
+      await response.body.cancel().catch(() => undefined);
+      throw err;
     }
     let received = 0;
     const stream = createWriteStream(destPath);

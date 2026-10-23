@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { GptImgError, fsError } from "../errors.ts";
@@ -77,10 +76,10 @@ function malformed(subject: string, detail: string): GptImgError {
  * (store-recovery-conventions). An absent or unreadable file is left to the
  * caller's own overwrite decision.
  */
-export function refuseNewerSidecar(sidecarPath: string): void {
+export async function refuseNewerSidecar(sidecarPath: string): Promise<void> {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(sidecarPath, "utf-8"));
+    parsed = JSON.parse(await readFile(sidecarPath, "utf-8"));
   } catch {
     return;
   }

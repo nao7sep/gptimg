@@ -196,7 +196,7 @@ export async function runLayer(
   }
 
   const placedSize = placed === topBuffer ? { width: topWidth, height: topHeight } : { width: visW, height: visH };
-  await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.base }, "layer", args, () =>
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, signal, source: args.base }, "layer", args, () =>
     decodeImage(args.base)
       .ensureAlpha()
       .composite([{ input: placed, raw: { ...placedSize, channels: 4 }, left: dstX, top: dstY }]),

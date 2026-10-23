@@ -1,3 +1,4 @@
+import { throwIfAborted } from "../errors.ts";
 import path from "node:path";
 import type { RefusedResult } from "../refusal.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
@@ -77,7 +78,8 @@ export async function generateImpl(
     // process fails without charging.
     using _outputReservation = await reserveOutputGroup(createOutputGroup(outDir, stem, "json"));
     // Sidecars identify the group independently of the eventual image format.
-    assertStemAvailable(outDir, stem, n, overwrite);
+    await assertStemAvailable(outDir, stem, n, overwrite);
+    throwIfAborted(opts.signal);
 
     logger.emit("info", "resolve", { event: "verb.start", input: null, output: path.join(outDir, stem), settings: { n, overwrite } });
     logger.emit("info", "request", { event: "provider.call", operation: "generate", model: (params.model as string | undefined) ?? null, settings: { ...params, n } });

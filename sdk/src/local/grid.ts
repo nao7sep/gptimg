@@ -112,7 +112,7 @@ export async function runGrid(
   // `background` here is the sheet's, already painted; as an encoding option it would fill the
   // transparency again, and "transparent" would fill it black.
   const { background: _sheet, ...encoding } = args;
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "grid", encoding, () =>
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, signal }, "grid", encoding, () =>
     sharp({ create: { width, height, channels: 4, background } }).composite(composites),
   );
 

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import sharp from "./sharp.ts";
 import { GptImgError } from "../errors.ts";
 
@@ -40,7 +41,13 @@ export async function shrinkForVision(
     const needsShrink = ow > fit.width || oh > fit.height;
 
     if (!needsShrink) {
-      const buffer = await sharp(input as Buffer).toBuffer();
+      // Validate every pixel without another lossy encoder pass. Formats sharp
+      // converts by default still take the existing conversion path below.
+      const preserve = fmt === "jpeg" || fmt === "png" || fmt === "webp";
+      const buffer = preserve
+        ? typeof input === "string" ? await readFile(input) : Buffer.isBuffer(input) ? input : Buffer.from(input)
+        : await sharp(input as Buffer).toBuffer();
+      if (preserve) await sharp(buffer).raw().toBuffer();
       return {
         buffer,
         applied: false,

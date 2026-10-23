@@ -40,7 +40,7 @@ export async function composeImpl(
       stem: defaultStem(args.in),
       ext: extensionFor(args.format ?? ENCODING_DEFAULTS.format),
     });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    await assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     const over: ComposeOver | undefined = args.over
       ? parseOverColor(args.over)

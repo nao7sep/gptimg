@@ -3,7 +3,8 @@ import path from "node:path";
 import sharp from "../image/sharp.ts";
 import { defaultModelFor } from "../ai-models.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
-import { fsError, GptImgError } from "../errors.ts";
+import { throwIfAborted, fsError, GptImgError } from "../errors.ts";
+import { inputImageError } from "../image/bridge.ts";
 import { detectFormat } from "../image/detectFormat.ts";
 import { hash } from "../image/hash.ts";
 import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
@@ -129,16 +130,26 @@ async function maskForms(png: Uint8Array): Promise<{ data: Uint8Array; guide: { 
 
 /** An earlier turn's image, fitted for resending; a file that is gone is left out with a warning. */
 async function readHistoryImage(filePath: string, logger: Logger): Promise<ChatImage | null> {
+  let bytes: Buffer;
   try {
-    const image = sharp(filePath).resize({ width: HISTORY_IMAGE_MAX_SIDE, height: HISTORY_IMAGE_MAX_SIDE, fit: "inside", withoutEnlargement: true });
-    const hasAlpha = (await sharp(filePath).metadata()).hasAlpha;
+    // Read through Node so a missing file is distinguished by its structured
+    // filesystem code, rather than sharp's opaque file-open message.
+    bytes = await readFile(filePath);
+  } catch (err) {
+    const error = fsError(err, "Failed to read history image", filePath);
+    if (error.code !== "fs.notFound") throw error;
+    logger.emit("warn", "request", { event: "chat.historyImageSkipped", path: filePath, error: diagnosticOf(error) });
+    return null;
+  }
+  try {
+    const image = sharp(bytes).resize({ width: HISTORY_IMAGE_MAX_SIDE, height: HISTORY_IMAGE_MAX_SIDE, fit: "inside", withoutEnlargement: true });
+    const hasAlpha = (await sharp(bytes).metadata()).hasAlpha;
     const { data, info } = await (hasAlpha ? image.png() : image.jpeg({ quality: 90 })).toBuffer({ resolveWithObject: true });
     const format = hasAlpha ? "png" : "jpeg";
     logger.emit("debug", "request", { event: "chat.historyImage", path: filePath, width: info.width, height: info.height, format });
     return { name: path.basename(filePath), data: new Uint8Array(data), format };
   } catch (err) {
-    logger.emit("warn", "request", { event: "chat.historyImageSkipped", path: filePath, error: diagnosticOf(err) });
-    return null;
+    throw inputImageError(err, "Failed to prepare history image", filePath);
   }
 }
 
@@ -217,7 +228,8 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     // A turn usually makes one image, which its stem names; a conflict found after the call,
     // when the count is known, fails those images as item failures.
     using _outputReservation = await reserveOutputGroup(createOutputGroup(outDir, stem, "json"));
-    assertStemAvailable(outDir, stem, 1, overwrite);
+    await assertStemAvailable(outDir, stem, 1, overwrite);
+    throwIfAborted(opts.signal);
 
     logger.emit("info", "resolve", {
       event: "verb.start",

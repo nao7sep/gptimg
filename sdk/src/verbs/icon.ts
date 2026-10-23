@@ -32,7 +32,7 @@ export async function iconImpl(
 
     const plan = planIconOutputs(outDir, name, pngs);
     for (const filePath of plan.all) {
-      assertSingleFileAvailable(filePath, args.overwrite ?? false);
+      await assertSingleFileAvailable(filePath, args.overwrite ?? false);
     }
 
     logger.emit("info", "resolve", verbStart({

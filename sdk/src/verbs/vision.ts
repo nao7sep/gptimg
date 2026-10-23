@@ -136,7 +136,7 @@ export async function visionImpl(
     const stemPath = path.join(outDir, stem);
     const outputGroup = createOutputGroup(outDir, stem, "json");
     using _outputReservation = await reserveOutputGroup(outputGroup);
-    assertOutputGroupAvailable(outputGroup, [`${stemPath}.json`], args.overwrite ?? false);
+    await assertOutputGroupAvailable(outputGroup, [`${stemPath}.json`], args.overwrite ?? false);
 
     const inputs = args.inputs;
     // Each preparation retains the original while shrinking and hashing it. Finish

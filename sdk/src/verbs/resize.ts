@@ -36,7 +36,7 @@ export async function resizeImpl(
       stem: defaultStem(args.in),
       ext: extensionFor(args.format ?? ENCODING_DEFAULTS.format),
     });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    await assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     logger.emit("info", "resolve", verbStart({
       input: args.in,

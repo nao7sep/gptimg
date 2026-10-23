@@ -38,7 +38,7 @@ export async function backplateImpl(
       stem: defaultStem(size),
       ext: extensionFor(args.format ?? ENCODING_DEFAULTS.format),
     });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    await assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     logger.emit("info", "resolve", verbStart({
       out: outPath,

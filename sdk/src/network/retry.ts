@@ -241,22 +241,21 @@ export async function callWithRetry<T>(
         attempt + 1,
         budget.retryIntervals,
       );
-      // Retry-After is untrusted external input. It may ask for a useful short
-      // delay, but it cannot expand the caller's explicit time budget into an
-      // hours- or days-long wait. Model routing caps it at thirty seconds, or
-      // the caller's shorter per-attempt timeout.
+      // Retry-After is the provider's minimum delay. If it exceeds our bounded
+      // wait, surface this failure instead of resending before it permits us.
       const retryAfterCap = Math.min(budget.timeout, 30_000);
-      const retryAfterCapped = headerWait != null && headerWait > retryAfterCap;
-      const waitMs = headerWait != null
-        ? Math.min(headerWait, retryAfterCap)
-        : scheduledWait;
+      if (headerWait != null && headerWait > retryAfterCap) {
+        logger?.emit("warn", "response", { event: "attempt.failed", ...failedAttemptFields(ctx, attempt + 1, started, err) });
+        throw err;
+      }
+      const waitMs = headerWait ?? scheduledWait;
       attempt += 1;
       logger?.emit("warn", "retry", {
         event: "attempt.retrying",
         ...failedAttemptFields(ctx, attempt, started, err),
         waitMs: Math.round(waitMs),
         retryAfterHeader: headerWait != null,
-        retryAfterCapped,
+        retryAfterCapped: false,
       });
       await abortableSleep(waitMs, signal);
       continue;

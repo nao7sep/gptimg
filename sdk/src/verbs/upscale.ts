@@ -36,7 +36,7 @@ export async function upscaleImpl(
       stem: defaultStem(args.in),
       ext: extensionFor(args.format ?? ENCODING_DEFAULTS.format),
     });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    await assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     const onnx = callPolicy(ctx, args.policy).onnx ?? {};
     const modelsDir = callModelsDir(ctx, args.modelsDir);

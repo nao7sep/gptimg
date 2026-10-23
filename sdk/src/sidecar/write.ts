@@ -32,7 +32,7 @@ export async function writeSidecar(
       subject: sidecarPath,
     });
   }
-  if (opts.overwrite) refuseNewerSidecar(sidecarPath);
+  if (opts.overwrite) await refuseNewerSidecar(sidecarPath);
   try {
     await mkdir(path.dirname(sidecarPath), { recursive: true });
   } catch (err) {

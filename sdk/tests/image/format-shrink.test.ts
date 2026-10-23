@@ -89,6 +89,21 @@ describe("shrinkForVision", () => {
     });
   });
 
+  it.each(["jpeg", "png", "webp"] as const)("keeps the original %s bytes when no transform is needed", async (format) => {
+    const input = await sharp({ create: { width: 12, height: 8, channels: 3, background: "#ed8142" } })
+      .withMetadata({ orientation: 6 })[format]().toBuffer();
+    const out = await shrinkForVision(input);
+    expect(out.buffer).toBe(input);
+    expect((await sharp(out.buffer).metadata()).orientation).toBe(6);
+    expect(out.applied).toBe(false);
+  });
+
+  it("rejects truncated pixels even when dimensions can be read and no shrink is needed", async () => {
+    const input = (await readFile(fixture("green-disk.png"))).subarray(0, 100);
+    await expect(sharp(input).metadata()).resolves.toMatchObject({ width: 128 });
+    await expect(shrinkForVision(input)).rejects.toMatchObject({ code: "image.undecodable" });
+  });
+
   it("shrinks oversized images while preserving aspect ratio", async () => {
     const input = await sharp({
       create: {

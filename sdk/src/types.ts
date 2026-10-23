@@ -1458,7 +1458,8 @@ export interface VerifyResult {
   /** True when there are no findings. */
   ok: boolean;
   findings: VerifyFinding[];
-  /** The sidecar as read, or null when it is missing or unreadable. */
+  /** The sidecar as read, or null when missing, malformed or in a newer format.
+   * Operational read failures throw instead of producing a finding. */
   record: Sidecar | null;
 }
 

@@ -18,7 +18,8 @@ import { validateVerifyArgs } from "./schemas.ts";
  * sidecar is present and readable in a supported format, one of its file
  * entries carries the image's SHA-256 under the image's own name, and the
  * image decodes in the format the entry records. Findings are results, not
- * errors; the call throws only when the image itself cannot be read.
+ * errors. Image read failures and operational sidecar read failures (such as
+ * permissions or device errors) throw, as does cancellation.
  */
 export async function verifyImpl(
   ctx: SdkContext,

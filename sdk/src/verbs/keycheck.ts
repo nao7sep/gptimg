@@ -67,7 +67,7 @@ export async function keycheckImpl(
         stem: defaultStem(args.in),
         ext: extensionFor(args.format ?? ENCODING_DEFAULTS.format),
       });
-      assertSingleFileAvailable(heatmapOut, args.overwrite ?? false);
+      await assertSingleFileAvailable(heatmapOut, args.overwrite ?? false);
     }
 
     logger.emit("info", "resolve", verbStart({

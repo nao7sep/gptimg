@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp, { type Sharp } from "sharp";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readImageSize, resizeSingleChannel, writeImageFile, writeMaskPNG, writeRGBA } from "../../src/image/bridge.ts";
 
 describe("resizeSingleChannel", () => {
@@ -122,6 +122,28 @@ describe("image publication", () => {
       });
       expect((await readFile(file)).equals(before)).toBe(true);
       await expect(readdir(dir)).resolves.toEqual(["out.png"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("honours cancellation after encoding settles, before replacing the output", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "gptimg-bridge-"));
+    try {
+      const file = path.join(dir, "out.png");
+      await writeFile(file, "earlier image");
+      const controller = new AbortController();
+      const pipeline = onePixel();
+      const encode = pipeline.toBuffer.bind(pipeline);
+      vi.spyOn(pipeline, "toBuffer").mockImplementation((async () => {
+        const bytes = await encode();
+        controller.abort();
+        return bytes;
+      }) as typeof pipeline.toBuffer);
+      await expect(writeImageFile({ path: file, overwrite: true, signal: controller.signal }, "encode", {}, () => pipeline))
+        .rejects.toMatchObject({ kind: "cancelled", effect: "none" });
+      expect(await readFile(file, "utf8")).toBe("earlier image");
+      expect(await readdir(dir)).toEqual(["out.png"]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

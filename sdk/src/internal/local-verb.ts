@@ -8,7 +8,7 @@
  */
 
 import path from "node:path";
-import { readdirSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { cancelledError, GptImgError, fsError } from "../errors.ts";
 import { assertAbsolutePath } from "./absolute-path.ts";
 import { createLogger, type Logger } from "../events/index.ts";
@@ -42,17 +42,17 @@ export function inferStem(filePath: string): string {
  * variant (`assertOutputGroupAvailable` / `assertStemAvailable` in
  * output-group.ts) is for generate/edit's multi-file artifact groups.
  */
-export function assertSingleFileAvailable(
+export async function assertSingleFileAvailable(
   filePath: string,
   allowOverwrite: boolean,
-): void {
+): Promise<void> {
   // Compare case-folded NFC: case variants and canonical Unicode spellings
   // collide on standard macOS/Windows volumes. Keep discovered names for I/O.
   const dir = path.dirname(filePath);
   const target = path.basename(filePath).normalize("NFC").toLowerCase();
   let entries: string[];
   try {
-    entries = readdirSync(dir);
+    entries = await readdir(dir);
   } catch (err) {
     // A missing directory means nothing to collide with; other errors surface.
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
@@ -60,7 +60,7 @@ export function assertSingleFileAvailable(
   }
   const clashes = entries.filter((name) => name.normalize("NFC").toLowerCase() === target);
   if (allowOverwrite) {
-    for (const clash of clashes) refuseCaseOnlyRename(path.join(dir, clash), filePath, entries);
+    for (const clash of clashes) await refuseCaseOnlyRename(path.join(dir, clash), filePath, entries);
   } else if (clashes.length > 0) {
     const existing = path.join(dir, clashes[0]!);
     refuse("output.exists", `Output exists: ${existing}. Set overwrite: true to allow.`, { subject: existing });
@@ -258,6 +258,9 @@ export async function withVerbLogger<T>(
  * cancellation, keeping any effect the work had reported.
  */
 function toSdkError(verbName: VerbName, thrown: unknown, signal: AbortSignal | undefined): GptImgError {
+  // Icon publication defers cancellation once it starts. Its recorded paths
+  // belong to the settled publication failure, even if an abort arrived meanwhile.
+  if (verbName === "icon" && thrown instanceof GptImgError && thrown.details?.publishedPaths !== undefined) return thrown;
   if (signal?.aborted && !(thrown instanceof GptImgError && thrown.code === "cancelled")) {
     return cancelledError(thrown, thrown instanceof GptImgError ? thrown.effect : "unknown");
   }

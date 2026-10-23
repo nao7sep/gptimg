@@ -35,7 +35,7 @@ export async function encodeImpl(
       stem: defaultStem(args.in),
       ext: extensionFor(args.format),
     });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    await assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     logger.emit("info", "resolve", verbStart({
       input: args.in,

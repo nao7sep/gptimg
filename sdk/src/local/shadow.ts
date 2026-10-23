@@ -203,7 +203,7 @@ export async function runShadow(
   const finalPipe = keepCanvas
     ? decodeImage(composed).extract({ left: subjX, top: subjY, width: w, height: h })
     : decodeImage(composed);
-  await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "shadow", args, () => finalPipe);
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, signal, source: args.in }, "shadow", args, () => finalPipe);
 
   return {
     output: args.out,

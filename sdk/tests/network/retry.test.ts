@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GptImgError } from "../../src/errors.ts";
 import { isAbortError } from "../../src/network/failure.ts";
 import { callWithRetry } from "../../src/network/retry.ts";
-import { NETWORK_DEFAULTS, type NetworkBudget } from "../../src/network/defaults.ts";
+import type { NetworkBudget } from "../../src/network/defaults.ts";
 import type { Logger } from "../../src/events/index.ts";
 
 const fast: NetworkBudget = {
@@ -239,63 +239,28 @@ describe("callWithRetry", () => {
     expect(out).toBe("ok");
   });
 
-  it("caps an untrusted Retry-After value to the configured timeout", async () => {
+  it.each<{ headers: Record<string, string>; timeout: number }>([
+    { headers: { "retry-after": "0.026" }, timeout: 25 },
+    { headers: { "retry-after-ms": "26" }, timeout: 25 },
+    { headers: { "retry-after": "31" }, timeout: 60_000 },
+    { headers: { "retry-after-ms": "30001" }, timeout: 60_000 },
+  ])("stops without shortening a header wait beyond the limit (%j)", async ({ headers, timeout }) => {
     vi.useFakeTimers();
     try {
       const logger = fakeLogger();
-      const headers = new Headers({ "retry-after": "9999" });
-      const fn = vi
-        .fn()
-        .mockRejectedValueOnce(Object.assign(new Error("429"), { status: 429, headers }))
-        .mockResolvedValueOnce("ok");
-      const pending = callWithRetry(
-        {
-          budgetName: "imageGenerate",
-          budget: { ...fast, timeout: 25, maxRetries: 1 },
-          logger,
-        },
+      const original = http(429, headers);
+      const fn = vi.fn().mockRejectedValueOnce(original).mockResolvedValueOnce("ok");
+      await expect(callWithRetry(
+        { budgetName: "imageGenerate", budget: { ...fast, timeout }, logger },
         fn,
-      );
-      await vi.advanceTimersByTimeAsync(25);
-      await expect(pending).resolves.toBe("ok");
-      expect(emitted(logger, "warn")[0]?.[1]).toMatchObject({
-        waitMs: 25,
-        retryAfterHeader: true,
-        retryAfterCapped: true,
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it.each<Record<string, string>>([
-    { "retry-after": "300" },
-    { "retry-after-ms": "300000" },
-  ])("caps provider-directed retry waits at thirty seconds (%j)", async (headers) => {
-    vi.useFakeTimers();
-    const ctrl = new AbortController();
-    const logger = fakeLogger();
-    const fn = vi.fn().mockRejectedValueOnce(http(429, headers)).mockResolvedValueOnce("ok");
-    const operation = callWithRetry(
-      { budgetName: "imageGenerate", budget: NETWORK_DEFAULTS.imageGenerate, signal: ctrl.signal, logger },
-      fn,
-    );
-    // Keep rejection owned even when a failed assertion cancels the pending sleep.
-    const settled = operation.then((result) => ({ result }), (error: unknown) => ({ error }));
-    try {
-      await vi.advanceTimersByTimeAsync(29_999);
+      )).rejects.toBe(original);
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(fn).toHaveBeenCalledOnce();
-      await vi.advanceTimersByTimeAsync(1);
-      expect(fn).toHaveBeenCalledTimes(2);
-      await expect(operation).resolves.toBe("ok");
-      expect(emitted(logger, "warn")[0]?.[1]).toMatchObject({
-        waitMs: 30_000,
-        retryAfterHeader: true,
-        retryAfterCapped: true,
-      });
+      expect(vi.getTimerCount()).toBe(0);
+      expect(emitted(logger, "warn")).toEqual([
+        ["response", expect.objectContaining({ event: "attempt.failed", attempt: 1, status: 429 })],
+      ]);
     } finally {
-      ctrl.abort();
-      await settled;
       vi.useRealTimers();
     }
   });
@@ -411,25 +376,54 @@ describe("callWithRetry", () => {
     expect(fn).toHaveBeenCalledOnce();
   });
 
-  // Retry-After supplied as an HTTP-date string (not a number of seconds): the
-  // header parser falls back to Date.parse and waits until that instant.
-  it("honors a Retry-After HTTP-date header", async () => {
-    // 0ms in the past → non-negative-after-now check yields a ~0 wait; the
-    // point is that the date branch is taken without throwing.
-    const when = new Date(Date.now() + 5).toUTCString();
-    const headers = new Headers({ "retry-after": when });
-    const fn = vi
-      .fn()
-      .mockRejectedValueOnce(
-        Object.assign(new Error("429"), { status: 429, headers }),
-      )
-      .mockResolvedValueOnce("ok");
-    const out = await callWithRetry(
-      { budgetName: "imageGenerate", budget: fast },
-      fn,
+  it("honors a future Retry-After HTTP-date without retrying early", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T00:00:00.000Z"));
+    try {
+      const logger = fakeLogger();
+      const when = new Date(Date.now() + 5000).toUTCString();
+      const fn = vi.fn().mockRejectedValueOnce(http(429, { "retry-after": when })).mockResolvedValueOnce("ok");
+      const operation = callWithRetry({ budgetName: "imageGenerate", budget: fast, logger }, fn);
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(fn).toHaveBeenCalledOnce();
+      expect(emitted(logger, "warn")[0]?.[1]).toMatchObject({
+        event: "attempt.retrying",
+        waitMs: 5000,
+        retryAfterHeader: true,
+        retryAfterCapped: false,
+      });
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(operation).resolves.toBe("ok");
+      expect(fn).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts during a provider-directed retry wait", async () => {
+    vi.useFakeTimers();
+    const ctrl = new AbortController();
+    const logger = fakeLogger();
+    const fn = vi.fn().mockRejectedValueOnce(http(429, { "retry-after": "5" })).mockResolvedValueOnce("ok");
+    const operation = callWithRetry(
+      { budgetName: "imageGenerate", budget: fast, signal: ctrl.signal, logger }, fn,
     );
-    expect(out).toBe("ok");
-    expect(fn).toHaveBeenCalledTimes(2);
+    const rejected = expect(operation).rejects.toMatchObject({ code: "cancelled", message: "stop waiting" });
+    try {
+      await vi.advanceTimersByTimeAsync(1000);
+      ctrl.abort(new Error("stop waiting"));
+      await rejected;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(fn).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(emitted(logger, "warn")[0]?.[1]).toMatchObject({
+        event: "attempt.retrying", waitMs: 5000, retryAfterHeader: true,
+      });
+    } finally {
+      ctrl.abort();
+      await operation.catch(() => undefined);
+      vi.useRealTimers();
+    }
   });
 
   // A Retry-After value that is neither a finite number nor a parseable date

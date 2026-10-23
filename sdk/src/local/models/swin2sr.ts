@@ -1,6 +1,7 @@
 /**
  * Swin2SR ×4 super-resolution wrapper. The ONNX session over the installed
- * model is created by the first upscale and reused for the process lifetime.
+ * model is created by the first upscale and reused until model.release retires
+ * the cache.
  *
  * The model is a windowed-attention transformer with two hard constraints the
  * caller must satisfy, neither of which the exported graph handles itself:

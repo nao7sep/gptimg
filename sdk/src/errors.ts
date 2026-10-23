@@ -96,6 +96,10 @@ export interface ErrorDetails {
   errno?: string;
   syscall?: string;
   refusal?: Refusal;
+  /** Icon targets confirmed published before a publication failure. */
+  publishedPaths?: string[];
+  /** Icon targets not confirmed published; the failed target may have changed. */
+  remainingPaths?: string[];
 }
 
 /** A serialized cause: enough to diagnose, nothing that needs its original realm. */

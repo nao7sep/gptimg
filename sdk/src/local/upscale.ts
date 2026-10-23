@@ -168,7 +168,7 @@ export async function runUpscale(
       rgba[d + 3] = alphaResized[p]!;
     }
     throwIfAborted(signal);
-    await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite, source: args.in }, args);
+    await writeRGBA(rgba, finalW, finalH, { path: args.out, overwrite: args.overwrite, signal, source: args.in }, args);
   } catch (err) {
     throw processingError(err, "upscale: failed to resample or write", args.out);
   }

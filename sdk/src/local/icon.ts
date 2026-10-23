@@ -12,7 +12,6 @@
  * differs, which the caller arranges.
  */
 
-import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
@@ -20,7 +19,7 @@ import { fsError, GptImgError, processingError, throwIfAborted } from "../errors
 import { decodeImage, encodeImage, inputImageError, readImageSize } from "../image/bridge.ts";
 import { readSourceMetadata, type SourceMetadata } from "../image/source-metadata.ts";
 import { publishStaged, stageFile, syncDirectory } from "../internal/atomic-file.ts";
-import { refuse } from "../refusal.ts";
+import { RefusalSignal, refuse } from "../refusal.ts";
 import type { Logger } from "../events/index.ts";
 import type { PngEncodingArgs } from "../types.ts";
 import { ICON_DEFAULTS } from "../defaults.ts";
@@ -197,11 +196,10 @@ export async function runIcon(
     throw processingError(err, "icon: failed to build icons from", args.in, "none");
   }
 
-  // Publish the set together: every file is staged beside its target first, so
-  // a failure to write any leaves the folder as it was; then each is renamed
-  // in. A failure or a cancellation while renaming removes the files this call
-  // created, never a file that existed before it (an overwrite has already
-  // replaced those), so old and new sizes mix only if a rename itself fails.
+  // Stage every file before publishing any target. Publication is sequential,
+  // with each file appearing whole; the set is not an atomic replacement.
+  // Cancellation is honored through staging, then deferred until the complete
+  // set has published. An I/O failure keeps every confirmed published file.
   const overwrite = args.overwrite ?? false;
   const staged: Array<{ path: string; temp: string }> = [];
   try {
@@ -209,16 +207,14 @@ export async function runIcon(
       throwIfAborted(signal);
       staged.push({ path: file.path, temp: await stageFile(file.path, file.bytes) });
     }
+    throwIfAborted(signal);
   } catch (err) {
     for (const { temp } of staged) await unlink(temp).catch(() => undefined);
     throw processingError(err, "icon: failed to stage icons from", args.in, "none");
   }
-  const created: string[] = [];
-  let replaced = false;
+  const published: string[] = [];
   try {
     for (const [i, file] of staged.entries()) {
-      throwIfAborted(signal);
-      const existed = existsSync(file.path);
       try {
         await publishStaged(file.temp, file.path, { overwrite });
       } catch (err) {
@@ -227,17 +223,27 @@ export async function runIcon(
         }
         throw fsError(err, "icon: failed to publish", file.path, "unknown");
       }
-      if (existed) replaced = true;
-      else created.push(file.path);
+      published.push(file.path);
       opts.logger?.progress("write", i + 1, staged.length, "renditions");
     }
     for (const dir of new Set(staged.map((file) => path.dirname(file.path)))) await syncDirectory(dir);
   } catch (err) {
     for (const { temp } of staged) await unlink(temp).catch(() => undefined);
-    for (const filePath of created) await unlink(filePath).catch(() => undefined);
-    const failure = processingError(err, "icon: failed to publish icons from", args.in);
-    // With the created files removed, only replaced files are left changed.
-    throw failure instanceof GptImgError ? failure.withEffect(replaced ? "unknown" : "none") : failure;
+    if (err instanceof RefusalSignal && published.length === 0) throw err;
+    const failure = err instanceof RefusalSignal
+      ? new GptImgError("refused", err.message, { subject: err.refusal.subject, cause: err, details: { refusal: err.refusal } })
+      : processingError(err, "icon: failed to publish icons from", args.in);
+    if (!(failure instanceof GptImgError)) throw failure;
+    throw new GptImgError(failure.code, failure.message, {
+      cause: failure,
+      subject: failure.subject,
+      effect: "unknown",
+      details: {
+        ...failure.details,
+        publishedPaths: published,
+        remainingPaths: staged.slice(published.length).map((file) => file.path),
+      },
+    });
   }
 
   return {

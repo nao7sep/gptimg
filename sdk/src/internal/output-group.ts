@@ -1,5 +1,4 @@
-import { existsSync, lstatSync, readdirSync } from "node:fs";
-import { realpath, stat, unlink } from "node:fs/promises";
+import { lstat, readdir, realpath, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { GptImgError, fsError } from "../errors.ts";
 import { refuse } from "../refusal.ts";
@@ -136,10 +135,10 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function siblingsOnDisk(group: OutputGroup): string[] {
+export async function siblingsOnDisk(group: OutputGroup): Promise<string[]> {
   let entries: string[];
   try {
-    entries = readdirSync(group.dir);
+    entries = await readdir(group.dir);
   } catch (err) {
     const e = err as NodeJS.ErrnoException;
     if (e.code === "ENOENT") return [];
@@ -177,7 +176,7 @@ function artifactIdentity(filePath: string, sidecarExt: string): string {
  * A slot's image may change format, so only a same-format extension must
  * match exactly.
  */
-export function refuseCaseOnlyRename(existing: string, planned: string, directoryEntries: readonly string[]): void {
+export async function refuseCaseOnlyRename(existing: string, planned: string, directoryEntries: readonly string[]): Promise<void> {
   const actualName = path.basename(existing);
   const requestedName = path.basename(planned);
   const existingName = actualName.normalize("NFC");
@@ -203,8 +202,11 @@ export function refuseCaseOnlyRename(existing: string, planned: string, director
       try {
         // Replacement acts on directory entries, including dangling symlinks,
         // rather than on the targets a symlink names.
-        const actual = lstatSync(existing);
-        const requested = lstatSync(requestedPath, { throwIfNoEntry: false });
+        const actual = await lstat(existing);
+        const requested = await lstat(requestedPath).catch((err: NodeJS.ErrnoException) => {
+          if (err.code === "ENOENT") return undefined;
+          throw err;
+        });
         if (requested?.dev === actual.dev && requested.ino === actual.ino) return;
       } catch (err) {
         throw fsError(err, `Failed to inspect output filenames ${requestedPath} and`, existing);
@@ -242,7 +244,7 @@ export function refuseCaseOnlyRename(existing: string, planned: string, director
  *   `output.caseConflict`. A Unicode spelling change that would create a
  *   distinct file is refused as `output.normalizationConflict`.
  */
-export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: string[], allowOverwrite: boolean): void {
+export async function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: string[], allowOverwrite: boolean): Promise<void> {
   const plannedResolved = new Set<string>();
   const plannedArtifacts = new Map<string, string>();
   for (const p of plannedFiles) {
@@ -254,7 +256,7 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
     plannedArtifacts.set(artifactIdentity(p, group.sidecarExt), p);
   }
 
-  const existing = siblingsOnDisk(group);
+  const existing = await siblingsOnDisk(group);
   if (existing.length === 0) return;
 
   if (!allowOverwrite) {
@@ -279,8 +281,8 @@ export function assertOutputGroupAvailable(group: OutputGroup, plannedFiles: str
   const existingNames = existing.map((p) => path.basename(p));
   for (const p of existing) {
     const identity = artifactIdentity(p, group.sidecarExt);
-    refuseCaseOnlyRename(p, plannedArtifacts.get(identity)!, existingNames);
-    if (identity.startsWith("sidecar:")) refuseNewerSidecar(p);
+    await refuseCaseOnlyRename(p, plannedArtifacts.get(identity)!, existingNames);
+    if (identity.startsWith("sidecar:")) await refuseNewerSidecar(p);
   }
 }
 
@@ -332,12 +334,16 @@ export async function removeUnpublishedSlots(
   const published = new Set(publishedFiles.map(fileName));
   let siblings: string[];
   try {
-    siblings = siblingsOnDisk(group);
+    siblings = await siblingsOnDisk(group);
   } catch {
     // The run's results are already published, so a folder that cannot be
     // listed now must not fail it: report the owned slots still present
     // under this run's names, which is all that can be seen without a listing.
-    return ownedFiles.filter((filePath) => !published.has(fileName(filePath)) && existsSync(filePath));
+    const candidates = ownedFiles.filter((filePath) => !published.has(fileName(filePath)));
+    const present = await Promise.all(candidates.map((filePath) =>
+      stat(filePath).then(() => true, () => false),
+    ));
+    return candidates.filter((_, index) => present[index]);
   }
   const sidecars = new Map(siblings
     .filter((filePath) => artifactIdentity(filePath, group.sidecarExt).startsWith("sidecar:"))
@@ -354,7 +360,7 @@ export async function removeUnpublishedSlots(
     const sidecarPath = sidecars.get(sidecarIdentity) ??
       `${filePath.slice(0, -path.extname(filePath).length)}.${group.sidecarExt}`;
     try {
-      refuseNewerSidecar(sidecarPath);
+      await refuseNewerSidecar(sidecarPath);
       await unlink(filePath);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") kept.push(filePath);
@@ -370,7 +376,7 @@ export async function removeUnpublishedSlots(
  * before spending on a provider call. The full image+sidecar check
  * (assertOutputGroupAvailable) still runs after the response as the authority.
  */
-export function assertStemAvailable(dir: string, stem: string, count: number, allowOverwrite: boolean): void {
+export async function assertStemAvailable(dir: string, stem: string, count: number, allowOverwrite: boolean): Promise<void> {
   const group = createOutputGroup(dir, stem, "png");
-  assertOutputGroupAvailable(group, ownedSlotFiles(group, count, 0), allowOverwrite);
+  await assertOutputGroupAvailable(group, ownedSlotFiles(group, count, 0), allowOverwrite);
 }

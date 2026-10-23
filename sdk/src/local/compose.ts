@@ -305,6 +305,6 @@ export async function runCompose(
   }
 
   throwIfAborted(signal);
-  await writeRGBA(out, width, height, { path: args.out, overwrite: args.overwrite, source: args.in }, args);
+  await writeRGBA(out, width, height, { path: args.out, overwrite: args.overwrite, signal, source: args.in }, args);
   return { output: args.out, width, height, over: over.kind };
 }

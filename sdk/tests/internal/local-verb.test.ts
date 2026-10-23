@@ -41,20 +41,18 @@ describe("assertSingleFileAvailable", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("allows writing when the target does not exist", () => {
-    expect(() =>
-      assertSingleFileAvailable(path.join(tmp, "nope.png"), false),
-    ).not.toThrow();
+  it("allows writing when the target does not exist", async () => {
+    await expect(assertSingleFileAvailable(path.join(tmp, "nope.png"), false)).resolves.toBeUndefined();
   });
 
   it("throws output.exists when the target exists and overwrite is false", async () => {
     const target = path.join(tmp, "there.png");
     await writeFile(target, "x");
-    expect(() => assertSingleFileAvailable(target, false)).toThrowError(
+    await expect(assertSingleFileAvailable(target, false)).rejects.toThrowError(
       RefusalSignal,
     );
     try {
-      assertSingleFileAvailable(target, false);
+      await assertSingleFileAvailable(target, false);
     } catch (err) {
       expect((err as RefusalSignal).code).toBe("output.exists");
       expect((err as Error).message).toContain("overwrite: true");
@@ -64,16 +62,14 @@ describe("assertSingleFileAvailable", () => {
   it("allows overwriting when overwrite is true", async () => {
     const target = path.join(tmp, "there.png");
     await writeFile(target, "x");
-    expect(() => assertSingleFileAvailable(target, true)).not.toThrow();
+    await expect(assertSingleFileAvailable(target, true)).resolves.toBeUndefined();
   });
 
   it("blocks a case-differing existing file (Photo.png blocks photo.png)", async () => {
     await writeFile(path.join(tmp, "Photo.png"), "x");
-    expect(() =>
-      assertSingleFileAvailable(path.join(tmp, "photo.png"), false),
-    ).toThrowError(RefusalSignal);
+    await expect(assertSingleFileAvailable(path.join(tmp, "photo.png"), false)).rejects.toThrowError(RefusalSignal);
     try {
-      assertSingleFileAvailable(path.join(tmp, "photo.png"), false);
+      await assertSingleFileAvailable(path.join(tmp, "photo.png"), false);
     } catch (err) {
       expect((err as RefusalSignal).code).toBe("output.exists");
       expect((err as Error).message).toContain("Photo.png");
@@ -82,7 +78,7 @@ describe("assertSingleFileAvailable", () => {
 
   it("refuses even under overwrite to replace a file whose name differs only in case", async () => {
     await writeFile(path.join(tmp, "Photo.png"), "x");
-    expect(() => assertSingleFileAvailable(path.join(tmp, "photo.png"), true)).toThrow(
+    await expect(assertSingleFileAvailable(path.join(tmp, "photo.png"), true)).rejects.toThrow(
       expect.objectContaining({ code: "output.caseConflict", message: expect.stringContaining("Photo.png") }),
     );
   });
@@ -93,19 +89,19 @@ describe("assertSingleFileAvailable", () => {
   ])("detects equivalent Unicode filenames and retains the case rule (%s against %s)", async (existing, planned) => {
     await writeFile(path.join(tmp, `${existing}.png`), "old image");
     const target = path.join(tmp, `${planned}.png`);
-    expect(() => assertSingleFileAvailable(target, false)).toThrow(
+    await expect(assertSingleFileAvailable(target, false)).rejects.toThrow(
       expect.objectContaining({ code: "output.exists" }),
     );
     const requestedSpelling = statSync(target, { throwIfNoEntry: false });
     const actualFile = statSync(path.join(tmp, `${existing}.png`));
     if (requestedSpelling?.ino === actualFile.ino && requestedSpelling.dev === actualFile.dev) {
-      expect(() => assertSingleFileAvailable(target, true)).not.toThrow();
+      await expect(assertSingleFileAvailable(target, true)).resolves.toBeUndefined();
     } else {
-      expect(() => assertSingleFileAvailable(target, true)).toThrow(
+      await expect(assertSingleFileAvailable(target, true)).rejects.toThrow(
         expect.objectContaining({ code: "output.normalizationConflict" }),
       );
     }
-    expect(() => assertSingleFileAvailable(path.join(tmp, `${planned.toUpperCase()}.png`), true)).toThrow(
+    await expect(assertSingleFileAvailable(path.join(tmp, `${planned.toUpperCase()}.png`), true)).rejects.toThrow(
       expect.objectContaining({ code: "output.caseConflict" }),
     );
   });
@@ -117,13 +113,13 @@ describe("assertSingleFileAvailable", () => {
     if (statSync(planned, { throwIfNoEntry: false }) === undefined) {
       await link(existing, planned);
       for (const target of [existing, planned]) {
-        expect(() => assertSingleFileAvailable(target, true)).toThrow(
+        await expect(assertSingleFileAvailable(target, true)).rejects.toThrow(
           expect.objectContaining({ code: "output.normalizationConflict" }),
         );
       }
       expect(await readdir(tmp)).toHaveLength(2);
     } else {
-      expect(() => assertSingleFileAvailable(planned, true)).not.toThrow();
+      await expect(assertSingleFileAvailable(planned, true)).resolves.toBeUndefined();
       expect(await readdir(tmp)).toHaveLength(1);
     }
   });

@@ -1,6 +1,7 @@
 import path from "node:path";
 import pLimit from "p-limit";
 import { GptImgError } from "../errors.ts";
+import sharp from "../image/sharp.ts";
 import { detectFormat } from "../image/detectFormat.ts";
 import { hash } from "../image/hash.ts";
 import { writeOutputBytes } from "../internal/output-files.ts";
@@ -123,7 +124,11 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
           return { data: null, format: null };
         }
         try {
-          return { data: item.data, format: await detectFormat(item.data) };
+          const format = await detectFormat(item.data);
+          // Metadata can survive truncated pixel data. Validate the complete
+          // image before publishing, while preserving the provider's bytes.
+          await sharp(item.data).raw().toBuffer();
+          return { data: item.data, format };
         } catch (err) {
           failures.push({ index, code: "image.undecodable", effect: "unknown", message: (err as Error).message });
           logger.emit("warn", "write", { event: "image.undecodable", index, error: diagnosticOf(err) });
@@ -154,7 +159,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
   const group = createOutputGroup(outDir, stem, plan.groupExtension);
   const owned = ownedSlotFiles(group, n, items.length);
   try {
-    assertOutputGroupAvailable(group, owned, overwrite);
+    await assertOutputGroupAvailable(group, owned, overwrite);
   } catch (err) {
     // A conflict that appeared during the paid call fails every planned item;
     // nothing was written.

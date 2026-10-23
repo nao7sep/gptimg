@@ -33,8 +33,8 @@ export function normalizeImageNet(rgb: Uint8Array, size: number): Float32Array {
 /**
  * Final-stage logits (expected `[1, 1, H, W]`) → Uint8 alpha via sigmoid. The
  * shape is validated explicitly and H/W are read from `dims` rather than assumed,
- * so a variant that downsamples (e.g. a deep-supervision output at H/4) fails
- * loudly instead of silently reading wrong data.
+ * so spatially downsampled outputs keep their actual dimensions for resizing
+ * by the wrapper. Incompatible shapes or data lengths fail explicitly.
  */
 export function logitsToAlpha(
   data: Float32Array,

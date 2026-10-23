@@ -35,7 +35,7 @@ export async function combineImpl(
       stem: defaultStem(firstInput, args.op),
       ext: "png",
     });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    await assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     logger.emit("info", "resolve", verbStart({
       op: args.op,

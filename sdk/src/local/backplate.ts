@@ -218,7 +218,7 @@ export async function runBackplate(
   });
   throwIfAborted(signal);
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite }, "backplate", args, () => sharp(Buffer.from(svg)));
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, signal }, "backplate", args, () => sharp(Buffer.from(svg)));
 
   return { output: args.out, size, content, radius, shape, from, to, angle };
 }

@@ -179,7 +179,7 @@ describe("case-folded NFC group membership", () => {
           // Files on disk spelled the other way are members of the group.
           const files = [`${variant}.png`, `${variant}-${index}.json`];
           for (const f of files) await writeFile(path.join(dir, f), "");
-          const found = siblingsOnDisk(createOutputGroup(dir, stem, "png")).map((p) => path.basename(p)).sort();
+          const found = (await siblingsOnDisk(createOutputGroup(dir, stem, "png"))).map((p) => path.basename(p)).sort();
           expect(found).toEqual(files.map((f) => f).sort());
         },
       ),
@@ -197,7 +197,7 @@ describe("case-folded NFC group membership", () => {
         const overlap = isSlotRef(a, b) || isSlotRef(b, a);
         expect(await reservationRefusal(dir, a, b)).toBe(overlap ? "output.busy" : null);
         await writeFile(path.join(dir, `${b}.png`), "");
-        const found = siblingsOnDisk(createOutputGroup(dir, a, "png"));
+        const found = await siblingsOnDisk(createOutputGroup(dir, a, "png"));
         expect(found.length).toBe(isSlotRef(b, a) ? 1 : 0);
       }),
       { numRuns: 80 },

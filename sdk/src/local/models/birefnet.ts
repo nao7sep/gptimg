@@ -1,7 +1,6 @@
 /**
  * BiRefNet inference wrapper. Lazy: the ONNX session is created the first
- * time the wrapper is called and reused thereafter for the lifetime of the
- * process.
+ * time the wrapper is called and reused until model.release retires the cache.
  *
  * Pipeline:
  *   1. RGBA input at any size.
@@ -48,8 +47,8 @@ function preprocessToTensor(rgb: Uint8Array, size: number): Promise<Ort.Tensor> 
  * Convert the model's logit output tensor to a Uint8 alpha mask. The pinned
  * BiRefNet export emits `[1, 1, H, W]` raw logits; we validate that shape
  * explicitly and read H/W from `dims` rather than assuming inputSize, so
- * future variants that downsample (e.g. deep-supervision outputs at H/4)
- * fail loudly with a clear error instead of silently reading wrong data.
+ * spatially downsampled outputs are supported and resized to the source
+ * dimensions; incompatible shapes or data lengths fail explicitly.
  */
 function tensorToAlpha(tensor: Ort.Tensor): { alpha: Uint8Array; width: number; height: number } {
   return logitsToAlpha(tensor.data as Float32Array, tensor.dims);

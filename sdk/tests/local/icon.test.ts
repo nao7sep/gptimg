@@ -1,10 +1,24 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+const staging = vi.hoisted(() => ({ afterStage: undefined as ((filePath: string) => void) | undefined }));
+vi.mock("../../src/internal/atomic-file.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/internal/atomic-file.ts")>();
+  return {
+    ...actual,
+    stageFile: async (filePath: string, bytes: Uint8Array) => {
+      const temp = await actual.stageFile(filePath, bytes);
+      staging.afterStage?.(filePath);
+      return temp;
+    },
+  };
+});
+
 import { planIconOutputs, runIcon } from "../../src/local/icon.ts";
+import { GptImg } from "../../src/gptimg.ts";
 
 /** A solid square RGBA PNG of the given size. */
 async function writeSquare(
@@ -96,6 +110,7 @@ describe("runIcon", () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-icon-"));
   });
   afterEach(async () => {
+    staging.afterStage = undefined;
     await rm(tmp, { recursive: true, force: true });
   });
 
@@ -168,16 +183,21 @@ describe("runIcon", () => {
     expect(m.width).toBe(1024);
   });
 
-  it("publishes its set together: an existing file stops it and the files it created are removed", async () => {
+  it("keeps published files when a later target already exists", async () => {
     const outDir = path.join(tmp, "set");
     await mkdir(outDir);
     // The master png exists already; publishing reaches it after the icns and ico.
     const existing = path.join(outDir, "app.png");
     await writeFile(existing, "keep");
     await expect(runIcon({ in: master, outDir, name: "app", pngs: true })).rejects.toMatchObject({
-      refusal: { code: "output.exists", subject: existing },
+      code: "refused", effect: "unknown",
+      details: {
+        refusal: { code: "output.exists", subject: existing },
+        publishedPaths: [path.join(outDir, "app.icns"), path.join(outDir, "app.ico")],
+        remainingPaths: planIconOutputs(outDir, "app", true).all.slice(2),
+      },
     });
-    expect(await readdir(outDir)).toEqual(["app.png"]);
+    expect((await readdir(outDir)).sort()).toEqual(["app.icns", "app.ico", "app.png"]);
     expect(await readFile(existing, "utf8")).toBe("keep");
   });
 
@@ -190,9 +210,10 @@ describe("runIcon", () => {
     for (const name of ["app.icns", "app.ico", "app.png"]) expect(await readFile(path.join(outDir, name), "utf8")).not.toBe("old");
   });
 
-  it("stops publishing when cancelled part-way and leaves no file of the set behind", async () => {
+  it.each([false, true])("finishes publishing when cancelled after publication begins (overwrite %s)", async (overwrite) => {
     const outDir = path.join(tmp, "cancelled");
     await mkdir(outDir);
+    if (overwrite) for (const file of planIconOutputs(outDir, "app", false).all) await writeFile(file, "old");
     const ctrl = new AbortController();
     const logger = {
       verb: "icon" as const,
@@ -202,11 +223,59 @@ describe("runIcon", () => {
       },
       addCredential: () => {},
     };
-    await expect(runIcon({ in: master, outDir, name: "app" }, { signal: ctrl.signal, logger })).rejects.toMatchObject({
-      code: "cancelled",
-      effect: "none",
+    const result = await runIcon({ in: master, outDir, name: "app", overwrite }, { signal: ctrl.signal, logger });
+    expect(ctrl.signal.aborted).toBe(true);
+    expect(result.outputs).toEqual(planIconOutputs(outDir, "app", false).all);
+    for (const file of result.outputs) expect(await readFile(file)).toEqual(await readFile(path.join(shared, path.basename(file))));
+    expect((await readdir(outDir)).sort()).toEqual(["app.icns", "app.ico", "app.png"]);
+  });
+
+  it("honors cancellation after the final file is staged and before publication", async () => {
+    const ctrl = new AbortController();
+    const plan = planIconOutputs(tmp, "app", false);
+    for (const file of plan.all) await writeFile(file, "old");
+    staging.afterStage = (filePath) => {
+      if (filePath === plan.png) ctrl.abort();
+    };
+    await expect(runIcon({ in: master, outDir: tmp, name: "app", overwrite: true }, { signal: ctrl.signal }))
+      .rejects.toMatchObject({ code: "cancelled", effect: "none" });
+    expect((await readdir(tmp)).sort()).toEqual(["app.icns", "app.ico", "app.png"]);
+    for (const file of plan.all) expect(await readFile(file, "utf8")).toBe("old");
+  });
+
+  it.each([false, true])("keeps completed publications on I/O failure (existing targets %s)", async (existingTargets) => {
+    const plan = planIconOutputs(tmp, "app", true);
+    if (existingTargets) for (const file of plan.all.slice(0, 2)) await writeFile(file, "old");
+    // A directory at the third target makes publication fail after the first
+    // two whole files have appeared, for new and existing targets.
+    await mkdir(plan.png);
+    await expect(runIcon({ in: master, outDir: tmp, name: "app", pngs: true, overwrite: true }))
+      .rejects.toMatchObject({
+        effect: "unknown",
+        details: { publishedPaths: plan.all.slice(0, 2), remainingPaths: plan.all.slice(2) },
+      });
+    expect((await readdir(tmp)).sort()).toEqual(["app.icns", "app.ico", "app.png"]);
+    for (const file of plan.all.slice(0, 2)) expect(await readFile(file)).toEqual(await readFile(path.join(shared, path.basename(file))));
+  });
+
+  it("reports the publication failure and paths through the public verb after a deferred cancel", async () => {
+    const plan = planIconOutputs(tmp, "app", false);
+    const ctrl = new AbortController();
+    const sdk = new GptImg();
+    await expect(sdk.icon({ in: master, outDir: tmp, outName: "app", overwrite: true }, {
+      signal: ctrl.signal,
+      onProgress: ({ done }) => {
+        if (done === 1) {
+          mkdirSync(plan.png);
+          ctrl.abort();
+        }
+      },
+    })).rejects.toMatchObject({
+      code: "fs.failed", effect: "unknown",
+      details: { publishedPaths: plan.all.slice(0, 2), remainingPaths: plan.all.slice(2) },
     });
-    expect(await readdir(outDir)).toEqual([]);
+    expect(ctrl.signal.aborted).toBe(true);
+    expect((await readdir(tmp)).sort()).toEqual(["app.icns", "app.ico", "app.png"]);
   });
 
   it("rejects a non-square master", async () => {

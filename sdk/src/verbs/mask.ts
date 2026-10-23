@@ -49,7 +49,7 @@ export async function maskImpl(
       stem: defaultStem(args.in),
       ext: "png",
     });
-    assertSingleFileAvailable(outPath, args.overwrite ?? false);
+    await assertSingleFileAvailable(outPath, args.overwrite ?? false);
 
     let alpha: Uint8Array;
     let width: number;
@@ -107,7 +107,7 @@ export async function maskImpl(
 
     throwIfAborted(signal);
 
-    await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false, source: args.in }, pngEncodingOf(args));
+    await writeMaskPNG(alpha, width, height, { path: outPath, overwrite: args.overwrite ?? false, signal, source: args.in }, pngEncodingOf(args));
     logger.emit("info", "write", verbDone({ path: outPath, stats }));
 
     return {

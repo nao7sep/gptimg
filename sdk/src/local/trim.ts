@@ -101,7 +101,7 @@ export async function runTrim(
   const finalW = bbox.width + padLeft + padRight;
   const finalH = bbox.height + padTop + padBottom;
 
-  await writeImageFile({ path: args.out, overwrite: args.overwrite, source: args.in }, "trim", args, () => {
+  await writeImageFile({ path: args.out, overwrite: args.overwrite, signal, source: args.in }, "trim", args, () => {
     const pipeline = decodeImage(args.in).extract({
       left: bbox.x,
       top: bbox.y,

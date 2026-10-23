@@ -59,6 +59,31 @@ describe("AI verb implementations with mocked provider", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
+  it("rejects truncated provider pixels per item and preserves valid original bytes and response fields", async () => {
+    const damaged = png.subarray(0, 100);
+    await expect(sharp(damaged).metadata()).resolves.toMatchObject({ width: 128 });
+    const raw = { id: "paid-response", details: { retained: [1, 2, 3] } };
+    providerCalls.generate.mockResolvedValue({ images: [{ data: damaged }, { data: png }], raw });
+    const result = done(await sdk.generate({ prompt: "image", policy: { generate: { n: 2 } }, outDir: tmp, outName: "validated" }));
+    expect(result.failures).toMatchObject([{ index: 1, code: "image.undecodable", effect: "unknown" }]);
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]!.index).toBe(2);
+    expect(await readFile(result.files[0]!.path)).toEqual(Buffer.from(png));
+    expect(result.response).toEqual(raw);
+    expect(result.files[0]!.record.response).toEqual(raw);
+    expect((await readdir(tmp)).some((name) => name === "validated-1.png")).toBe(false);
+  });
+
+  it("keeps a previous image when an overwrite response only has truncated pixels", async () => {
+    const output = path.join(tmp, "validated.png");
+    await writeFile(output, png);
+    providerCalls.generate.mockResolvedValue({ images: [{ data: png.subarray(0, 100) }], raw: { id: "paid-response" } });
+    const result = done(await sdk.generate({ prompt: "image", outDir: tmp, outName: "validated", overwrite: true }));
+    expect(result.files).toEqual([]);
+    expect(result.failures).toMatchObject([{ index: 1, code: "image.undecodable" }]);
+    expect(await readFile(output)).toEqual(Buffer.from(png));
+  });
+
   it("requires a destination before generation and leaves legacy output untouched", async () => {
     const legacy = path.join(tmp, "output");
     await mkdir(legacy);

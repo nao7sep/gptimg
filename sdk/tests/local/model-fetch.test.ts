@@ -243,6 +243,34 @@ describe("ensureModel", () => {
     expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
   });
 
+  it.each([
+    { label: "missing redirect Location", status: 302, headers: {}, calls: 1, code: "model.badRedirect", message: "did not include a Location" },
+    { label: "exhausted redirects", status: 302, headers: { location: "/again" }, calls: 11, code: "model.badRedirect", message: "Too many redirects" },
+    { label: "invalid content length", status: 200, headers: { "content-length": "invalid" }, calls: 1, code: "model.integrity", message: "Invalid model Content-Length" },
+    { label: "unsafe content length", status: 200, headers: { "content-length": "9007199254740992" }, calls: 1, code: "model.integrity", message: "not a safe integer" },
+    { label: "oversized content length", status: 200, headers: { "content-length": "5" }, calls: 1, code: "model.integrity", message: "exceeds the 4-byte limit" },
+    { label: "mismatched content length", status: 200, headers: { "content-length": "3" }, calls: 1, code: "model.integrity", message: "expected exactly 4" },
+  ])("cancels the response body for $label, preserving refusal if cleanup fails", async ({ status, headers, calls, code, message }) => {
+    const cancellations: ReturnType<typeof vi.fn>[] = [];
+    const fetcher = vi.fn(async () => {
+      const cancel = vi.fn(() => {
+        if (cancellations.length === calls) throw new Error("cleanup failed");
+      });
+      cancellations.push(cancel);
+      return new Response(new ReadableStream<Uint8Array>({ cancel }), { status, headers });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const entry: ModelEntry = {
+      name: "refused-body.bin", url: "https://example.com/model.bin", inputSize: 0, ...NOT_FETCHED,
+    };
+    await expect(ensureModel(entry, tmp)).rejects.toMatchObject({ code, message: expect.stringContaining(message) });
+    expect(fetcher).toHaveBeenCalledTimes(calls);
+    expect(cancellations).toHaveLength(calls);
+    for (const cancel of cancellations) expect(cancel).toHaveBeenCalledOnce();
+    expect(existsSync(path.join(tmp, entry.name))).toBe(false);
+    expect(await readdir(path.join(tmp, "temp"))).toEqual([]);
+  });
+
   it("follows a safe redirect before streaming the model", async () => {
     const body = Buffer.from("redirected model");
     const { server, baseURL } = await listen((req, res) => {
