@@ -12,6 +12,8 @@
  * differs, which the caller arranges.
  */
 
+import type { OutputInfo } from "sharp";
+import sharp from "../image/sharp.ts";
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
@@ -143,13 +145,22 @@ export async function runIcon(
 
   const plan = planIconOutputs(args.outDir, name, pngs);
 
-  // Decode the master once; every entry is a downscale of these bytes. Cache
-  // per size so overlapping icns/ico/png-set sizes render only once.
-  let master: Buffer;
+  // Reuse decoded master pixels where their metadata survives a raw roundtrip.
+  // Cache per size so overlapping icns/ico/png-set sizes render only once.
+  let master: { data: Buffer; info: OutputInfo } | Buffer;
   let source: SourceMetadata;
+  let density: number | undefined;
   try {
-    master = await decodeImage(args.in).ensureAlpha().png().toBuffer();
+    const decoded = decodeImage(args.in).ensureAlpha();
+    const metadata = await decoded.metadata();
+    density = metadata.density;
     source = await readSourceMetadata(args.in);
+    // CMYK decoding creates an sRGB profile; density without source EXIF also
+    // needs its encoded representation, because withDensity on raw pixels
+    // would invent EXIF. Preserve those cases without reconstructing metadata.
+    master = metadata.space === "cmyk" || (density !== undefined && source.exif === undefined)
+      ? await decoded.png().toBuffer()
+      : await decoded.raw().toBuffer({ resolveWithObject: true });
   } catch (err) {
     throw inputImageError(err, "icon: failed to decode", args.in);
   }
@@ -158,8 +169,13 @@ export async function runIcon(
   const render = (size: number): Promise<Buffer> => {
     let p = cache.get(size);
     if (!p) {
+      const rendition = (Buffer.isBuffer(master)
+        ? decodeImage(master)
+        : sharp(master.data, { raw: { width: master.info.width, height: master.info.height, channels: 4 } }))
+        .resize(size, size, { fit: "fill", kernel: "lanczos3" });
+      if (!Buffer.isBuffer(master) && density !== undefined) rendition.withDensity(density);
       p = encodeImage(
-        decodeImage(master).resize(size, size, { fit: "fill", kernel: "lanczos3" }),
+        rendition,
         args,
         "icon",
         source,
