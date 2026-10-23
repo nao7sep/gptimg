@@ -4,6 +4,7 @@ import { GptImgError } from "../errors.ts";
 import { detectFormat } from "../image/detectFormat.ts";
 import { hash } from "../image/hash.ts";
 import { writeOutputBytes } from "../internal/output-files.ts";
+import { diagnosticOf } from "../events/diagnostic.ts";
 import {
   assertOutputGroupAvailable,
   createOutputGroup,
@@ -125,7 +126,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
           return { data: item.data, format: await detectFormat(item.data) };
         } catch (err) {
           failures.push({ index, code: "image.undecodable", effect: "unknown", message: (err as Error).message });
-          logger.emit("warn", "write", { event: "image.undecodable", index, error: (err as Error).message });
+          logger.emit("warn", "write", { event: "image.undecodable", index, error: diagnosticOf(err) });
           return { data: item.data, format: null };
         }
       }),
@@ -135,9 +136,13 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
   const plan = planGenerateOutputs(n, stem, detected);
   const { suffixCount } = plan;
   for (const { index, extension } of plan.mixed) {
-    const message = `Image ${index} came back as ${extension}, but this group's images are ${plan.groupExtension}; one group holds one format.`;
-    failures.push({ index, code: "provider.invalidResponse", effect: "unknown", message });
-    logger.emit("warn", "write", { event: "image.unpublished", index, error: message });
+    const err = new GptImgError(
+      "provider.invalidResponse",
+      `Image ${index} came back as ${extension}, but this group's images are ${plan.groupExtension}; one group holds one format.`,
+      { effect: "unknown" },
+    );
+    failures.push(itemFailure(index, err));
+    logger.emit("warn", "write", { event: "image.unpublished", index, error: diagnosticOf(err) });
   }
   const planned = plan.images.map((img) => ({
     index: img.index,
@@ -167,7 +172,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
           await writeOutputBytes(item.filePath, item.data, overwrite);
         } catch (err) {
           failures.push(itemFailure(item.index, err));
-          logger.emit("warn", "write", { event: "image.unpublished", index: item.index, error: (err as Error).message });
+          logger.emit("warn", "write", { event: "image.unpublished", index: item.index, error: diagnosticOf(err) });
           return;
         }
         const sha256 = hash(item.data);
@@ -188,7 +193,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
           await writeSidecar(sidecarPath, record, { overwrite });
         } catch (err) {
           sidecar = failedPublication(err);
-          logger.emit("warn", "write", { event: "sidecar.unpublished", index: item.index, path: sidecarPath, error: (err as Error).message });
+          logger.emit("warn", "write", { event: "sidecar.unpublished", index: item.index, path: sidecarPath, error: diagnosticOf(err) });
         }
         files.push({ index: item.index, path: item.filePath, sha256, format: item.fmt.format, sidecarPath, sidecar, record });
         logger.emit("info", "write", {

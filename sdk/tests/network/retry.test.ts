@@ -510,13 +510,13 @@ describe("callWithRetry", () => {
       attempt: 1,
       maxRetries: fast.maxRetries,
       status: 429,
-      error: { name: "Error", message: "429", code: null },
+      error: { type: "Error", message: "429" },
       retryAfterHeader: true,
     });
     expect(data).not.toHaveProperty("request");
   });
 
-  // With no status, the error's name, message and network code say what failed.
+  // With no status, the error's type, message and network code say what failed.
   it("reports the error when there is no status", async () => {
     const logger = fakeLogger();
     const fn = vi
@@ -530,7 +530,7 @@ describe("callWithRetry", () => {
     const [, data] = emitted(logger, "warn")[0]!;
     expect(data).toMatchObject({
       status: null,
-      error: { name: "Error", code: "ECONNRESET" },
+      error: { type: "Error", code: "ECONNRESET" },
       retryAfterHeader: false,
     });
   });

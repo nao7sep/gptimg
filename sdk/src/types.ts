@@ -333,9 +333,23 @@ export interface AttemptFields {
 }
 
 /** A failed attempt: its status, the error, and the provider's own answer when one came back. */
+/**
+ * A failure as an event reports it (error-handling-conventions): its type,
+ * structured code, message, stack, the provider's response when it carried
+ * one, and its cause chain, credentials masked.
+ */
+export interface ErrorDiagnostic {
+  type: string;
+  message: string;
+  code?: string;
+  stack?: string;
+  response?: Record<string, unknown>;
+  cause?: ErrorDiagnostic;
+}
+
 export interface FailedAttemptFields extends AttemptFields {
   status: number | null;
-  error: { name: string; message: string; code: string | null };
+  error: ErrorDiagnostic;
   response?: Record<string, unknown>;
 }
 
@@ -364,7 +378,7 @@ export type SdkEventBody =
   | { event: "verb.start"; input: string | string[] | null; output: string | null; settings: Record<string, unknown> }
   | { event: "verb.done"; output: string | null; stats: Record<string, unknown> }
   | { event: "verb.refused"; code: RefusalCode; subject: string | null }
-  | { event: "verb.failed"; error: GptImgErrorData; thrown: Record<string, unknown> }
+  | { event: "verb.failed"; error: GptImgErrorData; diagnostic: ErrorDiagnostic }
   | { event: "verb.cancelled"; error: GptImgErrorData }
   | { event: "provider.call"; operation: "generate" | "edit" | "vision" | "chat"; model: string | null; settings: Record<string, unknown> }
   | { event: "provider.returned"; operation: "generate" | "edit" | "vision" | "chat"; summary: Record<string, unknown> }
@@ -374,18 +388,18 @@ export type SdkEventBody =
   | ({ event: "attempt.cancelled" } & AttemptFields)
   | { event: "image.short"; requested: number; returned: number }
   | { event: "image.missing"; index: number; error: string | null }
-  | { event: "image.undecodable"; index: number; error: string }
-  | { event: "image.unpublished"; index: number; error: string }
+  | { event: "image.undecodable"; index: number; error: ErrorDiagnostic }
+  | { event: "image.unpublished"; index: number; error: ErrorDiagnostic }
   | { event: "image.published"; index: number; name: string; sha256: string; format: string; sidecar: string | null }
   | { event: "sidecar.published"; path: string }
-  | { event: "sidecar.unpublished"; index: number | null; path: string; error: string }
+  | { event: "sidecar.unpublished"; index: number | null; path: string; error: ErrorDiagnostic }
   | { event: "slots.leftover"; leftovers: string[] }
   | { event: "vision.input"; name: string; shrink: Record<string, unknown> }
   | { event: "vision.refusal"; code: RefusalCode; request: Record<string, unknown>; response: unknown }
-  | { event: "vision.noVerdict"; request: Record<string, unknown>; response: unknown; error: { name: string; code: unknown; message: string } }
+  | { event: "vision.noVerdict"; request: Record<string, unknown>; response: unknown; error: ErrorDiagnostic }
   | { event: "chat.resend"; previousResponseId: string }
   | { event: "chat.historyImage"; path: string; width: number; height: number; format: string }
-  | { event: "chat.historyImageSkipped"; path: string; error: string }
+  | { event: "chat.historyImageSkipped"; path: string; error: ErrorDiagnostic }
   | { event: "model.download.needed"; name: string }
   | { event: "model.download.start"; name: string }
   | { event: "model.download.done"; name: string; bytes: number }

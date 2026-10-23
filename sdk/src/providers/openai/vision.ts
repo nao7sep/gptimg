@@ -3,6 +3,7 @@ import { GptImgError } from "../../errors.ts";
 import { classifyRequestFailure, safeReasonText } from "../../network/classify.ts";
 import { RefusalSignal, refuse } from "../../refusal.ts";
 import { maskDiagnosticCopy } from "../../events/mask.ts";
+import { diagnosticOf } from "../../events/diagnostic.ts";
 import { callWithRetry } from "../../network/retry.ts";
 import type { VisionVerdict } from "../../types.ts";
 import type { ProviderVisionResult, VisionProviderArgs } from "../types.ts";
@@ -206,11 +207,7 @@ export async function openaiVision(
       event: "vision.noVerdict",
       request,
       response,
-      error: {
-        name: (diagnosticError as Error).name,
-        code: (diagnosticError as { code?: unknown }).code ?? null,
-        message: (diagnosticError as Error).message,
-      },
+      error: diagnosticOf(diagnosticError),
     });
     throw diagnosticError;
   }

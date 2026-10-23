@@ -978,7 +978,8 @@ describe("OpenAI provider failure records", () => {
       expect(line.data).toMatchObject({
         request: { headers, body: { model: "gpt-image-2", prompt: "p" } },
         status: null,
-        error: { name: "APIConnectionError", code: "ECONNREFUSED" },
+        // The socket's code sits in the cause chain, as fetch wraps it.
+        error: { type: "APIConnectionError", cause: { type: "TypeError", cause: { code: "ECONNREFUSED" } } },
       });
       expect(line.data).not.toHaveProperty("response");
     }

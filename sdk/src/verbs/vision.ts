@@ -13,6 +13,7 @@ import { reserveOutputGroup, assertOutputGroupAvailable, createOutputGroup } fro
 import { outputStemLocation, withVerbLogger } from "../internal/local-verb.ts";
 import { singleLine } from "../internal/textCleanup.ts";
 import type { Logger } from "../events/index.ts";
+import { diagnosticOf } from "../events/diagnostic.ts";
 import { maskDiagnosticCopy } from "../events/mask.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { resolveVisionDetail, resolveVisionReasoning } from "../policy/model-check.ts";
@@ -203,7 +204,7 @@ export async function visionImpl(
           ? { code: err.code, message: err.message }
           : { code: "internal.unexpected" as const, message: (err as Error)?.message ?? String(err) };
       sidecar = { status: "failed", ...failure, effect: "unknown" };
-      logger.emit("warn", "write", { event: "sidecar.unpublished", index: null, path: sidecarPath, error: failure.message });
+      logger.emit("warn", "write", { event: "sidecar.unpublished", index: null, path: sidecarPath, error: diagnosticOf(err) });
     }
     logger.emit("info", "stats", { event: "verb.done", output: sidecar.status === "published" ? sidecarPath : null, stats: { ok: providerResult.verdict.ok, score: providerResult.verdict.score } });
 

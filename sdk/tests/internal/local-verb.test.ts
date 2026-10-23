@@ -238,7 +238,7 @@ describe("withVerbLogger", () => {
     ]);
   });
 
-  it("reports the thrown error as verb.failed with its data and a bounded cause chain, and rethrows it", async () => {
+  it("reports the thrown error as verb.failed with its data and its diagnostic cause chain, and rethrows it", async () => {
     const err = new GptImgError("fs.failed", "outer failure", { cause: new TypeError("inner failure") });
     const { outcome, events } = await run("mask", async () => {
       throw err;
@@ -250,7 +250,7 @@ describe("withVerbLogger", () => {
       stage: "error",
       event: "verb.failed",
       error: { code: "fs.failed", kind: "unavailable", effect: "none", message: "outer failure" },
-      thrown: { type: "GptImgError", message: "outer failure", cause: { type: "TypeError", message: "inner failure" } },
+      diagnostic: { type: "GptImgError", code: "fs.failed", message: "outer failure", stack: expect.any(String), cause: { type: "TypeError", message: "inner failure" } },
     });
   });
 
@@ -261,8 +261,8 @@ describe("withVerbLogger", () => {
       throw new GptImgError("provider.rejected", "OpenAI images.generate failed", { cause });
     });
     await expect(outcome).rejects.toMatchObject({ code: "provider.rejected" });
-    const thrown = (events[0] as Extract<SdkEvent, { event: "verb.failed" }>).thrown as { cause: { response: unknown } };
-    expect(thrown.cause.response).toEqual({ status: 400, headers: { "x-request-id": "req_123" }, requestId: "req_123", body });
+    const diagnostic = (events[0] as Extract<SdkEvent, { event: "verb.failed" }>).diagnostic;
+    expect(diagnostic.cause?.response).toEqual({ status: 400, headers: { "x-request-id": "req_123" }, requestId: "req_123", body });
   });
 
   it("turns a refusal into a refused result, reported as verb.refused", async () => {

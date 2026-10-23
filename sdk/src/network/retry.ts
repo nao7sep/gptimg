@@ -1,4 +1,5 @@
 import type { Logger } from "../events/index.ts";
+import { diagnosticOf } from "../events/diagnostic.ts";
 import type { AttemptFields, FailedAttemptFields } from "../types.ts";
 import { cancelledError } from "../errors.ts";
 import { isQuotaExhausted } from "./classify.ts";
@@ -189,11 +190,7 @@ function failedAttemptFields(
   return {
     ...attemptFields(ctx, attempt, started),
     status: statusFromError(err),
-    error: {
-      name: err instanceof Error ? err.name : typeof err,
-      message: err instanceof Error ? err.message : String(err),
-      code: networkCode(err),
-    },
+    error: diagnosticOf(err),
     ...(response && { response }),
   };
 }

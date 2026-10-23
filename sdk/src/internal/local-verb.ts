@@ -14,7 +14,7 @@ import { assertAbsolutePath } from "./absolute-path.ts";
 import { createLogger, type Logger } from "../events/index.ts";
 import type { SdkContext } from "../context.ts";
 import { VERSION } from "../version.ts";
-import { failedResponseFields } from "../network/retry.ts";
+import { diagnosticOf } from "../events/diagnostic.ts";
 import { RefusalSignal, refuse, type RefusedResult } from "../refusal.ts";
 import { responseIdOf, usageOf } from "../usage.ts";
 import { NO_LOG_HINT, type VerbCallOptions } from "../verbs/options.ts";
@@ -168,29 +168,6 @@ export function outputStemLocation(outDir: string | undefined, outName: string):
   return { outDir, stem: outName };
 }
 
-function serializeThrownError(
-  err: unknown,
-  seen = new Set<object>(),
-  depth = 0,
-): Record<string, unknown> {
-  if (!(err instanceof Error)) {
-    return { type: typeof err, message: String(err) };
-  }
-  const serialized: Record<string, unknown> = {
-    type: err.constructor?.name || err.name || "Error",
-    message: err.message,
-  };
-  if (err.stack) serialized.stack = err.stack;
-  const response = failedResponseFields(err);
-  if (response) serialized.response = response;
-  if (depth >= 4 || seen.has(err)) return serialized;
-  seen.add(err);
-  if (err.cause !== undefined) {
-    serialized.cause = serializeThrownError(err.cause, seen, depth + 1);
-  }
-  return serialized;
-}
-
 // The call options, the same for every verb: a verb with nothing to send through a hook never
 // calls it. An unknown one is refused, as an unknown argument is.
 // Typed by VerbCallOptions, so the list cannot miss or invent one.
@@ -270,7 +247,7 @@ export async function withVerbLogger<T>(
     const err = toSdkError(verbName, thrown, opts.signal);
     // A cancellation is the caller's request, never a failure, so it is recorded as such.
     if (err.code === "cancelled") logger.emit("info", "error", { event: "verb.cancelled", error: err.toJSON() });
-    else logger.emit("error", "error", { event: "verb.failed", error: err.toJSON(), thrown: serializeThrownError(err) });
+    else logger.emit("error", "error", { event: "verb.failed", error: err.toJSON(), diagnostic: diagnosticOf(err) });
     throw err;
   }
 }

@@ -12,6 +12,7 @@ import { assertStemAvailable, createOutputGroup, reserveOutputGroup } from "../i
 import { defaultStem } from "../internal/paths.ts";
 import { multiline } from "../internal/textCleanup.ts";
 import { dispatchHook, type Logger } from "../events/index.ts";
+import { diagnosticOf } from "../events/diagnostic.ts";
 import { maskDiagnosticCopy } from "../events/mask.ts";
 import { resolveNetworkForCall } from "../network/index.ts";
 import { checkImageParams, resolveChatModeration, resolveVisionReasoning } from "../policy/model-check.ts";
@@ -136,7 +137,7 @@ async function readHistoryImage(filePath: string, logger: Logger): Promise<ChatI
     logger.emit("debug", "request", { event: "chat.historyImage", path: filePath, width: info.width, height: info.height, format });
     return { name: path.basename(filePath), data: new Uint8Array(data), format };
   } catch (err) {
-    logger.emit("warn", "request", { event: "chat.historyImageSkipped", path: filePath, error: (err as Error).message });
+    logger.emit("warn", "request", { event: "chat.historyImageSkipped", path: filePath, error: diagnosticOf(err) });
     return null;
   }
 }
@@ -286,7 +287,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
         recordPublication = { status: "published" };
       } catch (err) {
         recordPublication = failedPublication(err);
-        logger.emit("warn", "write", { event: "sidecar.unpublished", index: null, path: target, error: (err as Error).message });
+        logger.emit("warn", "write", { event: "sidecar.unpublished", index: null, path: target, error: diagnosticOf(err) });
       }
     }
     logger.emit("info", "write", {
