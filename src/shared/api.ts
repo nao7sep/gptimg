@@ -48,6 +48,8 @@ export interface BootInfo {
 export interface AppFailure {
   message: Message;
   reason?: string;
+  /** Owned inputs or a delivered reply remain here after a save failure. */
+  recoveryPath?: string;
   /** True when trying again could help (the provider or the network, not the input). */
   retryable: boolean;
 }
@@ -96,6 +98,8 @@ export interface TaskProgress {
 
 export interface UpscalerStatus {
   installed: boolean;
+  /** The model status could not be checked; this does not mean it is absent. */
+  failure?: AppFailure;
   /** What installing it downloads, in bytes, when known. */
   downloadBytes: number | null;
 }
@@ -115,7 +119,7 @@ export interface GptImgApi {
   startupFailure(): Promise<StartupFailure>;
   quitApp(): void;
   saveSettings(next: Settings): Promise<Outcome<{ settings: Settings; language: LanguageInfo }>>;
-  saveState(state: UiState): void;
+  saveState(state: Partial<UiState>): void;
   pickFolder(current: string): Promise<string | null>;
 
   keyStatus(): Promise<KeyStatus>;
@@ -134,6 +138,7 @@ export interface GptImgApi {
   send(request: SendRequest): Promise<TurnOutcome>;
   retry(sessionId: string): Promise<TurnOutcome>;
   cancel(sessionId: string): void;
+  restartProcessing(): Promise<Outcome<object>>;
 
   /** Native picker for reference images; the chosen paths are registered for preview. */
   pickImages(): Promise<string[]>;
@@ -169,8 +174,11 @@ export interface GptImgApi {
   /** A record was stored (at most once a second): the Records window refreshes. */
   onRecordsChanged(handler: () => void): () => void;
 
+  setWindowDirty(dirty: boolean): void;
   closeWindow(): void;
   onMenu(handler: (command: MenuCommand) => void): () => void;
+  onSettings(handler: (settings: Settings) => void): () => void;
+  onSessionsChanged(handler: () => void): () => void;
   onLanguage(handler: (info: LanguageInfo) => void): () => void;
   /** The user's turn is saved and the call has started: the session as it now stands. */
   onTurnStarted(handler: (event: { requestId: string; session: OpenedSession }) => void): () => void;

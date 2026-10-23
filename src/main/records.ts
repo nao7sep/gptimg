@@ -50,6 +50,7 @@ export const APP_EVENTS = {
   "model.released": "upscaling model unloaded",
   "model.releaseFailed": "upscaling model could not be unloaded",
   "sdk.workerExit": "image engine process exited",
+  "window.closeFailed": "close confirmation could not be shown",
   "window.loadFailed": "window could not load",
   "window.rendererGone": "window renderer stopped",
   "window.console": "window reported a problem",
@@ -79,7 +80,7 @@ export interface Records {
   launches(): LaunchEntry[];
   query(query: RecordQuery): RecordsPage;
   detail(ref: RecordRef): RecordDetail | null;
-  /** Called after each record is stored, so an open Records window can refresh. */
+  /** Called after each record write settles, including failure, so Records can refresh. */
   onChange(listener: () => void): void;
   close(): void;
 }
@@ -97,6 +98,8 @@ CREATE TABLE IF NOT EXISTS log (
   at_utc TEXT NOT NULL,
   level TEXT NOT NULL,
   event TEXT NOT NULL,
+  message TEXT,
+  chat_id TEXT,
   fields TEXT
 );
 CREATE TABLE IF NOT EXISTS sdk_events (
@@ -104,6 +107,7 @@ CREATE TABLE IF NOT EXISTS sdk_events (
   session_id TEXT NOT NULL,
   at_utc TEXT NOT NULL,
   session_folder TEXT,
+  chat_id TEXT,
   level TEXT NOT NULL,
   event TEXT NOT NULL,
   body TEXT NOT NULL
@@ -113,6 +117,7 @@ CREATE TABLE IF NOT EXISTS turns (
   session_id TEXT NOT NULL,
   at_utc TEXT NOT NULL,
   session_folder TEXT NOT NULL,
+  chat_id TEXT,
   turn_id TEXT NOT NULL,
   model TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -122,14 +127,6 @@ CREATE TABLE IF NOT EXISTS turns (
   body TEXT NOT NULL
 );
 `;
-
-/** Columns later versions added, applied to a database an earlier version created. */
-const ADDED_COLUMNS: readonly [table: string, column: string, type: string][] = [
-  ["log", "message", "TEXT"],
-  ["log", "chat_id", "TEXT"],
-  ["sdk_events", "chat_id", "TEXT"],
-  ["turns", "chat_id", "TEXT"],
-];
 
 const INDEXES = `
 CREATE INDEX IF NOT EXISTS log_launch ON log (session_id, id);
@@ -144,40 +141,54 @@ function text(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-function migrate(db: DatabaseSync): void {
-  for (const [table, column, type] of ADDED_COLUMNS) {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-    if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-  }
-  db.exec(INDEXES);
+function diagnostic(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return { value: error };
+  return {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    ...("code" in error && { code: error.code }),
+    ...(error.cause !== undefined && { cause: diagnostic(error.cause) }),
+  };
 }
-
 
 /** Opens the records; when the database cannot be opened, every record takes the fallback and the app runs on. */
 export function openRecords(file: string, logsDir: string, sessionId: string, version: string): Records {
   const startedAt = new Date();
   let db: DatabaseSync | null = null;
+  let degraded: unknown;
+  let logStmt: ReturnType<DatabaseSync["prepare"]> | undefined;
+  let eventStmt: ReturnType<DatabaseSync["prepare"]> | undefined;
+  let turnStmt: ReturnType<DatabaseSync["prepare"]> | undefined;
   try {
     db = new DatabaseSync(file);
     db.exec("PRAGMA journal_mode = WAL");
+    // Unsupported schemas are not migrated. Roll back initialization if any
+    // required statement cannot be prepared, preserving their schema and rows.
+    db.exec("BEGIN");
     db.exec(SCHEMA);
-    migrate(db);
+    logStmt = db.prepare("INSERT INTO log (session_id, at_utc, level, event, message, chat_id, fields) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    eventStmt = db.prepare(
+      "INSERT INTO sdk_events (session_id, at_utc, session_folder, chat_id, level, event, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    );
+    turnStmt = db.prepare(`INSERT INTO turns (session_id, at_utc, session_folder, chat_id, turn_id, model, status,
+      response_id, input_tokens, output_tokens, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    db.exec(INDEXES);
     db.prepare("INSERT INTO launches (session_id, started_at_utc, app_version, platform) VALUES (?, ?, ?, ?)").run(
       sessionId,
       startedAt.toISOString(),
       version,
       process.platform,
     );
+    db.exec("COMMIT");
   } catch (error) {
+    degraded = error;
+    // Closing rolls back an open initialization transaction. A close failure
+    // must not replace the setup failure that explains the fallback.
+    try { db?.close(); } catch (closeError) { console.error("[gptimg] records close failed", closeError); }
     console.error("[gptimg] records unavailable", error);
     db = null;
   }
-  const logStmt = db?.prepare("INSERT INTO log (session_id, at_utc, level, event, message, chat_id, fields) VALUES (?, ?, ?, ?, ?, ?, ?)");
-  const eventStmt = db?.prepare(
-    "INSERT INTO sdk_events (session_id, at_utc, session_folder, chat_id, level, event, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  );
-  const turnStmt = db?.prepare(`INSERT INTO turns (session_id, at_utc, session_folder, chat_id, turn_id, model, status,
-    response_id, input_tokens, output_tokens, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
   // The launch's fallback log, named by its start, created only when a write first fails.
   const fallbackFile = join(logsDir, `${fileStamp(startedAt)}.log`);
@@ -194,13 +205,15 @@ export function openRecords(file: string, logsDir: string, sessionId: string, ve
   const listeners: (() => void)[] = [];
   const guard = (write: () => void, line: () => Record<string, unknown>) => {
     try {
-      if (!db) throw new Error("records unavailable");
+      if (!db) throw degraded;
       write();
-    } catch {
-      fallback(line());
-      return;
+    } catch (error) {
+      degraded ??= error;
+      fallback({ ...line(), storageError: diagnostic(error) });
     }
-    for (const listener of listeners) listener();
+    for (const listener of listeners) {
+      try { listener(); } catch (error) { console.error("[gptimg] records listener failed", error); }
+    }
   };
 
   return {
@@ -217,7 +230,7 @@ export function openRecords(file: string, logsDir: string, sessionId: string, ve
       const time = typeof event.time === "string" ? event.time : new Date().toISOString();
       guard(
         () => eventStmt!.run(sessionId, time, chat?.folder ?? null, chat?.id ?? null, String(event.level ?? "info"), String(event.event ?? ""), text(event)),
-        () => ({ level: String(event.level ?? "info"), event: `sdk.${String(event.event ?? "")}`, message: String(event.message ?? ""), body: event }),
+        () => ({ level: String(event.level ?? "info"), event: `sdk.${String(event.event ?? "")}`, message: String(event.message ?? ""), chat, body: event }),
       );
     },
     turn(record) {
@@ -248,7 +261,8 @@ export function openRecords(file: string, logsDir: string, sessionId: string, ve
     query(query) {
       if (!db) return { rows: [], next: null, failed: true };
       try {
-        return queryRecords(db, query);
+        const page = queryRecords(db, query);
+        return { ...page, failed: degraded !== undefined || page.failed };
       } catch {
         return { rows: [], next: null, failed: true };
       }

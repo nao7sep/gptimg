@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { UpscalerStatus } from "../../src/shared/api.ts";
 import { defaultExportPrefs } from "../../src/shared/export.ts";
 import { fakeApi, renderInApp } from "./harness.tsx";
 
 afterEach(cleanup);
 
-async function open() {
-  const api = fakeApi();
+async function open(status?: UpscalerStatus) {
+  const api = fakeApi(status ? { upscalerStatus: vi.fn(async () => status) } : {});
   const { ExportModal } = await import("../../src/renderer/src/modals/ExportModal.tsx");
   const { useExportTasks } = await import("../../src/renderer/src/export-tasks.ts");
   const onExported = vi.fn();
@@ -38,4 +39,28 @@ describe("the export dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
     await waitFor(() => expect(api.installUpscaler).toHaveBeenCalledTimes(1));
   });
+});
+
+
+it("shows a model check failure without suggesting a download, while ordinary export remains usable", async () => {
+  const { api } = await open({ installed: false, downloadBytes: null, failure: { message: { key: "failure.filePermission" }, retryable: true } });
+  expect(screen.getByRole("button", { name: "Export" })).toHaveProperty("disabled", false);
+  fireEvent.click(screen.getByRole("radio", { name: /AI upscale 2×/ }));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "GptImg is not allowed to read or write a file this message needs.");
+  expect(screen.queryByRole("button", { name: "Download" })).toBeNull();
+  expect(screen.queryByText(/one-time download/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Export" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("radio", { name: /Original size/ }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button", { name: "Export" })).toHaveProperty("disabled", false);
+  fireEvent.click(screen.getByRole("button", { name: "Export" }));
+  await waitFor(() => expect(api.exportImage).toHaveBeenCalledTimes(1));
+  expect(api.installUpscaler).not.toHaveBeenCalled();
+});
+
+it("enables upscale export for a present model without suggesting a download", async () => {
+  await open({ installed: true, downloadBytes: 53_827_735 });
+  fireEvent.click(screen.getByRole("radio", { name: /AI upscale 2×/ }));
+  expect(screen.getByRole("button", { name: "Export" })).toHaveProperty("disabled", false);
+  expect(screen.queryByRole("button", { name: "Download" })).toBeNull();
 });

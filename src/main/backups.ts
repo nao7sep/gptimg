@@ -10,10 +10,15 @@ export interface Backups {
 }
 
 export function openBackups(file: string, sessionId: string, onError: (error: unknown) => void): Backups {
+  const report = (error: unknown): void => {
+    try { onError(error); } catch (reportError) { console.error("[gptimg] backup diagnostic failed", error, reportError); }
+  };
   let db: DatabaseSync | null = null;
+  let upsert: ReturnType<DatabaseSync["prepare"]> | undefined;
   try {
     db = new DatabaseSync(file);
     db.exec("PRAGMA journal_mode = WAL");
+    db.exec("BEGIN");
     db.exec(`CREATE TABLE IF NOT EXISTS backups (
       session_id TEXT NOT NULL,
       path TEXT NOT NULL,
@@ -23,14 +28,17 @@ export function openBackups(file: string, sessionId: string, onError: (error: un
       written_at_utc TEXT NOT NULL,
       PRIMARY KEY (path, session_id)
     )`);
+    upsert = db.prepare(`INSERT INTO backups (session_id, path, content, sha256, byte_size, written_at_utc)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (path, session_id) DO UPDATE SET content = excluded.content, sha256 = excluded.sha256,
+        byte_size = excluded.byte_size, written_at_utc = excluded.written_at_utc`);
+    db.exec("COMMIT");
   } catch (error) {
-    onError(error);
+    try { db?.close(); } catch (closeError) { report(closeError); }
+    report(error);
     db = null;
+    upsert = undefined;
   }
-  const upsert = db?.prepare(`INSERT INTO backups (session_id, path, content, sha256, byte_size, written_at_utc)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT (path, session_id) DO UPDATE SET content = excluded.content, sha256 = excluded.sha256,
-      byte_size = excluded.byte_size, written_at_utc = excluded.written_at_utc`);
   return {
     keep(path, content) {
       if (!upsert) return;
@@ -39,11 +47,11 @@ export function openBackups(file: string, sessionId: string, onError: (error: un
         const sha = createHash("sha256").update(bytes).digest("hex");
         upsert.run(sessionId, path, bytes, sha, bytes.byteLength, new Date().toISOString());
       } catch (error) {
-        onError(error);
+        report(error);
       }
     },
     close() {
-      db?.close();
+      try { db?.close(); } catch (error) { report(error); }
     },
   };
 }

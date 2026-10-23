@@ -80,6 +80,8 @@ export function chatIdOf(folder: string, doc: SessionDoc): string {
 export interface SessionSummary {
   /** The folder's name inside the sessions folder: the session's identity. */
   id: string;
+  /** The lasting id used by chat records, including the legacy folder fallback. */
+  chatId: string;
   title: string;
   createdAt: string;
   /** The last turn's time, else the creation time. */
@@ -190,7 +192,7 @@ export function summarize(id: string, doc: SessionDoc): SessionSummary {
   }
   const last = doc.turns[doc.turns.length - 1];
   const lastSent = doc.turns.findLast((turn) => turn.role === "user");
-  return { id, title: doc.title, createdAt: doc.createdAt, updatedAt: last?.at ?? doc.createdAt, sentAt: lastSent?.at ?? doc.createdAt, cover, imageCount };
+  return { id, chatId: chatIdOf(id, doc), title: doc.title, createdAt: doc.createdAt, updatedAt: last?.at ?? doc.createdAt, sentAt: lastSent?.at ?? doc.createdAt, cover, imageCount };
 }
 
 function isString(value: unknown): value is string {
@@ -202,26 +204,56 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function isRelative(path: string): boolean {
-  return path !== "" && !path.startsWith("/") && !/^[a-zA-Z]:/.test(path) && !path.split(/[\\/]/).includes("..");
+  return path !== "" && path !== "." && !/[\\\u0000]/.test(path) && !path.startsWith("/") && !/^[a-zA-Z]:/.test(path) && !path.split("/").includes("..");
+}
+
+function isTimestamp(value: unknown): value is string {
+  if (!isString(value) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/.test(value)) return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 19) === value.slice(0, 19);
+}
+
+function isNonnegative(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isCount(value: unknown): value is number {
+  return isNonnegative(value) && Number.isInteger(value);
+}
+
+function isUsage(value: unknown): boolean {
+  if (value === null) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const usage = value as Record<string, unknown>;
+  return isNonnegative(usage.input) && isNonnegative(usage.output)
+    && (usage.imageInput === undefined || isNonnegative(usage.imageInput))
+    && (usage.imageOutput === undefined || isNonnegative(usage.imageOutput));
 }
 
 /** Validates a parsed session.json; null when it is not a session this version can read. */
 export function parseSession(value: unknown): SessionDoc | null {
   if (!value || typeof value !== "object") return null;
   const doc = value as Record<string, unknown>;
-  if (doc.format !== SESSION_FORMAT || !isString(doc.title) || !isString(doc.createdAt) || !Array.isArray(doc.turns)) return null;
+  if (doc.format !== SESSION_FORMAT || !isString(doc.title) || !isTimestamp(doc.createdAt) || !Array.isArray(doc.turns)) return null;
   if (doc.id !== undefined && !isString(doc.id)) return null;
   for (const raw of doc.turns) {
     if (!raw || typeof raw !== "object") return null;
     const turn = raw as Record<string, unknown>;
-    if (!isString(turn.id) || !isString(turn.at) || !isString(turn.text) || !isStringArray(turn.images)) return null;
+    if (!isString(turn.id) || !isTimestamp(turn.at) || !isString(turn.text) || !isStringArray(turn.images)) return null;
     if (!turn.images.every(isRelative)) return null;
     if (turn.role === "user") {
       const options = turn.options as Record<string, unknown> | undefined;
-      if (!options || !isString(options.size) || !isString(options.quality)) return null;
+      if (!options || typeof options !== "object" || Array.isArray(options) || !isString(options.size) || !isString(options.quality)) return null;
+      if (turn.mask !== undefined && (!isString(turn.mask) || !isRelative(turn.mask))) return null;
+      if (options.background !== undefined && options.background !== "transparent" && options.background !== "opaque") return null;
       if (options.transparent !== undefined && typeof options.transparent !== "boolean") return null;
     } else if (turn.role === "assistant") {
       if (!isString(turn.responseId)) return null;
+      if (turn.resumed !== null && turn.resumed !== "chain" && turn.resumed !== "resent") return null;
+      if (turn.incomplete !== null && !isString(turn.incomplete)) return null;
+      if (!isUsage(turn.usage) || !isCount(turn.failedImages)) return null;
+      if (turn.blockedImages !== undefined && !isCount(turn.blockedImages)) return null;
+      if (turn.missingImages !== undefined && !isCount(turn.missingImages)) return null;
     } else {
       return null;
     }

@@ -23,10 +23,6 @@ export function message(key: MessageKey, values?: MessageValues): Message {
   return values ? { key, values } : { key };
 }
 
-export function isMessage(value: unknown): value is Message {
-  return !!value && typeof value === "object" && typeof (value as Message).key === "string";
-}
-
 export interface Translator {
   language: Language;
   locale: string;

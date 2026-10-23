@@ -2,8 +2,7 @@
 // again brings the existing one forward; it remembers its own placement,
 // follows the main window's language and theme, closes with the main window,
 // and is told when a record is stored, at most once a second.
-import { BrowserWindow, nativeTheme } from "electron";
-import { join } from "node:path";
+import { BrowserWindow } from "electron";
 import { windowBackground } from "./window-background.ts";
 
 const RECORDS_WINDOW = { width: 1240, height: 820, minWidth: 720, minHeight: 440 } as const;
@@ -75,8 +74,4 @@ export class RecordsWindow {
   owns(window: BrowserWindow | null): boolean {
     return !!window && window === this.#window;
   }
-}
-
-export function rendererEntry(here: string): string {
-  return join(here, "../renderer/index.html");
 }

@@ -70,8 +70,18 @@ describe("export", () => {
     await vi.waitFor(() => expect(testRecords.log).toHaveBeenCalledWith("warn", "model.releaseFailed", { failure: expect.objectContaining({ retryable: true }) }));
   });
 
-  it("reports whether the upscaling model is installed", async () => {
-    const t = runner(() => ({ kind: "result", result: { status: "completed", models: [{ key: "swin2sr", cached: false, downloadBytes: 53_827_735 }] } }));
-    expect(await t.exports.upscalerStatus()).toEqual({ installed: false, downloadBytes: 53_827_735 });
+  it.each([false, true])("reports the model's installed state as %s after a successful status check", async (cached) => {
+    const t = runner(() => ({ kind: "result", result: { status: "completed", models: [{ key: "swin2sr", cached, downloadBytes: 53_827_735 }] } }));
+    expect(await t.exports.upscalerStatus()).toEqual({ installed: cached, downloadBytes: 53_827_735 });
+  });
+
+  it("preserves an unsuccessful status check instead of presenting a missing model", async () => {
+    const t = runner(() => ({ kind: "error", error: { name: "GptImgError", code: "fs.permissionDenied", kind: "unavailable", effect: "none", message: "private diagnostic" } }));
+    expect(await t.exports.upscalerStatus()).toEqual({ installed: false, downloadBytes: null, failure: { message: { key: "failure.filePermission" }, retryable: true } });
+  });
+
+  it("preserves a lost worker while checking the model", async () => {
+    const t = runner(() => ({ kind: "lost" }));
+    expect(await t.exports.upscalerStatus()).toEqual({ installed: false, downloadBytes: null, failure: { message: { key: "failure.workerLost" }, retryable: true } });
   });
 });

@@ -8,16 +8,20 @@ import { formattingLocale, normalizePreference, resolveLanguage, type Language, 
 import { createTranslator, type Translator } from "../shared/i18n/translator.ts";
 import type { LanguageInfo } from "../shared/api.ts";
 import type { Theme } from "../shared/settings.ts";
+import type { ReadResult } from "./files.ts";
 import { THEMES } from "../shared/settings.ts";
 
 /** The saved language and theme, read straight from config.json without the store: any failure is System. */
-export function earlyPreferences(configPath: string): { language: LanguagePreference; theme: Theme } {
+export function earlyPreferences(configPath: string): { language: LanguagePreference; theme: Theme; read: ReadResult } {
+  let read: ReadResult;
+  try { read = { kind: "ok", text: readFileSync(configPath, "utf8") }; }
+  catch (error) { read = (error as NodeJS.ErrnoException).code === "ENOENT" ? { kind: "absent" } : { kind: "failed", error }; }
   try {
-    const raw = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    const raw = JSON.parse(read.kind === "ok" ? read.text : "null") as Record<string, unknown>;
     const theme = typeof raw.theme === "string" && (THEMES as readonly string[]).includes(raw.theme) ? (raw.theme as Theme) : "system";
-    return { language: normalizePreference(raw.language), theme };
+    return { language: normalizePreference(raw.language), theme, read };
   } catch {
-    return { language: "system", theme: "system" };
+    return { language: "system", theme: "system", read };
   }
 }
 

@@ -26,10 +26,15 @@ export interface CallHooks {
   onPartial?: (partial: PartialDraft) => void;
 }
 
+const WORKER_WAIT_MS = 30_000;
+
 export class SdkHost {
   #child: UtilityProcess | null = null;
   #ready: Promise<void> | null = null;
   #stopping = false;
+  #usable = false;
+  #failed = false;
+  #exit: Promise<void> | null = null;
   readonly #pending = new Map<string, Pending>();
 
   readonly #entry: string;
@@ -40,16 +45,45 @@ export class SdkHost {
     this.#onExit = onExit;
   }
 
+  #losePending(): void {
+    for (const [id, pending] of this.#pending) {
+      this.#pending.delete(id);
+      pending.settle({ kind: "lost" });
+    }
+  }
+
   #start(): Promise<void> {
     if (this.#ready) return this.#ready;
-    const child = utilityProcess.fork(this.#entry, [], { serviceName: "GptImg SDK", stdio: "inherit" });
+    let child: UtilityProcess;
+    try {
+      child = utilityProcess.fork(this.#entry, [], { serviceName: "GptImg SDK", stdio: "inherit" });
+    } catch {
+      this.#losePending();
+      return Promise.resolve();
+    }
     this.#child = child;
+    this.#usable = false;
+    this.#failed = false;
+    this.#stopping = false;
+    let resolveExit!: () => void;
+    this.#exit = new Promise((resolve) => { resolveExit = resolve; });
     this.#ready = new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.#child !== child) return;
+        this.#failed = true;
+        this.#losePending();
+        resolve();
+        child.kill();
+      }, WORKER_WAIT_MS);
       child.on("message", (reply: WorkerReply) => {
+        if (this.#child !== child || this.#failed || this.#stopping) return;
         if (reply.type === "ready") {
+          clearTimeout(timer);
+          this.#usable = true;
           resolve();
           return;
         }
+        if (!this.#usable) return;
         const pending = this.#pending.get(reply.id);
         if (!pending) return;
         if (reply.type === "event") pending.onEvent(reply.event);
@@ -61,15 +95,19 @@ export class SdkHost {
         }
       });
       child.once("exit", (code) => {
+        if (this.#child !== child) return;
+        clearTimeout(timer);
+        const expected = this.#stopping;
         this.#child = null;
         this.#ready = null;
+        this.#exit = null;
+        this.#usable = false;
+        this.#stopping = false;
         resolve();
-        for (const [id, pending] of this.#pending) {
-          this.#pending.delete(id);
-          pending.settle({ kind: "lost" });
-        }
-        // An exit the app asked for while quitting is not news, and the records are closed by then.
-        if (!this.#stopping) this.#onExit(code);
+        resolveExit();
+        this.#losePending();
+        // An exit the app requested does not need another failure notice.
+        if (!expected) this.#onExit(code);
       });
     });
     return this.#ready;
@@ -83,26 +121,34 @@ export class SdkHost {
     hooks: CallHooks = {},
   ): { id: string; done: Promise<CallSettlement>; cancel: () => void } {
     const id = randomUUID();
-    let cancelled = false;
+    let sent = false;
+    if (this.#stopping) return { id, done: Promise.resolve({ kind: "lost" }), cancel: () => {} };
     const done = new Promise<CallSettlement>((settle) => {
       this.#pending.set(id, { onEvent: hooks.onEvent ?? (() => {}), onProgress: hooks.onProgress ?? (() => {}), onPartial: hooks.onPartial ?? (() => {}), settle });
       void this.#start().then(() => {
         if (!this.#pending.has(id)) return;
-        if (!this.#child) {
+        if (!this.#child || !this.#usable || this.#stopping) {
           this.#pending.delete(id);
           settle({ kind: "lost" });
           return;
         }
+        sent = true;
         this.#post({ type: "call", id, op, apiKey: hooks.apiKey ?? null, baseURL: hooks.baseURL ?? null, app, args });
-        if (cancelled) this.#post({ type: "cancel", id });
       });
     });
     return {
       id,
       done,
       cancel: () => {
-        cancelled = true;
-        this.#post({ type: "cancel", id });
+        const pending = this.#pending.get(id);
+        if (!pending) return;
+        if (sent) this.#post({ type: "cancel", id });
+        else {
+          this.#pending.delete(id);
+          pending.settle({ kind: "error", error: {
+            name: "GptImgError", code: "cancelled", kind: "cancelled", effect: "none", message: "Cancelled before the worker call was sent.",
+          } });
+        }
       },
     };
   }
@@ -119,11 +165,47 @@ export class SdkHost {
   }
 
   #post(request: WorkerRequest): void {
-    this.#child?.postMessage(request);
+    const child = this.#child;
+    if (!child) return;
+    try {
+      child.postMessage(request);
+    } catch {
+      // A broken channel must not leave an unhandled dispatch rejection or
+      // allow more paid work onto this worker. Keep it owned until its exit.
+      this.#usable = false;
+      this.#failed = true;
+      const pending = this.#pending.get(request.id);
+      this.#pending.delete(request.id);
+      pending?.settle({ kind: "lost" });
+      child.kill();
+    }
+  }
+
+  /** Wait for the owned worker to exit before allowing another to start. */
+  async restart(): Promise<void> {
+    const child = this.#child;
+    const exited = this.#exit;
+    if (!child || !exited) return;
+    this.#stopping = true;
+    this.#usable = false;
+    child.kill();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        exited,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error("The SDK worker did not exit within 30 seconds.")), WORKER_WAIT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   stop(): void {
+    if (!this.#child) return;
     this.#stopping = true;
-    this.#child?.kill();
+    this.#usable = false;
+    this.#child.kill();
   }
 }

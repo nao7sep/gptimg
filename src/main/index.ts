@@ -1,18 +1,19 @@
 // GptImg's main process: settles storage, language and theme before any
 // window exists, owns every store, and answers the window's requests.
+import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell } from "electron";
+import { dirname, join } from "node:path";
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, nativeTheme, powerMonitor, session, shell } from "electron";
 import type { AppFailure, BootInfo, GptImgApi, MenuCommand, Outcome, SendRequest } from "../shared/api.ts";
-import type { PartialDraft } from "./sdk-protocol.ts";
+import { DraftPreviews } from "./draft-previews.ts";
 import { extensionOf, type ExportRequest } from "../shared/export.ts";
 import { message } from "../shared/i18n/translator.ts";
 import { INITIAL_WINDOW, windowMinimum } from "../shared/layout.ts";
 import { SET_KEYS, validateSet, type Settings } from "../shared/settings.ts";
 import { parseUiState, type UiState } from "../shared/ui-state.ts";
 import { KeyStore } from "./api-keys.ts";
-import { openBackups, type Backups } from "./backups.ts";
+import { type Backups } from "./backups.ts";
 import { loadConfig, saveConfig, type LoadedConfig } from "./config.ts";
 import { json, readText, writeTextAtomic } from "./files.ts";
 import { ExportRunner, folderOf } from "./export.ts";
@@ -21,12 +22,13 @@ import { chromiumLang, clearAppleLanguages, earlyPreferences, LanguageOwner, wri
 import { buildMenu } from "./menu.ts";
 import { RecordsWindow } from "./records-window.ts";
 import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } from "./paths.ts";
-import { openRecords, type Records } from "./records.ts";
+import { StoreHost, type AsyncRecords } from "./store-host.ts";
 import { SdkHost } from "./sdk-host.ts";
 import { isSessionId, listSessions, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
-import { chatIdOf } from "../shared/session.ts";
+import { summarize, type SessionSummary, chatIdOf } from "../shared/session.ts";
 import type { RecordQuery, RecordRef } from "../shared/records.ts";
 import { TurnRunner } from "./turns.ts";
+import { navigationAllowed } from "./navigation.ts";
 import { windowBackground } from "./window-background.ts";
 
 declare const __APP_VERSION__: string;
@@ -37,11 +39,15 @@ const here = import.meta.dirname;
 app.setName("GptImg");
 registerImageScheme();
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
-  void start();
-}
+// Framework state and the instance lock share the selected storage root.
+try {
+  const paths = ensureDataRoot();
+  mkdirSync(join(paths.root, "electron", "session"), { recursive: true, mode: 0o700 });
+  app.setPath("userData", join(paths.root, "electron"));
+  app.setPath("sessionData", join(paths.root, "electron", "session"));
+  if (!app.requestSingleInstanceLock() || process.argv.includes("--gptimg-quit-for-replacement")) app.quit();
+  else void start(paths);
+} catch (error) { void showStartupFailure(error); }
 
 interface State {
   paths: AppPaths;
@@ -49,7 +55,7 @@ interface State {
   configExisted: boolean;
   ui: UiState;
   keys: KeyStore;
-  records: Records;
+  records: AsyncRecords;
   backups: Backups;
   language: LanguageOwner;
   host: SdkHost;
@@ -59,18 +65,15 @@ interface State {
   images: ImageAccess;
   window: BrowserWindow | null;
   quitConfirmed: boolean;
+  quitAsking: boolean;
+  windowDirty: boolean;
+  rootChanging: boolean;
+  summaryRoot: string;
+  summaryRevision: number;
+  summaries: Map<string, SessionSummary> | null;
 }
 
-async function start(): Promise<void> {
-  // Storage first: an unusable folder stops the app with a message, before anything else.
-  let paths: AppPaths;
-  try {
-    paths = ensureDataRoot();
-  } catch (error) {
-    await showStartupFailure(error);
-    return;
-  }
-
+async function start(paths: AppPaths): Promise<void> {
   const early = earlyPreferences(paths.config);
   const lang = chromiumLang(early.language);
   if (lang) app.commandLine.appendSwitch("lang", lang);
@@ -78,16 +81,16 @@ async function start(): Promise<void> {
   await app.whenReady();
 
   const launchId = randomUUID();
-  const records = openRecords(paths.records, paths.logs, launchId, __APP_VERSION__);
-  const backups = openBackups(paths.backups, launchId, (error) => records.log("warn", "backups.failed", { error: String(error) }));
+  const stores = new StoreHost(join(here, "store-worker.js"), paths, launchId, __APP_VERSION__);
+  const { records, backups } = stores;
   records.log("info", "app.start", { version: __APP_VERSION__, platform: process.platform, dataDir: paths.root });
 
   const language = new LanguageOwner();
   clearAppleLanguages((error) => records.log("warn", "language.appleLanguagesFailed", { error: String(error) }));
   language.readComputer();
 
-  const configRead = await readText(paths.config);
-  const config = await loadConfig(paths.config);
+  const configRead = early.read;
+  const config = await loadConfig(paths.config, configRead);
   await language.use(config.settings.language);
   writeAppleLanguages(config.settings.language, (error) => records.log("warn", "language.appleLanguagesFailed", { error: String(error) }));
   nativeTheme.themeSource = config.settings.theme;
@@ -138,56 +141,31 @@ async function start(): Promise<void> {
     images: new ImageAccess(() => [state.config.settings.sessionsDir, paths.staging]),
     window: null,
     quitConfirmed: false,
+    quitAsking: false,
+    windowDirty: false,
+    rootChanging: false,
+    summaryRoot: config.settings.sessionsDir,
+    summaryRevision: 0,
+    summaries: null,
   };
-  // The drafts of the image a turn is drawing: the latest one per chat, in staging, gone when the turn
-  // settles. A write still under way when the turn settles is dropped, never shown late.
-  const drafts = (() => {
-    const shown = new Map<string, string>();
-    const generation = new Map<string, number>();
-    const drop = (sessionId: string) => {
-      const previous = shown.get(sessionId);
-      shown.delete(sessionId);
-      if (previous) void rm(previous, { force: true });
-    };
-    return {
-      async show(sessionId: string, draft: PartialDraft | null) {
-        if (!draft) {
-          generation.set(sessionId, (generation.get(sessionId) ?? 0) + 1);
-          drop(sessionId);
-          state.window?.webContents.send("turnDraft", { sessionId, path: null });
-          return;
-        }
-        const mine = generation.get(sessionId) ?? 0;
-        const path = join(paths.staging, `draft-${randomUUID().slice(0, 8)}.${draft.format === "jpeg" ? "jpg" : draft.format}`);
-        try {
-          await mkdir(paths.staging, { recursive: true, mode: 0o700 });
-          await writeFile(path, draft.data, { mode: 0o600 });
-          if ((generation.get(sessionId) ?? 0) !== mine) {
-            await rm(path, { force: true });
-            return;
-          }
-          await state.images.register(path);
-          drop(sessionId);
-          shown.set(sessionId, path);
-          state.window?.webContents.send("turnDraft", { sessionId, path });
-        } catch {
-          // A draft is only a preview; the finished image does not depend on it.
-          void rm(path, { force: true });
-        }
-      },
-    };
-  })();
+  const drafts = new DraftPreviews(paths.staging, (sessionId, path) => {
+    state.window?.webContents.send("turnDraft", { sessionId, path });
+  });
   state.turns = new TurnRunner({
     host,
     records,
     settings: () => state.config.settings,
     apiKey: () => keys.resolve(),
+    authorizeImage: (path) => state.images.allowed(path),
     app: { name: "GptImg", version: __APP_VERSION__ },
     backup: (path, text) => backups.keep(path, text),
-    started: (requestId, session) => state.window?.webContents.send("turnStarted", { requestId, session }),
+    started: (requestId, session) => {
+      updateSummary(state, session);
+      state.window?.webContents.send("turnStarted", { requestId, session });
+    },
     draft: (sessionId, draft) => void drafts.show(sessionId, draft),
     releaseStaged: (path) => {
-      if (path.startsWith(paths.staging)) void rm(path, { force: true });
+      if (dirname(path) === paths.staging) void rm(path, { force: true });
     },
   });
   state.images.install();
@@ -206,7 +184,8 @@ async function start(): Promise<void> {
 
   createWindow(state);
 
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    if (argv.includes("--gptimg-quit-for-replacement")) { app.quit(); return; }
     const win = state.window;
     if (!win) return;
     if (win.isMinimized()) win.restore();
@@ -217,13 +196,15 @@ async function start(): Promise<void> {
   });
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", (event) => {
-    // One quit owner: a reply still on its way is the only thing a quit can lose.
-    if (state.quitConfirmed || !state.turns.busy) {
+    // Ordinary closes and replacement requests keep the window alive until one decision.
+    if (state.quitConfirmed || (!state.turns.busy && !state.exports.busy && !state.windowDirty)) {
       state.turns.cancelAll();
       state.exports.cancel();
       return;
     }
     event.preventDefault();
+    if (state.quitAsking) return;
+    state.quitAsking = true;
     const t = language.translator;
     const owner = state.window ?? undefined;
     const options = {
@@ -235,12 +216,15 @@ async function start(): Promise<void> {
       detail: t.t("quit.detail"),
     };
     void (owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options)).then(({ response }) => {
+      state.quitAsking = false;
       if (response !== 1) return;
       state.quitConfirmed = true;
       state.turns.cancelAll();
       app.quit();
-    });
+    }).catch((error) => { state.quitAsking = false; records.log("error", "window.closeFailed", { error: String(error) }); });
   });
+  // OS takeover never asks or waits for optional history/worker teardown.
+  powerMonitor.on("shutdown", () => { state.quitConfirmed = true; app.exit(0); });
   app.on("will-quit", () => {
     host.stop();
     records.log("info", "app.quit");
@@ -311,7 +295,7 @@ function harden(win: BrowserWindow): void {
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, url) => {
-    if (!DEV_URL || !url.startsWith(DEV_URL)) event.preventDefault();
+    if (!navigationAllowed(url, DEV_URL)) event.preventDefault();
   });
 }
 
@@ -365,6 +349,11 @@ function createWindow(state: State): void {
     if (event.level === "warning" || event.level === "error") state.records.log(event.level === "error" ? "error" : "warn", "window.console", { message: event.message, source: event.sourceId, line: event.lineNumber });
   });
   win.webContents.on("preload-error", (_event, path, error) => state.records.log("error", "window.preloadFailed", { path, error: String(error) }));
+  win.on("close", (event) => {
+    if (!state.quitConfirmed && (state.windowDirty || state.turns.busy || state.exports.busy)) { event.preventDefault(); app.quit(); }
+  });
+  win.on("query-session-end", () => { state.quitConfirmed = true; });
+  win.on("session-end", () => app.exit(0));
   win.on("closed", () => {
     state.window = null;
     // Secondary windows go with the main one.
@@ -391,6 +380,20 @@ type Handlers = { [K in keyof GptImgApi]?: (...args: never[]) => unknown };
 
 function installIpc(state: State): void {
   const { paths, keys, records, language } = state;
+  let savingUi = false;
+  let pendingUi = false;
+  const persistUi = async () => {
+    pendingUi = true;
+    if (savingUi) return;
+    savingUi = true;
+    try {
+      while (pendingUi) {
+        pendingUi = false;
+        try { await writeTextAtomic(paths.state, json(state.ui)); }
+        catch (error) { records.log("warn", "state.saveFailed", { error: String(error) }); }
+      }
+    } finally { savingUi = false; }
+  };
 
   const handlers = {
     async boot(): Promise<BootInfo> {
@@ -409,11 +412,15 @@ function installIpc(state: State): void {
     },
 
     async saveSettings(next: Settings) {
+      if (state.rootChanging) return failure("failure.taskRunning");
+      if (next.sessionsDir !== state.config.settings.sessionsDir && state.turns.busy) return failure("failure.turnRunning");
       if (state.config.locked) return failure("settings.problem.locked", { path: paths.config });
       for (const key of SET_KEYS) {
         const problem = validateSet(key, next[key]);
         if (problem) return failure("failure.settingsInvalid");
       }
+      state.rootChanging = next.sessionsDir !== state.config.settings.sessionsDir;
+      try {
       try {
         const text = await saveConfig(paths.config, next, state.config.unknown, state.configExisted);
         if (text) {
@@ -432,12 +439,17 @@ function installIpc(state: State): void {
         await language.use(next.language);
         writeAppleLanguages(next.language, (error) => records.log("warn", "language.appleLanguagesFailed", { error: String(error) }));
       }
+      if (previous.sessionsDir !== next.sessionsDir) { state.summaryRoot = next.sessionsDir; state.summaries = null; }
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("settingsChanged", next);
+      if (previous.sessionsDir !== next.sessionsDir) sessionsChanged(state);
       return { ok: true, settings: next, language: language.info() };
+      } finally { state.rootChanging = false; }
     },
 
-    saveState(next: UiState) {
-      state.ui = parseUiState(next);
-      void writeTextAtomic(paths.state, json(state.ui)).catch((error) => records.log("warn", "state.saveFailed", { error: String(error) }));
+    saveState(next: Partial<UiState>) {
+      const { recordsListWidth: _recordsOwned, ...patch } = next;
+      state.ui = parseUiState({ ...state.ui, ...patch });
+      void persistUi();
     },
 
     async pickFolder(current: string) {
@@ -484,7 +496,9 @@ function installIpc(state: State): void {
       const root = state.config.settings.sessionsDir;
       if (!root) return { ok: true, sessions: [], unreadable: 0 };
       try {
-        return { ok: true, ...(await listSessions(root)) };
+        const listing = await discoverSessions(state, root);
+        if (root === state.config.settings.sessionsDir) { state.summaryRoot = root; state.summaries = new Map(listing.sessions.map((row) => [row.id, row])); }
+        return { ok: true, ...listing };
       } catch (error) {
         records.log("error", "sessions.listFailed", { error: String(error) });
         return failure("failure.sessionsFolder", { path: root });
@@ -501,23 +515,31 @@ function installIpc(state: State): void {
       }
     },
     async renameSession(id: string, title: string) {
+      if (state.rootChanging) return failure("failure.taskRunning");
       const root = state.config.settings.sessionsDir;
       const clean = title.replace(/\s+/g, " ").trim();
       if (!isSessionId(id) || !clean) return failure("failure.titleRequired");
-      if (state.turns.isRunning(id)) return failure("failure.turnRunning");
+      const release = state.turns.reserveSession(id);
+      if (!release) return failure("failure.turnRunning");
       try {
         const renamed = await renameSession(root, id, clean);
+        state.summaries?.delete(id);
+        updateSummary(state, { id: renamed.id, doc: renamed.doc, dir: sessionDir(root, renamed.id) });
         records.log("info", "sessions.renamed", { chatId: chatIdOf(renamed.id, renamed.doc), from: id, to: renamed.id });
         return { ok: true, session: { id: renamed.id, doc: renamed.doc, dir: sessionDir(root, renamed.id) } };
       } catch (error) {
         records.log("error", "sessions.renameFailed", { error: String(error) });
         return sessionFailure(error);
+      } finally {
+        release();
       }
     },
     async trashSession(id: string) {
+      if (state.rootChanging) return failure("failure.taskRunning");
       const root = state.config.settings.sessionsDir;
       if (!isSessionId(id)) return failure("failure.sessionMissing");
-      if (state.turns.isRunning(id)) return failure("failure.turnRunning");
+      const release = state.turns.reserveSession(id);
+      if (!release) return failure("failure.turnRunning");
       try {
         let chatId = id;
         try {
@@ -526,11 +548,15 @@ function installIpc(state: State): void {
           // An unreadable chat is still trashed; its folder name stands in.
         }
         await shell.trashItem(sessionDir(root, id));
+        state.summaries?.delete(id);
+        sessionsChanged(state);
         records.log("info", "sessions.trashed", { chatId, folder: id });
         return { ok: true };
       } catch (error) {
         records.log("error", "sessions.trashFailed", { error: String(error) });
         return failure(process.platform === "darwin" ? "failure.trashMac" : "failure.trashOther");
+      } finally {
+        release();
       }
     },
     showChatsFolder() {
@@ -542,16 +568,21 @@ function installIpc(state: State): void {
       if (isSessionId(id)) shell.showItemInFolder(join(sessionDir(root, id), "session.json"));
     },
 
-    send(request: SendRequest) {
-      // An absolute path is only one the window registered (picked, dropped, pasted or painted); a session path stays inside the session.
-      const outside = (path: string) => (path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path)) && !state.images.allowed(path);
-      const references = request.references.filter((path) => !outside(path));
-      const mask = request.mask && !outside(request.mask.mask) && !outside(request.mask.image) ? request.mask : undefined;
-      const { mask: _requested, ...rest } = request;
-      return state.turns.send({ ...rest, references, ...(mask && { mask }) });
+    async send(request: SendRequest) {
+      if (state.rootChanging) return { ...failure("failure.taskRunning"), session: null, cancelled: false };
+      const outcome = await state.turns.send(request);
+      if (outcome.session) updateSummary(state, outcome.session);
+      return outcome;
     },
-    retry(sessionId: string) {
-      return state.turns.retry(sessionId);
+    async retry(sessionId: string) {
+      if (state.rootChanging) return { ...failure("failure.taskRunning"), session: null, cancelled: false };
+      const outcome = await state.turns.retry(sessionId);
+      if (outcome.session) updateSummary(state, outcome.session);
+      return outcome;
+    },
+    async restartProcessing() {
+      try { await state.host.restart(); return { ok: true }; }
+      catch { return failure("failure.workerLost"); }
     },
     cancel(sessionId: string) {
       state.turns.cancel(sessionId);
@@ -604,14 +635,14 @@ function installIpc(state: State): void {
     },
 
     async copyImage(path: string) {
-      if (!state.images.allowed(path)) return failure("failure.imageMissing");
-      const image = nativeImage.createFromPath(path);
-      if (image.isEmpty()) return failure("failure.imageMissing");
-      await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(image.toPNG())], { type: "image/png" }) })]);
+      if (!await state.images.allowed(path)) return failure("failure.imageMissing");
+      const png = await state.images.png(path);
+      if (!png) return failure("failure.imageMissing");
+      await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
       return { ok: true };
     },
     async inspectImage(path: string) {
-      if (!state.images.allowed(path)) return failure("failure.imageMissing");
+      if (!await state.images.allowed(path)) return failure("failure.imageMissing");
       const outcome = await state.exports.inspect(path);
       return outcome.ok ? { ok: true, info: outcome.value } : { ok: false, failure: outcome.failure };
     },
@@ -623,7 +654,7 @@ function installIpc(state: State): void {
       return outcome.ok ? { ok: true } : { ok: false, failure: outcome.failure };
     },
     async exportImage(request: ExportRequest, suggestedName: string): Promise<Outcome<{ savedTo: string | null; dir: string | null }>> {
-      if (!state.images.allowed(request.path)) return failure("failure.imageMissing");
+      if (!await state.images.allowed(request.path)) return failure("failure.imageMissing");
       const inspected = await state.exports.inspect(request.path);
       if (!inspected.ok) return { ok: false, failure: inspected.failure };
       const t = language.translator;
@@ -644,8 +675,8 @@ function installIpc(state: State): void {
     cancelTask() {
       state.exports.cancel();
     },
-    showInFolder(path: string) {
-      if (state.images.allowed(path)) shell.showItemInFolder(path);
+    async showInFolder(path: string) {
+      if (await state.images.allowed(path)) shell.showItemInFolder(path);
     },
 
     openRecords() {
@@ -658,16 +689,13 @@ function installIpc(state: State): void {
       const root = state.config.settings.sessionsDir;
       if (!root) return [];
       try {
-        const listing = await listSessions(root);
-        const chats: { id: string; title: string }[] = [];
-        for (const summary of listing.sessions) {
-          try {
-            chats.push({ id: chatIdOf(summary.id, await readSession(root, summary.id)), title: summary.title });
-          } catch {
-            // A chat that cannot be read is left out of the filter; its records still show under all chats.
-          }
+        if (!state.summaries || state.summaryRoot !== root) {
+          const listing = await discoverSessions(state, root);
+          if (root !== state.config.settings.sessionsDir) return [];
+          state.summaryRoot = root;
+          state.summaries = new Map(listing.sessions.map((row) => [row.id, row]));
         }
-        return chats;
+        return [...state.summaries.values()].map((row) => ({ id: row.chatId, title: row.title }));
       } catch {
         return [];
       }
@@ -680,9 +708,10 @@ function installIpc(state: State): void {
     },
     saveRecordsLayout(listWidth: number) {
       state.ui = parseUiState({ ...state.ui, recordsListWidth: listWidth });
-      void writeTextAtomic(paths.state, json(state.ui)).catch((error) => records.log("warn", "state.saveFailed", { error: String(error) }));
+      void persistUi();
     },
 
+    setWindowDirty(dirty: boolean) { state.windowDirty = dirty; },
     closeWindow() {
       (BrowserWindow.getFocusedWindow() ?? state.window)?.close();
     },
@@ -691,4 +720,25 @@ function installIpc(state: State): void {
   for (const [name, handler] of Object.entries(handlers)) {
     ipcMain.handle(name, (_event, ...args: unknown[]) => (handler as (...a: unknown[]) => unknown)(...args));
   }
+}
+
+function sessionsChanged(state: State): void {
+  ++state.summaryRevision;
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sessionsChanged");
+}
+
+// A turn or rename can settle while discovery is reading older documents.
+// Only a scan with no intervening mutation may replace the summary snapshot.
+async function discoverSessions(state: State, root: string) {
+  for (;;) {
+    const revision = state.summaryRevision;
+    const listing = await listSessions(root);
+    if (root !== state.config.settings.sessionsDir || revision === state.summaryRevision) return listing;
+  }
+}
+
+function updateSummary(state: State, opened: import("../shared/api.ts").OpenedSession): void {
+  if (opened.dir !== sessionDir(state.config.settings.sessionsDir, opened.id)) return;
+  state.summaries?.set(opened.id, summarize(opened.id, opened.doc));
+  sessionsChanged(state);
 }

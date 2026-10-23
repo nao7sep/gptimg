@@ -1,7 +1,8 @@
 // Every image in the open chat, newest first, beside the conversation: the
-// ones the assistant made and the ones the user attached. Clicking one attaches
-// it to the next message, and clicking it again takes it off; the assistant
-// sees an earlier image only when it is attached.
+// ones the assistant made and the ones the user attached. Clicking one explicitly
+// selects it for the next message; clicking again removes that attachment.
+// Recent images are resent automatically when the provider conversation expires.
+// The assistant has no tool for looking up other images in this pane.
 import { imageUrl, type OpenedSession } from "../../../shared/api.ts";
 import { useI18n } from "../i18n.tsx";
 import { CheckIcon } from "./icons.tsx";

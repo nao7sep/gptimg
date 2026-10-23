@@ -5,12 +5,12 @@ import { bootInfo, fakeApi, renderInApp } from "./harness.tsx";
 
 afterEach(cleanup);
 
-async function open(onClose = vi.fn(), onSaved = vi.fn()) {
+async function open(onClose = vi.fn(), onSaved = vi.fn(), onDirtyChange = vi.fn()) {
   const api = fakeApi();
   const boot = bootInfo();
   const { SettingsModal } = await import("../../src/renderer/src/modals/SettingsModal.tsx");
-  await renderInApp(() => <SettingsModal boot={boot} settings={boot.settings} problem={null} keyStatus={boot.key} onClose={onClose} onSaved={onSaved} />);
-  return { api, onClose, onSaved };
+  const rendered = await renderInApp(() => <SettingsModal boot={boot} settings={boot.settings} problem={null} keyStatus={boot.key} onClose={onClose} onSaved={onSaved} onDirtyChange={onDirtyChange} />);
+  return { api, onClose, onSaved, onDirtyChange, rendered };
 }
 
 describe("Settings", () => {
@@ -83,4 +83,57 @@ describe("Settings", () => {
     expect(api.clearKey).toHaveBeenCalled();
     expect(api.setKey).not.toHaveBeenCalled();
   });
+});
+
+describe("Settings drafts and partial saves", () => {
+  it("keeps a blank numeric draft dirty and invalid across tabs until reset", async () => {
+    const { api, onClose } = await open();
+    fireEvent.change(screen.getByLabelText("Conversation text size"), { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    expect(screen.getByLabelText("Conversation text size").getAttribute("aria-invalid")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "Chats" }));
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    expect(screen.getByLabelText("Conversation text size")).toHaveProperty("value", "");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByText("Discard changes?")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset fonts" }));
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    expect(api.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("publishes saved settings even when the key fails, retaining the key draft for retry", async () => {
+    const { api, onClose, onSaved } = await open();
+    vi.mocked(api.setKey).mockResolvedValueOnce({ ok: false, failure: { retryable: true, message: { key: "failure.internal" } } });
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    fireEvent.click(screen.getByRole("tab", { name: "OpenAI" }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "sk-new-draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("alert");
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ theme: "dark" }), expect.objectContaining({ source: "stored" }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("API key")).toHaveProperty("value", "sk-new-draft");
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", false);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(api.setKey).toHaveBeenNthCalledWith(2, "sk-new-draft");
+  });
+});
+
+
+it("reports invalid numeric draft dirtiness and clears it only on reset or unmount", async () => {
+  const { onDirtyChange, rendered } = await open();
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  fireEvent.change(screen.getByLabelText("Conversation text size"), { target: { value: "" } });
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  const calls = onDirtyChange.mock.calls.length;
+  fireEvent.change(screen.getByLabelText("Conversation text size"), { target: { value: "20" } });
+  expect(onDirtyChange.mock.calls.slice(calls).some(([dirty]) => dirty === false)).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Reset fonts" }));
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  rendered.unmount();
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
 });

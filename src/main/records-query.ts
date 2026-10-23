@@ -13,7 +13,7 @@ import {
   type RecordsPage,
 } from "../shared/records.ts";
 
-const ATTEMPTS = ["attempt.succeeded", "attempt.failed", "attempt.cancelled"];
+const ATTEMPTS = ["attempt.retrying", "attempt.succeeded", "attempt.failed", "attempt.cancelled"];
 const IN_ATTEMPTS = `(${ATTEMPTS.map((e) => `'${e}'`).join(", ")})`;
 
 // Every record as one shape: the app's lines, and the SDK's events split into log lines and calls.

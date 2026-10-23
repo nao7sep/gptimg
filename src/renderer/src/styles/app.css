@@ -336,6 +336,7 @@ select {
 
 
 .splitter {
+  width: 6px;
   flex: none;
   cursor: col-resize;
   background: linear-gradient(to right, transparent 2px, var(--line-divider) 2px, var(--line-divider) 3px, transparent 3px);
@@ -755,7 +756,10 @@ select {
 /* ---------- Composer ---------- */
 
 .composer-wrap {
-  flex: none;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: calc(100vh - var(--pane-header) - var(--pane-transcript-min));
+  overflow-y: auto;
   padding: 0 28px 18px;
 }
 
@@ -1817,3 +1821,5 @@ input[type="range"] {
 .task-strip-text {
   flex: 1 1 auto;
 }
+
+.records-pagination { display: flex; gap: 8px; padding: 8px 12px; flex: none; border-top: 1px solid var(--line-row); }

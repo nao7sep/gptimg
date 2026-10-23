@@ -81,3 +81,40 @@ describe("session.json validation", () => {
   });
 });
 
+
+
+describe("session consumed-field validation", () => {
+  const doc = { format: 1, title: "t", createdAt: "2026-10-19T00:00:00.000Z", turns: [reply("a", "r")] };
+
+  it("rejects invalid timestamps and accepts supported UTC precision", () => {
+    for (const createdAt of ["tomorrow", "2026-02-30T00:00:00Z", "2026-10-19T00:00:00+09:00"]) {
+      expect(parseSession({ ...doc, createdAt })).toBeNull();
+    }
+    for (const createdAt of ["2026-10-19T00:00:00Z", "2026-10-19T00:00:00.1234567+00:00"]) {
+      expect(parseSession({ ...doc, createdAt })).not.toBeNull();
+    }
+  });
+
+  it("validates all assistant values used by the app", () => {
+    for (const fields of [
+      { resumed: "other" }, { resumed: undefined }, { incomplete: 1 }, { incomplete: undefined },
+      { failedImages: -1 }, { failedImages: 1.5 }, { blockedImages: -1 }, { missingImages: NaN },
+      { usage: { input: "10", output: 2 } }, { usage: { input: 1, output: Infinity } },
+      { usage: { input: 1, output: 2, imageOutput: -1 } }, { usage: undefined },
+      { at: "invalid" },
+    ]) expect(parseSession({ ...doc, turns: [{ ...reply("a", "r"), ...fields }] })).toBeNull();
+  });
+
+  it("preserves documented legacy optionals and unknown fields", () => {
+    const value = { ...doc, extra: "kept", turns: [user("u", "old"), { ...reply("a", "r"), usage: { input: 0, output: 0, extra: 5 } }] };
+    expect(parseSession(value)).toBe(value);
+    expect(parseSession({ ...doc, turns: [{ ...user("u", "old"), options: { size: "auto", quality: "auto", transparent: true } }] })).not.toBeNull();
+  });
+
+  it("validates masks and backgrounds as well as image references", () => {
+    for (const fields of [ { mask: "../escape.png" }, { mask: "C:\\x.png" }, { mask: 3 }, { options: { size: "auto", quality: "auto", background: "auto" } } ]) {
+      expect(parseSession({ ...doc, turns: [{ ...user("u", "x"), ...fields }] })).toBeNull();
+    }
+    expect(parseSession({ ...doc, turns: [{ ...user("u", "x"), mask: "inputs/mask.png", options: { size: "auto", quality: "auto", background: "opaque" } }] })).not.toBeNull();
+  });
+});

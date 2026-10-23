@@ -16,4 +16,9 @@ describe("window minimum", () => {
     expect(railWidth(400, 2000)).toBe(400);
     expect(railWidth(null, 2000)).toBe(RAIL_WIDTH.initial);
   });
+  it("leaves room for the visible image pane at a wide rail", () => {
+    expect(railWidth(400, 970, true) + PANES.splitter.width + PANES.conversation.minWidth + PANES.images.width).toBe(970);
+    expect(railWidth(400, 960, true)).toBe(400);
+  });
+
 });

@@ -5,7 +5,7 @@
 // Save (config-sets-conventions). The key field holds only a new key: the
 // saved one is never shown, and clearing it is its own action
 // (api-key-storage-conventions).
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BootInfo, KeyStatus } from "../../../shared/api.ts";
 import { LANGUAGES, OWN_NAMES, type LanguagePreference } from "../../../shared/i18n/languages.ts";
 import type { Message } from "../../../shared/i18n/translator.ts";
@@ -35,6 +35,7 @@ interface SettingsModalProps {
   problem: Message | null;
   keyStatus: KeyStatus;
   onClose: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onSaved: (settings: Settings, key: KeyStatus) => void;
 }
 
@@ -46,6 +47,8 @@ export function SettingsModal(props: SettingsModalProps) {
   const { t, of, info } = useI18n();
   const [tab, setTab] = useState<Tab>("general");
   const [draft, setDraft] = useState<Settings>(props.settings);
+  const [accepted, setAccepted] = useState(props.settings);
+  const [fontText, setFontText] = useState(() => fontNumbers(props.settings));
   const [lastRow, setLastRow] = useState<string | null>(chatRow(props.settings["openai.chat"])?.id ?? null);
   const [hasStoredKey, setHasStoredKey] = useState(false);
   const [newKey, setNewKey] = useState("");
@@ -62,24 +65,43 @@ export function SettingsModal(props: SettingsModalProps) {
   const zones = useMemo(() => Intl.supportedValuesOf("timeZone"), []);
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const row = chatRow(draft["openai.chat"]);
-  const invalid = SET_KEYS.filter((key) => validateSet(key, draft[key]) !== null);
-  const fontProblem = validateSet("contentFont", draft.contentFont);
+  const parsedDraft = {
+    ...draft,
+    contentFont: {
+      ...draft.contentFont,
+      readingSize: parseNumber(fontText.readingSize),
+      writingSize: parseNumber(fontText.writingSize),
+      lineHeight: parseNumber(fontText.lineHeight),
+    },
+  };
+  const invalid = SET_KEYS.filter((key) => validateSet(key, parsedDraft[key]) !== null);
+  const fontProblem = validateSet("contentFont", parsedDraft.contentFont);
   const keyChanged = newKey.trim() !== "" || clearKey;
-  const dirty = keyChanged || JSON.stringify(draft) !== JSON.stringify(props.settings);
+  const dirty = keyChanged || JSON.stringify(parsedDraft) !== JSON.stringify(accepted) || JSON.stringify(fontText) !== JSON.stringify(fontNumbers(accepted));
   const builtIn = builtInSettings();
+  const dirtyCallback = useRef(props.onDirtyChange);
+  dirtyCallback.current = props.onDirtyChange;
+  useEffect(() => { props.onDirtyChange?.(dirty); }, [dirty, props.onDirtyChange]);
+  useEffect(() => () => dirtyCallback.current?.(false), []);
 
-  const requestClose = () => (dirty ? setConfirmDiscard(true) : props.onClose());
+  const requestClose = () => {
+    if (saving) return;
+    if (dirty) setConfirmDiscard(true);
+    else props.onClose();
+  };
 
   const save = async () => {
     if (invalid.length > 0 || saving || !dirty) return;
     setSaving(true);
     setFailure(null);
-    const outcome = await api.saveSettings(draft);
+    const outcome = await api.saveSettings(parsedDraft);
     if (!outcome.ok) {
       setFailure(outcome.failure.message);
       setSaving(false);
       return;
     }
+    setAccepted(outcome.settings);
+    props.onSaved(outcome.settings, props.keyStatus);
     let status = props.keyStatus;
     if (keyChanged) {
       const keyOutcome = newKey.trim() ? await api.setKey(newKey) : await api.clearKey();
@@ -90,7 +112,8 @@ export function SettingsModal(props: SettingsModalProps) {
       }
       status = keyOutcome.status;
     }
-    props.onSaved(outcome.settings, status);
+    if (keyChanged) props.onSaved(outcome.settings, status);
+    props.onClose();
   };
 
   const onTabKey = (event: React.KeyboardEvent) => {
@@ -132,7 +155,7 @@ export function SettingsModal(props: SettingsModalProps) {
         footer={
           <>
             <span className="spacer" />
-            <button type="button" className="button" onClick={requestClose}>
+            <button type="button" className="button" disabled={saving} onClick={requestClose}>
               {t("common.cancel")}
             </button>
             <button type="button" className="button primary" disabled={!dirty || invalid.length > 0 || saving || props.boot.settingsLocked} onClick={() => void save()}>
@@ -170,7 +193,7 @@ export function SettingsModal(props: SettingsModalProps) {
               <section className="settings-group">
                 <div className="group-head">
                   <h3 className="group-label">{t("settings.fonts")}</h3>
-                  <button type="button" className="quiet-button" onClick={() => setDraft((d) => ({ ...d, uiFont: builtIn.uiFont, contentFont: builtIn.contentFont }))}>
+                  <button type="button" className="quiet-button" onClick={() => { setDraft((d) => ({ ...d, uiFont: builtIn.uiFont, contentFont: builtIn.contentFont })); setFontText(fontNumbers(builtIn)); }}>
                     {t("settings.resetFonts")}
                   </button>
                 </div>
@@ -187,27 +210,27 @@ export function SettingsModal(props: SettingsModalProps) {
                 <div className="field-row">
                   <NumberField
                     label={t("settings.readingSize")}
-                    value={draft.contentFont.readingSize}
+                    value={fontText.readingSize}
                     min={CONTENT_SIZE.min}
                     max={CONTENT_SIZE.max}
                     step={1}
-                    onChange={(readingSize) => set("contentFont", { ...draft.contentFont, readingSize })}
+                    onChange={(readingSize) => setFontText((text) => ({ ...text, readingSize }))}
                   />
                   <NumberField
                     label={t("settings.writingSize")}
-                    value={draft.contentFont.writingSize}
+                    value={fontText.writingSize}
                     min={CONTENT_SIZE.min}
                     max={CONTENT_SIZE.max}
                     step={1}
-                    onChange={(writingSize) => set("contentFont", { ...draft.contentFont, writingSize })}
+                    onChange={(writingSize) => setFontText((text) => ({ ...text, writingSize }))}
                   />
                   <NumberField
                     label={t("settings.lineHeight")}
-                    value={draft.contentFont.lineHeight}
+                    value={fontText.lineHeight}
                     min={CONTENT_LINE_HEIGHT.min}
                     max={CONTENT_LINE_HEIGHT.max}
                     step={0.05}
-                    onChange={(lineHeight) => set("contentFont", { ...draft.contentFont, lineHeight })}
+                    onChange={(lineHeight) => setFontText((text) => ({ ...text, lineHeight }))}
                   />
                 </div>
                 {fontProblem && <span className="field-error">{t(fontProblem as never, fontProblem === "settings.error.lineHeight" ? CONTENT_LINE_HEIGHT : CONTENT_SIZE)}</span>}
@@ -387,23 +410,27 @@ export function SettingsModal(props: SettingsModalProps) {
   );
 }
 
-function NumberField(props: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
-  const [text, setText] = useState(String(props.value));
-  useEffect(() => setText(String(props.value)), [props.value]);
+function fontNumbers(settings: Settings) {
+  const { readingSize, writingSize, lineHeight } = settings.contentFont;
+  return { readingSize: String(readingSize), writingSize: String(writingSize), lineHeight: String(lineHeight) };
+}
+
+function parseNumber(text: string): number {
+  return text.trim() === "" ? NaN : Number(text);
+}
+
+function NumberField(props: { label: string; value: string; min: number; max: number; step: number; onChange: (value: string) => void }) {
   return (
     <label className="field compact">
       <span className="field-label">{props.label}</span>
       <input
         type="number"
-        value={text}
+        value={props.value}
         min={props.min}
         max={props.max}
         step={props.step}
-        onChange={(e) => {
-          setText(e.target.value);
-          const value = Number(e.target.value);
-          if (e.target.value !== "" && Number.isFinite(value)) props.onChange(value);
-        }}
+        aria-invalid={!Number.isFinite(parseNumber(props.value)) || parseNumber(props.value) < props.min || parseNumber(props.value) > props.max || (props.step === 1 && !Number.isInteger(parseNumber(props.value)))}
+        onChange={(e) => props.onChange(e.target.value)}
       />
     </label>
   );

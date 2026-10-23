@@ -2,19 +2,25 @@
 // only files inside the sessions folder, the staging folder, or files the
 // user picked or dropped this launch are served. `?w=` returns a copy decoded
 // at that width (volume-handling-conventions: decode at the size shown).
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
+import { availableParallelism, totalmem } from "node:os";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { nativeImage, net, protocol } from "electron";
+import { net, protocol } from "electron";
+import pLimit from "p-limit";
+import sharp from "sharp";
 import { IMAGE_SCHEME } from "../shared/api.ts";
-import { isInside } from "./sessions.ts";
+import { isInside, isInsideResolved } from "./sessions.ts";
 
-const CACHE_LIMIT = 300;
 const MAX_THUMB_WIDTH = 2048;
 
 export class ImageAccess {
-  readonly #picked = new Set<string>();
+  readonly #picked = new Map<string, string>();
   readonly #thumbs = new Map<string, Buffer>();
+  readonly #pending = new Map<string, Promise<Buffer | null>>();
+  readonly #limit = pLimit(Math.max(1, Math.floor(availableParallelism() / Math.max(1, sharp.concurrency()))));
+  readonly #cacheBytes = Math.floor(totalmem() / 128);
+  #thumbBytes = 0;
 
   readonly #roots: () => string[];
 
@@ -27,18 +33,47 @@ export class ImageAccess {
     const absolute = resolve(path);
     if (!isImagePath(absolute)) return false;
     try {
-      if (!(await stat(absolute)).isFile()) return false;
+      const canonical = await realpath(absolute);
+      if (!(await stat(canonical)).isFile()) return false;
+      this.#picked.set(absolute, canonical);
+      return true;
     } catch {
       return false;
     }
-    this.#picked.add(absolute);
-    return true;
   }
 
-  allowed(path: string): boolean {
+  async #authorizedPath(path: string): Promise<string | null> {
     const absolute = resolve(path);
-    if (this.#picked.has(absolute)) return true;
-    return this.#roots().some((root) => root !== "" && isInside(root, absolute));
+    try {
+      const canonical = await realpath(absolute);
+      const picked = this.#picked.get(absolute);
+      if (picked !== undefined) return picked === canonical ? canonical : null;
+      const inside = await Promise.all(this.#roots().map(async (root) => {
+        if (!root || !isInside(root, absolute)) return false;
+        try {
+          return await isInsideResolved(root, canonical);
+        } catch {
+          return false;
+        }
+      }));
+      return inside.some(Boolean) ? canonical : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async allowed(path: string): Promise<boolean> {
+    return (await this.#authorizedPath(path)) !== null;
+  }
+
+  async #encode(path: string, width?: number): Promise<Buffer | null> {
+    try {
+      let image = sharp(path).rotate();
+      if (width !== undefined) image = image.resize({ width, withoutEnlargement: true });
+      return await image.png().toBuffer();
+    } catch {
+      return null;
+    }
   }
 
   async #thumb(path: string, width: number): Promise<Buffer | null> {
@@ -50,27 +85,57 @@ export class ImageAccess {
       this.#thumbs.set(key, hit);
       return hit;
     }
-    const image = nativeImage.createFromPath(path);
-    if (image.isEmpty()) return null;
-    const size = image.getSize();
-    const png = (size.width > width ? image.resize({ width, quality: "best" }) : image).toPNG();
-    this.#thumbs.set(key, png);
-    if (this.#thumbs.size > CACHE_LIMIT) this.#thumbs.delete(this.#thumbs.keys().next().value!);
-    return png;
+    const pending = this.#pending.get(key);
+    if (pending) return pending;
+    const job = this.#limit(async () => {
+      const png = await this.#encode(path, width);
+      if (png && png.byteLength <= this.#cacheBytes) {
+        this.#thumbs.set(key, png);
+        this.#thumbBytes += png.byteLength;
+        while (this.#thumbBytes > this.#cacheBytes) {
+          const oldest = this.#thumbs.keys().next().value!;
+          this.#thumbBytes -= this.#thumbs.get(oldest)!.byteLength;
+          this.#thumbs.delete(oldest);
+        }
+      }
+      return png;
+    });
+    this.#pending.set(key, job);
+    try {
+      return await job;
+    } finally {
+      this.#pending.delete(key);
+    }
+  }
+
+  /** Checked asynchronous PNG conversion. Full-size clipboard images are never cached. */
+  async png(path: string, width?: number): Promise<Buffer | null> {
+    const canonical = await this.#authorizedPath(path);
+    if (!canonical) return null;
+    try {
+      if (width !== undefined) {
+        if (!Number.isFinite(width) || width <= 0) return null;
+        return await this.#thumb(canonical, Math.max(1, Math.min(MAX_THUMB_WIDTH, Math.round(width))));
+      }
+      return await this.#limit(() => this.#encode(canonical));
+    } catch {
+      return null;
+    }
   }
 
   install(): void {
     protocol.handle(IMAGE_SCHEME, async (request) => {
       const url = new URL(request.url);
       const path = decodeURIComponent(url.pathname.replace(/^\//, ""));
-      if (!this.allowed(path)) return new Response(null, { status: 403 });
+      const canonical = await this.#authorizedPath(path);
+      if (!canonical) return new Response(null, { status: 403 });
       const width = Number(url.searchParams.get("w"));
       try {
         if (Number.isFinite(width) && width > 0) {
-          const png = await this.#thumb(path, Math.min(MAX_THUMB_WIDTH, Math.round(width)));
+          const png = await this.#thumb(canonical, Math.max(1, Math.min(MAX_THUMB_WIDTH, Math.round(width))));
           if (png) return new Response(new Uint8Array(png), { headers: { "content-type": "image/png", "cache-control": "no-cache" } });
         }
-        return await net.fetch(pathToFileURL(path).toString());
+        return await net.fetch(pathToFileURL(canonical).toString());
       } catch {
         return new Response(null, { status: 404 });
       }

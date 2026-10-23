@@ -1,7 +1,7 @@
 // The open session: a compact header, and the transcript as text and prints.
 // No bubbles: the user's turns carry a persimmon margin rule; the assistant's
 // text reads in the content font with its prints at column width.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { imageUrl, type AppFailure, type OpenedSession } from "../../../shared/api.ts";
 import { sessionTotals, type AssistantTurn, type UserTurn } from "../../../shared/session.ts";
 import type { Running } from "../App.tsx";
@@ -10,6 +10,7 @@ import { CloseIcon, FolderIcon, ImagesIcon, PencilIcon, RetryIcon } from "./icon
 import { Markdown } from "./Markdown.tsx";
 import { Print } from "./Print.tsx";
 import { elapsed, relativeDay } from "./time.ts";
+import { useWindowedItems } from "./use-windowed-items.ts";
 
 interface ConversationProps {
   session: OpenedSession | null;
@@ -39,6 +40,11 @@ export function Conversation(props: ConversationProps) {
   // Whether the reader is at the end; prints load after layout, so the end moves.
   const pinned = useRef(true);
   const turns = session?.doc.turns ?? [];
+  const items = useMemo(() => turns.map((turn) => ({
+    id: turn.id,
+    estimatedHeight: 80 + Math.ceil(turn.text.length / 70) * 24 + turn.images.length * (turn.role === "assistant" ? 600 : 100),
+  })), [turns]);
+  const windowed = useWindowedItems(items, scroller, session?.id ?? "");
   const totals = sessionTotals(turns);
   const absolute = (rel: string) => (session ? `${session.dir}/${rel}` : rel);
   const allImages = turns.flatMap((turn) => (turn.role === "assistant" ? turn.images.map(absolute) : []));
@@ -51,18 +57,22 @@ export function Conversation(props: ConversationProps) {
     pinned.current = true;
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [turns.length, running !== null, session?.id]);
+    windowed.refresh();
+  }, [turns.length, running !== null, session?.id, windowed.refresh]);
 
   useEffect(() => {
     const el = scroller.current;
     const inner = column.current;
     if (!el || !inner) return;
     const observer = new ResizeObserver(() => {
-      if (pinned.current) el.scrollTop = el.scrollHeight;
+      if (pinned.current) {
+        el.scrollTop = el.scrollHeight;
+        windowed.refresh();
+      }
     });
     observer.observe(inner);
     return () => observer.disconnect();
-  }, []);
+  }, [windowed.refresh]);
 
   return (
     <section className="conversation" aria-label={t("conversation.label")}>
@@ -114,35 +124,43 @@ export function Conversation(props: ConversationProps) {
               <p className="empty-line">{t("conversation.empty")}</p>
             </div>
           )}
-          {turns.map((turn, index) =>
-            turn.role === "user" ? (
-              <UserTurnView
-                key={turn.id}
-                turn={turn}
-                absolute={absolute}
-                timeZone={props.timeZone}
-                onView={props.onView}
-                skipped={turns[index + 1]?.role === "user"}
-              />
-            ) : (
-              <AssistantTurnView
-                key={turn.id}
-                turn={turn}
-                absolute={absolute}
-                allImages={allImages}
-                onView={props.onView}
-                onReuse={props.onReuse}
-                onExport={props.onExport}
-                exported={props.exported}
-                first={index === 0}
-              />
-            ),
-          )}
+          <div ref={windowed.startRef} aria-hidden="true" style={{ height: windowed.top }} />
+          {turns.slice(windowed.start, windowed.end).map((turn, visibleIndex) => {
+            const index = windowed.start + visibleIndex;
+            return (
+              <div key={turn.id} ref={windowed.measureRef(turn.id)} style={{ display: "flow-root" }}>
+                {turn.role === "user" ? (
+                  <UserTurnView
+                    key={turn.id}
+                    turn={turn}
+                    absolute={absolute}
+                    timeZone={props.timeZone}
+                    onView={props.onView}
+                    skipped={turns[index + 1]?.role === "user"}
+                  />
+                ) : (
+                  <AssistantTurnView
+                    key={turn.id}
+                    turn={turn}
+                    absolute={absolute}
+                    allImages={allImages}
+                    onView={props.onView}
+                    onReuse={props.onReuse}
+                    onExport={props.onExport}
+                    exported={props.exported}
+                    first={index === 0}
+                  />
+                )}
+              </div>
+            );
+          })}
+          <div aria-hidden="true" style={{ height: windowed.bottom }} />
           {running && <Developing running={running} onCancel={props.onCancel} />}
-          {(unanswered || (!session && props.failure)) && (
+          {(unanswered || props.failure) && (
             <div className={`no-reply${props.failure ? " has-failure" : ""}`} role={props.failure ? "alert" : undefined}>
               <div className="no-reply-text">
                 <p>{props.failure ? of(props.failure.message) : t("conversation.noReply")}</p>
+                {props.failure?.recoveryPath && <p>{t("failure.recoveryFiles", { path: props.failure.recoveryPath })}</p>}
                 {props.failure?.reason && (
                   <p className="provider-reason">
                     <span className="provider-label">{t("conversation.providerSaid")}</span> {props.failure.reason}
@@ -269,9 +287,9 @@ function AssistantTurnView({
 /** The working card: a placeholder of the requested shape that slowly develops, with a counter and Cancel. */
 function Developing({ running, onCancel }: { running: Running; onCancel: () => void }) {
   const { t } = useI18n();
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(performance.now());
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => setNow(performance.now()), 1000);
     return () => clearInterval(timer);
   }, []);
   const [w, h] = running.size === "auto" ? [1, 1] : running.size.split("x").map(Number);

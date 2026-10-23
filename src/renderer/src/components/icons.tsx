@@ -56,13 +56,6 @@ export const MenuIcon = (p: IconProps) => (
   </Svg>
 );
 
-export const GearIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="10" cy="10" r="2.6" />
-    <path d="M10 2.8v2M10 15.2v2M17.2 10h-2M4.8 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9" />
-  </Svg>
-);
-
 export const ClipIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M14.5 9.2 9.4 14.3a3.1 3.1 0 0 1-4.4-4.4l5.6-5.6a2.1 2.1 0 0 1 3 3L8 12.9a1 1 0 0 1-1.5-1.5l4.9-4.9" />
@@ -125,12 +118,6 @@ export const ReuseIcon = (p: IconProps) => (
 export const FolderIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M3 6.2A1.7 1.7 0 0 1 4.7 4.5h3l1.6 1.8h6A1.7 1.7 0 0 1 17 8v6.3a1.7 1.7 0 0 1-1.7 1.7H4.7A1.7 1.7 0 0 1 3 14.3Z" />
-  </Svg>
-);
-
-export const TrashIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 6h12M8 6V4.5h4V6M5.5 6l.8 9.6A1.5 1.5 0 0 0 7.8 17h4.4a1.5 1.5 0 0 0 1.5-1.4l.8-9.6" />
   </Svg>
 );
 

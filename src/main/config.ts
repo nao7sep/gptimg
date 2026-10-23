@@ -4,7 +4,7 @@
 // (store-recovery-conventions).
 import { message, type Message } from "../shared/i18n/translator.ts";
 import { builtInSettings, differingSets, readSets, type SetKey, type Settings } from "../shared/settings.ts";
-import { json, readText, writeTextAtomic } from "./files.ts";
+import { json, readText, writeTextAtomic, type ReadResult } from "./files.ts";
 
 export interface LoadedConfig {
   settings: Settings;
@@ -16,8 +16,8 @@ export interface LoadedConfig {
   problem: Message | null;
 }
 
-export async function loadConfig(path: string): Promise<LoadedConfig> {
-  const read = await readText(path);
+export async function loadConfig(path: string, snapshot?: ReadResult): Promise<LoadedConfig> {
+  const read = snapshot ?? await readText(path);
   if (read.kind === "absent") return { settings: builtInSettings(), unknown: {}, invalid: [], locked: false, problem: null };
   if (read.kind === "failed") {
     return { settings: builtInSettings(), unknown: {}, invalid: [], locked: true, problem: message("settings.problem.unreadable", { path }) };

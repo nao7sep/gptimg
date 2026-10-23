@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PANES } from "../../shared/layout.ts";
 import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedSession, TurnOutcome } from "../../shared/api.ts";
-import type { SessionSummary, TurnOptions } from "../../shared/session.ts";
+import { summarize, type SessionSummary, type TurnOptions } from "../../shared/session.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { commandFor } from "../../shared/shortcuts.ts";
 import type { UiState } from "../../shared/ui-state.ts";
@@ -14,6 +14,7 @@ import { Conversation } from "./components/Conversation.tsx";
 import { ImagesPane, paneImages, type PaneImage } from "./components/ImagesPane.tsx";
 import { Rail } from "./components/Rail.tsx";
 import { useI18n } from "./i18n.tsx";
+import { requestTopModalClose } from "./modals/Modal.tsx";
 import { SettingsModal } from "./modals/SettingsModal.tsx";
 import { SetupModal } from "./modals/SetupModal.tsx";
 import { AboutModal, ConfirmModal, RenameModal, ShortcutsModal } from "./modals/SmallModals.tsx";
@@ -33,6 +34,7 @@ const paneSizes = {
 
 type ModalSpec =
   | { kind: "settings" }
+  | { kind: "restart" }
   | { kind: "setup" }
   | { kind: "about" }
   | { kind: "shortcuts" }
@@ -76,6 +78,10 @@ export function App({ boot }: { boot: BootInfo }) {
   const [running, setRunning] = useState<Record<string, Running>>({});
   const [failures, setFailures] = useState<Record<string, AppFailure>>({});
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const windowDirty = settingsDirty || Object.values(drafts).some((draft) => draft.text.trim() !== "" || draft.references.length > 0 || !!draft.mask);
+  useEffect(() => { api.setWindowDirty(windowDirty); }, [windowDirty]);
+  useEffect(() => () => api.setWindowDirty(false), []);
   const [exported, setExported] = useState<{ path: string; count: number } | null>(null);
   const exportTasks = useExportTasks();
   const [modals, setModals] = useState<ModalSpec[]>(() =>
@@ -84,6 +90,14 @@ export function App({ boot }: { boot: BootInfo }) {
   const pendingNew = useRef<{ requestId: string; running: Running } | null>(null);
   // Mirrors pendingNew for rendering: the new-session composer shows its turn as working.
   const [pendingRun, setPendingRun] = useState<Running | null>(null);
+  const rootRef = useRef(settings.sessionsDir);
+  rootRef.current = settings.sessionsDir;
+  const restored = useRef(false);
+  const listingGeneration = useRef(0);
+  const listingUpdates = useRef(new Map<string, SessionSummary>());
+  const openingGeneration = useRef(0);
+  const submitted = useRef(new Map<string, { key: string; version: number }>());
+  const draftVersions = useRef(new Map<string, number>());
   const currentRef = useRef(currentId);
   currentRef.current = currentId;
   const composerFocus = useRef<() => void>(() => {});
@@ -93,33 +107,52 @@ export function App({ boot }: { boot: BootInfo }) {
 
   const saveUi = useCallback((next: UiState) => {
     setUi(next);
-    api.saveState(next);
+    const before = uiRef.current;
+    uiRef.current = next;
+    const patch = Object.fromEntries(Object.entries(next).filter(([key, value]) => key !== "recordsListWidth" && value !== before[key as keyof UiState]));
+    api.saveState(patch);
   }, []);
 
   const refreshList = useCallback(async () => {
+    const generation = ++listingGeneration.current;
+    const root = rootRef.current;
+    listingUpdates.current = new Map();
     const outcome = await api.listSessions();
+    if (root !== rootRef.current || generation !== listingGeneration.current) return;
     if (!outcome.ok) {
       setListFailure(outcome.failure);
       return;
     }
     setListFailure(null);
-    setSessions(outcome.sessions);
+    const rows = new Map(outcome.sessions.map((row) => [row.id, row]));
+    for (const [id, row] of listingUpdates.current) rows.set(id, row);
+    setSessions([...rows.values()].sort((a, b) => b.sentAt.localeCompare(a.sentAt) || b.id.localeCompare(a.id)));
     setUnreadable(outcome.unreadable);
+  }, []);
+
+  const upsertSummary = useCallback((session: OpenedSession) => {
+    const summary = summarize(session.id, session.doc);
+    listingUpdates.current.set(summary.id, summary);
+    setSessions((rows) => [...rows.filter((row) => row.id !== summary.id), summary].sort((a, b) => b.sentAt.localeCompare(a.sentAt) || b.id.localeCompare(a.id)));
   }, []);
 
   const openSession = useCallback(
     async (id: string) => {
+      const generation = ++openingGeneration.current;
+      const root = rootRef.current;
+      currentRef.current = id;
       setCurrentId(id);
+      setOpened(null);
       setOpenFailure(null);
       if (id === NEW) {
         setOpened(null);
         return;
       }
       const outcome = await api.openSession(id);
-      if (currentRef.current !== id) return;
+      if (currentRef.current !== id || root !== rootRef.current || generation !== openingGeneration.current) return;
       if (outcome.ok) {
         setOpened(outcome.session);
-        saveUi({ ...ui, lastSessionId: id });
+        saveUi({ ...uiRef.current, lastSessionId: id });
       } else {
         setOpened(null);
         setOpenFailure(outcome.failure);
@@ -128,32 +161,48 @@ export function App({ boot }: { boot: BootInfo }) {
     [saveUi, ui],
   );
 
-  // First listing, then reopen the session the user last had open.
   useEffect(() => {
-    void (async () => {
-      await refreshList();
-      if (boot.state.lastSessionId) void openSession(boot.state.lastSessionId);
-    })();
-    // Runs once at launch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    ++listingGeneration.current;
+    ++openingGeneration.current;
+    currentRef.current = NEW;
+    setCurrentId(NEW);
+    setOpened(null);
+    setSessions([]);
+    setFailures({});
+    const root = settings.sessionsDir;
+    const restoreId = !restored.current && root === boot.settings.sessionsDir ? boot.state.lastSessionId : null;
+    restored.current = true;
+    const selection = openingGeneration.current;
+    void refreshList().then(() => {
+      if (restoreId && rootRef.current === root && openingGeneration.current === selection) void openSession(restoreId);
+    });
   }, [settings.sessionsDir]);
 
   useEffect(
     () =>
       api.onTurnStarted(({ requestId, session }) => {
+        const submission = submitted.current.get(requestId);
+        if (submission) {
+          submitted.current.delete(requestId);
+          if ((draftVersions.current.get(submission.key) ?? 0) === submission.version) {
+            setDrafts(({ [submission.key]: _accepted, ...rest }) => rest);
+          }
+        }
         const pending = pendingNew.current;
         if (pending?.requestId === requestId) {
           pendingNew.current = null;
           setPendingRun(null);
           setRunning((r) => ({ ...r, [session.id]: pending.running }));
           if (currentRef.current === NEW) {
+            ++openingGeneration.current;
+            currentRef.current = session.id;
             setCurrentId(session.id);
             setOpened(session);
           }
         } else if (currentRef.current === session.id) {
           setOpened(session);
         }
-        void refreshList();
+        upsertSummary(session);
       }),
     [refreshList],
   );
@@ -182,39 +231,42 @@ export function App({ boot }: { boot: BootInfo }) {
         // Nothing was saved (no key, no folder): the failure belongs to the new-session composer.
         setFailures((f) => ({ ...f, [NEW]: outcome.failure }));
       }
-      void refreshList();
+      if (outcome.session) upsertSummary(outcome.session);
     },
-    [refreshList],
+    [upsertSummary],
   );
 
   const send = useCallback(
     async (draft: Draft, options: TurnOptions) => {
+      if (currentId !== NEW && opened?.id !== currentId) return;
       const sessionId = currentId === NEW ? null : currentId;
       const requestId = crypto.randomUUID();
-      const run: Running = { startedAt: Date.now(), size: options.size };
+      const run: Running = { startedAt: performance.now(), size: options.size };
       if (sessionId) setRunning((r) => ({ ...r, [sessionId]: run }));
       else {
         pendingNew.current = { requestId, running: run };
         setPendingRun(run);
       }
       setFailures(({ [currentId]: _old, ...rest }) => rest);
-      setDrafts(({ [currentId]: _sent, ...rest }) => rest);
+      const key = `${rootRef.current}\0${currentId}`;
+      submitted.current.set(requestId, { key, version: draftVersions.current.get(key) ?? 0 });
       saveUi({ ...ui, composer: options });
       const outcome = await api.send({ requestId, sessionId, text: draft.text, references: draft.references.map((r) => r.path), ...(draft.mask && { mask: draft.mask }), options });
       if (!sessionId && pendingNew.current?.requestId === requestId) {
         pendingNew.current = null;
         setPendingRun(null);
       }
+      submitted.current.delete(requestId);
       settle(sessionId, outcome);
     },
-    [currentId, saveUi, settle, ui],
+    [currentId, opened, saveUi, settle, ui],
   );
 
   const retry = useCallback(
     async (sessionId: string) => {
       const lastUser = [...(opened?.doc.turns ?? [])].reverse().find((turn) => turn.role === "user");
       const size = lastUser?.role === "user" ? lastUser.options.size : "auto";
-      setRunning((r) => ({ ...r, [sessionId]: { startedAt: Date.now(), size } }));
+      setRunning((r) => ({ ...r, [sessionId]: { startedAt: performance.now(), size } }));
       setFailures(({ [sessionId]: _old, ...rest }) => rest);
       settle(sessionId, await api.retry(sessionId));
     },
@@ -229,7 +281,7 @@ export function App({ boot }: { boot: BootInfo }) {
   const runCommand = useCallback(
     (command: MenuCommand) => {
       if (command === "close") {
-        if (modals.length > 0) popModal();
+        if (modals.length > 0) requestTopModalClose();
         else api.closeWindow();
         return;
       }
@@ -301,9 +353,13 @@ export function App({ boot }: { boot: BootInfo }) {
     };
   }, []);
 
-  const draftKey = currentId;
-  const draft = drafts[draftKey] ?? { text: "", references: [] };
-  const setDraft = useCallback((next: Draft) => setDrafts((d) => ({ ...d, [draftKey]: next })), [draftKey]);
+  const draftKey = `${settings.sessionsDir}\0${currentId}`;
+  const storedDraft = drafts[draftKey] ?? { text: "", references: [] };
+  const draft = { ...storedDraft, references: storedDraft.references.map((reference) => ({ ...reference, absolute: absoluteIn(opened, reference.path) })) };
+  const setDraft = useCallback((next: Draft | ((current: Draft) => Draft)) => {
+    draftVersions.current.set(draftKey, (draftVersions.current.get(draftKey) ?? 0) + 1);
+    setDrafts((d) => ({ ...d, [draftKey]: typeof next === "function" ? next(d[draftKey] ?? { text: "", references: [] }) : next }));
+  }, [draftKey]);
 
   const runningHere = currentId === NEW ? pendingRun : (running[currentId] ?? null);
   const composerOptions = useMemo(() => {
@@ -327,6 +383,7 @@ export function App({ boot }: { boot: BootInfo }) {
     <div className="shell" style={paneSizes}>
       <Rail
         sessions={sessions}
+        imagesPane={paneShown}
         currentId={currentId}
         running={running}
         unreadable={unreadable}
@@ -349,7 +406,7 @@ export function App({ boot }: { boot: BootInfo }) {
           running={runningHere}
           failure={failures[currentId] ?? null}
           timeZone={settings.timeZone}
-          onCancel={() => currentId !== NEW && api.cancel(currentId)}
+          onCancel={() => api.cancel(currentId !== NEW ? currentId : (pendingNew.current?.requestId ?? ""))}
           onRetry={() => currentId !== NEW && void retry(currentId)}
           onDismissFailure={() => setFailures(({ [currentId]: _gone, ...rest }) => rest)}
           onRename={() => runCommand("rename")}
@@ -362,7 +419,12 @@ export function App({ boot }: { boot: BootInfo }) {
           onReuse={(path) => setDraft({ ...draft, references: [...draft.references.filter((r) => r.path !== path), { path, absolute: absoluteIn(opened, path) }] })}
         />
         {front?.kind !== "export" && <TaskStrip tasks={exportTasks} />}
+        {(Object.keys(running).length > 0 || pendingRun !== null || exportTasks.task !== null) && (
+          <button type="button" className="quiet-button" onClick={() => pushModal({ kind: "restart" })}>{t("processing.restart")}</button>
+        )}
         <Composer
+          key={draftKey}
+          disabled={currentId !== NEW && opened?.id !== currentId}
           draft={draft}
           onDraft={setDraft}
           options={composerOptions}
@@ -373,7 +435,7 @@ export function App({ boot }: { boot: BootInfo }) {
           focusRef={composerFocus}
           attachRef={attachRef}
           onSend={(d, o) => void send(d, o)}
-          onCancel={() => currentId !== NEW && api.cancel(currentId)}
+          onCancel={() => api.cancel(currentId !== NEW ? currentId : (pendingNew.current?.requestId ?? ""))}
           onOpenSettings={() => runCommand("settings")}
           onPaintMask={(reference) => pushModal({ kind: "mask", reference })}
         />
@@ -399,16 +461,30 @@ export function App({ boot }: { boot: BootInfo }) {
           problem={settingsProblem}
           keyStatus={keyStatus}
           onClose={popModal}
+          onDirtyChange={setSettingsDirty}
           onSaved={(next, status) => {
             const folderMoved = next.sessionsDir !== settings.sessionsDir;
             setSettings(next);
             setSettingsProblem(null);
             setKeyStatus(status);
-            popModal();
             if (folderMoved) {
               setCurrentId(NEW);
               setOpened(null);
             }
+          }}
+        />
+      )}
+      {front?.kind === "restart" && (
+        <ConfirmModal
+          title={t("processing.restart")}
+          body={t("processing.restartWarning")}
+          confirmLabel={t("processing.restart")}
+          onClose={popModal}
+          onConfirm={async () => {
+            const outcome = await api.restartProcessing();
+            if (!outcome.ok) return outcome.failure;
+            setModals((current) => current.at(-1) === front ? current.slice(0, -1) : current);
+            return null;
           }}
         />
       )}
@@ -420,14 +496,18 @@ export function App({ boot }: { boot: BootInfo }) {
           onClose={popModal}
           onRename={async (title) => {
             const outcome = await api.renameSession(front.id, title);
-            if (!outcome.ok) return outcome.failure;
+            if (!outcome.ok) {
+              await refreshList();
+              if (currentRef.current === front.id) await openSession(front.id);
+              return outcome.failure;
+            }
             popModal();
             if (currentRef.current === front.id) {
               setCurrentId(outcome.session.id);
               setOpened(outcome.session);
               saveUi({ ...ui, lastSessionId: outcome.session.id });
             }
-            setDrafts(({ [front.id]: moved, ...rest }) => (moved ? { ...rest, [outcome.session.id]: moved } : rest));
+            setDrafts(({ [`${settings.sessionsDir}\0${front.id}`]: moved, ...rest }) => (moved ? { ...rest, [`${settings.sessionsDir}\0${outcome.session.id}`]: moved } : rest));
             await refreshList();
             return null;
           }}

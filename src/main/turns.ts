@@ -21,19 +21,20 @@ import {
   type UserTurn,
 } from "../shared/session.ts";
 import { effectiveThinking, OPENAI_ENDPOINT, type Settings } from "../shared/settings.ts";
-import type { Records } from "./records.ts";
+import type { RecordWriter } from "./store-host.ts";
 import type { CallSettlement, SdkHost } from "./sdk-host.ts";
 import type { PartialDraft } from "./sdk-protocol.ts";
-import { createSession, importReference, readSession, sessionDir, withId, writeSession } from "./sessions.ts";
+import { createSession, importReference, readSession, sessionDir, resolvedSessionPath, withId, writeSession } from "./sessions.ts";
 
 export interface TurnDeps {
   host: SdkHost;
-  records: Records;
+  records: RecordWriter;
   settings: () => Settings;
   apiKey: () => Promise<string | null>;
+  authorizeImage?: (path: string) => Promise<boolean>;
   app: { name: string; version: string };
   backup: (path: string, text: string) => void;
-  /** Called once a staged (pasted) file has been copied into a session. */
+  /** Called after the saved user turn owns its imported staged file. */
   releaseStaged: (path: string) => void;
   /** The user's turn is saved; the call is about to start. */
   started: (requestId: string, session: OpenedSession) => void;
@@ -50,8 +51,10 @@ function plain(failure: AppFailure, session: OpenedSession | null, cancelled = f
   return { ok: false, session, failure, cancelled };
 }
 
+type TurnOperation = { cancelled: boolean; cancel?: () => void; keys: Set<string>; sessionId?: string };
+
 export class TurnRunner {
-  readonly #running = new Map<string, () => void>();
+  readonly #running = new Map<string, TurnOperation>();
 
   readonly deps: TurnDeps;
 
@@ -67,12 +70,25 @@ export class TurnRunner {
     return this.#running.size > 0;
   }
 
+  /** Hold a session through a rename or trash operation, before its first wait. */
+  reserveSession(id: string): (() => void) | null {
+    if (this.#running.has(id)) return null;
+    this.#running.set(id, { cancelled: false, keys: new Set([id]) });
+    let reserved = true;
+    return () => {
+      if (!reserved) return;
+      reserved = false;
+      this.#running.delete(id);
+    };
+  }
+
   cancel(sessionId: string): void {
-    this.#running.get(sessionId)?.();
+    const operation = this.#running.get(sessionId);
+    if (operation) { operation.cancelled = true; operation.cancel?.(); }
   }
 
   cancelAll(): void {
-    for (const cancel of this.#running.values()) cancel();
+    for (const key of this.#running.keys()) this.cancel(key);
   }
 
   #now(): Date {
@@ -84,19 +100,47 @@ export class TurnRunner {
     if (text) this.deps.backup(`${sessionDir(root, id)}${sep}session.json`, text);
   }
 
+  async #own(key: string, run: (operation: TurnOperation) => Promise<TurnOutcome>): Promise<TurnOutcome> {
+    if (this.isRunning(key)) return plain({ message: message("failure.turnRunning"), retryable: false }, null);
+    const operation: TurnOperation = { cancelled: false, keys: new Set([key]) };
+    this.#running.set(key, operation);
+    try {
+      return await run(operation);
+    } catch (error) {
+      this.deps.records.log("error", "turn.failed", { error: String(error) });
+      return plain(failureFromError(errorDataOf(error)), null);
+    } finally {
+      for (const owned of operation.keys) {
+        this.#running.delete(owned);
+      }
+      if (operation.sessionId) this.deps.draft?.(operation.sessionId, null);
+    }
+  }
+
   async send(request: SendRequest): Promise<TurnOutcome> {
+    if (!request.text.trim()) return plain({ message: message("failure.invalidRequest"), retryable: false }, null);
+    return this.#own(request.sessionId ?? request.requestId, (operation) => this.#send(request, operation));
+  }
+
+  async #send(request: SendRequest, operation: TurnOperation): Promise<TurnOutcome> {
     const settings = this.deps.settings();
     const root = settings.sessionsDir;
     if (!root) return plain({ message: message("failure.noSessionsFolder"), retryable: false }, null);
     const apiKey = await this.deps.apiKey();
     if (!apiKey) return plain({ message: message("failure.apiKeyMissing"), retryable: false }, null);
-    if (request.sessionId && this.isRunning(request.sessionId)) {
-      return plain({ message: message("failure.turnRunning"), retryable: false }, null);
+    if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, null, true);
+
+    const external = request.references.filter(isAbsolutePath);
+    if (request.mask) external.push(request.mask.mask);
+    for (const path of external) {
+      if (this.deps.authorizeImage && !await this.deps.authorizeImage(path)) return plain({ message: message("failure.imageMissing"), retryable: false }, null);
+      if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, null, true);
     }
 
     const now = this.#now();
     let id: string;
     let doc: SessionDoc;
+    let recoveryPath: string | undefined;
     try {
       if (request.sessionId) {
         id = request.sessionId;
@@ -105,19 +149,23 @@ export class TurnRunner {
         ({ id, doc } = await createSession(root, now, titleFrom(request.text)));
         this.deps.records.log("info", "sessions.created", { chatId: chatIdOf(id, doc), folder: id });
       }
+      operation.keys.add(id);
+      this.#running.set(id, operation);
       const dir = sessionDir(root, id);
+      recoveryPath = dir;
       const images: string[] = [];
       // The masked image goes first: a mask applies to the first image a message carries.
       const masked = request.mask && request.references.includes(request.mask.image) ? request.mask : undefined;
       const references = masked ? [masked.image, ...request.references.filter((r) => r !== masked.image)] : request.references;
       for (const reference of references) {
+        if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, null, true);
+        if (!isAbsolutePath(reference)) await resolvedSessionPath(root, id, reference);
         images.push(isAbsolutePath(reference) ? await importReference(dir, reference, now) : reference);
-        if (isAbsolutePath(reference)) this.deps.releaseStaged(reference);
       }
       let mask: string | undefined;
       if (masked) {
         mask = await importReference(dir, masked.mask, now);
-        this.deps.releaseStaged(masked.mask);
+
       }
       const turn: UserTurn = {
         id: randomUUID(),
@@ -129,22 +177,29 @@ export class TurnRunner {
         options: request.options,
       };
       doc = { ...doc, turns: [...doc.turns, turn] };
+      if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, null, true);
       await this.#save(root, id, doc);
+      for (const reference of references) if (isAbsolutePath(reference)) this.deps.releaseStaged(reference);
+      if (masked) this.deps.releaseStaged(masked.mask);
       this.deps.records.log("info", "turn.sent", { chatId: chatIdOf(id, doc), turnId: turn.id, attachments: images.length, masked: mask !== undefined, options: turn.options });
     } catch (error) {
       this.deps.records.log("error", "turn.saveFailed", { error: String(error) });
-      return plain({ message: message("failure.sessionWrite"), retryable: false }, null);
+      return plain({ message: message("failure.sessionWrite"), retryable: false, ...(recoveryPath && { recoveryPath }) }, null);
     }
     this.deps.started(request.requestId, { id, doc, dir: sessionDir(root, id) });
-    return this.#run(root, id, doc, apiKey, settings);
+    return this.#run(root, id, doc, apiKey, settings, operation);
   }
 
   async retry(sessionId: string): Promise<TurnOutcome> {
+    return this.#own(sessionId, (operation) => this.#retry(sessionId, operation));
+  }
+
+  async #retry(sessionId: string, operation: TurnOperation): Promise<TurnOutcome> {
     const settings = this.deps.settings();
     const root = settings.sessionsDir;
     const apiKey = await this.deps.apiKey();
     if (!apiKey) return plain({ message: message("failure.apiKeyMissing"), retryable: false }, null);
-    if (this.isRunning(sessionId)) return plain({ message: message("failure.turnRunning"), retryable: false }, null);
+
     let doc: SessionDoc;
     try {
       doc = withId(await readSession(root, sessionId));
@@ -154,15 +209,35 @@ export class TurnRunner {
     if (doc.turns[doc.turns.length - 1]?.role !== "user") {
       return plain({ message: message("failure.nothingToRetry"), retryable: false }, { id: sessionId, doc, dir: sessionDir(root, sessionId) });
     }
-    return this.#run(root, sessionId, doc, apiKey, settings);
+    return this.#run(root, sessionId, doc, apiKey, settings, operation);
   }
 
   /** Sends the session's last turn, which is the user's, and saves the reply. */
-  async #run(root: string, id: string, doc: SessionDoc, apiKey: string, settings: Settings): Promise<TurnOutcome> {
+  async #run(root: string, id: string, doc: SessionDoc, apiKey: string, settings: Settings, operation: TurnOperation): Promise<TurnOutcome> {
     const dir = sessionDir(root, id);
+    operation.sessionId = id;
     const index = doc.turns.length - 1;
     const turn = doc.turns[index] as UserTurn;
     const absolute = (rel: string) => `${dir}${sep}${rel.split("/").join(sep)}`;
+    const opened = (d: SessionDoc): OpenedSession => ({ id, doc: d, dir });
+    if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, opened(doc), true);
+    try {
+      // Check all paths at the protected use boundary, including history reloaded by the SDK.
+      for (const prior of doc.turns) {
+        for (const image of prior.images) {
+          try { await resolvedSessionPath(root, id, image); }
+          catch (error) {
+            if (prior !== turn && (error as NodeJS.ErrnoException).code === "ENOENT") continue;
+            throw error;
+          }
+        }
+        if (prior === turn && prior.role === "user" && prior.mask) await resolvedSessionPath(root, id, prior.mask);
+      }
+    } catch (error) {
+      this.deps.records.log("error", "turn.failed", { error: String(error), folder: id });
+      return plain({ message: message("failure.imageMissing"), retryable: false }, opened(doc));
+    }
+    if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, opened(doc), true);
     const reasoning = effectiveThinking(settings);
     const previousResponseId = previousResponseBefore(doc.turns, index);
     const args = {
@@ -195,19 +270,9 @@ export class TurnRunner {
       onEvent: (event) => this.deps.records.sdkEvent(chat, event),
       onPartial: (draft) => this.deps.draft?.(id, draft),
     });
-    let cancelled = false;
-    this.#running.set(id, () => {
-      cancelled = true;
-      call.cancel();
-    });
-    let settlement: CallSettlement;
-    try {
-      settlement = await call.done;
-    } finally {
-      this.#running.delete(id);
-      this.deps.draft?.(id, null);
-    }
-    const opened = (d: SessionDoc): OpenedSession => ({ id, doc: d, dir });
+    operation.cancel = call.cancel;
+    if (operation.cancelled) call.cancel();
+    const settlement: CallSettlement = await call.done;
     const model = settings["openai.chat"];
 
     if (settlement.kind === "lost") {
@@ -220,7 +285,7 @@ export class TurnRunner {
       const status = error.code === "cancelled" ? "cancelled" : "failed";
       this.deps.records.turn({ chatId: chat.id, sessionFolder: id, turnId: turn.id, model, status, responseId: null, inputTokens: null, outputTokens: null, body: error });
       this.deps.records.log(status === "cancelled" ? "info" : "warn", status === "cancelled" ? "turn.cancelled" : "turn.failed", { chatId: chat.id, turnId: turn.id, code: error.code });
-      return plain(failureFromError(error), opened(doc), cancelled || error.code === "cancelled");
+      return plain(failureFromError(error), opened(doc), operation.cancelled || error.code === "cancelled");
     }
     const result = settlement.result as unknown as ChatResult | RefusedResult;
     if (result.status === "refused") {
@@ -266,18 +331,16 @@ export class TurnRunner {
       body: result.response,
     });
     // Re-read before appending: a rename may not run meanwhile, but the file is the authority.
-    let latest = doc;
+    let next: SessionDoc;
     try {
-      latest = withId(await readSession(root, id));
-    } catch {
-      // Fall back to what this turn started from.
-    }
-    const next = { ...latest, turns: [...latest.turns, reply] };
-    try {
+      const latest = withId(await readSession(root, id));
+      if (latest.id !== doc.id || JSON.stringify(latest.turns) !== JSON.stringify(doc.turns)) throw new Error("The conversation changed while its reply was being prepared.");
+      next = { ...latest, turns: [...latest.turns, reply] };
       await this.#save(root, id, next);
     } catch (error) {
       this.deps.records.log("error", "turn.replySaveFailed", { error: String(error), responseId: result.responseId });
-      return plain({ message: message("failure.sessionWrite"), retryable: false }, opened(latest));
+      // Keep the paid reply visible for recovery; no stale snapshot is written over the authoritative file.
+      return plain({ message: message("failure.sessionWrite"), retryable: false, recoveryPath: dir }, opened({ ...doc, turns: [...doc.turns, reply] }));
     }
     return { ok: true, session: opened(next) };
   }

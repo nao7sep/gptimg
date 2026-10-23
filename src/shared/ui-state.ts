@@ -41,7 +41,7 @@ export function parseUiState(value: unknown): UiState {
   const composer = raw.composer as Record<string, unknown> | undefined;
   const size = typeof composer?.size === "string" ? composer.size : base.composer.size;
   const quality = typeof composer?.quality === "string" ? composer.quality : base.composer.quality;
-  const background = BACKGROUNDS.find((b) => b !== "auto" && (composer?.background === b || (b === "transparent" && composer?.transparent === true)));
+  const background = BACKGROUNDS.find((b) => b !== "auto" && composer?.background === b);
   const exportDir = typeof raw.exportDir === "string" && raw.exportDir !== "" ? raw.exportDir : null;
   const listWidth = raw.recordsListWidth;
   const recordsListWidth =

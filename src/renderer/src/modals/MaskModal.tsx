@@ -6,9 +6,9 @@ import { imageUrl } from "../../../shared/api.ts";
 import { api } from "../api.ts";
 import { useI18n } from "../i18n.tsx";
 import { Modal } from "./Modal.tsx";
+import { MaskHistory, drawMaskSegment, replayMaskCommand, type MaskStroke } from "./mask-history.ts";
 
 const BRUSH = { min: 4, max: 160, initial: 40 } as const;
-const UNDO_DEPTH = 20;
 
 export function MaskModal({ absolute, onClose, onDone }: { absolute: string; onClose: () => void; onDone: (maskPath: string) => void }) {
   const { t } = useI18n();
@@ -21,8 +21,30 @@ export function MaskModal({ absolute, onClose, onDone }: { absolute: string; onC
   const [failed, setFailed] = useState(false);
   const stage = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState<{ width: number; height: number } | null>(null);
-  const undo = useRef<ImageData[]>([]);
-  const last = useRef<{ x: number; y: number } | null>(null);
+  const base = useRef<HTMLCanvasElement | null>(null);
+  const history = useRef<MaskHistory | null>(null);
+  const active = useRef<MaskStroke | null>(null);
+  const [undoCount, setUndoCount] = useState(0);
+
+  useEffect(() => {
+    const live = paint.current;
+    if (!natural || !live) return;
+    live.width = natural.width;
+    live.height = natural.height;
+    const canvas = document.createElement("canvas");
+    canvas.width = natural.width;
+    canvas.height = natural.height;
+    const ctx = canvas.getContext("2d")!;
+    base.current = canvas;
+    history.current = new MaskHistory((command) => replayMaskCommand(ctx, command));
+    return () => {
+      active.current = null;
+      history.current = null;
+      base.current = null;
+      canvas.width = canvas.height = 0;
+      live.width = live.height = 0;
+    };
+  }, [natural]);
 
   useEffect(() => {
     const image = new Image();
@@ -56,56 +78,51 @@ export function MaskModal({ absolute, onClose, onDone }: { absolute: string; onC
     return { x: (event.clientX - rect.left) * s, y: (event.clientY - rect.top) * s };
   };
 
-  const stroke = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    const ctx = context();
-    if (!ctx) return;
-    ctx.strokeStyle = "rgba(232, 96, 60, 1)";
-    ctx.fillStyle = "rgba(232, 96, 60, 1)";
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = brush * scale();
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
-  };
-
   const onDown = (event: React.PointerEvent) => {
     const ctx = context();
-    if (!ctx || !paint.current) return;
+    if (!ctx || !paint.current || !history.current) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    undo.current = [...undo.current, ctx.getImageData(0, 0, paint.current.width, paint.current.height)].slice(-UNDO_DEPTH);
     const point = at(event);
-    last.current = point;
-    stroke(point, point);
+    const command: MaskStroke = { kind: "stroke", width: brush * scale(), points: [point] };
+    active.current = command;
+    drawMaskSegment(ctx, command.width, point, point);
     setPainted(true);
   };
 
   const onMove = (event: React.PointerEvent) => {
-    if (!last.current) return;
+    const command = active.current;
+    const ctx = context();
+    if (!command || !ctx) return;
     const point = at(event);
-    stroke(last.current, point);
-    last.current = point;
+    drawMaskSegment(ctx, command.width, command.points.at(-1)!, point);
+    command.points.push(point);
   };
 
   const onUp = () => {
-    last.current = null;
+    if (!active.current || !history.current) return;
+    history.current.append(active.current);
+    active.current = null;
+    setUndoCount(history.current.commands.length);
   };
 
   const clear = () => {
     const ctx = context();
-    if (!ctx || !paint.current) return;
-    undo.current = [...undo.current, ctx.getImageData(0, 0, paint.current.width, paint.current.height)].slice(-UNDO_DEPTH);
-    ctx.clearRect(0, 0, paint.current.width, paint.current.height);
-    setPainted(false);
+    if (!ctx || !history.current) return;
+    history.current.append({ kind: "clear" });
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    setUndoCount(history.current.commands.length);
+    setPainted(history.current.painted);
   };
 
   const back = () => {
     const ctx = context();
-    const previous = undo.current.pop();
-    if (!ctx || !previous) return;
-    ctx.putImageData(previous, 0, 0);
-    setPainted(previous.data.some((value, i) => i % 4 === 3 && value > 0));
+    if (!ctx || !base.current || !history.current) return;
+    history.current.undo();
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.drawImage(base.current, 0, 0);
+    for (const command of history.current.commands) replayMaskCommand(ctx, command);
+    setUndoCount(history.current.commands.length);
+    setPainted(history.current.painted);
   };
 
   const done = async () => {
@@ -151,7 +168,7 @@ export function MaskModal({ absolute, onClose, onDone }: { absolute: string; onC
           <span>{t("mask.brush")}</span>
           <input type="range" min={BRUSH.min} max={BRUSH.max} value={brush} onChange={(e) => setBrush(Number(e.target.value))} />
         </label>
-        <button type="button" className="button" onClick={back} disabled={undo.current.length === 0 && !painted}>
+        <button type="button" className="button" onClick={back} disabled={undoCount === 0}>
           {t("mask.undo")}
         </button>
         <button type="button" className="button" onClick={clear} disabled={!painted}>

@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createSession, importReference, isInside, isSessionId, listSessions, readSession, renameSession, withId, writeSession } from "../../src/main/sessions.ts";
+import { createSession, importReference, isInside, isSessionId, listSessions, isInsideResolved, resolvedSessionPath, readSession, renameSession, withId, writeSession } from "../../src/main/sessions.ts";
 
 const root = () => mkdtempSync(join(tmpdir(), "gptimg-sessions-"));
 
@@ -70,5 +70,57 @@ describe("a chat's lasting id", () => {
     expect(withId(old).id).toMatch(/^[0-9a-f-]{36}$/);
     const kept = { ...old, id: "abc" };
     expect(withId(kept)).toBe(kept);
+  });
+});
+
+
+describe("resolved session boundaries", () => {
+  it("rejects escaping session, metadata and child symlinks", async () => {
+    const dir = root();
+    const outside = root();
+    writeFileSync(join(outside, "session.json"), "external");
+    symlinkSync(outside, join(dir, "escaped"), "dir");
+    await expect(readSession(dir, "escaped")).rejects.toMatchObject({ code: "badId" });
+    await expect(writeSession(dir, "escaped", { format: 1, title: "x", createdAt: new Date().toISOString(), turns: [] })).rejects.toMatchObject({ code: "badId" });
+    mkdirSync(join(dir, "safe"));
+    symlinkSync(join(outside, "session.json"), join(dir, "safe", "session.json"));
+    await expect(readSession(dir, "safe")).rejects.toMatchObject({ code: "badId" });
+    symlinkSync(outside, join(dir, "safe", "inputs"), "dir");
+    await expect(resolvedSessionPath(dir, "safe", "inputs/new.png")).rejects.toMatchObject({ code: "badId" });
+    expect(await isInsideResolved(dir, join(dir, "escaped", "session.json"))).toBe(false);
+    expect((await listSessions(dir)).unreadable).toBe(1);
+  });
+
+  it("permits only missing final names, never missing ancestors or dangling symlinks", async () => {
+    const dir = root();
+    mkdirSync(join(dir, "safe"));
+    expect(await resolvedSessionPath(dir, "safe")).toBe(join(realpathSync(dir), "safe", "session.json"));
+    await expect(resolvedSessionPath(dir, "safe", "inputs/new.png")).rejects.toMatchObject({ code: "ENOENT" });
+    symlinkSync(join(root(), "missing"), join(dir, "safe", "session.json"));
+    await expect(resolvedSessionPath(dir, "safe")).rejects.toMatchObject({ code: "badId" });
+    for (const relative of ["../x", "/x", "C:/x", "inputs/../../x", "inputs\\x"]) {
+      await expect(resolvedSessionPath(dir, "safe", relative)).rejects.toMatchObject({ code: "badId" });
+    }
+  });
+
+  it("copies an internal-looking external symlink into safe inputs", async () => {
+    const dir = root();
+    const source = join(root(), "image.png");
+    writeFileSync(source, "image");
+    const alias = join(dir, "alias.png");
+    symlinkSync(source, alias);
+    const result = await importReference(dir, alias, new Date("2026-10-19T00:00:00Z"));
+    expect(result).toMatch(/^inputs\//);
+    expect(await isInsideResolved(dir, join(dir, result))).toBe(true);
+  });
+
+  it("preserves unknown fields when assigning a legacy id, and lists stable identity", async () => {
+    const dir = root();
+    const s = await createSession(dir, new Date("2026-10-19T00:00:00Z"), "x");
+    const doc = { ...s.doc, extension: { authored: "kept" } };
+    const { id: _, ...legacy } = doc;
+    expect(withId(legacy)).toMatchObject({ extension: { authored: "kept" } });
+    await writeSession(dir, s.id, doc);
+    expect((await listSessions(dir)).sessions[0]!.chatId).toBe(doc.id);
   });
 });

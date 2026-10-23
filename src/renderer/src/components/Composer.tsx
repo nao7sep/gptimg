@@ -28,7 +28,8 @@ export interface Draft {
 
 interface ComposerProps {
   draft: Draft;
-  onDraft: (draft: Draft) => void;
+  onDraft: (draft: Draft | ((current: Draft) => Draft)) => void;
+  disabled?: boolean;
   options: TurnOptions;
   imageModel: string;
   busy: boolean;
@@ -56,9 +57,7 @@ export function Composer(props: ComposerProps) {
   const [sizing, setSizing] = useState(false);
   const [dropping, setDropping] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  // The latest draft, for handlers that finish after an await.
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
+
 
   useEffect(() => {
     setSize(props.options.size);
@@ -67,6 +66,7 @@ export function Composer(props: ComposerProps) {
   }, [props.options]);
 
   const qualities = imageRow(props.imageModel)?.image.qualities ?? QUALITIES;
+  const effectiveQuality = qualities.includes(quality) ? quality : (qualities[0] ?? "auto");
 
   useLayoutEffect(() => {
     const el = field.current;
@@ -79,33 +79,33 @@ export function Composer(props: ComposerProps) {
 
   props.focusRef.current = () => field.current?.focus();
 
+  const append = (paths: string[]) => onDraft((current) => {
+    const existing = new Set(current.references.map((r) => r.path));
+    const added = paths.filter((p) => !existing.has(p)).map((p) => ({ path: p, absolute: p }));
+    return { ...current, references: [...current.references, ...added] };
+  });
   const addPaths = async (paths: string[]) => {
     if (paths.length === 0) return;
-    const accepted = await api.registerFiles(paths);
-    if (accepted.length < paths.length) setNotice(t("composer.notImages"));
-    const current = draftRef.current;
-    const existing = new Set(current.references.map((r) => r.path));
-    const added = accepted.filter((p) => !existing.has(p)).map((p) => ({ path: p, absolute: p }));
-    if (added.length > 0) onDraft({ ...current, references: [...current.references, ...added] });
+    try {
+      const accepted = await api.registerFiles(paths);
+      if (accepted.length < paths.length) setNotice(t("composer.notImages"));
+      append(accepted);
+    } catch { setNotice(t("failure.imageUnreadable")); }
   };
-
   const attach = async () => {
-    const picked = await api.pickImages();
-    const current = draftRef.current;
-    const existing = new Set(current.references.map((r) => r.path));
-    const added = picked.filter((p) => !existing.has(p)).map((p) => ({ path: p, absolute: p }));
-    if (added.length > 0) onDraft({ ...current, references: [...current.references, ...added] });
+    try { append(await api.pickImages()); }
+    catch { setNotice(t("failure.imageUnreadable")); }
     field.current?.focus();
   };
   props.attachRef.current = () => void attach();
 
   const custom = !(SIZES as readonly string[]).includes(size);
-  const canSend = !props.busy && (draft.text.trim() !== "" || draft.references.length > 0);
+  const canSend = !props.busy && !props.disabled && draft.text.trim() !== "";
 
   const send = () => {
     if (!canSend) return;
     setNotice(null);
-    props.onSend({ text: draft.text.trim(), references: draft.references, ...(draft.mask && { mask: draft.mask }) }, { size, quality, ...(background !== "auto" && { background }) });
+    props.onSend({ text: draft.text.trim(), references: draft.references, ...(draft.mask && { mask: draft.mask }) }, { size, quality: effectiveQuality, ...(background !== "auto" && { background }) });
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -125,11 +125,10 @@ export function Composer(props: ComposerProps) {
       await addPaths(withPaths);
       return;
     }
-    const staged = await api.pasteImage();
-    if (staged) {
-      const current = draftRef.current;
-      onDraft({ ...current, references: [...current.references, { path: staged, absolute: staged }] });
-    }
+    try {
+      const staged = await api.pasteImage();
+      if (staged) append([staged]);
+    } catch { setNotice(t("failure.imageUnreadable")); }
   };
 
   const onDrop = (event: React.DragEvent) => {
@@ -259,7 +258,7 @@ export function Composer(props: ComposerProps) {
           )}
           <label className="quality">
             <span className="visually-hidden">{t("composer.qualityLabel")}</span>
-            <select value={qualities.includes(quality) ? quality : (qualities[0] ?? "auto")} onChange={(event) => setQuality(event.target.value)}>
+            <select value={effectiveQuality} onChange={(event) => setQuality(event.target.value)}>
               {qualities.map((value) => (
                 <option key={value} value={value}>
                   {qualityLabel(value, t)}

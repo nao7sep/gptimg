@@ -8,6 +8,7 @@ import type { Message } from "../../../shared/i18n/translator.ts";
 import { api } from "../api.ts";
 import { CloseIcon, CopyIcon, ExportIcon } from "../components/icons.tsx";
 import { useI18n } from "../i18n.tsx";
+import { useModalBoundary } from "./Modal.tsx";
 
 interface ViewerProps {
   images: string[];
@@ -19,6 +20,7 @@ interface ViewerProps {
 
 export function ViewerModal({ images, index, onClose, onExport }: ViewerProps) {
   const { t, of, translator } = useI18n();
+  const panel = useModalBoundary(onClose);
   const [at, setAt] = useState(Math.max(0, index));
   const [actual, setActual] = useState(false);
   const [info, setInfo] = useState<ImageInfo | null>(null);
@@ -31,26 +33,22 @@ export function ViewerModal({ images, index, onClose, onExport }: ViewerProps) {
     if (path) void api.inspectImage(path).then((outcome) => outcome.ok && setInfo(outcome.info));
   }, [path]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      } else if (event.key === "ArrowRight" && at < images.length - 1) {
-        setAt(at + 1);
-        setActual(false);
-      } else if (event.key === "ArrowLeft" && at > 0) {
-        setAt(at - 1);
-        setActual(false);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [at, images.length, onClose]);
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "ArrowRight" && at < images.length - 1) {
+      event.preventDefault();
+      setAt(at + 1);
+      setActual(false);
+    } else if (event.key === "ArrowLeft" && at > 0) {
+      event.preventDefault();
+      setAt(at - 1);
+      setActual(false);
+    }
+  };
 
   if (!path) return null;
   return (
-    <div className="viewer" role="dialog" aria-modal="true" aria-label={t("viewer.label")}>
+    <div ref={panel} tabIndex={-1} onKeyDown={onKeyDown} className="viewer" role="dialog" aria-modal="true" aria-label={t("viewer.label")}>
       <div className={`viewer-stage${actual ? " actual" : ""}`} onClick={(event) => event.target === event.currentTarget && onClose()}>
         <img
           src={imageUrl(path)}
@@ -93,7 +91,7 @@ export function ViewerModal({ images, index, onClose, onExport }: ViewerProps) {
           <ExportIcon size={15} />
           <span>{t("print.export")}</span>
         </button>
-        <button type="button" className="icon-button on-dark" autoFocus onClick={onClose} aria-label={t("common.close")}>
+        <button type="button" className="icon-button on-dark" data-autofocus="true" onClick={onClose} aria-label={t("common.close")}>
           <CloseIcon />
         </button>
       </div>

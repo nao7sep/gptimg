@@ -219,7 +219,8 @@ export function ExportModal({ path, prefs: initial, tasks, onClose, onExported }
           ))}
         </div>
         {!longSideOk && <span className="field-error">{t("export.longSideRange", { min: LONG_SIDE.min, max: LONG_SIDE.max })}</span>}
-        {upscaling && upscaler && !upscaler.installed && (
+        {upscaling && upscaler?.failure && <span className="field-error" role="alert">{of(upscaler.failure.message)}</span>}
+        {upscaling && upscaler && !upscaler.failure && !upscaler.installed && (
           <div className="inline-notice">
             <span>
               {upscaler.downloadBytes

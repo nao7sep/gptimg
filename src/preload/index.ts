@@ -1,5 +1,6 @@
 // The window's only door to main: each method is one IPC call, typed by the
 // shared interface it satisfies.
+import type { Settings } from "../shared/settings.ts";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { GptImgApi, LanguageInfo, MenuCommand, OpenedSession, TaskProgress } from "../shared/api.ts";
 
@@ -34,6 +35,7 @@ const api = {
   send: invoke("send"),
   retry: invoke("retry"),
   cancel: fire("cancel"),
+  restartProcessing: invoke("restartProcessing"),
   pickImages: invoke("pickImages"),
   pasteImage: invoke("pasteImage"),
   saveMask: invoke("saveMask"),
@@ -68,11 +70,21 @@ const api = {
     ipcRenderer.on("recordsChanged", listener);
     return () => ipcRenderer.off("recordsChanged", listener);
   },
+  setWindowDirty: fire("setWindowDirty"),
   closeWindow: fire("closeWindow"),
   onMenu: (handler: (command: MenuCommand) => void) => {
     const listener = (_event: unknown, command: MenuCommand) => handler(command);
     ipcRenderer.on("menu", listener);
     return () => ipcRenderer.off("menu", listener);
+  },
+  onSettings: (handler: (settings: Settings) => void) => {
+    const listener = (_event: unknown, settings: Settings) => handler(settings);
+    ipcRenderer.on("settingsChanged", listener);
+    return () => ipcRenderer.off("settingsChanged", listener);
+  },
+  onSessionsChanged: (handler: () => void) => {
+    ipcRenderer.on("sessionsChanged", handler);
+    return () => ipcRenderer.off("sessionsChanged", handler);
   },
   onLanguage: (handler: (info: LanguageInfo) => void) => {
     const listener = (_event: unknown, info: LanguageInfo) => handler(info);

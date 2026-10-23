@@ -1,16 +1,23 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { APP_EVENTS, openRecords } from "../../src/main/records.ts";
+
+const directories: string[] = [];
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const fresh = () => {
   const dir = mkdtempSync(join(tmpdir(), "gptimg-records-"));
+  directories.push(dir);
   return { file: join(dir, "records.sqlite3"), logs: join(dir, "logs"), dir };
 };
 
-const attempt = (event: string, at: string, extra: Record<string, unknown> = {}) => ({
+const attempt = (event: string, at: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
   time: at,
   level: event === "attempt.failed" ? "warn" : "info",
   verb: "chat",
@@ -97,15 +104,80 @@ describe("records", () => {
     records.close();
   });
 
-  it("adds the columns a later version needs to a database an earlier one made", () => {
+  it("contains a throwing change listener and still notifies later listeners", () => {
+    const { file, logs } = fresh();
+    const records = openRecords(file, logs, "launch", "1");
+    const failure = new Error("listener unavailable");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    records.onChange(() => { throw failure; });
+    const later = vi.fn();
+    records.onChange(later);
+    expect(() => records.log("info", "app.start")).not.toThrow();
+    expect(later).toHaveBeenCalledOnce();
+    expect(console.error).toHaveBeenCalledWith("[gptimg] records listener failed", failure);
+    expect(records.query({})).toMatchObject({ failed: false, rows: [{ title: "app.start" }] });
+    records.close();
+  });
+
+  it("leaves an unsupported old schema and rows untouched, closes it, and uses fallback", () => {
     const { file, logs } = fresh();
     const old = new DatabaseSync(file);
     old.exec("CREATE TABLE log (id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, at_utc TEXT NOT NULL, level TEXT NOT NULL, event TEXT NOT NULL, fields TEXT)");
     old.prepare("INSERT INTO log (session_id, at_utc, level, event) VALUES ('old', '2026-01-01T00:00:00.000Z', 'info', 'app.start')").run();
+    const before = old.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table'").all();
     old.close();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const closed = vi.spyOn(DatabaseSync.prototype, "close");
     const records = openRecords(file, logs, "new", "1");
+    expect(closed).toHaveBeenCalledOnce();
     records.log("info", "app.quit");
-    expect(records.query({}).rows.map((r) => r.title)).toEqual(["app.quit", "app.start"]);
+    expect(records.query({})).toEqual({ rows: [], next: null, failed: true });
+    const check = new DatabaseSync(file);
+    expect(check.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table'").all()).toEqual(before);
+    expect(check.prepare("SELECT session_id, event FROM log").all()).toEqual([{ session_id: "old", event: "app.start" }]);
+    check.close();
+    records.close();
+  });
+
+  it("keeps a failed-write diagnostic, notifies listeners, and marks readable queries incomplete", () => {
+    const { file, logs } = fresh();
+    const records = openRecords(file, logs, "launch", "1");
+    records.log("info", "app.start");
+    const control = new DatabaseSync(file);
+    control.exec("CREATE TRIGGER refuse_event BEFORE INSERT ON sdk_events BEGIN SELECT RAISE(FAIL, 'test store write failure'); END");
+    const listener = vi.fn();
+    records.onChange(listener);
+    const chat = { id: "chat-a", folder: "/chosen/chat" };
+    const event = { event: "attempt.retrying", level: "warn", request: { authorization: "[REDACTED]" } };
+    records.sdkEvent(chat, event);
+    expect(listener).toHaveBeenCalledOnce();
+    const line = JSON.parse(readFileSync(join(logs, readdirSync(logs)[0]!), "utf8").trim());
+    expect(line).toMatchObject({ chat, body: event, storageError: { name: "Error", message: "test store write failure", code: "ERR_SQLITE_ERROR", stack: expect.any(String) } });
+    expect(event.request.authorization).toBe("[REDACTED]");
+    expect(records.query({})).toMatchObject({ failed: true, rows: [{ title: "app.start" }] });
+    control.exec("DROP TRIGGER refuse_event");
+    records.sdkEvent(chat, { event: "verb.start", level: "info" });
+    expect(records.query({})).toMatchObject({ failed: true });
+    expect(records.query({}).rows).toHaveLength(2);
+    expect(listener).toHaveBeenCalledTimes(2);
+    control.close();
+    records.close();
+  });
+
+  it("classifies a retrying attempt as a call with its request and error details", () => {
+    const { file, logs } = fresh();
+    const records = openRecords(file, logs, "launch", "1");
+    const event = attempt("attempt.retrying", "2026-10-19T00:00:03.000Z", { error: { code: "rate_limit" }, status: 429 });
+    records.sdkEvent({ id: "chat", folder: "folder" }, event);
+    const calls = records.query({ kind: "call" }).rows;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ title: "chat retrying", kind: "call" });
+    expect(records.query({ kind: "log" }).rows).toEqual([]);
+    const detail = records.detail({ source: "sdk", id: calls[0]!.id })!;
+    expect(detail).toMatchObject({ kind: "call", title: "chat retrying" });
+    expect(detail.blocks.map((block) => block.label)).toEqual(["request", "error"]);
+    expect(JSON.parse(detail.blocks[0]!.text)).toEqual(event.request);
+    expect(JSON.parse(detail.blocks[1]!.text)).toEqual(event.error);
     records.close();
   });
 
@@ -113,6 +185,7 @@ describe("records", () => {
     const { dir, logs } = fresh();
     const notADatabase = join(dir, "records.sqlite3");
     writeFileSync(notADatabase, "this is not sqlite");
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const records = openRecords(notADatabase, logs, "launch-x", "1");
     records.log("warn", "settings.saveFailed", { error: "disk" });
     expect(records.query({})).toMatchObject({ failed: true });

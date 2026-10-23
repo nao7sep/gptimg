@@ -157,3 +157,41 @@ describe("the composer", () => {
     expect(screen.getByRole("button", { name: "Send" })).toHaveProperty("disabled", true);
   });
 });
+
+
+async function configuredComposer(imageOnly: boolean) {
+  fakeApi();
+  const onSend = vi.fn();
+  const { Composer } = await import("../../src/renderer/src/components/Composer.tsx");
+  await renderInApp(() => <Composer
+    draft={{ text: imageOnly ? " " : "A lighthouse", references: imageOnly ? [{ path: "/reference.png", absolute: "/reference.png" }] : [] }}
+    onDraft={() => {}}
+    options={{ size: "auto", quality: "xhigh" }}
+    imageModel="gpt-image-2"
+    busy={false}
+    keyMissing={false}
+    sessionDir={null}
+    focusRef={{ current: () => {} }}
+    attachRef={{ current: () => {} }}
+    onSend={onSend}
+    onCancel={() => {}}
+    onOpenSettings={() => {}}
+    onPaintMask={() => {}}
+  />);
+  return onSend;
+}
+
+it("keeps image-only submission disabled until there is a text instruction", async () => {
+  const onSend = await configuredComposer(true);
+  expect(screen.getByRole("button", { name: "Send" })).toHaveProperty("disabled", true);
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), { key: "Enter" });
+  expect(onSend).not.toHaveBeenCalled();
+});
+
+it("submits the displayed supported quality when the saved quality is incompatible with the model", async () => {
+  const onSend = await configuredComposer(false);
+  const quality = screen.getByRole("combobox", { name: "Quality" }) as HTMLSelectElement;
+  expect(quality.value).not.toBe("xhigh");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(onSend).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ quality: quality.value }));
+});

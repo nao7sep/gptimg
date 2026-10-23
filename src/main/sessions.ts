@@ -3,8 +3,10 @@
 // of every attached reference. Paths inside a session are relative, so the
 // folder can be moved or renamed whole.
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readdir, rename, stat, utimes } from "node:fs/promises";
-import { basename, extname, join, relative, resolve, sep } from "node:path";
+import { availableParallelism } from "node:os";
+import pLimit from "p-limit";
+import { lstat, mkdir, readdir, realpath, rename } from "node:fs/promises";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import {
   INPUTS_DIR,
   SESSION_FILE,
@@ -18,7 +20,7 @@ import {
   type SessionDoc,
   type SessionSummary,
 } from "../shared/session.ts";
-import { json, readText, writeTextAtomic } from "./files.ts";
+import { copyFileAtomic, json, readText, writeTextAtomic } from "./files.ts";
 
 export class SessionError extends Error {
   readonly code: "notFound" | "unreadable" | "malformed" | "badId" | "exists";
@@ -33,7 +35,7 @@ export class SessionError extends Error {
 
 /** A session id is one folder name: never a path, never a parent reference. */
 export function isSessionId(id: string): boolean {
-  return id !== "" && id !== "." && id !== ".." && !/[\\/]/.test(id) && basename(id) === id;
+  return id !== "" && id !== "." && id !== ".." && !/[\\/\u0000]/.test(id) && basename(id) === id;
 }
 
 export function sessionDir(root: string, id: string): string {
@@ -44,7 +46,43 @@ export function sessionDir(root: string, id: string): string {
 /** True when `path` is inside `dir` (after resolving), so a relative path cannot climb out of its session. */
 export function isInside(dir: string, path: string): boolean {
   const rel = relative(resolve(dir), resolve(path));
-  return rel !== "" && !rel.startsWith("..") && !rel.startsWith(sep) && !/^[a-zA-Z]:/.test(rel);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !rel.startsWith(sep) && !/^[a-zA-Z]:/.test(rel);
+}
+
+/** Check actual filesystem containment; inaccessible or missing paths remain errors. */
+export async function isInsideResolved(root: string, path: string): Promise<boolean> {
+  const [resolvedRoot, resolvedPath] = await Promise.all([realpath(root), realpath(path)]);
+  return isInside(resolvedRoot, resolvedPath);
+}
+
+/** Resolve managed paths without following a session or child symlink outside its root.
+ * Only a missing final name is allowed, so writes cannot create through a missing ancestor.
+ */
+export async function resolvedSessionPath(root: string, id: string, relativePath = SESSION_FILE): Promise<string> {
+  const dir = sessionDir(root, id);
+  const target = resolve(dir, relativePath);
+  if (!relativePath || relativePath.startsWith("/") || /^[a-zA-Z]:/.test(relativePath) || /[\\\u0000]/.test(relativePath) || relativePath.split("/").includes("..") || !isInside(dir, target)) {
+    throw new SessionError("badId", target);
+  }
+  const resolvedRoot = await realpath(root);
+  const resolvedDir = await realpath(dir);
+  if (!isInside(resolvedRoot, resolvedDir)) throw new SessionError("badId", dir);
+  let resolvedTarget: string;
+  try {
+    resolvedTarget = await realpath(target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // A dangling symlink is an existing unsafe target, not permission to replace it.
+    try {
+      await lstat(target);
+      throw new SessionError("badId", target);
+    } catch (entryError) {
+      if ((entryError as NodeJS.ErrnoException).code !== "ENOENT") throw entryError;
+    }
+    resolvedTarget = join(await realpath(dirname(target)), basename(target));
+  }
+  if (!isInside(resolvedDir, resolvedTarget)) throw new SessionError("badId", target);
+  return resolvedTarget;
 }
 
 export async function listSessions(root: string): Promise<{ sessions: SessionSummary[]; unreadable: number }> {
@@ -57,19 +95,18 @@ export async function listSessions(root: string): Promise<{ sessions: SessionSum
   }
   const sessions: SessionSummary[] = [];
   let unreadable = 0;
+  const limit = pLimit(availableParallelism());
   await Promise.all(
     entries
       .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-      .map(async (entry) => {
-        const read = await readText(join(root, entry.name, SESSION_FILE));
-        if (read.kind === "absent") return;
-        const doc = read.kind === "ok" ? parseJson(read.text) : null;
-        if (!doc) {
+      .map((entry) => limit(async () => {
+        try {
+          sessions.push(summarize(entry.name, await readSession(root, entry.name)));
+        } catch (error) {
+          if (error instanceof SessionError && error.code === "notFound") return;
           unreadable++;
-          return;
         }
-        sessions.push(summarize(entry.name, doc));
-      }),
+      })),
   );
   sessions.sort((a, b) => (a.sentAt < b.sentAt ? 1 : a.sentAt > b.sentAt ? -1 : a.id < b.id ? 1 : -1));
   return { sessions, unreadable };
@@ -84,7 +121,13 @@ function parseJson(text: string): SessionDoc | null {
 }
 
 export async function readSession(root: string, id: string): Promise<SessionDoc> {
-  const path = join(sessionDir(root, id), SESSION_FILE);
+  let path: string;
+  try {
+    path = await resolvedSessionPath(root, id);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new SessionError("notFound", sessionDir(root, id));
+    throw error;
+  }
   const read = await readText(path);
   if (read.kind === "absent") throw new SessionError("notFound", path);
   if (read.kind === "failed") throw new SessionError("unreadable", path);
@@ -95,21 +138,22 @@ export async function readSession(root: string, id: string): Promise<SessionDoc>
 
 /** A chat saved before ids existed gains its lasting id with its next real write; launch and reading write nothing. */
 export function withId(doc: SessionDoc): SessionDoc {
-  return doc.id ? doc : { format: doc.format, id: randomUUID(), title: doc.title, createdAt: doc.createdAt, turns: doc.turns };
+  return doc.id ? doc : { ...doc, id: randomUUID() };
 }
 
 /** Writes session.json; returns the bytes written, or null when nothing changed. */
 export async function writeSession(root: string, id: string, doc: SessionDoc): Promise<string | null> {
   const text = json(doc);
-  return (await writeTextAtomic(join(sessionDir(root, id), SESSION_FILE), text)) ? text : null;
+  return (await writeTextAtomic(await resolvedSessionPath(root, id), text)) ? text : null;
 }
 
 async function exists(path: string): Promise<boolean> {
   try {
-    await stat(path);
+    await lstat(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
   }
 }
 
@@ -133,12 +177,12 @@ export async function renameSession(root: string, id: string, title: string): Pr
   const next = { ...doc, title };
   const stamp = folderStamp(id) ?? fileStamp(new Date(doc.createdAt));
   const wanted = `${stamp}-${folderPart(title)}`;
+  await writeSession(root, id, next);
   let newId = id;
   if (wanted !== id) {
     newId = await freeName(root, wanted);
     await rename(sessionDir(root, id), sessionDir(root, newId));
   }
-  await writeSession(root, newId, next);
   return { id: newId, doc: next };
 }
 
@@ -148,15 +192,16 @@ export async function renameSession(root: string, id: string, title: string): Pr
  * the session is returned as it is.
  */
 export async function importReference(dir: string, source: string, now: Date): Promise<string> {
-  if (isInside(dir, source)) return relative(dir, source).split(sep).join("/");
+  const resolvedDir = await realpath(dir);
+  const resolvedSource = await realpath(source);
+  if (isInside(dir, source) && isInside(resolvedDir, resolvedSource)) return relative(dir, source).split(sep).join("/");
   const inputs = join(dir, INPUTS_DIR);
   await mkdir(inputs, { recursive: true });
+  if (!(await isInsideResolved(dir, inputs))) throw new SessionError("badId", inputs);
   const ext = extname(source).toLowerCase();
   const stem = basename(source, extname(source)).replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(0, 40) || "image";
   const name = await freeName(inputs, `${fileStamp(now)}-${stem}`, ext);
   const target = join(inputs, name);
-  await copyFile(source, target);
-  const times = await stat(source);
-  await utimes(target, times.atime, times.mtime);
+  await copyFileAtomic(source, target);
   return `${INPUTS_DIR}/${name}`;
 }

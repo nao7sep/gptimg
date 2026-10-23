@@ -6,6 +6,7 @@ import { RAIL_WIDTH } from "./ui-state.ts";
 export const PANES = {
   rail: { minWidth: RAIL_WIDTH.min },
   splitter: { width: 6 },
+  images: { width: 216, breakpoint: 960 },
   /** The conversation column: narrow enough for a laptop split, wide enough for a print and its actions. */
   conversation: { minWidth: 440 },
   header: { height: 48 },
@@ -25,8 +26,9 @@ export function windowMinimum(): { width: number; height: number } {
 export const INITIAL_WINDOW = { width: 1180, height: 820 } as const;
 
 /** The rail's displayed width: the user's drag intent clamped so the conversation keeps its minimum. */
-export function railWidth(intent: number | null, windowWidth: number): number {
+export function railWidth(intent: number | null, windowWidth: number, imagesPane = false): number {
   const wanted = intent ?? RAIL_WIDTH.initial;
-  const fit = windowWidth - PANES.splitter.width - PANES.conversation.minWidth;
+  const imagesWidth = imagesPane && windowWidth > PANES.images.breakpoint ? PANES.images.width : 0;
+  const fit = windowWidth - PANES.splitter.width - PANES.conversation.minWidth - imagesWidth;
   return Math.max(RAIL_WIDTH.min, Math.min(wanted, RAIL_WIDTH.max, fit));
 }

@@ -33,8 +33,3 @@ export function useI18n(): I18n {
   if (!value) throw new Error("useI18n outside I18nProvider");
   return value;
 }
-
-/** For the last-resort error surface outside the provider: English, which is always loaded. */
-export function documentTranslator(): Translator {
-  return createTranslator("en", "en", ENGLISH, ENGLISH);
-}

@@ -18,10 +18,44 @@ function Require-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) { throw "$Name is required but not installed." }
 }
 
-# Replaces whatever GptImg this checkout already runs, by executable path.
+# Ask the existing app to use its ordinary quit owner, then wait for the exact
+# processes captured here. A declined quit leaves the current app running.
 function Stop-Running {
-  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $App -or $_.Path -eq $DevElectron } | Stop-Process -Force
-  Start-Sleep -Milliseconds 300
+  $Processes = @(Get-CimInstance Win32_Process)
+  $Running = @($Processes | Where-Object { $_.ExecutablePath -eq $App -or $_.ExecutablePath -eq $DevElectron })
+  if ($Running.Count -eq 0) { return }
+  $Waiting = @($Running | ForEach-Object { [int]$_.ProcessId })
+  foreach ($Process in $Running) {
+    if ($Process.ExecutablePath -eq $DevElectron) {
+      $Parent = $Processes | Where-Object { $_.ProcessId -eq $Process.ParentProcessId } | Select-Object -First 1
+      # electron-vite exits when its Electron child closes, releasing Vite too.
+      if ($Parent -and $Parent.CommandLine) {
+        foreach ($Supervisor in @((Join-Path $Root "node_modules\.bin\electron-vite"),
+                                  (Join-Path $Root "node_modules\electron-vite\bin\electron-vite.js"))) {
+          if ($Parent.CommandLine.EndsWith("$Supervisor dev", [System.StringComparison]::OrdinalIgnoreCase) -or
+              $Parent.CommandLine.EndsWith("`"$Supervisor`" dev", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $Waiting += [int]$Parent.ProcessId
+            break
+          }
+        }
+      }
+    }
+  }
+  foreach ($Executable in @($Running.ExecutablePath | Select-Object -Unique)) {
+    $Arguments = @("--gptimg-quit-for-replacement")
+    if ($Executable -eq $DevElectron) { $Arguments = @("`"$Root`"", "--gptimg-quit-for-replacement") }
+    $Request = Start-Process -FilePath $Executable -ArgumentList $Arguments -PassThru
+    $Waiting += $Request.Id
+  }
+  $Clock = [System.Diagnostics.Stopwatch]::StartNew()
+  while ($Waiting.Count -gt 0) {
+    $Waiting = @($Waiting | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    if ($Waiting.Count -eq 0) { return }
+    if ($Clock.Elapsed.TotalSeconds -ge 30) {
+      throw "GptImg is still running. Finish or cancel its current work, accept Quit, then run this launcher again. No replacement was launched."
+    }
+    Start-Sleep -Milliseconds 100
+  }
 }
 
 function Invoke-Launcher([string]$Name, [scriptblock]$Body) {

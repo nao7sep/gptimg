@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenedSession } from "../../src/shared/api.ts";
 import type { SessionDoc } from "../../src/shared/session.ts";
 import { fakeApi, renderInApp } from "./harness.tsx";
@@ -80,11 +80,16 @@ describe("the images pane", () => {
 });
 
 describe("the conversation's notes", () => {
-  // jsdom has no layout, so nothing to observe.
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
+  beforeEach(() => {
+    // All four short fixture turns fit in this transcript viewport.
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(1200);
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+  });
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it("says which images were blocked or missing, which message the assistant never saw, and what a mask limited", async () => {
     fakeApi();

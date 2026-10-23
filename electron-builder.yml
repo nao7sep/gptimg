@@ -24,6 +24,8 @@ asarUnpack:
   - node_modules/@img/**
   - node_modules/onnxruntime-node/**
 mac:
+  # The bundled ONNX Runtime native library requires macOS 14 or later.
+  minimumSystemVersion: "14.0"
   category: public.app-category.graphics-design
   icon: build/icon.icns
   # ONNX Runtime ships every platform's binaries; each build keeps only its own.

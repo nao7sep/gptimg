@@ -1,7 +1,7 @@
 // The session rail: a contact sheet. Each row leads with its latest print, so
 // a session is found by its picture. One tab stop: a listbox whose active row
 // moves with the arrow keys (composite-control-conventions).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { imageUrl, type AppFailure, type MenuCommand } from "../../../shared/api.ts";
 import { PANES, railWidth } from "../../../shared/layout.ts";
 import type { SessionSummary } from "../../../shared/session.ts";
@@ -11,6 +11,7 @@ import { useI18n } from "../i18n.tsx";
 import { AppMenu } from "./AppMenu.tsx";
 import { FrameIcon, PlusIcon } from "./icons.tsx";
 import { relativeDay } from "./time.ts";
+import { useWindowedItems } from "./use-windowed-items.ts";
 
 interface RailProps {
   sessions: SessionSummary[];
@@ -21,6 +22,7 @@ interface RailProps {
   sessionsDir: string;
   timeZone: string;
   width: number | null;
+  imagesPane?: boolean;
   onWidth: (width: number) => void;
   onNew: () => void;
   onOpen: (id: string) => void;
@@ -38,6 +40,8 @@ export function Rail(props: RailProps) {
   const list = useRef<HTMLDivElement>(null);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [drag, setDrag] = useState<number | null>(null);
+  const items = useMemo(() => sessions.map(({ id }) => ({ id, estimatedHeight: 68 })), [sessions]);
+  const windowed = useWindowedItems(items, list, props.sessionsDir, true);
 
   useEffect(() => {
     const onResize = () => setWindowWidth(window.innerWidth);
@@ -45,19 +49,20 @@ export function Rail(props: RailProps) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const width = railWidth(drag ?? props.width, windowWidth);
+  const width = railWidth(drag ?? props.width, windowWidth, props.imagesPane);
   const activeIndex = sessions.findIndex((s) => s.id === currentId);
 
   useEffect(() => {
     if (activeIndex < 0) return;
-    document.getElementById(`session-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex]);
+    windowed.scrollToIndex(activeIndex);
+  }, [activeIndex, windowed.scrollToIndex]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (sessions.length === 0) return;
     const move = (index: number) => {
       event.preventDefault();
       const next = sessions[Math.max(0, Math.min(sessions.length - 1, index))];
+      windowed.scrollToIndex(Math.max(0, Math.min(sessions.length - 1, index)));
       if (next && next.id !== currentId) props.onOpen(next.id);
     };
     const current = sessions[activeIndex];
@@ -137,15 +142,20 @@ export function Rail(props: RailProps) {
           role="listbox"
           tabIndex={0}
           aria-label={t("rail.sessions")}
-          aria-activedescendant={activeIndex >= 0 ? `session-${activeIndex}` : undefined}
+          aria-activedescendant={activeIndex >= windowed.start && activeIndex < windowed.end ? `session-${activeIndex}` : undefined}
           onKeyDown={onKeyDown}
         >
-          {sessions.map((session, index) => {
+          <div ref={windowed.startRef} aria-hidden="true" style={{ height: windowed.top }} />
+          {sessions.slice(windowed.start, windowed.end).map((session, visibleIndex) => {
+            const index = windowed.start + visibleIndex;
             const isRunning = !!props.running[session.id];
             const cover = session.cover ? `${props.sessionsDir}/${session.id}/${session.cover}` : null;
             return (
               <div
                 key={session.id}
+                ref={windowed.measureRef(session.id)}
+                aria-setsize={sessions.length}
+                aria-posinset={index + 1}
                 id={`session-${index}`}
                 role="option"
                 aria-selected={session.id === currentId}
@@ -170,6 +180,7 @@ export function Rail(props: RailProps) {
               </div>
             );
           })}
+          <div aria-hidden="true" style={{ height: windowed.bottom }} />
           {sessions.length === 0 && !props.failure && <p className="rail-empty">{t("rail.empty")}</p>}
           {props.failure && <p className="rail-problem" role="alert">{of(props.failure.message)}</p>}
           {props.unreadable > 0 && <p className="rail-note">{t("rail.unreadable", { count: props.unreadable })}</p>}
