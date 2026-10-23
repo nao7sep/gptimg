@@ -87,6 +87,7 @@ export type {
   EncodeArgs,
   EncodeResult,
   EncodingArgs,
+  ErrorDiagnostic,
   FilePublication,
   FrameDeltas,
   FrameEdgeContact,
