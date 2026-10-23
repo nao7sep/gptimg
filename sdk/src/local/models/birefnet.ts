@@ -20,7 +20,7 @@ import type { Logger } from "../../events/index.ts";
 import { requireInstalledModel } from "./fetch.ts";
 import type { OnnxPolicy } from "../../types.ts";
 import { BIREFNET } from "./registry.ts";
-import { float32Tensor, loadSession, runSession } from "./session.ts";
+import { float32Tensor, withSession, runSession } from "./session.ts";
 import { logitsToAlpha, normalizeImageNet } from "./birefnet-tensor.ts";
 
 async function resizeRGB(
@@ -77,36 +77,37 @@ export async function runBirefnet(
   // (onnxruntime-node runs them synchronously), so cancellation is honored at
   // the boundaries around them.
   throwIfAborted(opts.signal);
-  const session = await loadSession(modelPath, opts.onnx);
-  throwIfAborted(opts.signal);
+  return withSession(modelPath, opts.onnx, async (session) => {
+    throwIfAborted(opts.signal);
 
-  const size = BIREFNET.inputSize;
-  const rgb = await resizeRGB(rgba, width, height, size, size);
-  const tensor = await preprocessToTensor(rgb, size);
+    const size = BIREFNET.inputSize;
+    const rgb = await resizeRGB(rgba, width, height, size, size);
+    const tensor = await preprocessToTensor(rgb, size);
 
-  const inputName = session.inputNames[0];
-  if (!inputName) {
-    throw new GptImgError(
-      "model.loadFailed",
-      "BiRefNet ONNX session has no input. Model file may be malformed.",
-    );
-  }
-  opts.logger?.emit("info", "infer", { event: "model.infer.start", model: "birefnet", settings: { width, height } });
-  throwIfAborted(opts.signal);
-  const outputs = await runSession(session, { [inputName]: tensor });
-  opts.logger?.emit("info", "infer", { event: "model.infer.done", model: "birefnet", stats: {} });
-  throwIfAborted(opts.signal);
-  const outputName = session.outputNames[session.outputNames.length - 1]!;
-  const output = outputs[outputName];
-  if (!output) {
-    throw new GptImgError(
-      "model.loadFailed",
-      `BiRefNet ONNX session produced no output named ${outputName}.`,
-    );
-  }
+    const inputName = session.inputNames[0];
+    if (!inputName) {
+      throw new GptImgError(
+        "model.loadFailed",
+        "BiRefNet ONNX session has no input. Model file may be malformed.",
+      );
+    }
+    opts.logger?.emit("info", "infer", { event: "model.infer.start", model: "birefnet", settings: { width, height } });
+    throwIfAborted(opts.signal);
+    const outputs = await runSession(session, { [inputName]: tensor });
+    opts.logger?.emit("info", "infer", { event: "model.infer.done", model: "birefnet", stats: {} });
+    throwIfAborted(opts.signal);
+    const outputName = session.outputNames[session.outputNames.length - 1]!;
+    const output = outputs[outputName];
+    if (!output) {
+      throw new GptImgError(
+        "model.loadFailed",
+        `BiRefNet ONNX session produced no output named ${outputName}.`,
+      );
+    }
 
-  const { alpha: alphaAtModel, width: outW, height: outH } = tensorToAlpha(output);
-  const alpha = await resizeSingleChannel(alphaAtModel, outW, outH, width, height);
-  throwIfAborted(opts.signal);
-  return { alpha, width, height };
+    const { alpha: alphaAtModel, width: outW, height: outH } = tensorToAlpha(output);
+    const alpha = await resizeSingleChannel(alphaAtModel, outW, outH, width, height);
+    throwIfAborted(opts.signal);
+    return { alpha, width, height };
+  });
 }

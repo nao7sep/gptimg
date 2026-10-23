@@ -31,7 +31,7 @@ import type { Logger } from "../../events/index.ts";
 import { requireInstalledModel } from "./fetch.ts";
 import type { OnnxPolicy } from "../../types.ts";
 import { SWIN2SR_X4 } from "./registry.ts";
-import { float32Tensor, loadSession, runSession } from "./session.ts";
+import { float32Tensor, withSession, runSession } from "./session.ts";
 import { packNchw01, unpackChwToU8 } from "./swin2sr-tensor.ts";
 import {
   SWIN2SR_DEFAULT_TILE,
@@ -259,24 +259,25 @@ export async function runSwin2srX4(
 
   const modelPath = requireInstalledModel(SWIN2SR_X4, "swin2sr", modelsDir);
   throwIfAborted(signal);
-  const session = await loadSession(modelPath, opts.onnx);
-  throwIfAborted(signal);
-  const inputName = session.inputNames[0];
-  const outputName = session.outputNames[0];
-  if (!inputName || !outputName) {
-    throw new GptImgError(
-      "model.loadFailed",
-      "Swin2SR ONNX session is missing an input or output. Model file may be malformed.",
-    );
-  }
+  return withSession(modelPath, opts.onnx, async (session) => {
+    throwIfAborted(signal);
+    const inputName = session.inputNames[0];
+    const outputName = session.outputNames[0];
+    if (!inputName || !outputName) {
+      throw new GptImgError(
+        "model.loadFailed",
+        "Swin2SR ONNX session is missing an input or output. Model file may be malformed.",
+      );
+    }
 
-  return tileAndStitch(
-    rgb,
-    width,
-    height,
-    tile,
-    makeOnnxRun(session, inputName, outputName),
-    signal,
-    opts.logger,
-  );
+    return tileAndStitch(
+      rgb,
+      width,
+      height,
+      tile,
+      makeOnnxRun(session, inputName, outputName),
+      signal,
+      opts.logger,
+    );
+  });
 }

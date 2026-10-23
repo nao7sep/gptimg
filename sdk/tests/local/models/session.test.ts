@@ -9,7 +9,9 @@ vi.mock("onnxruntime-node", () => ({
   InferenceSession: { create: ortMocks.create },
 }));
 
-import { loadSession } from "../../../src/local/models/session.ts";
+import { withSession } from "../../../src/local/models/session.ts";
+
+const loadSession = (path: string, onnx?: import("../../../src/types.ts").OnnxPolicy) => withSession(path, onnx, async (session) => session);
 
 describe("managed ONNX sessions", () => {
   afterEach(() => {

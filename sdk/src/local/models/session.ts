@@ -17,12 +17,19 @@ import { ONNX_DEFAULTS } from "../../defaults.ts";
 
 // One creation per model path and tuning: concurrent first callers await the
 // same promise instead of each loading its own copy of the weights.
-const sessions = new Map<string, Promise<Ort.InferenceSession>>();
+interface SessionEntry {
+  modelPath: string;
+  pending: Promise<Ort.InferenceSession>;
+  borrowers: number;
+  idle: Promise<void>;
+  signalIdle: () => void;
+  disposal?: Promise<boolean> | undefined;
+}
+const sessions = new Map<string, SessionEntry>();
+// Retired entries stay owned until disposal succeeds, including after a failed release.
+const retired = new Set<SessionEntry>();
 
 let runtime: Promise<typeof Ort> | null = null;
-
-// Inference in flight, so a release waits for it instead of freeing a session mid-run.
-const running = new Set<Promise<unknown>>();
 
 /**
  * ONNX Runtime, loaded on the first inference rather than with the SDK, so a
@@ -80,23 +87,41 @@ export async function inferenceRecord(model: { key: string; name: string; sha256
 }
 
 /**
- * Create (or return a cached) ONNX inference session for `modelPath` with the
- * given tuning. Sessions are cached for the lifetime of the process, and a
- * creation still in flight is shared with every caller that asks meanwhile. A
- * failed creation is dropped from the cache so the next call tries again.
+ * Borrow a shared session for the entire model operation, including asynchronous
+ * preprocessing and gaps between native runs. Admission is synchronous, before
+ * creation is awaited, so release also waits for borrowers of a loading model.
  */
-export function loadSession(modelPath: string, onnx?: OnnxPolicy): Promise<Ort.InferenceSession> {
+export async function withSession<T>(
+  modelPath: string,
+  onnx: OnnxPolicy | undefined,
+  operation: (session: Ort.InferenceSession) => Promise<T>,
+): Promise<T> {
   const providers = executionProviders(onnx);
   const threads = intraOpThreadCount(onnx);
   const key = `${modelPath}\0${providers.join(",")}\0${threads}`;
-  const cached = sessions.get(key);
-  if (cached) return cached;
-  const created = createSession(modelPath, providers, threads);
-  sessions.set(key, created);
-  created.catch(() => {
-    if (sessions.get(key) === created) sessions.delete(key);
-  });
-  return created;
+  let entry = sessions.get(key);
+  if (!entry) {
+    const created: SessionEntry = {
+      modelPath,
+      pending: createSession(modelPath, providers, threads),
+      borrowers: 0,
+      idle: Promise.resolve(),
+      signalIdle: () => {},
+    };
+    sessions.set(key, created);
+    created.pending.catch(() => {
+      if (sessions.get(key) === created) sessions.delete(key);
+    });
+    entry = created;
+  }
+  if (entry.borrowers++ === 0) {
+    entry.idle = new Promise<void>((resolve) => { entry.signalIdle = resolve; });
+  }
+  try {
+    return await operation(await entry.pending);
+  } finally {
+    if (--entry.borrowers === 0) entry.signalIdle();
+  }
 }
 
 /**
@@ -108,10 +133,8 @@ export async function runSession(
   session: Ort.InferenceSession,
   feeds: Ort.InferenceSession.FeedsType,
 ): Promise<Ort.InferenceSession.ReturnType> {
-  const run = session.run(feeds);
-  running.add(run);
   try {
-    return await run;
+    return await session.run(feeds);
   } catch (err) {
     if (err instanceof GptImgError) throw err;
     // A native abort leaves the SDK as its own cancellation, with the original as cause.
@@ -121,31 +144,48 @@ export async function runSession(
       `ONNX inference failed: ${err instanceof Error ? err.message : String(err)}`,
       { cause: err },
     );
-  } finally {
-    running.delete(run);
   }
 }
 
 /**
- * Frees every loaded session's native memory (a loaded model holds gigabytes) once the
- * inference in flight has finished. The cache is process-wide, so this releases the sessions of
- * every instance in the process; the next call that needs a model loads it again. Returns how
- * many sessions were released.
+ * Retire the current cache, then release it once all admitted operations settle.
+ * New callers can load and use a fresh generation independently. Concurrent
+ * releases share disposal; failed disposal stays owned for a later retry.
  */
 export async function releaseSessions(): Promise<number> {
-  await Promise.allSettled([...running]);
-  const loaded = [...sessions.values()];
+  for (const entry of sessions.values()) retired.add(entry);
   sessions.clear();
-  let released = 0;
-  for (const pending of loaded) {
+  const outcomes = await Promise.allSettled([...retired].map(disposeSession));
+  const failed = outcomes.find((outcome) => outcome.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
+  return outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value).length;
+}
+
+function disposeSession(entry: SessionEntry): Promise<boolean> {
+  entry.disposal ??= (async () => {
+    await entry.idle;
+    let session: Ort.InferenceSession;
     try {
-      await (await pending).release();
-      released += 1;
+      session = await entry.pending;
     } catch {
-      // A session whose creation failed holds nothing to free.
+      // Failed creation owns no native session to dispose.
+      retired.delete(entry);
+      return false;
     }
-  }
-  return released;
+    try {
+      await session.release();
+    } catch (cause) {
+      throw new GptImgError("internal.unexpected", `Failed to release ONNX session for ${entry.modelPath}.`, {
+        cause,
+        // A rejecting native disposer may already have freed part of its resources.
+        effect: "unknown",
+        subject: entry.modelPath,
+      });
+    }
+    retired.delete(entry);
+    return true;
+  })().finally(() => { entry.disposal = undefined; });
+  return entry.disposal;
 }
 
 async function createSession(modelPath: string, providers: string[], threads: number): Promise<Ort.InferenceSession> {

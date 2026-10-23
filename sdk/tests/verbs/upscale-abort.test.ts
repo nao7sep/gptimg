@@ -1,3 +1,5 @@
+import type * as Ort from "onnxruntime-node";
+import type { OnnxPolicy } from "../../src/types.ts";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { done } from "../helpers/results.ts";
 import path from "node:path";
@@ -20,7 +22,8 @@ vi.mock("../../src/local/models/fetch.ts", async (importOriginal) => ({
 }));
 vi.mock("../../src/local/models/session.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/local/models/session.ts")>()),
-  loadSession: model.loadSession,
+  withSession: async <T>(path: string, onnx: OnnxPolicy | undefined, operation: (session: Ort.InferenceSession) => Promise<T>) =>
+    operation(await model.loadSession(path, onnx)),
 }));
 
 function deferred<T>() {
