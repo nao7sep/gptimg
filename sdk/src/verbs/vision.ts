@@ -5,7 +5,7 @@ import { defaultModelFor } from "../ai-models.ts";
 import { resolveModel } from "../providers/openai/client.ts";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { GptImgError, fsError } from "../errors.ts";
+import { GptImgError, fsError, throwIfAborted } from "../errors.ts";
 import { RefusalSignal } from "../refusal.ts";
 import { hash } from "../image/hash.ts";
 import { ensureOutputDir } from "../internal/output-files.ts";
@@ -138,9 +138,14 @@ export async function visionImpl(
     assertOutputGroupAvailable(outputGroup, [`${stemPath}.json`], args.overwrite ?? false);
 
     const inputs = args.inputs;
-    const prepared = await Promise.all(
-      inputs.map((p) => prepareImage(p, shrink, detail, logger)),
-    );
+    // Each preparation retains the original while shrinking and hashing it. Finish
+    // one before reading the next, retaining only provider-sized images for the call.
+    const prepared: PreparedImage[] = [];
+    for (const input of inputs) {
+      throwIfAborted(signal);
+      prepared.push(await prepareImage(input, shrink, detail, logger));
+    }
+    throwIfAborted(signal);
 
     logger.emit("info", "resolve", { event: "verb.start", input: inputs, output: `${stemPath}.json`, settings: { check, overwrite: args.overwrite ?? false } });
     logger.emit("info", "request", { event: "provider.call", operation: "vision", model: (params.model as string | undefined) ?? null, settings: { ...params, images: prepared.length } });
