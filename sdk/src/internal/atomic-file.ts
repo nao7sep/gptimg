@@ -1,4 +1,4 @@
-import { chmod, link, lstat, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { chmod, link, lstat, open, readFile, readdir, realpath, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 
@@ -24,6 +24,14 @@ export function stagingPathFor(filePath: string): string {
   return path.join(dir, `${stem}-${discriminator}.tmp`);
 }
 
+// A publication owns its target until the filesystem work settles. This also
+// covers local writers, which do not hold a paid output-group reservation.
+const publishingTargets = new Set<string>();
+
+function targetExists(filePath: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`EEXIST: file already exists, publish '${filePath}'`), { code: "EEXIST", syscall: "rename", path: filePath });
+}
+
 const HARD_LINK_UNAVAILABLE = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"]);
 
 /**
@@ -31,23 +39,39 @@ const HARD_LINK_UNAVAILABLE = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS
  * atomically, failing EEXIST when it is taken. A volume without hard links
  * (exFAT, FAT32) gets the staged file renamed in once the name is confirmed
  * free (storage-path-conventions, *Replacement and publication*): no reader
- * sees a partial file, and the remaining gap is another writer taking the name
+ * sees a partial file. A process-local target claim excludes SDK competitors;
+ * the remaining gap is an external writer or separate process taking the name
  * between the check and the rename. Never a copy into place, which would expose
  * a partial file. Returns whether the staged name is still there to remove.
  */
 export async function publishFileNoClobber(tempPath: string, filePath: string, createLink: typeof link = link): Promise<{ tempRemains: boolean }> {
+  const directory = await realpath(path.dirname(filePath));
+  const name = path.basename(filePath).normalize("NFC").toLowerCase();
+  const target = path.join(directory, name);
+  // Check and claim synchronously after the last await, including portable
+  // filename aliases even on a case-sensitive volume.
+  if (publishingTargets.has(target)) throw targetExists(filePath);
+  publishingTargets.add(target);
   try {
-    await createLink(tempPath, filePath);
-    return { tempRemains: true };
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (!code || !HARD_LINK_UNAVAILABLE.has(code)) throw err;
+    // Preflight may have run before an earlier SDK publisher settled. Inspect
+    // disk under the claim as well, so portable aliases cannot publish later
+    // as distinct entries on a case-sensitive or normalization-sensitive volume.
+    if ((await readdir(directory)).some((entry) => entry.normalize("NFC").toLowerCase() === name)) {
+      throw targetExists(filePath);
+    }
+    try {
+      await createLink(tempPath, filePath);
+      return { tempRemains: true };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (!code || !HARD_LINK_UNAVAILABLE.has(code)) throw err;
+    }
+    if (await nameTaken(filePath)) throw targetExists(filePath);
+    await rename(tempPath, filePath);
+    return { tempRemains: false };
+  } finally {
+    publishingTargets.delete(target);
   }
-  if (await nameTaken(filePath)) {
-    throw Object.assign(new Error(`EEXIST: file already exists, publish '${filePath}'`), { code: "EEXIST", syscall: "rename", path: filePath });
-  }
-  await rename(tempPath, filePath);
-  return { tempRemains: false };
 }
 
 async function nameTaken(filePath: string): Promise<boolean> {
