@@ -39,6 +39,20 @@ describe("verify", () => {
     expect(result).toMatchObject({ ok: true, findings: [], sidecarPath: path.join(tmp, "raw.json"), record: { kind: "generate" } });
   });
 
+  it.each([1, 2])("chooses a later matching name and digest in format %s", async (formatVersion) => {
+    const record = {
+      formatVersion,
+      ...(formatVersion === 2 && { kind: "generate", writer: { name: "gptimgsdk", version: "0.1.0" } }),
+      request: { prompt: "p", n: 2 }, response: {},
+      files: [
+        { index: 1, name: "other.png", sha256, format: "webp" },
+        { index: 2, name: "raw.png", sha256, format: "png" },
+      ],
+    };
+    await writeFile(path.join(tmp, "raw.json"), JSON.stringify(record));
+    expect(done(await img.verify({ in: image }))).toMatchObject({ ok: true, findings: [] });
+  });
+
   it("finds a renamed raw whose files[].name was not updated, and a replaced image", async () => {
     await sidecar("old-name.png", {});
     expect(done(await img.verify({ in: image })).findings.map((f) => f.code)).toEqual(["sidecar.nameMismatch"]);

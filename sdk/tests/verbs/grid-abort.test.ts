@@ -71,6 +71,12 @@ describe("public grid cancellation after its final tile", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
+  it("reports actual input paths in the public start event", async () => {
+    const events: unknown[] = [];
+    await sdk.grid({ inputs: [first, last], cell: 8, outName: "events" }, { onEvent: (event) => { events.push(event); } });
+    expect(events).toContainEqual(expect.objectContaining({ event: "verb.start", input: [first, last] }));
+  });
+
   it.each(["decoded", "unreadable"] as const)(
     "rejects cancellation after the final %s tile and publishes nothing",
     async (kind) => {

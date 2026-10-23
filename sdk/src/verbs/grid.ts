@@ -38,7 +38,7 @@ export async function gridImpl(
 
     logger.emit("info", "resolve", verbStart({
       out: outPath,
-      inputs: args.inputs.length,
+      inputs: args.inputs,
       cols: args.cols ?? null,
       cell: args.cell ?? null,
       gap: args.gap ?? null,

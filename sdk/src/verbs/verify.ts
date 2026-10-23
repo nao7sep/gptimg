@@ -67,7 +67,8 @@ export async function verifyImpl(
     }
 
     if (record !== null) {
-      const entry = record.files.find((file) => file.sha256 === sha256);
+      const entry = record.files.find((file) => file.sha256 === sha256 && file.name === base)
+        ?? record.files.find((file) => file.sha256 === sha256);
       if (!entry) {
         findings.push({
           code: "sidecar.hashMismatch",

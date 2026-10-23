@@ -74,8 +74,8 @@ function checkArgs<T extends object>(operation: string, args: T, known: readonly
 /**
  * Install models explicitly: the only way a model reaches its folder
  * (sdk-conventions, *Nothing installs implicitly*). Each download is staged,
- * size- and SHA-256-verified and published whole; a superseded pin's file is
- * deleted once its replacement is verified.
+ * size- and SHA-256-verified and published whole. Files from earlier pins remain
+ * untouched.
  */
 export async function installModelsImpl(
   ctx: SdkContext,
