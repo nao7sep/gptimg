@@ -365,6 +365,7 @@ export type SdkEventBody =
   | { event: "verb.done"; output: string | null; stats: Record<string, unknown> }
   | { event: "verb.refused"; code: RefusalCode; subject: string | null }
   | { event: "verb.failed"; error: GptImgErrorData; thrown: Record<string, unknown> }
+  | { event: "verb.cancelled"; error: GptImgErrorData }
   | { event: "provider.call"; operation: "generate" | "edit" | "vision" | "chat"; model: string | null; settings: Record<string, unknown> }
   | { event: "provider.returned"; operation: "generate" | "edit" | "vision" | "chat"; summary: Record<string, unknown> }
   | ({ event: "attempt.succeeded"; response: Record<string, unknown> } & AttemptFields)

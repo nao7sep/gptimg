@@ -9,7 +9,7 @@
 
 import path from "node:path";
 import { readdirSync } from "node:fs";
-import { GptImgError, fsError } from "../errors.ts";
+import { cancelledError, GptImgError, fsError } from "../errors.ts";
 import { assertAbsolutePath } from "./absolute-path.ts";
 import { createLogger, type Logger } from "../events/index.ts";
 import type { SdkContext } from "../context.ts";
@@ -223,6 +223,15 @@ export async function withVerbLogger<T>(
       details: { field: unknown, constraint: unknown === "log" ? "retired" : "known call option" },
     });
   }
+  // A caller's types are not a contract: a wrong kind of option fails here, not deep inside the work.
+  if (opts.signal !== undefined && !(opts.signal instanceof AbortSignal)) {
+    throw new GptImgError("args.invalid", `${verbName}: signal must be an AbortSignal.`, { details: { field: "signal", constraint: "AbortSignal" } });
+  }
+  for (const hook of ["onEvent", "onProgress", "onPartialImage"] as const) {
+    if (opts[hook] !== undefined && typeof opts[hook] !== "function") {
+      throw new GptImgError("args.invalid", `${verbName}: ${hook} must be a function.`, { details: { field: hook, constraint: "function" } });
+    }
+  }
   const logger = createLogger(verbName, { onEvent: opts.onEvent, onProgress: opts.onProgress, debug: ctx.debug });
   // The instance's key is masked from the call's first event, before any provider registers it.
   if (ctx.apiKey) logger.addCredential(ctx.apiKey);
@@ -258,14 +267,23 @@ export async function withVerbLogger<T>(
         }),
       };
     }
-    const err = toSdkError(verbName, thrown);
-    logger.emit("error", "error", { event: "verb.failed", error: err.toJSON(), thrown: serializeThrownError(err) });
+    const err = toSdkError(verbName, thrown, opts.signal);
+    // A cancellation is the caller's request, never a failure, so it is recorded as such.
+    if (err.code === "cancelled") logger.emit("info", "error", { event: "verb.cancelled", error: err.toJSON() });
+    else logger.emit("error", "error", { event: "verb.failed", error: err.toJSON(), thrown: serializeThrownError(err) });
     throw err;
   }
 }
 
-/** Everything that leaves a verb as a failure is a `GptImgError`. */
-function toSdkError(verbName: VerbName, thrown: unknown): GptImgError {
+/**
+ * Everything that leaves a verb as a failure is a `GptImgError`. Once the
+ * caller's signal has fired, whatever the interrupted work threw is that
+ * cancellation, keeping any effect the work had reported.
+ */
+function toSdkError(verbName: VerbName, thrown: unknown, signal: AbortSignal | undefined): GptImgError {
+  if (signal?.aborted && !(thrown instanceof GptImgError && thrown.code === "cancelled")) {
+    return cancelledError(thrown, thrown instanceof GptImgError ? thrown.effect : "unknown");
+  }
   const contained = containOutOfMemory(verbName, thrown);
   if (contained instanceof GptImgError) return contained;
   return new GptImgError(

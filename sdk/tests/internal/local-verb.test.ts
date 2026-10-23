@@ -295,6 +295,29 @@ describe("withVerbLogger", () => {
     });
   });
 
+  it("refuses a signal that is not an AbortSignal and a hook that is not a function", async () => {
+    await expect(withVerbLogger(ctx(), "encode", { signal: {} as AbortSignal }, async () => 1)).rejects.toMatchObject({
+      code: "args.invalid",
+      details: { field: "signal" },
+    });
+    await expect(withVerbLogger(ctx(), "encode", { onProgress: "log" as never }, async () => 1)).rejects.toMatchObject({
+      code: "args.invalid",
+      details: { field: "onProgress" },
+    });
+  });
+
+  it("reports whatever interrupted work throws after the signal fired as the cancellation, recorded as one", async () => {
+    const controller = new AbortController();
+    const events: SdkEvent[] = [];
+    const run = withVerbLogger(ctx(), "encode", { signal: controller.signal, onEvent: (e) => events.push(e) }, async () => {
+      controller.abort();
+      throw new Error("sharp: VipsJpeg: premature end of input");
+    });
+    await expect(run).rejects.toMatchObject({ code: "cancelled", kind: "cancelled", effect: "unknown" });
+    expect(events.map((e) => [e.event, e.level])).toContainEqual(["verb.cancelled", "info"]);
+    expect(events.some((e) => e.event === "verb.failed")).toBe(false);
+  });
+
   it("accepts the same call options on every verb, onPartialImage included", async () => {
     const opts = { signal: new AbortController().signal, onEvent: () => {}, onProgress: () => {}, onPartialImage: () => {} };
     await expect(withVerbLogger(ctx(), "encode", opts, async () => 1)).resolves.toBe(1);

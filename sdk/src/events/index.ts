@@ -14,6 +14,7 @@ const MESSAGES: Readonly<Record<SdkEventName, string>> = {
   "verb.done": "verb finished",
   "verb.refused": "verb refused",
   "verb.failed": "verb failed",
+  "verb.cancelled": "verb cancelled",
   "provider.call": "calling the provider",
   "provider.returned": "the provider returned",
   "attempt.succeeded": "request attempt succeeded",

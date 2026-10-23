@@ -95,16 +95,21 @@ async function writeSynced(filePath: string, bytes: Uint8Array): Promise<void> {
   }
 }
 
+// A volume that cannot flush a folder (some network shares and FUSE file systems) says so with these.
+const FOLDER_SYNC_UNSUPPORTED = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP", "EISDIR"]);
+
 /**
  * Flush a folder's entries, so a file just renamed or linked into it survives
  * a crash. Windows cannot open a folder for this, and its file system commits
- * the rename itself.
+ * the rename itself; a volume that does not support it publishes without it.
  */
 export async function syncDirectory(dirPath: string): Promise<void> {
   if (process.platform === "win32") return;
   const handle = await open(dirPath, "r");
   try {
     await handle.sync();
+  } catch (err) {
+    if (!FOLDER_SYNC_UNSUPPORTED.has((err as NodeJS.ErrnoException).code ?? "")) throw err;
   } finally {
     await handle.close();
   }
