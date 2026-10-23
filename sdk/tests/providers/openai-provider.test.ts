@@ -10,6 +10,7 @@ import { modelsFor } from "../../src/ai-models.ts";
 import { createLogger, type Logger } from "../../src/events/index.ts";
 import { NETWORK_DEFAULTS } from "../../src/network/defaults.ts";
 import { openaiEdit } from "../../src/providers/openai/edit.ts";
+import { imageFileForEditUpload } from "../../src/providers/openai/upload.ts";
 import { openaiGenerate } from "../../src/providers/openai/generate.ts";
 import { OPENAI_VISION_SYSTEM_PROMPT } from "../../src/providers/openai/defaults.ts";
 import { openaiVision } from "../../src/providers/openai/vision.ts";
@@ -20,7 +21,7 @@ const openaiMock = vi.hoisted(() => ({
   generate: vi.fn(),
   edit: vi.fn(),
   create: vi.fn(),
-  toFile: vi.fn(async (_data: unknown, _name?: unknown, _options?: unknown) => ({ mockFile: true })),
+  toFile: vi.fn(async (_data: unknown, name?: unknown, _options?: unknown) => ({ mockFile: true, name })),
 }));
 
 // The SDK's APIPromise: the parsed body, with `withResponse()` adding the HTTP
@@ -231,8 +232,8 @@ describe("OpenAI provider implementations", () => {
 
     const result = await openaiEdit({
       prompt: "edit it",
-      imagePath: path.join(FIXTURES, "green-disk.png"),
-      maskPath: path.join(FIXTURES, "green-disk.png"),
+      image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
+      mask: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "mask")).file,
       params: { model: "gpt-image-2" },
       credentials,
       network,
@@ -260,7 +261,7 @@ describe("OpenAI provider implementations", () => {
 
     await openaiEdit({
       prompt: "edit it",
-      imagePath: path.join(FIXTURES, "green-disk.png"),
+      image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
       params: { model: "custom-edit-model" },
       credentials,
       network,
@@ -272,7 +273,7 @@ describe("OpenAI provider implementations", () => {
     openaiMock.edit.mockClear();
     await openaiEdit({
       prompt: "edit it",
-      imagePath: path.join(FIXTURES, "green-disk.png"),
+      image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
       params: {},
       credentials,
       network,
@@ -289,7 +290,7 @@ describe("OpenAI provider implementations", () => {
     await expect(
       openaiEdit({
         prompt: "edit it",
-        imagePath: path.join(FIXTURES, "green-disk.png"),
+        image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
         params: {},
         credentials,
         network: { ...network, signal: ctrl.signal },
@@ -306,7 +307,7 @@ describe("OpenAI provider implementations", () => {
     await expect(
       openaiEdit({
         prompt: "edit it",
-        imagePath: path.join(FIXTURES, "green-disk.png"),
+        image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
         params: { model: "gpt-image-2" },
         credentials,
         network,
@@ -328,7 +329,7 @@ describe("OpenAI provider implementations", () => {
 
     const result = await openaiEdit({
       prompt: "edit it",
-      imagePath: path.join(FIXTURES, "green-disk.png"),
+      image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
       params: { model: "dall-e-2" },
       credentials,
       network,
@@ -348,7 +349,7 @@ describe("OpenAI provider implementations", () => {
 
     const result = await openaiEdit({
       prompt: "edit it",
-      imagePath: path.join(FIXTURES, "green-disk.png"),
+      image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
       params: { model: "dall-e-2" },
       credentials,
       network,
@@ -366,7 +367,7 @@ describe("OpenAI provider implementations", () => {
 
     const result = await openaiEdit({
       prompt: "edit it",
-      imagePath: path.join(FIXTURES, "green-disk.png"),
+      image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
       params: { model: "gpt-image-2" },
       credentials,
       network,
@@ -382,13 +383,7 @@ describe("OpenAI provider implementations", () => {
     const missing = path.join(FIXTURES, "does-not-exist.png");
 
     await expect(
-      openaiEdit({
-        prompt: "edit it",
-        imagePath: missing,
-        params: { model: "gpt-image-2" },
-        credentials,
-        network,
-      }),
+      imageFileForEditUpload(missing, "input"),
     ).rejects.toMatchObject({
       // The upload preparation's own error, not rewrapped.
       code: "fs.notFound",
@@ -414,13 +409,7 @@ describe("OpenAI provider implementations", () => {
       await writeFile(gifPath, gifBytes);
 
       await expect(
-        openaiEdit({
-          prompt: "edit it",
-          imagePath: gifPath,
-          params: { model: "gpt-image-2" },
-          credentials,
-          network,
-        }),
+        imageFileForEditUpload(gifPath, "input"),
       ).rejects.toMatchObject({
         code: "image.unsupportedFormat",
         message: /Unsupported input image format for OpenAI edit upload: gif/,
@@ -437,13 +426,7 @@ describe("OpenAI provider implementations", () => {
     openaiMock.toFile.mockRejectedValueOnce(new Error("toFile blew up"));
 
     await expect(
-      openaiEdit({
-        prompt: "edit it",
-        imagePath: path.join(FIXTURES, "green-disk.png"),
-        params: { model: "gpt-image-2" },
-        credentials,
-        network,
-      }),
+      imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input"),
     ).rejects.toMatchObject({
       code: "internal.unexpected",
       effect: "none",
@@ -1009,8 +992,8 @@ describe("OpenAI provider failure records", () => {
     await expect(
       openaiEdit({
         prompt: "edit it",
-        imagePath: path.join(FIXTURES, "green-disk.png"),
-        maskPath: path.join(FIXTURES, "donut.png"),
+        image: (await imageFileForEditUpload(path.join(FIXTURES, "green-disk.png"), "input")).file,
+        mask: (await imageFileForEditUpload(path.join(FIXTURES, "donut.png"), "mask")).file,
         params: { model: "gpt-image-2", quality: "low" },
         credentials,
         network: net,

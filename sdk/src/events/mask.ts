@@ -81,9 +81,11 @@ export function urlQueryValues(url: string): string[] {
   return [...new Set(query.split("&").flatMap((pair) => {
     const eq = pair.indexOf("=");
     const value = eq < 0 ? "" : pair.slice(eq + 1);
-    // URLSearchParams handles '+' as a space and tolerates malformed escapes.
+    // Servers may echo percent-decoded text either retaining '+' or treating it as a space.
+    // URLSearchParams tolerates malformed escapes in both copies.
+    const percentDecoded = new URLSearchParams(pair.replaceAll("+", "%2B")).values().next().value ?? "";
     const decoded = new URLSearchParams(pair).values().next().value ?? "";
-    return value.length > 0 ? [value, decoded] : [];
+    return value.length > 0 ? [value, percentDecoded, decoded] : [];
   }))];
 }
 

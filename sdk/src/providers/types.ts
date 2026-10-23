@@ -48,8 +48,9 @@ export interface GenerateProviderArgs {
 
 export interface EditProviderArgs {
   prompt: string;
-  imagePath: string;
-  maskPath?: string | undefined;
+  /** Prepared immutable uploads, shared with the digests recorded by the verb. */
+  image: File;
+  mask?: File | undefined;
   params: Record<string, unknown>;
   credentials: Credentials;
   network: ProviderNetworkCtx;

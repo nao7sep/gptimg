@@ -308,8 +308,8 @@ describe("AI verb implementations with mocked provider", () => {
     const call = providerCalls.edit.mock.calls[0]?.[0];
     expect(call).toMatchObject({
       prompt: "make it blue",
-      imagePath: input,
-      maskPath: mask,
+      image: expect.objectContaining({ name: "input.png", type: "image/png" }),
+      mask: expect.objectContaining({ name: "mask.png", type: "image/png" }),
     });
 
     const sidecar = JSON.parse(
@@ -348,8 +348,8 @@ describe("AI verb implementations with mocked provider", () => {
     }));
 
     const call = providerCalls.edit.mock.calls[0]?.[0];
-    expect(call).toMatchObject({ imagePath: input });
-    expect(call?.maskPath).toBeUndefined();
+    expect(call?.image.name).toBe("input.png");
+    expect(call?.mask).toBeUndefined();
   });
 
   it("edit uses edit-scoped policy values without leaking generate settings", async () => {

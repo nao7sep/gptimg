@@ -3,10 +3,8 @@ import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
 import { sidecarWriter } from "../sidecar/writer.ts";
 import { defaultModelFor } from "../ai-models.ts";
 import { resolveModel } from "../providers/openai/client.ts";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fsError } from "../errors.ts";
-import { hash } from "../image/hash.ts";
+import { imageFileForEditUpload } from "../providers/openai/upload.ts";
 import { ensureOutputDir } from "../internal/output-files.ts";
 import {
   reserveOutputGroup,
@@ -26,19 +24,6 @@ import { defaultStem } from "../internal/paths.ts";
 import { responseIdOf, usageOf } from "../usage.ts";
 
 export type EditContext = SdkContext;
-
-/**
- * Read an input image before the paid call, failing early when it is
- * unreadable, and return its SHA-256 so the sidecar identifies the exact
- * source after a rename or overwrite, as it identifies each output.
- */
-async function readImageSha256(filePath: string, label: string): Promise<string> {
-  try {
-    return hash(await readFile(filePath));
-  } catch (err) {
-    throw fsError(err, `Failed to read ${label} image`, filePath);
-  }
-}
 
 /** What an edit call would send, resolved and checked with no disk, network or key, from checked arguments. */
 function planEdit(ctx: SdkContext, args: EditArgs) {
@@ -74,8 +59,8 @@ export async function editImpl(
     const resolved = requireCredentials(ctx);
     const network = resolveNetworkForCall(policy);
 
-    const inputSha256 = await readImageSha256(args.in, "input");
-    const maskSha256 = args.mask ? await readImageSha256(args.mask, "mask") : null;
+    const input = await imageFileForEditUpload(args.in, "input");
+    const mask = args.mask ? await imageFileForEditUpload(args.mask, "mask") : undefined;
 
     const { outDir, stem } = outputStemLocation(args.outDir ?? path.dirname(args.in), args.outName ?? defaultStem());
     await ensureOutputDir(outDir);
@@ -90,8 +75,8 @@ export async function editImpl(
     const provider = getProvider();
     const providerResult = await provider.edit({
       prompt,
-      imagePath: args.in,
-      maskPath: args.mask,
+      image: input.file,
+      mask: mask?.file,
       params,
       credentials: resolved,
       network: {
@@ -107,9 +92,9 @@ export async function editImpl(
       ...params,
       prompt,
       input: path.basename(args.in),
-      inputSha256,
+      inputSha256: input.sha256,
       mask: args.mask ? path.basename(args.mask) : null,
-      maskSha256,
+      maskSha256: mask?.sha256 ?? null,
       n,
     };
     const { files, failures, leftovers, response } = await publishProviderImages({

@@ -250,9 +250,10 @@ function readResponse(
     throw err;
   }
   if (response.status === "failed") {
-    throw new GptImgError("provider.invalidResponse", `The turn failed at the provider: ${response.error?.message ?? "no reason given"}.`, {
+    const error = maskDiagnosticCopy(response.error, ctx.credentials);
+    throw new GptImgError("provider.invalidResponse", `The turn failed at the provider: ${error?.message ?? "no reason given"}.`, {
       effect: "unknown",
-      details: { ...(response.error?.code !== undefined && { providerCode: response.error.code }) },
+      details: { ...(error?.code !== undefined && { providerCode: error.code }) },
     });
   }
   if (typeof response.id !== "string") {
@@ -270,6 +271,8 @@ function readResponse(
       if (item.status === "completed" && typeof item.result === "string" && item.result.length > 0) {
         return { data: new Uint8Array(Buffer.from(item.result, "base64")) };
       }
+      // Only the failed item's diagnostic copy is masked; successful reply content stays intact.
+      item = maskDiagnosticCopy(item, ctx.credentials);
       // The image tool's call fails on its own while the turn completes: a moderation block is the provider declining, not an image gone missing.
       if (item.error?.code === "moderation_blocked") {
         const details = item.error.moderation_details;

@@ -5,6 +5,7 @@ import type { NetworkBudget } from "../../network/defaults.ts";
 import { isAbortError } from "../../network/failure.ts";
 import { fetchWithBudget } from "../../network/fetch.ts";
 import type { ProviderImageResult } from "../types.ts";
+import { maskDiagnosticCopy, urlQueryValues } from "../../events/mask.ts";
 
 /**
  * The images endpoint's items as bytes, in response order: base64 decoded, a
@@ -29,7 +30,8 @@ export async function materializeImages(
         } catch (err) {
           // The images were paid for; stopping now may lose them.
           if (isAbortError(err)) throw cancelledError(err, "unknown");
-          return { data: null, error: `Failed to fetch image from URL: ${(err as Error).message}` };
+          const diagnostic = maskDiagnosticCopy(err, urlQueryValues(item.url));
+          return { data: null, error: `Failed to fetch image from URL: ${(diagnostic as Error).message}` };
         }
       }
       return { data: null, error: "Response item contained neither b64_json nor url" };

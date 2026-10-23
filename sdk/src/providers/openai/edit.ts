@@ -1,5 +1,3 @@
-import path from "node:path";
-import { processingError } from "../../errors.ts";
 import { maskDiagnosticCopy } from "../../events/mask.ts";
 import { classifyRequestFailure } from "../../network/classify.ts";
 import { callWithRetry } from "../../network/retry.ts";
@@ -8,7 +6,6 @@ import { buildOpenAIClient, clientHeaders, recordedResponse, resolveModel } from
 import { defaultModelFor } from "../../ai-models.ts";
 import { buildImageRequest } from "./request.ts";
 import { materializeImages } from "./images.ts";
-import { imageFileForEditUpload } from "./upload.ts";
 
 export async function openaiEdit(
   args: EditProviderArgs,
@@ -16,23 +13,12 @@ export async function openaiEdit(
   const client = buildOpenAIClient(args.credentials);
   const model = resolveModel(args.params.model, defaultModelFor("openai", "image-edit"));
 
-  let imageFile;
-  let maskFile;
-  try {
-    imageFile = await imageFileForEditUpload(args.imagePath, "input");
-    maskFile = args.maskPath
-      ? await imageFileForEditUpload(args.maskPath, "mask")
-      : undefined;
-  } catch (err) {
-    throw processingError(err, "Failed to prepare edit input image", args.imagePath, "none");
-  }
-
   const params = buildImageRequest(model, {
     ...args.params,
     model,
     prompt: args.prompt,
-    image: imageFile,
-    ...(maskFile && { mask: maskFile }),
+    image: args.image,
+    ...(args.mask && { mask: args.mask }),
   });
 
   // The uploads are recorded by file name: those files already hold their bytes.
@@ -40,8 +26,8 @@ export async function openaiEdit(
     headers: clientHeaders(client),
     body: {
       ...params,
-      image: path.basename(args.imagePath),
-      ...(args.maskPath && { mask: path.basename(args.maskPath) }),
+      image: args.image.name,
+      ...(args.mask && { mask: args.mask.name }),
     },
   };
 

@@ -26,7 +26,7 @@ describe("credential masking helpers", () => {
   it("lists raw and standard decoded query values without duplicates", () => {
     expect(urlQueryValues("https://h.example/a?se=2026-10-05&sig=a%2Bb&flag&empty=#x")).toEqual(["2026-10-05", "a%2Bb", "a+b"]);
     expect(urlQueryValues("https://h.example/a?sig=a%2Fb%2Bc%3Dd&token=signed+value%2Btail")).toEqual([
-      "a%2Fb%2Bc%3Dd", "a/b+c=d", "signed+value%2Btail", "signed value+tail",
+      "a%2Fb%2Bc%3Dd", "a/b+c=d", "signed+value%2Btail", "signed+value+tail", "signed value+tail",
     ]);
     expect(urlQueryValues("https://h.example/a?sig=bad%escape")).toEqual(["bad%escape"]);
     expect(urlQueryValues("https://h.example/a")).toEqual([]);
