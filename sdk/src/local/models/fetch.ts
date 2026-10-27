@@ -31,7 +31,6 @@
 
 import { createReadStream, createWriteStream, statSync } from "node:fs";
 import { mkdir, open, readdir, rename, unlink } from "node:fs/promises";
-import { syncDirectory } from "../../internal/atomic-file.ts";
 import { hostname } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -533,7 +532,6 @@ async function acquireModel(
     throw classifyDownloadFailure(err, entry.url, finalPath);
   }
 
-  let namespacePublished = false;
   try {
     // Verify the pinned hash before publishing. A mismatch means the pinned URL
     // changed or the download is corrupt — fail loudly rather than cache bad
@@ -558,7 +556,6 @@ async function acquireModel(
     // open; a usable copy already there is then the published model.
     try {
       await rename(partialPath, finalPath);
-      namespacePublished = true;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       const locked = code === "EPERM" || code === "EACCES" || code === "EBUSY";
@@ -566,16 +563,8 @@ async function acquireModel(
         throw fsError(err, "Failed to publish model at", finalPath);
       }
     }
-    await syncDirectory(cacheDir);
   } catch (err) {
     await unlink(partialPath).catch(() => undefined);
-    // A successful rename is the cancellation commit point. A later
-    // directory-sync error remains an error, but cancellation cannot relabel
-    // an artifact that was already published as cancelled or timed out.
-    if (namespacePublished) {
-      // The model is in place, but its folder entry may not have reached the disk.
-      throw fsError(err, `Published ${entry.name}, but failed to sync`, cacheDir, "unknown");
-    }
     if (signal?.aborted) throw cancelledError(signal.reason);
     if (operationSignal.aborted) {
       throw new GptImgError("model.timeout", `Timed out acquiring ${entry.name}.`, { cause: err, subject: entry.url });

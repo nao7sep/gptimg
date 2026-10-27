@@ -46,7 +46,6 @@ export async function writeTextAtomic(path: string, text: string, mode?: number)
     }
     await rename(temp, path);
     owned = false;
-    await syncDirectory(dirname(path));
   } finally {
     if (owned) await rm(temp, { force: true }).catch(() => {});
   }
@@ -55,19 +54,6 @@ export async function writeTextAtomic(path: string, text: string, mode?: number)
 
 export function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
-}
-
-/** Flush a published directory where the filesystem supports it. */
-export async function syncDirectory(path: string): Promise<void> {
-  if (process.platform === "win32") return;
-  const handle = await open(path, "r");
-  try {
-    await handle.sync();
-  } catch (error) {
-    if (!["EINVAL", "ENOTSUP", "EOPNOTSUPP", "EISDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
-  } finally {
-    await handle.close();
-  }
 }
 
 /** Copy complete, flushed bytes into place, keeping the source's modification time. */
@@ -89,7 +75,6 @@ export async function copyFileAtomic(source: string, target: string): Promise<vo
     }
     await rename(temp, target);
     owned = false;
-    await syncDirectory(dirname(target));
   } finally {
     if (owned) await rm(temp, { force: true }).catch(() => {});
   }

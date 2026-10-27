@@ -18,7 +18,7 @@ import { IconIcns, IconIco } from "@shockpkg/icon-encoder";
 import { fsError, GptImgError, processingError, throwIfAborted } from "../errors.ts";
 import { decodeImage, encodeImage, inputImageError, readImageSize } from "../image/bridge.ts";
 import { readSourceMetadata, type SourceMetadata } from "../image/source-metadata.ts";
-import { publishStaged, stageFile, syncDirectory } from "../internal/atomic-file.ts";
+import { publishStaged, stageFile } from "../internal/atomic-file.ts";
 import { RefusalSignal, refuse } from "../refusal.ts";
 import type { Logger } from "../events/index.ts";
 import type { PngEncodingArgs } from "../types.ts";
@@ -226,7 +226,6 @@ export async function runIcon(
       published.push(file.path);
       opts.logger?.progress("write", i + 1, staged.length, "renditions");
     }
-    for (const dir of new Set(staged.map((file) => path.dirname(file.path)))) await syncDirectory(dir);
   } catch (err) {
     for (const { temp } of staged) await unlink(temp).catch(() => undefined);
     if (err instanceof RefusalSignal && published.length === 0) throw err;

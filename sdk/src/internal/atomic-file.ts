@@ -149,7 +149,8 @@ async function replacedMode(filePath: string): Promise<number | undefined> {
  * leave `filePath` truncated or torn. `overwrite: false` publishes without
  * replacing an existing target (see `publishFileNoClobber`). The content is
  * flushed before publication and the folder after it, so a crash cannot leave
- * the name pointing at nothing. On any failure before publication the temp
+ * the name pointing at nothing: this writer publishes paid provider images and
+ * their sidecars, the only evidence of a charged request. On any failure before publication the temp
  * file is best-effort removed and the target is left untouched; a failure to
  * flush the folder afterwards is thrown, the file already published.
  *
@@ -192,8 +193,7 @@ export async function stageFile(filePath: string, bytes: Uint8Array): Promise<st
 /**
  * Publish a staged file at `filePath`: replacing it, keeping the replaced
  * file's permission mode, or, without `overwrite`, only when the name is free.
- * A failure removes the staged file and leaves the target as it was. The
- * caller flushes the folder once its files are in.
+ * A failure removes the staged file and leaves the target as it was.
  */
 export async function publishStaged(tempPath: string, filePath: string, { overwrite }: AtomicWriteOptions): Promise<void> {
   let tempRemains = false;
