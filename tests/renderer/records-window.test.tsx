@@ -18,7 +18,6 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-const pagination = () => within(document.querySelector<HTMLElement>(".records-pagination")!);
 const filters = () => within(document.querySelector<HTMLElement>(".records-filters")!);
 
 function setup(over: Partial<GptImgApi> = {}) {
@@ -40,60 +39,43 @@ function setup(over: Partial<GptImgApi> = {}) {
   };
 }
 
-describe("Records pages", () => {
-  it("keeps one bounded page while Newer and Older traverse the complete history", async () => {
-    const queryRecords = vi.fn(async (query: RecordQuery) => !query.cursor ? page(0) : query.cursor.id === 99 ? page(100) : page(200, 100, false));
+describe("Records list", () => {
+  it("loads older records as the list nears its end, keeping the ones shown", async () => {
+    const queryRecords = vi.fn(async (query: RecordQuery) => !query.cursor ? page(0) : page(100, 100, false));
     const t = setup({ queryRecords });
     await t.render();
     await screen.findByText("Row 0");
-    expect(document.querySelectorAll('[role="option"][aria-selected]')).toHaveLength(100);
-    const newer = pagination().getByRole("button", { name: "Newer" }) as HTMLButtonElement;
-    const older = pagination().getByRole("button", { name: "Older" }) as HTMLButtonElement;
-    expect(newer.disabled).toBe(true);
-    fireEvent.click(older);
+    fireEvent.scroll(screen.getByRole("listbox"));
     await screen.findByText("Row 100");
-    expect(screen.queryByText("Row 0")).toBeNull();
-    fireEvent.click(older);
-    await screen.findByText("Row 200");
-    expect(document.querySelectorAll(".record-card")).toHaveLength(100);
-    expect(older.disabled).toBe(true);
-    fireEvent.click(newer);
-    await screen.findByText("Row 100");
-    fireEvent.click(newer);
-    await screen.findByText("Row 0");
-    expect(queryRecords.mock.calls.map(([query]) => query.cursor?.id)).toEqual([undefined, 99, 199, 99, undefined]);
+    expect(screen.getByText("Row 0")).toBeDefined();
+    expect(document.querySelectorAll(".record-card")).toHaveLength(200);
+    fireEvent.scroll(screen.getByRole("listbox"));
+    expect(queryRecords.mock.calls.map(([query]) => query.cursor?.id)).toEqual([undefined, 99]);
   });
 
-  it("replaces the live first page and pauses refresh while below the top or on an older page", async () => {
-    const queryRecords = vi.fn(async () => page(0));
+  it("joins new records at the top only while the list is scrolled there", async () => {
+    const queryRecords = vi.fn(async () => page(0, 1, false));
     const t = setup({ queryRecords });
     await t.render();
     await screen.findByText("Row 0");
-    queryRecords.mockResolvedValueOnce(page(100));
+    queryRecords.mockResolvedValueOnce(page(1, 1, false));
     await act(async () => t.emitRecords());
-    await screen.findByText("Row 100");
-    expect(screen.queryByText("Row 0")).toBeNull();
-    expect(document.querySelectorAll(".record-card")).toHaveLength(100);
+    await screen.findByText("Row 1");
+    expect([...document.querySelectorAll(".record-card")].map((card) => card.textContent)).toEqual([expect.stringContaining("Row 1"), expect.stringContaining("Row 0")]);
     const list = screen.getByRole("listbox");
     list.scrollTop = 30;
     await act(async () => t.emitRecords());
     expect(queryRecords).toHaveBeenCalledTimes(2);
-    list.scrollTop = 0;
-    queryRecords.mockResolvedValueOnce(page(200));
-    fireEvent.click(pagination().getByRole("button", { name: "Older" }));
-    await screen.findByText("Row 200");
-    await act(async () => t.emitRecords());
-    expect(queryRecords).toHaveBeenCalledTimes(3);
   });
 
-  it("resets history, selection and detail when filters change, ignoring earlier queries", async () => {
+  it("resets the list, selection and detail when filters change, ignoring earlier queries", async () => {
     const late = deferred<RecordsPage>();
     const queryRecords = vi.fn<(query: RecordQuery) => Promise<RecordsPage>>()
       .mockResolvedValueOnce(page(0)).mockResolvedValueOnce(page(100)).mockImplementationOnce(() => late.promise).mockResolvedValueOnce(page(400, 1, false));
     const t = setup({ queryRecords, recordDetail: vi.fn(async ({ id }) => detail(id)) });
     await t.render();
     await screen.findByText("Row 0");
-    fireEvent.click(pagination().getByRole("button", { name: "Older" }));
+    fireEvent.scroll(screen.getByRole("listbox"));
     await screen.findByText("Row 100");
     fireEvent.click(screen.getByText("Row 100"));
     await screen.findByText("Detail 100");
@@ -105,47 +87,44 @@ describe("Records pages", () => {
     await act(async () => late.resolve(page(300, 1, false)));
     expect(screen.queryByText("Row 300")).toBeNull();
     expect(screen.getByText("Row 400")).toBeDefined();
-    expect((pagination().getByRole("button", { name: "Newer" }) as HTMLButtonElement).disabled).toBe(true);
     expect(document.querySelector('[aria-selected="true"]')).toBeNull();
     expect(queryRecords.mock.calls.at(-1)?.[0]).toEqual({ kind: "call", level: "error" });
   });
 
-  it("shows readable history alongside a degraded-store warning on first load and permits paging", async () => {
+  it("shows readable history alongside a degraded-store warning and keeps loading older records", async () => {
     const queryRecords = vi.fn(async () => ({ ...page(0, 1), failed: true }));
     const t = setup({ queryRecords });
     await t.render();
     await screen.findByText("Row 0");
     expect(screen.getByRole("alert")).toBeDefined();
-    expect((pagination().getByRole("button", { name: "Older" }) as HTMLButtonElement).disabled).toBe(false);
     queryRecords.mockResolvedValueOnce({ ...page(1, 1, false), failed: true });
-    fireEvent.click(pagination().getByRole("button", { name: "Older" }));
+    fireEvent.scroll(screen.getByRole("listbox"));
     await screen.findByText("Row 1");
-    expect(screen.queryByText("Row 0")).toBeNull();
+    expect(screen.getByText("Row 0")).toBeDefined();
     expect(screen.getByRole("alert")).toBeDefined();
-    expect((pagination().getByRole("button", { name: "Newer" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("keeps valid rows through refresh failures and allows a retry", async () => {
+  it("keeps valid rows through refresh failures and clears the warning on a later success", async () => {
     const queryRecords = vi.fn(async () => page(0, 1, false));
     const t = setup({ queryRecords });
     await t.render();
     await screen.findByText("Row 0");
     queryRecords.mockResolvedValueOnce({ rows: [], next: null, failed: true });
-    fireEvent.click(pagination().getByRole("button", { name: "Refresh" }));
+    await act(async () => t.emitRecords());
     await screen.findByRole("alert");
     expect(screen.getByText("Row 0")).toBeDefined();
     queryRecords.mockRejectedValueOnce(new Error("private error"));
-    fireEvent.click(pagination().getByRole("button", { name: "Refresh" }));
+    await act(async () => t.emitRecords());
     await screen.findByRole("alert");
     expect(screen.queryByText("private error")).toBeNull();
     expect(screen.getByText("Row 0")).toBeDefined();
     queryRecords.mockResolvedValueOnce(page(2, 1, false));
-    fireEvent.click(pagination().getByRole("button", { name: "Refresh" }));
+    await act(async () => t.emitRecords());
     await screen.findByText("Row 2");
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("ignores earlier refresh results after a newer refresh settles", async () => {
+  it("ignores earlier live results after a newer one settles", async () => {
     const first = deferred<RecordsPage>();
     const second = deferred<RecordsPage>();
     const queryRecords = vi.fn(async () => page(0, 1, false));
@@ -163,7 +142,7 @@ describe("Records pages", () => {
 });
 
 describe("Records details and live settings", () => {
-  it("clears the old detail on selection and refuses late detail results after selection or refresh", async () => {
+  it("clears the old detail on selection and refuses late detail results after selection or a filter change", async () => {
     const old = deferred<RecordDetail | null>();
     const next = deferred<RecordDetail | null>();
     const late = deferred<RecordDetail | null>();
@@ -180,8 +159,8 @@ describe("Records details and live settings", () => {
     expect(screen.queryByText("Detail 0")).toBeNull();
     fireEvent.click(screen.getByText("Row 0"));
     expect(screen.queryByText("Detail 1")).toBeNull();
-    fireEvent.click(pagination().getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(recordDetail).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(recordDetail).toHaveBeenCalledTimes(3));
+    fireEvent.change(filters().getByRole("combobox", { name: "Kind" }), { target: { value: "call" } });
     await act(async () => late.resolve(detail(0)));
     expect(screen.queryByText("Detail 0")).toBeNull();
   });

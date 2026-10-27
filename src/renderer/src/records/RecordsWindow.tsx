@@ -36,14 +36,15 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
   const [launches, setLaunches] = useState<LaunchEntry[]>([]);
   const [chats, setChats] = useState<{ id: string; title: string }[]>([]);
   const [rows, setRows] = useState<RecordRow[]>([]);
-  const [cursors, setCursors] = useState<Array<RecordCursor | undefined>>([undefined]);
   const [next, setNext] = useState<RecordCursor | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<RecordDetail | null | "loading" | "failed">(null);
   const [width, setWidth] = useState(boot.state.recordsListWidth ?? RECORDS_LIST_WIDTH.initial);
   const list = useRef<HTMLDivElement>(null);
+  const loadingMore = useRef(false);
   const queryGeneration = useRef(0);
+  const liveGeneration = useRef(0);
   const detailGeneration = useRef(0);
   const selectedRef = useRef<string | null>(null);
 
@@ -120,18 +121,12 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
     }
   }, []);
 
-  const loadPage = useCallback(async (stack: Array<RecordCursor | undefined>, reset = false) => {
+  // A page joins the list only while no newer filter has replaced it. A failed
+  // query that still returned rows shows them beside the warning.
+  const loadFirst = useCallback(async () => {
     const generation = ++queryGeneration.current;
-    ++detailGeneration.current;
-    setDetail(null);
-    if (reset) {
-      selectedRef.current = null;
-      setSelected(null);
-    }
-    setState("loading");
     try {
-      const cursor = stack[stack.length - 1];
-      const page = await api.queryRecords({ ...filters, ...(cursor && { cursor }) });
+      const page = await api.queryRecords(filters);
       if (generation !== queryGeneration.current) return;
       if (page.failed && page.rows.length === 0) {
         setState("failed");
@@ -139,42 +134,69 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
       }
       setRows(page.rows);
       setNext(page.next);
-      setCursors(stack);
       setState(page.failed ? "failed" : "ready");
-      const kept = page.rows.find((row) => keyOf(row) === selectedRef.current);
-      if (kept) void choose(kept);
-      else {
-        ++detailGeneration.current;
-        selectedRef.current = null;
-        setSelected(null);
-        setDetail(null);
-      }
     } catch {
       if (generation === queryGeneration.current) setState("failed");
     }
-  }, [filters, choose]);
+  }, [filters]);
 
   useEffect(() => {
+    ++detailGeneration.current;
+    selectedRef.current = null;
+    setSelected(null);
+    setDetail(null);
     setRows([]);
     setNext(null);
-    setCursors([undefined]);
+    setState("loading");
     if (list.current) list.current.scrollTop = 0;
-    void loadPage([undefined], true);
+    void loadFirst();
     return () => {
       ++queryGeneration.current;
       ++detailGeneration.current;
     };
-  }, [loadPage]);
+  }, [loadFirst]);
 
-  // Only the first page follows live records, and only while the reader is at its top.
-  useEffect(() => api.onRecordsChanged(() => {
-    if (cursors.length !== 1 || (list.current?.scrollTop ?? 0) > 8) return;
-    void loadPage([undefined]);
-  }), [cursors.length, loadPage]);
+  const merge = (current: RecordRow[], page: RecordRow[], atTop: boolean) => {
+    const fresh = new Set(page.map(keyOf));
+    const kept = current.filter((row) => !fresh.has(keyOf(row)));
+    return atTop ? [...page, ...kept] : [...kept, ...page];
+  };
 
-  const browse = (stack: Array<RecordCursor | undefined>) => {
-    if (list.current) list.current.scrollTop = 0;
-    void loadPage(stack, true);
+  // New records join the top while the list is scrolled there.
+  useEffect(
+    () =>
+      api.onRecordsChanged(async () => {
+        if ((list.current?.scrollTop ?? 0) > 8) return;
+        const generation = queryGeneration.current;
+        const live = ++liveGeneration.current;
+        const current = () => generation === queryGeneration.current && live === liveGeneration.current;
+        try {
+          const page = await api.queryRecords(filters);
+          if (!current()) return;
+          setRows((rows) => merge(rows, page.rows, true));
+          setState(page.failed ? "failed" : "ready");
+        } catch {
+          if (current()) setState("failed");
+        }
+      }),
+    [filters],
+  );
+
+  const loadMore = async () => {
+    if (!next || loadingMore.current) return;
+    loadingMore.current = true;
+    const generation = queryGeneration.current;
+    try {
+      const page = await api.queryRecords({ ...filters, cursor: next });
+      if (generation !== queryGeneration.current) return;
+      setRows((current) => merge(current, page.rows, false));
+      setNext(page.next);
+      setState(page.failed ? "failed" : "ready");
+    } catch {
+      if (generation === queryGeneration.current) setState("failed");
+    } finally {
+      loadingMore.current = false;
+    }
   };
 
   const index = rows.findIndex((row) => keyOf(row) === selected);
@@ -282,6 +304,10 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
           aria-label={t("records.title")}
           aria-activedescendant={selected ? `record-${selected}` : undefined}
           onKeyDown={onListKey}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) void loadMore();
+          }}
         >
           {state === "loading" && <p className="records-state">{t("records.loading")}</p>}
           {state === "failed" && <p role="alert" className="records-state problem">{t("records.failed")}</p>}
@@ -304,11 +330,6 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
                 {row.text && <div className="record-text">{row.text}</div>}
               </div>
             ))}
-        </div>
-        <div className="records-pagination">
-          <button type="button" disabled={state === "loading" || cursors.length === 1} onClick={() => browse(cursors.slice(0, -1))}>{t("records.newer")}</button>
-          <button type="button" disabled={state === "loading" || next === null} onClick={() => next && browse([...cursors, next])}>{t("records.older")}</button>
-          <button type="button" disabled={state === "loading"} onClick={() => void loadPage(cursors)}>{t("records.refresh")}</button>
         </div>
       </aside>
       <div
