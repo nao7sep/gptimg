@@ -138,6 +138,43 @@ describe("a turn", () => {
     expect(t.runner.busy).toBe(false);
   });
 
+  it.each(["unreadable", "replaced", "edited with the same ids"] as const)("preserves an externally %s session and keeps the paid reply visible without Retry", async (change) => {
+    const started = gate<string>();
+    const provider = gate<void>();
+    const t = setup(async (call) => {
+      const dir = call.args.outDir as string;
+      started.resolve(dir);
+      await provider.promise;
+      return completed(dir, "resp_paid");
+    });
+    const pending = t.runner.send(request(null, "paid reply"));
+    const dir = await started.promise;
+    const file = join(dir, "session.json");
+    let changed = "{broken external document";
+    if (change !== "unreadable") {
+      const external = JSON.parse(readFileSync(file, "utf8"));
+      if (change === "replaced") {
+        external.id = "external-conversation";
+        external.title = "External replacement";
+        external.turns = [];
+      } else external.turns.at(-1).text = "Edited outside while the paid call was running";
+      changed = JSON.stringify(external);
+    }
+    writeFileSync(file, changed);
+    provider.resolve();
+    const outcome = await pending;
+    expect(outcome).toMatchObject({
+      ok: false,
+      failure: { message: { key: "failure.sessionWrite" }, retryable: false },
+      session: { doc: { turns: [expect.objectContaining({ role: "user" }), expect.objectContaining({
+        role: "assistant", text: "Here it is.", responseId: "resp_paid", images: ["img.png"],
+      })] } },
+    });
+    expect(readFileSync(file, "utf8")).toBe(changed);
+    expect(t.calls).toHaveLength(1);
+    expect(t.runner.busy).toBe(false);
+  });
+
   it("retains the staged attachment when saving the initial user turn fails after import", async () => {
     const t = setup((call) => completed(call.args.outDir as string, "unreached"));
     const reference = join(t.root, "staged.png");
