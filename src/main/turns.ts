@@ -3,7 +3,7 @@
 // reply's text and images are saved as the assistant turn. One turn runs per
 // session at a time.
 import { randomUUID } from "node:crypto";
-import { relative, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 import type { ChatResult, RefusedResult } from "gptimgsdk/types";
 import type { AppFailure, OpenedSession, SendRequest, TurnOutcome } from "../shared/api.ts";
 import { modelSpelling } from "../shared/ai-models.ts";
@@ -24,14 +24,14 @@ import { effectiveThinking, OPENAI_ENDPOINT, type Settings } from "../shared/set
 import type { Records } from "./records.ts";
 import type { CallSettlement, SdkHost } from "./sdk-host.ts";
 import type { PartialDraft } from "./sdk-protocol.ts";
-import { createSession, importReference, readSession, sessionDir, resolvedSessionPath, withId, writeSession } from "./sessions.ts";
+import { createSession, importReference, isInside, readSession, SessionError, sessionDir, withId, writeSession } from "./sessions.ts";
 
 export interface TurnDeps {
   host: SdkHost;
   records: Records;
   settings: () => Settings;
   apiKey: () => Promise<string | null>;
-  authorizeImage?: (path: string) => Promise<boolean>;
+  authorizeImage?: (path: string) => boolean;
   app: { name: string; version: string };
   backup: (path: string, text: string) => void;
   /** Called after the saved user turn owns its imported staged file. */
@@ -133,7 +133,7 @@ export class TurnRunner {
     const external = request.references.filter(isAbsolutePath);
     if (request.mask) external.push(request.mask.mask);
     for (const path of external) {
-      if (this.deps.authorizeImage && !await this.deps.authorizeImage(path)) return plain({ message: message("failure.imageMissing"), retryable: false }, null);
+      if (this.deps.authorizeImage && !this.deps.authorizeImage(path)) return plain({ message: message("failure.imageMissing"), retryable: false }, null);
       if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, null, true);
     }
 
@@ -159,7 +159,7 @@ export class TurnRunner {
       const references = masked ? [masked.image, ...request.references.filter((r) => r !== masked.image)] : request.references;
       for (const reference of references) {
         if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, null, true);
-        if (!isAbsolutePath(reference)) await resolvedSessionPath(root, id, reference);
+        if (!isAbsolutePath(reference) && !isInside(dir, join(dir, reference))) throw new SessionError("badId", reference);
         images.push(isAbsolutePath(reference) ? await importReference(dir, reference, now) : reference);
       }
       let mask: string | undefined;
@@ -220,23 +220,6 @@ export class TurnRunner {
     const turn = doc.turns[index] as UserTurn;
     const absolute = (rel: string) => `${dir}${sep}${rel.split("/").join(sep)}`;
     const opened = (d: SessionDoc): OpenedSession => ({ id, doc: d, dir });
-    if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, opened(doc), true);
-    try {
-      // Check all paths at the protected use boundary, including history reloaded by the SDK.
-      for (const prior of doc.turns) {
-        for (const image of prior.images) {
-          try { await resolvedSessionPath(root, id, image); }
-          catch (error) {
-            if (prior !== turn && (error as NodeJS.ErrnoException).code === "ENOENT") continue;
-            throw error;
-          }
-        }
-        if (prior === turn && prior.role === "user" && prior.mask) await resolvedSessionPath(root, id, prior.mask);
-      }
-    } catch (error) {
-      this.deps.records.log("error", "turn.failed", { error: String(error), folder: id });
-      return plain({ message: message("failure.imageMissing"), retryable: false }, opened(doc));
-    }
     if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, opened(doc), true);
     const reasoning = effectiveThinking(settings);
     const previousResponseId = previousResponseBefore(doc.turns, index);

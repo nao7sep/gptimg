@@ -2,7 +2,7 @@
 // only files inside the sessions folder, the staging folder, or files the
 // user picked or dropped this launch are served. `?w=` returns a copy decoded
 // at that width (volume-handling-conventions: decode at the size shown).
-import { realpath, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { availableParallelism, totalmem } from "node:os";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,12 +10,12 @@ import { net, protocol } from "electron";
 import pLimit from "p-limit";
 import sharp from "sharp";
 import { IMAGE_SCHEME } from "../shared/api.ts";
-import { isInside, isInsideResolved } from "./sessions.ts";
+import { isInside } from "./sessions.ts";
 
 const MAX_THUMB_WIDTH = 2048;
 
 export class ImageAccess {
-  readonly #picked = new Map<string, string>();
+  readonly #picked = new Set<string>();
   readonly #thumbs = new Map<string, Buffer>();
   readonly #pending = new Map<string, Promise<Buffer | null>>();
   readonly #limit = pLimit(Math.max(1, Math.floor(availableParallelism() / Math.max(1, sharp.concurrency()))));
@@ -33,37 +33,18 @@ export class ImageAccess {
     const absolute = resolve(path);
     if (!isImagePath(absolute)) return false;
     try {
-      const canonical = await realpath(absolute);
-      if (!(await stat(canonical)).isFile()) return false;
-      this.#picked.set(absolute, canonical);
-      return true;
+      if (!(await stat(absolute)).isFile()) return false;
     } catch {
       return false;
     }
+    this.#picked.add(absolute);
+    return true;
   }
 
-  async #authorizedPath(path: string): Promise<string | null> {
+  allowed(path: string): boolean {
     const absolute = resolve(path);
-    try {
-      const canonical = await realpath(absolute);
-      const picked = this.#picked.get(absolute);
-      if (picked !== undefined) return picked === canonical ? canonical : null;
-      const inside = await Promise.all(this.#roots().map(async (root) => {
-        if (!root || !isInside(root, absolute)) return false;
-        try {
-          return await isInsideResolved(root, canonical);
-        } catch {
-          return false;
-        }
-      }));
-      return inside.some(Boolean) ? canonical : null;
-    } catch {
-      return null;
-    }
-  }
-
-  async allowed(path: string): Promise<boolean> {
-    return (await this.#authorizedPath(path)) !== null;
+    if (this.#picked.has(absolute)) return true;
+    return this.#roots().some((root) => root !== "" && isInside(root, absolute));
   }
 
   async #encode(path: string, width?: number): Promise<Buffer | null> {
@@ -110,14 +91,14 @@ export class ImageAccess {
 
   /** Checked asynchronous PNG conversion. Full-size clipboard images are never cached. */
   async png(path: string, width?: number): Promise<Buffer | null> {
-    const canonical = await this.#authorizedPath(path);
-    if (!canonical) return null;
+    if (!this.allowed(path)) return null;
+    const absolute = resolve(path);
     try {
       if (width !== undefined) {
         if (!Number.isFinite(width) || width <= 0) return null;
-        return await this.#thumb(canonical, Math.max(1, Math.min(MAX_THUMB_WIDTH, Math.round(width))));
+        return await this.#thumb(absolute, Math.max(1, Math.min(MAX_THUMB_WIDTH, Math.round(width))));
       }
-      return await this.#limit(() => this.#encode(canonical));
+      return await this.#limit(() => this.#encode(absolute));
     } catch {
       return null;
     }
@@ -127,15 +108,14 @@ export class ImageAccess {
     protocol.handle(IMAGE_SCHEME, async (request) => {
       const url = new URL(request.url);
       const path = decodeURIComponent(url.pathname.replace(/^\//, ""));
-      const canonical = await this.#authorizedPath(path);
-      if (!canonical) return new Response(null, { status: 403 });
+      if (!this.allowed(path)) return new Response(null, { status: 403 });
       const width = Number(url.searchParams.get("w"));
       try {
         if (Number.isFinite(width) && width > 0) {
-          const png = await this.#thumb(canonical, Math.max(1, Math.min(MAX_THUMB_WIDTH, Math.round(width))));
+          const png = await this.#thumb(path, Math.max(1, Math.min(MAX_THUMB_WIDTH, Math.round(width))));
           if (png) return new Response(new Uint8Array(png), { headers: { "content-type": "image/png", "cache-control": "no-cache" } });
         }
-        return await net.fetch(pathToFileURL(canonical).toString());
+        return await net.fetch(pathToFileURL(path).toString());
       } catch {
         return new Response(null, { status: 404 });
       }

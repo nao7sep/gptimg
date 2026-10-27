@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,7 @@ import { createSession, listSessions, readSession, renameSession, writeSession }
 
 vi.mock("node:fs/promises", async (actual) => {
   const original = await actual<typeof fs>();
-  return { ...original, rename: vi.fn(original.rename), realpath: vi.fn(original.realpath) };
+  return { ...original, rename: vi.fn(original.rename), readFile: vi.fn(original.readFile) };
 });
 afterEach(() => vi.restoreAllMocks());
 const root = () => mkdtempSync(join(tmpdir(), "gptimg-session-failure-"));
@@ -33,10 +33,11 @@ describe("session failure preservation", () => {
     const session = await createSession(dir, new Date("2026-10-19T00:00:00Z"), "good");
     await writeSession(dir, session.id, session.doc);
     mkdirSync(join(dir, "inaccessible"));
-    const actualRealpath = vi.mocked(fs.realpath).getMockImplementation()!;
-    vi.mocked(fs.realpath).mockImplementation(async (path, options) => {
+    writeFileSync(join(dir, "inaccessible", "session.json"), "{}");
+    const actualReadFile = vi.mocked(fs.readFile).getMockImplementation()!;
+    vi.mocked(fs.readFile).mockImplementation(async (path, options) => {
       if (String(path).includes("inaccessible")) throw Object.assign(new Error("denied"), { code: "EACCES" });
-      return actualRealpath(path, options);
+      return actualReadFile(path, options);
     });
     const listed = await listSessions(dir);
     expect(listed.unreadable).toBe(1);

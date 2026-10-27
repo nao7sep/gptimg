@@ -5,8 +5,8 @@
 import { randomUUID } from "node:crypto";
 import { availableParallelism } from "node:os";
 import pLimit from "p-limit";
-import { lstat, mkdir, readdir, realpath, rename } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { lstat, mkdir, readdir, rename } from "node:fs/promises";
+import { basename, extname, join, relative, resolve, sep } from "node:path";
 import {
   INPUTS_DIR,
   SESSION_FILE,
@@ -49,42 +49,6 @@ export function isInside(dir: string, path: string): boolean {
   return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !rel.startsWith(sep) && !/^[a-zA-Z]:/.test(rel);
 }
 
-/** Check actual filesystem containment; inaccessible or missing paths remain errors. */
-export async function isInsideResolved(root: string, path: string): Promise<boolean> {
-  const [resolvedRoot, resolvedPath] = await Promise.all([realpath(root), realpath(path)]);
-  return isInside(resolvedRoot, resolvedPath);
-}
-
-/** Resolve managed paths without following a session or child symlink outside its root.
- * Only a missing final name is allowed, so writes cannot create through a missing ancestor.
- */
-export async function resolvedSessionPath(root: string, id: string, relativePath = SESSION_FILE): Promise<string> {
-  const dir = sessionDir(root, id);
-  const target = resolve(dir, relativePath);
-  if (!relativePath || relativePath.startsWith("/") || /^[a-zA-Z]:/.test(relativePath) || /[\\\u0000]/.test(relativePath) || relativePath.split("/").includes("..") || !isInside(dir, target)) {
-    throw new SessionError("badId", target);
-  }
-  const resolvedRoot = await realpath(root);
-  const resolvedDir = await realpath(dir);
-  if (!isInside(resolvedRoot, resolvedDir)) throw new SessionError("badId", dir);
-  let resolvedTarget: string;
-  try {
-    resolvedTarget = await realpath(target);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    // A dangling symlink is an existing unsafe target, not permission to replace it.
-    try {
-      await lstat(target);
-      throw new SessionError("badId", target);
-    } catch (entryError) {
-      if ((entryError as NodeJS.ErrnoException).code !== "ENOENT") throw entryError;
-    }
-    resolvedTarget = join(await realpath(dirname(target)), basename(target));
-  }
-  if (!isInside(resolvedDir, resolvedTarget)) throw new SessionError("badId", target);
-  return resolvedTarget;
-}
-
 export async function listSessions(root: string): Promise<{ sessions: SessionSummary[]; unreadable: number }> {
   let entries: import("node:fs").Dirent[];
   try {
@@ -121,13 +85,7 @@ function parseJson(text: string): SessionDoc | null {
 }
 
 export async function readSession(root: string, id: string): Promise<SessionDoc> {
-  let path: string;
-  try {
-    path = await resolvedSessionPath(root, id);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new SessionError("notFound", sessionDir(root, id));
-    throw error;
-  }
+  const path = join(sessionDir(root, id), SESSION_FILE);
   const read = await readText(path);
   if (read.kind === "absent") throw new SessionError("notFound", path);
   if (read.kind === "failed") throw new SessionError("unreadable", path);
@@ -144,7 +102,7 @@ export function withId(doc: SessionDoc): SessionDoc {
 /** Writes session.json; returns the bytes written, or null when nothing changed. */
 export async function writeSession(root: string, id: string, doc: SessionDoc): Promise<string | null> {
   const text = json(doc);
-  return (await writeTextAtomic(await resolvedSessionPath(root, id), text)) ? text : null;
+  return (await writeTextAtomic(join(sessionDir(root, id), SESSION_FILE), text)) ? text : null;
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -192,12 +150,9 @@ export async function renameSession(root: string, id: string, title: string): Pr
  * the session is returned as it is.
  */
 export async function importReference(dir: string, source: string, now: Date): Promise<string> {
-  const resolvedDir = await realpath(dir);
-  const resolvedSource = await realpath(source);
-  if (isInside(dir, source) && isInside(resolvedDir, resolvedSource)) return relative(dir, source).split(sep).join("/");
+  if (isInside(dir, source)) return relative(dir, source).split(sep).join("/");
   const inputs = join(dir, INPUTS_DIR);
   await mkdir(inputs, { recursive: true });
-  if (!(await isInsideResolved(dir, inputs))) throw new SessionError("badId", inputs);
   const ext = extname(source).toLowerCase();
   const stem = basename(source, extname(source)).replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(0, 40) || "image";
   const name = await freeName(inputs, `${fileStamp(now)}-${stem}`, ext);

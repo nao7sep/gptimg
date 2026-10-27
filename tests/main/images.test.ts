@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as os from "node:os";
 import { join } from "node:path";
@@ -28,39 +28,20 @@ async function image(dir: string, name = "image.png", color = "#fff"): Promise<s
 }
 
 describe("image access", () => {
-  it("allows protected files and explicit picks, denying inaccessible and escaping links", async () => {
+  it("allows protected files and explicit picks", async () => {
     const dir = root();
     const outside = root();
     const own = await image(dir);
     const other = await image(outside);
     const access = new ImageAccess(() => [dir, join(dir, "missing-root")]);
-    expect(await access.allowed(own)).toBe(true);
-    expect(await access.allowed(other)).toBe(false);
+    expect(access.allowed(own)).toBe(true);
+    expect(access.allowed(other)).toBe(false);
     expect(await access.png(other)).toBeNull();
-    expect(await access.allowed(join(dir, "missing.png"))).toBe(false);
-    const escape = join(dir, "escape.png");
-    symlinkSync(other, escape);
-    expect(await access.allowed(escape)).toBe(false);
     expect(await access.register(other)).toBe(true);
-    expect(await access.allowed(other)).toBe(true);
+    expect(access.allowed(other)).toBe(true);
     const text = join(outside, "text.txt");
     writeFileSync(text, "text");
     expect(await access.register(text)).toBe(false);
-  });
-
-  it("does not retain approval after a picked symlink changes its target", async () => {
-    const dir = root();
-    const first = await image(dir, "first.png");
-    const second = await image(dir, "second.png", "#f00");
-    const alias = join(dir, "alias.png");
-    symlinkSync(first, alias);
-    const access = new ImageAccess(() => []);
-    expect(await access.register(alias)).toBe(true);
-    expect(await access.png(alias, 32)).not.toBeNull();
-    unlinkSync(alias);
-    symlinkSync(second, alias);
-    expect(await access.allowed(alias)).toBe(false);
-    expect(await access.png(alias, 32)).toBeNull();
   });
 
   it("resizes with orientation and alpha intact, without enlarging or exceeding the thumbnail bound", async () => {

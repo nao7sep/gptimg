@@ -634,14 +634,14 @@ function installIpc(state: State): void {
     },
 
     async copyImage(path: string) {
-      if (!await state.images.allowed(path)) return failure("failure.imageMissing");
+      if (!state.images.allowed(path)) return failure("failure.imageMissing");
       const png = await state.images.png(path);
       if (!png) return failure("failure.imageMissing");
       await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
       return { ok: true };
     },
     async inspectImage(path: string) {
-      if (!await state.images.allowed(path)) return failure("failure.imageMissing");
+      if (!state.images.allowed(path)) return failure("failure.imageMissing");
       const outcome = await state.exports.inspect(path);
       return outcome.ok ? { ok: true, info: outcome.value } : { ok: false, failure: outcome.failure };
     },
@@ -653,7 +653,7 @@ function installIpc(state: State): void {
       return outcome.ok ? { ok: true } : { ok: false, failure: outcome.failure };
     },
     async exportImage(request: ExportRequest, suggestedName: string): Promise<Outcome<{ savedTo: string | null; dir: string | null }>> {
-      if (!await state.images.allowed(request.path)) return failure("failure.imageMissing");
+      if (!state.images.allowed(request.path)) return failure("failure.imageMissing");
       const inspected = await state.exports.inspect(request.path);
       if (!inspected.ok) return { ok: false, failure: inspected.failure };
       const t = language.translator;
@@ -675,7 +675,7 @@ function installIpc(state: State): void {
       state.exports.cancel();
     },
     async showInFolder(path: string) {
-      if (await state.images.allowed(path)) shell.showItemInFolder(path);
+      if (state.images.allowed(path)) shell.showItemInFolder(path);
     },
 
     openRecords() {
