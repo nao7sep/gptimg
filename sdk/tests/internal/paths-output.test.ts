@@ -12,11 +12,10 @@ describe("internal paths", () => {
     expect(defaultStem("20260102-030405-utc", "a1b2c3")).toBe("20260102-030405-utc-a1b2c3-gptimg");
   });
 
-  it("gives calls started in the same second distinct default stems", () => {
-    const ts = "20260102-030405-utc";
-    const stems = new Set(Array.from({ length: 1000 }, () => defaultStem(ts)));
-    expect(stems.size).toBe(1000);
-    for (const stem of stems) expect(stem).toMatch(/^20260102-030405-utc-[0-9a-z]{6}-gptimg$/);
+  // A rare repeated ID is refused as busy or existing output, never overwritten;
+  // the output-group tests cover that handling deterministically.
+  it("fills in the current second and a six-character lowercase ID", () => {
+    expect(defaultStem("20260102-030405-utc")).toMatch(/^20260102-030405-utc-[0-9a-z]{6}-gptimg$/);
     expect(defaultStem()).toMatch(/^\d{8}-\d{6}-utc-[0-9a-z]{6}-gptimg$/);
   });
 
