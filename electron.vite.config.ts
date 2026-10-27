@@ -22,7 +22,6 @@ export default defineConfig({
         input: {
           index: resolve("src/main/index.ts"),
           "sdk-worker": resolve("src/main/sdk-worker.ts"),
-          "store-worker": resolve("src/main/store-worker.ts"),
         },
         // The app's own dependencies are the native modules, shipped beside the bundle.
         external: Object.keys(manifest.dependencies),

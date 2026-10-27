@@ -21,14 +21,14 @@ import {
   type UserTurn,
 } from "../shared/session.ts";
 import { effectiveThinking, OPENAI_ENDPOINT, type Settings } from "../shared/settings.ts";
-import type { RecordWriter } from "./store-host.ts";
+import type { Records } from "./records.ts";
 import type { CallSettlement, SdkHost } from "./sdk-host.ts";
 import type { PartialDraft } from "./sdk-protocol.ts";
 import { createSession, importReference, readSession, sessionDir, resolvedSessionPath, withId, writeSession } from "./sessions.ts";
 
 export interface TurnDeps {
   host: SdkHost;
-  records: RecordWriter;
+  records: Records;
   settings: () => Settings;
   apiKey: () => Promise<string | null>;
   authorizeImage?: (path: string) => Promise<boolean>;

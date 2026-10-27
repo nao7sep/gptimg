@@ -13,7 +13,7 @@ import { INITIAL_WINDOW, windowMinimum } from "../shared/layout.ts";
 import { SET_KEYS, validateSet, type Settings } from "../shared/settings.ts";
 import { parseUiState, type UiState } from "../shared/ui-state.ts";
 import { KeyStore } from "./api-keys.ts";
-import { type Backups } from "./backups.ts";
+import { openBackups, type Backups } from "./backups.ts";
 import { loadConfig, saveConfig, type LoadedConfig } from "./config.ts";
 import { json, readText, writeTextAtomic } from "./files.ts";
 import { ExportRunner, folderOf } from "./export.ts";
@@ -22,7 +22,7 @@ import { chromiumLang, clearAppleLanguages, earlyPreferences, LanguageOwner, wri
 import { buildMenu } from "./menu.ts";
 import { RecordsWindow } from "./records-window.ts";
 import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } from "./paths.ts";
-import { StoreHost, type AsyncRecords } from "./store-host.ts";
+import { openRecords, type Records } from "./records.ts";
 import { SdkHost } from "./sdk-host.ts";
 import { isSessionId, listSessions, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
 import { summarize, type SessionSummary, chatIdOf } from "../shared/session.ts";
@@ -55,7 +55,7 @@ interface State {
   configExisted: boolean;
   ui: UiState;
   keys: KeyStore;
-  records: AsyncRecords;
+  records: Records;
   backups: Backups;
   language: LanguageOwner;
   host: SdkHost;
@@ -81,8 +81,8 @@ async function start(paths: AppPaths): Promise<void> {
   await app.whenReady();
 
   const launchId = randomUUID();
-  const stores = new StoreHost(join(here, "store-worker.js"), paths, launchId, __APP_VERSION__);
-  const { records, backups } = stores;
+  const records = openRecords(paths.records, paths.logs, launchId, __APP_VERSION__);
+  const backups = openBackups(paths.backups, launchId, (error) => records.log("warn", "backups.failed", { error: String(error) }));
   records.log("info", "app.start", { version: __APP_VERSION__, platform: process.platform, dataDir: paths.root });
 
   const language = new LanguageOwner();
@@ -222,7 +222,7 @@ async function start(paths: AppPaths): Promise<void> {
       app.quit();
     }).catch((error) => { state.quitAsking = false; records.log("error", "window.closeFailed", { error: String(error) }); });
   });
-  // OS takeover never asks or waits for optional history/worker teardown.
+  // OS takeover never asks or waits for optional history teardown.
   powerMonitor.on("shutdown", () => { state.quitConfirmed = true; app.exit(0); });
   app.on("will-quit", () => {
     host.stop();

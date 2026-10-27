@@ -7,14 +7,14 @@ import type { AppFailure, TaskProgress, UpscalerStatus } from "../shared/api.ts"
 import { exportCall, exportTarget, type ExportRequest, type ImageInfo } from "../shared/export.ts";
 import { errorDataOf, failureFromError, failureFromRefusal, lostWorkerFailure } from "../shared/failures.ts";
 import { message } from "../shared/i18n/translator.ts";
-import type { RecordWriter } from "./store-host.ts";
+import type { Records } from "./records.ts";
 import type { CallSettlement, SdkHost } from "./sdk-host.ts";
 
 export const UPSCALER = "swin2sr";
 
 export interface ExportDeps {
   host: SdkHost;
-  records: RecordWriter;
+  records: Records;
   app: { name: string; version: string };
   progress: (progress: TaskProgress) => void;
 }
