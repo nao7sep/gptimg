@@ -25,7 +25,7 @@ import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } fro
 import { openRecords, type Records } from "./records.ts";
 import { SdkHost } from "./sdk-host.ts";
 import { isSessionId, listSessions, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
-import { summarize, type SessionSummary, chatIdOf } from "../shared/session.ts";
+import { chatIdOf } from "../shared/session.ts";
 import type { RecordQuery, RecordRef } from "../shared/records.ts";
 import { TurnRunner } from "./turns.ts";
 import { navigationAllowed } from "./navigation.ts";
@@ -68,9 +68,6 @@ interface State {
   quitAsking: boolean;
   windowDirty: boolean;
   rootChanging: boolean;
-  summaryRoot: string;
-  summaryRevision: number;
-  summaries: Map<string, SessionSummary> | null;
 }
 
 async function start(paths: AppPaths): Promise<void> {
@@ -144,9 +141,6 @@ async function start(paths: AppPaths): Promise<void> {
     quitAsking: false,
     windowDirty: false,
     rootChanging: false,
-    summaryRoot: config.settings.sessionsDir,
-    summaryRevision: 0,
-    summaries: null,
   };
   const drafts = new DraftPreviews(paths.staging, (sessionId, path) => {
     state.window?.webContents.send("turnDraft", { sessionId, path });
@@ -160,8 +154,8 @@ async function start(paths: AppPaths): Promise<void> {
     app: { name: "GptImg", version: __APP_VERSION__ },
     backup: (path, text) => backups.keep(path, text),
     started: (requestId, session) => {
-      updateSummary(state, session);
       state.window?.webContents.send("turnStarted", { requestId, session });
+      sessionsChanged();
     },
     draft: (sessionId, draft) => void drafts.show(sessionId, draft),
     releaseStaged: (path) => {
@@ -438,9 +432,8 @@ function installIpc(state: State): void {
         await language.use(next.language);
         writeAppleLanguages(next.language, (error) => records.log("warn", "language.appleLanguagesFailed", { error: String(error) }));
       }
-      if (previous.sessionsDir !== next.sessionsDir) { state.summaryRoot = next.sessionsDir; state.summaries = null; }
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("settingsChanged", next);
-      if (previous.sessionsDir !== next.sessionsDir) sessionsChanged(state);
+      if (previous.sessionsDir !== next.sessionsDir) sessionsChanged();
       return { ok: true, settings: next, language: language.info() };
       } finally { state.rootChanging = false; }
     },
@@ -495,9 +488,7 @@ function installIpc(state: State): void {
       const root = state.config.settings.sessionsDir;
       if (!root) return { ok: true, sessions: [], unreadable: 0 };
       try {
-        const listing = await discoverSessions(state, root);
-        if (root === state.config.settings.sessionsDir) { state.summaryRoot = root; state.summaries = new Map(listing.sessions.map((row) => [row.id, row])); }
-        return { ok: true, ...listing };
+        return { ok: true, ...(await listSessions(root)) };
       } catch (error) {
         records.log("error", "sessions.listFailed", { error: String(error) });
         return failure("failure.sessionsFolder", { path: root });
@@ -522,8 +513,7 @@ function installIpc(state: State): void {
       if (!release) return failure("failure.turnRunning");
       try {
         const renamed = await renameSession(root, id, clean);
-        state.summaries?.delete(id);
-        updateSummary(state, { id: renamed.id, doc: renamed.doc, dir: sessionDir(root, renamed.id) });
+        sessionsChanged();
         records.log("info", "sessions.renamed", { chatId: chatIdOf(renamed.id, renamed.doc), from: id, to: renamed.id });
         return { ok: true, session: { id: renamed.id, doc: renamed.doc, dir: sessionDir(root, renamed.id) } };
       } catch (error) {
@@ -547,8 +537,7 @@ function installIpc(state: State): void {
           // An unreadable chat is still trashed; its folder name stands in.
         }
         await shell.trashItem(sessionDir(root, id));
-        state.summaries?.delete(id);
-        sessionsChanged(state);
+        sessionsChanged();
         records.log("info", "sessions.trashed", { chatId, folder: id });
         return { ok: true };
       } catch (error) {
@@ -569,15 +558,11 @@ function installIpc(state: State): void {
 
     async send(request: SendRequest) {
       if (state.rootChanging) return { ...failure("failure.taskRunning"), session: null, cancelled: false };
-      const outcome = await state.turns.send(request);
-      if (outcome.session) updateSummary(state, outcome.session);
-      return outcome;
+      return state.turns.send(request);
     },
     async retry(sessionId: string) {
       if (state.rootChanging) return { ...failure("failure.taskRunning"), session: null, cancelled: false };
-      const outcome = await state.turns.retry(sessionId);
-      if (outcome.session) updateSummary(state, outcome.session);
-      return outcome;
+      return state.turns.retry(sessionId);
     },
     async restartProcessing() {
       try { await state.host.restart(); return { ok: true }; }
@@ -688,13 +673,8 @@ function installIpc(state: State): void {
       const root = state.config.settings.sessionsDir;
       if (!root) return [];
       try {
-        if (!state.summaries || state.summaryRoot !== root) {
-          const listing = await discoverSessions(state, root);
-          if (root !== state.config.settings.sessionsDir) return [];
-          state.summaryRoot = root;
-          state.summaries = new Map(listing.sessions.map((row) => [row.id, row]));
-        }
-        return [...state.summaries.values()].map((row) => ({ id: row.chatId, title: row.title }));
+        // The listing reads each chat once and carries its lasting id.
+        return (await listSessions(root)).sessions.map((row) => ({ id: row.chatId, title: row.title }));
       } catch {
         return [];
       }
@@ -721,23 +701,7 @@ function installIpc(state: State): void {
   }
 }
 
-function sessionsChanged(state: State): void {
-  ++state.summaryRevision;
+/** Tells every window the chats changed, so Records refreshes its chat names. */
+function sessionsChanged(): void {
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sessionsChanged");
-}
-
-// A turn or rename can settle while discovery is reading older documents.
-// Only a scan with no intervening mutation may replace the summary snapshot.
-async function discoverSessions(state: State, root: string) {
-  for (;;) {
-    const revision = state.summaryRevision;
-    const listing = await listSessions(root);
-    if (root !== state.config.settings.sessionsDir || revision === state.summaryRevision) return listing;
-  }
-}
-
-function updateSummary(state: State, opened: import("../shared/api.ts").OpenedSession): void {
-  if (opened.dir !== sessionDir(state.config.settings.sessionsDir, opened.id)) return;
-  state.summaries?.set(opened.id, summarize(opened.id, opened.doc));
-  sessionsChanged(state);
 }

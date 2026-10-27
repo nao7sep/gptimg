@@ -138,7 +138,7 @@ it("does not restore the startup chat after New was chosen during slow discovery
   expect(screen.getByTestId("conversation").textContent).toBe("");
 });
 
-it("keeps an accepted new chat and its summary when startup discovery finishes later", async () => {
+it("keeps an accepted new chat open when startup discovery finishes later", async () => {
   const list = deferred<{ ok: true } & SessionsListing>();
   const pending = deferred<Awaited<ReturnType<GptImgApi["send"]>>>();
   const boot = bootInfo();
@@ -156,7 +156,6 @@ it("keeps an accepted new chat and its summary when startup discovery finishes l
   await act(async () => list.resolve({ ok: true, sessions: [summarize("A", session("A").doc)], unreadable: 0 }));
   expect(api.openSession).not.toHaveBeenCalled();
   expect(screen.getByTestId("conversation").textContent).toBe("Created");
-  expect(screen.getByRole("button", { name: "Created" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "A" })).toBeTruthy();
   await act(async () => pending.resolve({ ok: true, session: session("Created") }));
 });

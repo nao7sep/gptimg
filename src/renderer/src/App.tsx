@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PANES } from "../../shared/layout.ts";
 import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedSession, TurnOutcome } from "../../shared/api.ts";
-import { summarize, type SessionSummary, type TurnOptions } from "../../shared/session.ts";
+import { type SessionSummary, type TurnOptions } from "../../shared/session.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { commandFor } from "../../shared/shortcuts.ts";
 import type { UiState } from "../../shared/ui-state.ts";
@@ -94,7 +94,6 @@ export function App({ boot }: { boot: BootInfo }) {
   rootRef.current = settings.sessionsDir;
   const restored = useRef(false);
   const listingGeneration = useRef(0);
-  const listingUpdates = useRef(new Map<string, SessionSummary>());
   const openingGeneration = useRef(0);
   const submitted = useRef(new Map<string, { key: string; version: number }>());
   const draftVersions = useRef(new Map<string, number>());
@@ -116,7 +115,6 @@ export function App({ boot }: { boot: BootInfo }) {
   const refreshList = useCallback(async () => {
     const generation = ++listingGeneration.current;
     const root = rootRef.current;
-    listingUpdates.current = new Map();
     const outcome = await api.listSessions();
     if (root !== rootRef.current || generation !== listingGeneration.current) return;
     if (!outcome.ok) {
@@ -124,16 +122,8 @@ export function App({ boot }: { boot: BootInfo }) {
       return;
     }
     setListFailure(null);
-    const rows = new Map(outcome.sessions.map((row) => [row.id, row]));
-    for (const [id, row] of listingUpdates.current) rows.set(id, row);
-    setSessions([...rows.values()].sort((a, b) => b.sentAt.localeCompare(a.sentAt) || b.id.localeCompare(a.id)));
+    setSessions(outcome.sessions);
     setUnreadable(outcome.unreadable);
-  }, []);
-
-  const upsertSummary = useCallback((session: OpenedSession) => {
-    const summary = summarize(session.id, session.doc);
-    listingUpdates.current.set(summary.id, summary);
-    setSessions((rows) => [...rows.filter((row) => row.id !== summary.id), summary].sort((a, b) => b.sentAt.localeCompare(a.sentAt) || b.id.localeCompare(a.id)));
   }, []);
 
   const openSession = useCallback(
@@ -202,7 +192,7 @@ export function App({ boot }: { boot: BootInfo }) {
         } else if (currentRef.current === session.id) {
           setOpened(session);
         }
-        upsertSummary(session);
+        void refreshList();
       }),
     [refreshList],
   );
@@ -231,9 +221,9 @@ export function App({ boot }: { boot: BootInfo }) {
         // Nothing was saved (no key, no folder): the failure belongs to the new-session composer.
         setFailures((f) => ({ ...f, [NEW]: outcome.failure }));
       }
-      if (outcome.session) upsertSummary(outcome.session);
+      void refreshList();
     },
-    [upsertSummary],
+    [refreshList],
   );
 
   const send = useCallback(
