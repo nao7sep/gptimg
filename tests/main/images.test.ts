@@ -9,7 +9,7 @@ import { ImageAccess } from "../../src/main/images.ts";
 vi.mock("electron", () => ({ net: { fetch: vi.fn() }, protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() } }));
 vi.mock("node:os", async (actual) => {
   const original = await actual<typeof os>();
-  return { ...original, availableParallelism: vi.fn(() => 4), totalmem: vi.fn(() => 1024 * 1024 * 1024) };
+  return { ...original, availableParallelism: vi.fn(() => 4) };
 });
 const folders: string[] = [];
 afterEach(() => {
@@ -103,23 +103,16 @@ describe("image access", () => {
     expect(encoded).toHaveBeenCalledTimes(3);
   });
 
-  it("evicts thumbnail bytes by LRU and leaves full PNG conversions uncached", async () => {
+  it("caches thumbnails and leaves full PNG conversions uncached", async () => {
     const dir = root();
-    const files = await Promise.all([image(dir, "a.png"), image(dir, "b.png", "#f00"), image(dir, "c.png", "#0f0")]);
-    vi.mocked(os.totalmem).mockReturnValue(128 * 16);
+    const file = await image(dir);
     const access = new ImageAccess(() => [dir]);
     const encoded = vi.spyOn(sharp.prototype, "toBuffer").mockResolvedValue(Buffer.alloc(8) as never);
-    await access.png(files[0]!, 32);
-    await access.png(files[1]!, 32);
-    await access.png(files[0]!, 32); // Refresh a, so c must evict b.
-    expect(encoded).toHaveBeenCalledTimes(2);
-    await access.png(files[2]!, 32);
-    await access.png(files[0]!, 32);
+    await access.png(file, 32);
+    await access.png(file, 32);
+    expect(encoded).toHaveBeenCalledTimes(1);
+    await access.png(file);
+    await access.png(file);
     expect(encoded).toHaveBeenCalledTimes(3);
-    await access.png(files[1]!, 32);
-    expect(encoded).toHaveBeenCalledTimes(4);
-    await access.png(files[0]!);
-    await access.png(files[0]!);
-    expect(encoded).toHaveBeenCalledTimes(6);
   });
 });

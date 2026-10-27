@@ -3,7 +3,7 @@
 // user picked or dropped this launch are served. `?w=` returns a copy decoded
 // at that width (volume-handling-conventions: decode at the size shown).
 import { stat } from "node:fs/promises";
-import { availableParallelism, totalmem } from "node:os";
+import { availableParallelism } from "node:os";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { net, protocol } from "electron";
@@ -12,6 +12,7 @@ import sharp from "sharp";
 import { IMAGE_SCHEME } from "../shared/api.ts";
 import { isInside } from "./sessions.ts";
 
+const CACHE_LIMIT = 300;
 const MAX_THUMB_WIDTH = 2048;
 
 export class ImageAccess {
@@ -19,8 +20,6 @@ export class ImageAccess {
   readonly #thumbs = new Map<string, Buffer>();
   readonly #pending = new Map<string, Promise<Buffer | null>>();
   readonly #limit = pLimit(Math.max(1, Math.floor(availableParallelism() / Math.max(1, sharp.concurrency()))));
-  readonly #cacheBytes = Math.floor(totalmem() / 128);
-  #thumbBytes = 0;
 
   readonly #roots: () => string[];
 
@@ -70,14 +69,9 @@ export class ImageAccess {
     if (pending) return pending;
     const job = this.#limit(async () => {
       const png = await this.#encode(path, width);
-      if (png && png.byteLength <= this.#cacheBytes) {
+      if (png) {
         this.#thumbs.set(key, png);
-        this.#thumbBytes += png.byteLength;
-        while (this.#thumbBytes > this.#cacheBytes) {
-          const oldest = this.#thumbs.keys().next().value!;
-          this.#thumbBytes -= this.#thumbs.get(oldest)!.byteLength;
-          this.#thumbs.delete(oldest);
-        }
+        if (this.#thumbs.size > CACHE_LIMIT) this.#thumbs.delete(this.#thumbs.keys().next().value!);
       }
       return png;
     });
