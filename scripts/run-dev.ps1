@@ -13,5 +13,9 @@ Invoke-Launcher "run-dev" {
   $DevPort = [int](node -p "require('./package.json').config.devPort")
   if (Get-NetTCPConnection -LocalPort $DevPort -State Listen -ErrorAction SilentlyContinue) { throw "Port $DevPort is held by another process; GptImg's dev server needs it." }
   Write-Step "Starting the dev server"
-  Invoke-Native npx @("electron-vite", "dev")
+  $Dev = Start-Process -FilePath (Get-Command npx.cmd).Source -ArgumentList @("electron-vite", "dev") -NoNewWindow -PassThru
+  Save-DevApp $Dev.Id
+  $Dev.WaitForExit()
+  # 130 and 0xC000013A are an interrupt: the reader stopped it on purpose.
+  if ($Dev.ExitCode -notin @(0, 130, -1073741510)) { throw "electron-vite dev exited with $($Dev.ExitCode)." }
 }

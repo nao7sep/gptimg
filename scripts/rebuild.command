@@ -16,4 +16,4 @@ log_step "Assembling GptImg.app"
 npx electron-builder --dir --mac --arm64
 log_step "Launching"
 stop_running
-open -n "$APP"
+launch_built

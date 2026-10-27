@@ -1,5 +1,5 @@
 # Shared by the Windows launchers: where things are, how a phase is announced,
-# and how an earlier GptImg from this checkout is replaced. Dot-sourced.
+# and how the GptImg these launchers started is replaced. Dot-sourced.
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Root = Split-Path -Parent $PSScriptRoot
@@ -18,44 +18,63 @@ function Require-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) { throw "$Name is required but not installed." }
 }
 
-# Ask the existing app to use its ordinary quit owner, then wait for the exact
-# processes captured here. A declined quit leaves the current app running.
+# The launcher that starts GptImg records its process ID and executable here.
+$Record = Join-Path $Root ".git\launcher-runtime-process"
+
+function Save-Launched([int]$ProcessId, [string]$Executable) {
+  Set-Content -Path $Record -Value @("$ProcessId", $Executable) -Encoding UTF8
+}
+
+# The executable a process runs, or "" once it has ended.
+function Get-ExecutableOf([int]$ProcessId) {
+  $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if ($Process -and $Process.Path) { return $Process.Path }
+  return ""
+}
+
+# Ask the recorded GptImg to close its window as a user would, only while that
+# process still runs the recorded executable, so its quit confirmation can
+# protect unsaved or running work. One started any other way is left to its
+# single-instance lock, which brings its window forward instead.
 function Stop-Running {
-  $Processes = @(Get-CimInstance Win32_Process)
-  $Running = @($Processes | Where-Object { $_.ExecutablePath -eq $App -or $_.ExecutablePath -eq $DevElectron })
-  if ($Running.Count -eq 0) { return }
-  $Waiting = @($Running | ForEach-Object { [int]$_.ProcessId })
-  foreach ($Process in $Running) {
-    if ($Process.ExecutablePath -eq $DevElectron) {
-      $Parent = $Processes | Where-Object { $_.ProcessId -eq $Process.ParentProcessId } | Select-Object -First 1
-      # electron-vite exits when its Electron child closes, releasing Vite too.
-      if ($Parent -and $Parent.CommandLine) {
-        foreach ($Supervisor in @((Join-Path $Root "node_modules\.bin\electron-vite"),
-                                  (Join-Path $Root "node_modules\electron-vite\bin\electron-vite.js"))) {
-          if ($Parent.CommandLine.EndsWith("$Supervisor dev", [System.StringComparison]::OrdinalIgnoreCase) -or
-              $Parent.CommandLine.EndsWith("`"$Supervisor`" dev", [System.StringComparison]::OrdinalIgnoreCase)) {
-            $Waiting += [int]$Parent.ProcessId
-            break
-          }
-        }
-      }
-    }
-  }
-  foreach ($Executable in @($Running.ExecutablePath | Select-Object -Unique)) {
-    $Arguments = @("--gptimg-quit-for-replacement")
-    if ($Executable -eq $DevElectron) { $Arguments = @("`"$Root`"", "--gptimg-quit-for-replacement") }
-    $Request = Start-Process -FilePath $Executable -ArgumentList $Arguments -PassThru
-    $Waiting += $Request.Id
-  }
+  if (-not (Test-Path $Record)) { return }
+  $Lines = @(Get-Content $Record)
+  $ProcessId = 0
+  if ($Lines.Count -lt 2 -or -not [int]::TryParse($Lines[0], [ref]$ProcessId) -or -not $Lines[1]) { return }
+  $Executable = $Lines[1]
+  if ((Get-ExecutableOf $ProcessId) -ne $Executable) { return }
+  Write-Host "Asking the running GptImg (pid $ProcessId) to quit."
+  $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if ($Process) { $null = $Process.CloseMainWindow() }
   $Clock = [System.Diagnostics.Stopwatch]::StartNew()
-  while ($Waiting.Count -gt 0) {
-    $Waiting = @($Waiting | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
-    if ($Waiting.Count -eq 0) { return }
-    if ($Clock.Elapsed.TotalSeconds -ge 30) {
-      throw "GptImg is still running. Finish or cancel its current work, accept Quit, then run this launcher again. No replacement was launched."
+  while ((Get-ExecutableOf $ProcessId) -eq $Executable) {
+    if ($Clock.Elapsed.TotalSeconds -ge 5) {
+      throw "GptImg is still open, perhaps finishing or asking about running work. Close it, then run this launcher again."
     }
     Start-Sleep -Milliseconds 100
   }
+}
+
+# Record the Electron that electron-vite starts, once it appears: the topmost
+# descendant of the wrapper running the dev executable, since Electron's own
+# child processes share it. Fails when the wrapper ends first.
+function Save-DevApp([int]$WrapperId) {
+  while (Get-Process -Id $WrapperId -ErrorAction SilentlyContinue) {
+    $Processes = @(Get-CimInstance Win32_Process)
+    $ParentOf = @{}
+    foreach ($Item in $Processes) { $ParentOf[[int]$Item.ProcessId] = [int]$Item.ParentProcessId }
+    $Found = @($Processes | Where-Object { $_.ExecutablePath -eq $DevElectron } | ForEach-Object { [int]$_.ProcessId })
+    foreach ($Candidate in $Found) {
+      if ($Found -contains $ParentOf[$Candidate]) { continue }
+      $Up = $ParentOf[$Candidate]
+      for ($Hops = 0; $Hops -lt 64 -and $Up; $Hops++) {
+        if ($Up -eq $WrapperId) { Save-Launched $Candidate $DevElectron; return }
+        $Up = $ParentOf[$Up]
+      }
+    }
+    Start-Sleep -Milliseconds 200
+  }
+  throw "The GptImg development runtime ended before the app started."
 }
 
 function Invoke-Launcher([string]$Name, [scriptblock]$Body) {

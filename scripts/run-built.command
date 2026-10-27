@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Launches the existing production build without rebuilding it: strict CSP,
-# packaged layout. Replaces any GptImg this checkout is running.
+# packaged layout. Replaces the GptImg these launchers started.
 LAUNCHER_NAME=run-built
 source "${0:A:h}/launcher.sh"
 set -e
@@ -10,4 +10,4 @@ if [[ ! -d "$APP" ]]; then
 fi
 log_step "Launching the build from $(build_age) ago"
 stop_running
-open -n "$APP"
+launch_built

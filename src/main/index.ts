@@ -45,7 +45,7 @@ try {
   mkdirSync(join(paths.root, "electron", "session"), { recursive: true, mode: 0o700 });
   app.setPath("userData", join(paths.root, "electron"));
   app.setPath("sessionData", join(paths.root, "electron", "session"));
-  if (!app.requestSingleInstanceLock() || process.argv.includes("--gptimg-quit-for-replacement")) app.quit();
+  if (!app.requestSingleInstanceLock()) app.quit();
   else void start(paths);
 } catch (error) { void showStartupFailure(error); }
 
@@ -184,8 +184,7 @@ async function start(paths: AppPaths): Promise<void> {
 
   createWindow(state);
 
-  app.on("second-instance", (_event, argv) => {
-    if (argv.includes("--gptimg-quit-for-replacement")) { app.quit(); return; }
+  app.on("second-instance", () => {
     const win = state.window;
     if (!win) return;
     if (win.isMinimized()) win.restore();
@@ -196,7 +195,7 @@ async function start(paths: AppPaths): Promise<void> {
   });
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", (event) => {
-    // Ordinary closes and replacement requests keep the window alive until one decision.
+    // Ordinary closes and launcher replacement keep the window alive until one decision.
     if (state.quitConfirmed || (!state.turns.busy && !state.exports.busy && !state.windowDirty)) {
       state.turns.cancelAll();
       state.exports.cancel();

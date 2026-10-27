@@ -1,5 +1,5 @@
 # Shared by the macOS launchers: where things are, how a phase is announced,
-# and how an earlier GptImg from this checkout is replaced. Sourced, not run.
+# and how the GptImg these launchers started is replaced. Sourced, not run.
 
 SCRIPT_DIR="${0:A:h}"
 ROOT="${SCRIPT_DIR:h}"
@@ -22,55 +22,80 @@ on_exit() {
 }
 trap on_exit EXIT
 
-# Ask the existing app to use its ordinary quit owner, then wait for the exact
-# processes captured here. A declined quit leaves the current app running.
-stop_running() {
-  local snapshot pid parent executable parent_command request_pid
-  local built_running=0 dev_running=0
-  local -a waiting remaining
-  snapshot=$(ps -axo pid=,ppid=,comm=) || return 1
-  while read -r pid parent executable; do
-    if [[ "$executable" == "$APP/Contents/MacOS/GptImg" ]]; then
-      built_running=1
-      waiting+=("$pid")
-    elif [[ "$executable" == "$DEV_ELECTRON/Contents/MacOS/Electron" ]]; then
-      dev_running=1
-      waiting+=("$pid")
-      # electron-vite exits on its Electron child's close; wait for it to
-      # release the dev server as well, without signalling the supervisor.
-      parent_command=$(ps -p "$parent" -o command= 2>/dev/null) || parent_command=""
-      if [[ "$parent_command" == *"$ROOT/node_modules/.bin/electron-vite dev" ||
-            "$parent_command" == *"$ROOT/node_modules/electron-vite/bin/electron-vite.js dev" ]]; then
-        waiting+=("$parent")
-      fi
-    fi
-  done <<< "$snapshot"
-  (( ${#waiting} == 0 )) && return 0
+# The launcher that starts GptImg records its process ID and executable here.
+RECORD="$ROOT/.git/launcher-runtime-process"
 
-  if (( built_running )); then
-    "$APP/Contents/MacOS/GptImg" --gptimg-quit-for-replacement >/dev/null 2>&1 &
-    request_pid=$!
-    waiting+=("$request_pid")
-  fi
-  if (( dev_running )); then
-    "$DEV_ELECTRON/Contents/MacOS/Electron" "$ROOT" --gptimg-quit-for-replacement >/dev/null 2>&1 &
-    request_pid=$!
-    waiting+=("$request_pid")
-  fi
-  local deadline=$(( SECONDS + 30 ))
-  while (( ${#waiting} > 0 )); do
-    remaining=()
-    for pid in "${waiting[@]}"; do
-      if ps -p "$pid" -o pid= >/dev/null 2>&1; then remaining+=("$pid"); fi
-    done
-    waiting=("${remaining[@]}")
-    (( ${#waiting} == 0 )) && return 0
+# The executable a process runs, or nothing once it has ended.
+executable_of() { ps -p "$1" -o comm= 2>/dev/null }
+
+record_process() { print -r -- "$1"$'\n'"$2" > "$RECORD" }
+
+# Ask the recorded GptImg to quit as a user would, only while that process still
+# runs the recorded executable, so its quit confirmation can protect unsaved or
+# running work. One started any other way is left to its single-instance lock,
+# which brings its window forward instead of opening a second one.
+stop_running() {
+  [[ -f "$RECORD" ]] || return 0
+  local pid executable
+  { read -r pid; read -r executable } < "$RECORD"
+  [[ "$pid" == <-> && -n "$executable" && "$(executable_of $pid)" == "$executable" ]] || return 0
+  print "Asking the running GptImg (pid $pid) to quit."
+  osascript -l JavaScript -e "ObjC.import('AppKit');
+function run(args) {
+  var running = \$.NSRunningApplication.runningApplicationWithProcessIdentifier(Number(args[0]));
+  if (running) running.terminate;
+}" "$pid" >/dev/null
+  local deadline=$(( SECONDS + 5 ))
+  while [[ "$(executable_of $pid)" == "$executable" ]]; do
     if (( SECONDS >= deadline )); then
-      print -u2 "GptImg is still running. Finish or cancel its current work, accept Quit, then run this launcher again. No replacement was launched."
+      print -u2 "GptImg is still open, perhaps finishing or asking about running work. Close it, then run this launcher again."
       return 1
     fi
     sleep 0.1
   done
+}
+
+# Open a new instance of the bundle through Launch Services, which gives it its
+# bundle identity, and record it.
+launch_built() {
+  local pid
+  pid=$(osascript -l JavaScript -e "ObjC.import('AppKit');
+function run(args) {
+  var running = \$.NSWorkspace.sharedWorkspace.launchApplicationAtURLOptionsConfigurationError(
+    \$.NSURL.fileURLWithPath(args[0]), \$.NSWorkspaceLaunchNewInstance, \$({}), null);
+  return running.isNil() ? '' : String(running.processIdentifier);
+}" "$APP")
+  [[ "$pid" == <-> ]] || { print -u2 "GptImg could not be opened."; return 1 }
+  record_process "$pid" "$(executable_of $pid)"
+}
+
+# Record the Electron that electron-vite (pid $1) starts, once it appears: the
+# topmost descendant running the dev executable. Fails when the dev server ends
+# first, as it does when the build fails.
+record_dev_app() {
+  local wrapper=$1 expected="$DEV_ELECTRON/Contents/MacOS/Electron"
+  local pid parent executable up hops
+  local -A parent_of
+  local -a matches
+  while kill -0 "$wrapper" 2>/dev/null; do
+    parent_of=()
+    matches=()
+    while read -r pid parent executable; do
+      parent_of[$pid]=$parent
+      [[ "$executable" == "$expected" ]] && matches+=("$pid")
+    done <<< "$(ps -axo pid=,ppid=,comm=)"
+    for pid in $matches; do
+      (( ${matches[(Ie)${parent_of[$pid]}]} )) && continue
+      up=${parent_of[$pid]}
+      for (( hops = 0; hops < 64 && up > 1; hops++ )); do
+        if [[ "$up" == "$wrapper" ]]; then record_process "$pid" "$expected"; return 0; fi
+        up=${parent_of[$up]:-0}
+      done
+    done
+    sleep 0.2
+  done
+  print -u2 "The GptImg development runtime ended before the app started."
+  return 1
 }
 
 build_age() {

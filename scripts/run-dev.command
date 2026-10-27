@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Runs GptImg from source with live reload (electron-vite dev): the loose
-# configuration, for coding. Replaces any GptImg this checkout is running.
+# configuration, for coding. Replaces the GptImg these launchers started.
 LAUNCHER_NAME=run-dev
 source "${0:A:h}/launcher.sh"
 set -e
@@ -20,4 +20,7 @@ if lsof -nP -iTCP:$DEV_PORT -sTCP:LISTEN >/dev/null 2>&1; then
   exit 1
 fi
 log_step "Starting the dev server"
-npx electron-vite dev
+npx electron-vite dev &
+DEV_PID=$!
+record_dev_app $DEV_PID
+wait $DEV_PID

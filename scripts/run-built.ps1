@@ -5,5 +5,6 @@ Invoke-Launcher "run-built" {
   $age = (Get-Date) - (Get-Item $App).LastWriteTime
   Write-Step ("Launching the build from {0:N0} minutes ago" -f $age.TotalMinutes)
   Stop-Running
-  Start-Process $App
+  $Started = Start-Process $App -PassThru
+  Save-Launched $Started.Id $App
 }

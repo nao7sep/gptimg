@@ -13,5 +13,6 @@ Invoke-Launcher "rebuild" {
   Invoke-Native npx @("electron-builder", "--dir", "--win", "--x64")
   Write-Step "Launching"
   Stop-Running
-  Start-Process $App
+  $Started = Start-Process $App -PassThru
+  Save-Launched $Started.Id $App
 }
