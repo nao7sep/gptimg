@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { GptImgError, fsError } from "../errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
-import { writeOutputBytes } from "../internal/output-files.ts";
+import { writeProviderOutput } from "../internal/output-files.ts";
 import { formatZodError } from "../internal/zodError.ts";
 import type { Sidecar } from "../types.ts";
 import { refuseNewerSidecar } from "./read.ts";
@@ -38,5 +38,5 @@ export async function writeSidecar(
   } catch (err) {
     throw fsError(err, "Failed to create the sidecar's folder", path.dirname(sidecarPath), "none");
   }
-  await writeOutputBytes(sidecarPath, text, opts.overwrite, "Failed to write sidecar");
+  await writeProviderOutput(sidecarPath, text, opts.overwrite, "Failed to write sidecar");
 }

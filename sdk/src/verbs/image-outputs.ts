@@ -3,7 +3,7 @@ import { GptImgError } from "../errors.ts";
 import sharp from "../image/sharp.ts";
 import { detectFormat } from "../image/detectFormat.ts";
 import { hash } from "../image/hash.ts";
-import { writeOutputBytes } from "../internal/output-files.ts";
+import { writeProviderOutput } from "../internal/output-files.ts";
 import { diagnosticOf } from "../events/diagnostic.ts";
 import {
   assertOutputGroupAvailable,
@@ -168,7 +168,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
 
   for (const item of planned) {
     try {
-      await writeOutputBytes(item.filePath, item.data, overwrite);
+      await writeProviderOutput(item.filePath, item.data, overwrite);
     } catch (err) {
       failures.push(itemFailure(item.index, err));
       logger.emit("warn", "write", { event: "image.unpublished", index: item.index, error: diagnosticOf(err) });

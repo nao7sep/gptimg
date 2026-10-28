@@ -1,4 +1,5 @@
-// A volume that cannot flush a folder (some network shares and FUSE file
+// Only a paid provider result flushes its folder; a local output does not. A
+// volume that cannot flush a folder (some network shares and FUSE file
 // systems answer EINVAL or ENOTSUP) still publishes; any other failure to
 // flush is the filesystem's error.
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -25,6 +26,7 @@ vi.mock("node:fs/promises", async (original) => {
 });
 
 const { writeFileAtomic } = await import("../../src/internal/atomic-file.ts");
+const { writeProviderOutput } = await import("../../src/internal/output-files.ts");
 
 describe.skipIf(process.platform === "win32")("flushing the output folder", () => {
   let tmp: string;
@@ -39,12 +41,21 @@ describe.skipIf(process.platform === "win32")("flushing the output folder", () =
   it.each(["EINVAL", "ENOTSUP"])("publishes on a volume that answers %s", async (code) => {
     folderSync.code = code;
     const target = path.join(tmp, "out.txt");
-    await writeFileAtomic(target, "kept", { overwrite: false });
+    await writeProviderOutput(target, "kept", false);
     expect(await readFile(target, "utf8")).toBe("kept");
   });
 
-  it("fails with any other folder-flush error", async () => {
+  it("fails with any other folder-flush error, the file already published", async () => {
     folderSync.code = "EIO";
-    await expect(writeFileAtomic(path.join(tmp, "out.txt"), "x", { overwrite: false })).rejects.toMatchObject({ code: "EIO" });
+    const target = path.join(tmp, "out.txt");
+    await expect(writeProviderOutput(target, "x", false)).rejects.toMatchObject({ effect: "unknown", details: { errno: "EIO" } });
+    expect(await readFile(target, "utf8")).toBe("x");
+  });
+
+  it("does not flush the folder for a local output", async () => {
+    folderSync.code = "EIO";
+    const target = path.join(tmp, "out.txt");
+    await writeFileAtomic(target, "local", { overwrite: false });
+    expect(await readFile(target, "utf8")).toBe("local");
   });
 });

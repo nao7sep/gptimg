@@ -100,7 +100,8 @@ const FOLDER_SYNC_UNSUPPORTED = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP", "EIS
 
 /**
  * Flush a folder's entries, so a file just renamed or linked into it survives
- * a crash. Windows cannot open a folder for this, and its file system commits
+ * a crash. Only a paid provider result gets this: it is the evidence of a
+ * charged request. Windows cannot open a folder for this, and its file system commits
  * the rename itself; a volume that does not support it publishes without it.
  */
 export async function syncDirectory(dirPath: string): Promise<void> {
@@ -148,11 +149,10 @@ async function replacedMode(filePath: string): Promise<number | undefined> {
  * target (see `stagingPathFor`), then publish it so a crash mid-write can never
  * leave `filePath` truncated or torn. `overwrite: false` publishes without
  * replacing an existing target (see `publishFileNoClobber`). The content is
- * flushed before publication and the folder after it, so a crash cannot leave
- * the name pointing at nothing: this writer publishes paid provider images and
- * their sidecars, the only evidence of a charged request. On any failure before publication the temp
- * file is best-effort removed and the target is left untouched; a failure to
- * flush the folder afterwards is thrown, the file already published.
+ * flushed before publication; the folder is not, so a power cut may lose the
+ * newest output but never leaves it damaged. A paid provider result also
+ * flushes its folder (`writeProviderOutput`). On any failure the temp file is
+ * best-effort removed and the target is left untouched.
  *
  * An overwrite whose content is identical to the target's is skipped, so the
  * file and its times stay as they are (content-lifecycle-conventions, *Files*).
@@ -160,7 +160,7 @@ async function replacedMode(filePath: string): Promise<number | undefined> {
  * written as UTF-8.
  *
  * Storage waits are unbounded by design (sdk-conventions, *Waits are bounded
- * where a stall is realistic*): gptimgsdk's storage is local, and Node cannot
+ * where they reach a network provider or a subprocess*): gptimgsdk's storage is local, and Node cannot
  * cancel a filesystem call already running, so a timer would only stop waiting
  * while the call kept its thread and its write might still land.
  */
@@ -169,7 +169,6 @@ export async function writeFileAtomic(filePath: string, data: string | Buffer | 
   if (overwrite && (await holdsContent(filePath, bytes))) return;
   const tempPath = await stageFile(filePath, bytes);
   await publishStaged(tempPath, filePath, { overwrite });
-  await syncDirectory(path.dirname(filePath));
 }
 
 /**
