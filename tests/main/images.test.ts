@@ -1,16 +1,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import * as os from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImageAccess } from "../../src/main/images.ts";
 
 vi.mock("electron", () => ({ net: { fetch: vi.fn() }, protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() } }));
-vi.mock("node:os", async (actual) => {
-  const original = await actual<typeof os>();
-  return { ...original, availableParallelism: vi.fn(() => 4) };
-});
 const folders: string[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
@@ -75,32 +70,35 @@ describe("image access", () => {
     expect(await access.png(path, 0)).toBeNull();
   });
 
-  it("bounds jobs by machine and libvips parallelism and shares identical in-flight work", async () => {
+  it("encodes one image at a time, and a repeated request finds the cached copy", async () => {
     const dir = root();
-    const files = await Promise.all([image(dir, "a.png"), image(dir, "b.png"), image(dir, "c.png")]);
-    vi.spyOn(sharp, "concurrency").mockReturnValue(2);
+    const files = await Promise.all([image(dir, "a.png"), image(dir, "b.png")]);
     const access = new ImageAccess(() => [dir]);
     const release: Array<() => void> = [];
+    let entered!: () => void;
     let active = 0;
     let peak = 0;
     const encoded = vi.spyOn(sharp.prototype, "toBuffer").mockImplementation(() => {
       active++;
       peak = Math.max(peak, active);
+      entered();
       return new Promise<Buffer>((resolve) => release.push(() => {
         active--;
         resolve(Buffer.from("png"));
       })) as never;
     });
-    const jobs = [access.png(files[0]!, 32), access.png(files[0]!, 32), access.png(files[1]!, 32), access.png(files[2]!, 32)];
-    await vi.waitFor(() => expect(encoded).toHaveBeenCalledTimes(2));
-    expect(active).toBe(2);
-    release.splice(0).forEach((done) => done());
-    await vi.waitFor(() => expect(encoded).toHaveBeenCalledTimes(3));
-    release.splice(0).forEach((done) => done());
+    const encoding = () => new Promise<void>((resolve) => { entered = resolve; });
+    let started = encoding();
+    const jobs = [access.png(files[0]!, 32), access.png(files[0]!, 32), access.png(files[1]!, 32)];
+    await started;
+    started = encoding();
+    release.shift()!();
+    await started;
+    release.shift()!();
     const results = await Promise.all(jobs);
-    expect(peak).toBe(2);
+    expect(peak).toBe(1);
     expect(results[0]).toBe(results[1]);
-    expect(encoded).toHaveBeenCalledTimes(3);
+    expect(encoded).toHaveBeenCalledTimes(2);
   });
 
   it("caches thumbnails and leaves full PNG conversions uncached", async () => {

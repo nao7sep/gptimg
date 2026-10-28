@@ -3,11 +3,9 @@
 // user picked or dropped this launch are served. `?w=` returns a copy decoded
 // at that width (volume-handling-conventions: decode at the size shown).
 import { stat } from "node:fs/promises";
-import { availableParallelism } from "node:os";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { net, protocol } from "electron";
-import pLimit from "p-limit";
 import sharp from "sharp";
 import { IMAGE_SCHEME } from "../shared/api.ts";
 import { isInside } from "./sessions.ts";
@@ -18,8 +16,8 @@ const MAX_THUMB_WIDTH = 2048;
 export class ImageAccess {
   readonly #picked = new Set<string>();
   readonly #thumbs = new Map<string, Buffer>();
-  readonly #pending = new Map<string, Promise<Buffer | null>>();
-  readonly #limit = pLimit(Math.max(1, Math.floor(availableParallelism() / Math.max(1, sharp.concurrency()))));
+  // One image encodes at a time (serial by default); sharp spreads each across its own threads.
+  #queue: Promise<unknown> = Promise.resolve();
 
   readonly #roots: () => string[];
 
@@ -56,18 +54,23 @@ export class ImageAccess {
     }
   }
 
+  #serial<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.#queue.then(job, job);
+    this.#queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** A repeated request waits its turn and then finds the copy the first one cached. */
   async #thumb(path: string, width: number): Promise<Buffer | null> {
     const info = await stat(path);
     const key = `${path}\0${width}\0${info.mtimeMs}\0${info.size}`;
-    const hit = this.#thumbs.get(key);
-    if (hit) {
-      this.#thumbs.delete(key);
-      this.#thumbs.set(key, hit);
-      return hit;
-    }
-    const pending = this.#pending.get(key);
-    if (pending) return pending;
-    const job = this.#limit(async () => {
+    return this.#serial(async () => {
+      const hit = this.#thumbs.get(key);
+      if (hit) {
+        this.#thumbs.delete(key);
+        this.#thumbs.set(key, hit);
+        return hit;
+      }
       const png = await this.#encode(path, width);
       if (png) {
         this.#thumbs.set(key, png);
@@ -75,12 +78,6 @@ export class ImageAccess {
       }
       return png;
     });
-    this.#pending.set(key, job);
-    try {
-      return await job;
-    } finally {
-      this.#pending.delete(key);
-    }
   }
 
   /** Checked asynchronous PNG conversion. Full-size clipboard images are never cached. */
@@ -92,7 +89,7 @@ export class ImageAccess {
         if (!Number.isFinite(width) || width <= 0) return null;
         return await this.#thumb(absolute, Math.max(1, Math.min(MAX_THUMB_WIDTH, Math.round(width))));
       }
-      return await this.#limit(() => this.#encode(absolute));
+      return await this.#serial(() => this.#encode(absolute));
     } catch {
       return null;
     }

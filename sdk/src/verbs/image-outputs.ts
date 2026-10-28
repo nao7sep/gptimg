@@ -1,5 +1,4 @@
 import path from "node:path";
-import pLimit from "p-limit";
 import { GptImgError } from "../errors.ts";
 import sharp from "../image/sharp.ts";
 import { detectFormat } from "../image/detectFormat.ts";
@@ -92,7 +91,6 @@ export function failedPublication(err: unknown): FilePublication {
 export async function publishProviderImages(args: PublishProviderImagesArgs): Promise<PublishedImages> {
   const { outDir, stem, n, overwrite, providerResult, requestRecord, logger } = args;
   const items = providerResult.images;
-  const limit = pLimit(4);
   const failures: ItemFailure[] = [];
   const snapshot = maskDiagnosticCopy(
     { request: requestRecord, response: nullBase64InResponse(providerResult.raw) },
@@ -108,35 +106,33 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
 
   // Detect each returned image's format (the I/O step). A null format marks a
   // failed item: no data, or bytes that would not decode.
-  const detected = await Promise.all(
-    items.map((item, i) =>
-      limit(async (): Promise<{ data: Uint8Array | null } & DetectedImage> => {
-        const index = i + 1;
-        if (!item.data) {
-          failures.push({
-            index,
-            code: item.code ?? "provider.noImage",
-            effect: "unknown",
-            message: item.error ?? `The provider returned no image for item ${index}.`,
-            ...(item.safeReason !== undefined && { safeReason: item.safeReason }),
-          });
-          logger.emit("warn", "write", { event: "image.missing", index, error: item.error ?? null });
-          return { data: null, format: null };
-        }
-        try {
-          const format = await detectFormat(item.data);
-          // Metadata can survive truncated pixel data. Validate the complete
-          // image before publishing, while preserving the provider's bytes.
-          await sharp(item.data).raw().toBuffer();
-          return { data: item.data, format };
-        } catch (err) {
-          failures.push({ index, code: "image.undecodable", effect: "unknown", message: (err as Error).message });
-          logger.emit("warn", "write", { event: "image.undecodable", index, error: diagnosticOf(err) });
-          return { data: item.data, format: null };
-        }
-      }),
-    ),
-  );
+  const detected: ({ data: Uint8Array | null } & DetectedImage)[] = [];
+  for (const [i, item] of items.entries()) {
+    const index = i + 1;
+    if (!item.data) {
+      failures.push({
+        index,
+        code: item.code ?? "provider.noImage",
+        effect: "unknown",
+        message: item.error ?? `The provider returned no image for item ${index}.`,
+        ...(item.safeReason !== undefined && { safeReason: item.safeReason }),
+      });
+      logger.emit("warn", "write", { event: "image.missing", index, error: item.error ?? null });
+      detected.push({ data: null, format: null });
+      continue;
+    }
+    try {
+      const format = await detectFormat(item.data);
+      // Metadata can survive truncated pixel data. Validate the complete
+      // image before publishing, while preserving the provider's bytes.
+      await sharp(item.data).raw().toBuffer();
+      detected.push({ data: item.data, format });
+    } catch (err) {
+      failures.push({ index, code: "image.undecodable", effect: "unknown", message: (err as Error).message });
+      logger.emit("warn", "write", { event: "image.undecodable", index, error: diagnosticOf(err) });
+      detected.push({ data: item.data, format: null });
+    }
+  }
 
   const plan = planGenerateOutputs(n, stem, detected);
   const { suffixCount } = plan;
@@ -170,48 +166,44 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
 
   const files: OutputFile[] = [];
 
-  await Promise.all(
-    planned.map((item) =>
-      limit(async () => {
-        try {
-          await writeOutputBytes(item.filePath, item.data, overwrite);
-        } catch (err) {
-          failures.push(itemFailure(item.index, err));
-          logger.emit("warn", "write", { event: "image.unpublished", index: item.index, error: diagnosticOf(err) });
-          return;
-        }
-        const sha256 = hash(item.data);
-        const sidecarPath = sidecarPathFor(group, item.index, suffixCount);
-        // Per-image record: the same request and response across siblings, but
-        // `files` carries only this image's entry, so each sidecar describes
-        // its own image.
-        const record = {
-          formatVersion: 2,
-          kind: args.kind,
-          writer: args.writer,
-          request: snapshot.request,
-          response: snapshot.response,
-          files: [{ index: item.index, name: path.basename(item.filePath), sha256, format: item.fmt.format }],
-        } as GenerateSidecar | EditSidecar | ChatSidecar;
-        let sidecar: FilePublication = { status: "published" };
-        try {
-          await writeSidecar(sidecarPath, record, { overwrite });
-        } catch (err) {
-          sidecar = failedPublication(err);
-          logger.emit("warn", "write", { event: "sidecar.unpublished", index: item.index, path: sidecarPath, error: diagnosticOf(err) });
-        }
-        files.push({ index: item.index, path: item.filePath, sha256, format: item.fmt.format, sidecarPath, sidecar, record });
-        logger.emit("info", "write", {
-          event: "image.published",
-          index: item.index,
-          name: path.basename(item.filePath),
-          sha256,
-          format: item.fmt.format,
-          sidecar: sidecar.status === "published" ? path.basename(sidecarPath) : null,
-        });
-      }),
-    ),
-  );
+  for (const item of planned) {
+    try {
+      await writeOutputBytes(item.filePath, item.data, overwrite);
+    } catch (err) {
+      failures.push(itemFailure(item.index, err));
+      logger.emit("warn", "write", { event: "image.unpublished", index: item.index, error: diagnosticOf(err) });
+      continue;
+    }
+    const sha256 = hash(item.data);
+    const sidecarPath = sidecarPathFor(group, item.index, suffixCount);
+    // Per-image record: the same request and response across siblings, but
+    // `files` carries only this image's entry, so each sidecar describes
+    // its own image.
+    const record = {
+      formatVersion: 2,
+      kind: args.kind,
+      writer: args.writer,
+      request: snapshot.request,
+      response: snapshot.response,
+      files: [{ index: item.index, name: path.basename(item.filePath), sha256, format: item.fmt.format }],
+    } as GenerateSidecar | EditSidecar | ChatSidecar;
+    let sidecar: FilePublication = { status: "published" };
+    try {
+      await writeSidecar(sidecarPath, record, { overwrite });
+    } catch (err) {
+      sidecar = failedPublication(err);
+      logger.emit("warn", "write", { event: "sidecar.unpublished", index: item.index, path: sidecarPath, error: diagnosticOf(err) });
+    }
+    files.push({ index: item.index, path: item.filePath, sha256, format: item.fmt.format, sidecarPath, sidecar, record });
+    logger.emit("info", "write", {
+      event: "image.published",
+      index: item.index,
+      name: path.basename(item.filePath),
+      sha256,
+      format: item.fmt.format,
+      sidecar: sidecar.status === "published" ? path.basename(sidecarPath) : null,
+    });
+  }
 
   // A run that published nothing leaves the earlier run's files as they are:
   // a paid call that produced no image must not destroy previous results.

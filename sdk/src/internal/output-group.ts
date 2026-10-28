@@ -340,10 +340,11 @@ export async function removeUnpublishedSlots(
     // listed now must not fail it: report the owned slots still present
     // under this run's names, which is all that can be seen without a listing.
     const candidates = ownedFiles.filter((filePath) => !published.has(fileName(filePath)));
-    const present = await Promise.all(candidates.map((filePath) =>
-      stat(filePath).then(() => true, () => false),
-    ));
-    return candidates.filter((_, index) => present[index]);
+    const present: string[] = [];
+    for (const filePath of candidates) {
+      if (await stat(filePath).then(() => true, () => false)) present.push(filePath);
+    }
+    return present;
   }
   const sidecars = new Map(siblings
     .filter((filePath) => artifactIdentity(filePath, group.sidecarExt).startsWith("sidecar:"))

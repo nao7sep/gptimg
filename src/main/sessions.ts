@@ -3,8 +3,6 @@
 // of every attached reference. Paths inside a session are relative, so the
 // folder can be moved or renamed whole.
 import { randomUUID } from "node:crypto";
-import { availableParallelism } from "node:os";
-import pLimit from "p-limit";
 import { lstat, mkdir, readdir, rename } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import {
@@ -59,19 +57,15 @@ export async function listSessions(root: string): Promise<{ sessions: SessionSum
   }
   const sessions: SessionSummary[] = [];
   let unreadable = 0;
-  const limit = pLimit(availableParallelism());
-  await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-      .map((entry) => limit(async () => {
-        try {
-          sessions.push(summarize(entry.name, await readSession(root, entry.name)));
-        } catch (error) {
-          if (error instanceof SessionError && error.code === "notFound") return;
-          unreadable++;
-        }
-      })),
-  );
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    try {
+      sessions.push(summarize(entry.name, await readSession(root, entry.name)));
+    } catch (error) {
+      if (error instanceof SessionError && error.code === "notFound") continue;
+      unreadable++;
+    }
+  }
   sessions.sort((a, b) => (a.sentAt < b.sentAt ? 1 : a.sentAt > b.sentAt ? -1 : a.id < b.id ? 1 : -1));
   return { sessions, unreadable };
 }

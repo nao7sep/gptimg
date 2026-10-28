@@ -32,7 +32,8 @@ async function loadSameSize(paths: string[]): Promise<{
   width: number;
   height: number;
 }> {
-  const masks = await Promise.all(paths.map((p) => loadMaskPNG(p)));
+  const masks: Awaited<ReturnType<typeof loadMaskPNG>>[] = [];
+  for (const p of paths) masks.push(await loadMaskPNG(p));
   const first = masks[0]!;
   for (let i = 1; i < masks.length; i++) {
     if (masks[i]!.width !== first.width || masks[i]!.height !== first.height) {

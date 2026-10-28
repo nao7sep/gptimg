@@ -45,7 +45,9 @@ export async function runEncode(
   const lossless = args.format === "png" || (args.lossless ?? false);
   await writeImageFile({ path: args.out, overwrite: args.overwrite, signal, source: args.in }, "encode", args, () => decodeImage(args.in));
 
-  const [source, written, meta] = await Promise.all([stat(args.in), stat(args.out), sharp(args.out).metadata()]);
+  const source = await stat(args.in);
+  const written = await stat(args.out);
+  const meta = await sharp(args.out).metadata();
   return {
     output: args.out,
     format: args.format,

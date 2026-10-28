@@ -156,13 +156,16 @@ async function readHistoryImage(filePath: string, logger: Logger): Promise<ChatI
 async function loadHistory(history: readonly ChatTurn[], logger: Logger): Promise<ChatHistoryTurn[]> {
   const withImages = history.map((turn, i) => ((turn.images?.length ?? 0) > 0 ? i : -1)).filter((i) => i >= 0);
   const recent = new Set(withImages.slice(-HISTORY_IMAGE_TURNS));
-  return Promise.all(
-    history.map(async (turn, i) => {
-      const paths = recent.has(i) ? (turn.images ?? []) : [];
-      const images = (await Promise.all(paths.map((p) => readHistoryImage(p, logger)))).filter((x): x is ChatImage => x !== null);
-      return { role: turn.role, text: turn.text, images };
-    }),
-  );
+  const turns: ChatHistoryTurn[] = [];
+  for (const [i, turn] of history.entries()) {
+    const images: ChatImage[] = [];
+    for (const p of recent.has(i) ? (turn.images ?? []) : []) {
+      const image = await readHistoryImage(p, logger);
+      if (image) images.push(image);
+    }
+    turns.push({ role: turn.role, text: turn.text, images });
+  }
+  return turns;
 }
 
 /**
@@ -219,7 +222,8 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     const credentials = requireCredentials(ctx);
     const network = resolveNetworkForCall(policy);
 
-    const attachments = await Promise.all((args.images ?? []).map(readAttachment));
+    const attachments: (ChatImage & { sha256: string })[] = [];
+    for (const image of args.images ?? []) attachments.push(await readAttachment(image));
     const mask = args.mask !== undefined ? await readMask(args.mask, attachments[0]!) : undefined;
 
     const { outDir, stem } = outputStemLocation(args.outDir, args.outName ?? defaultStem());
