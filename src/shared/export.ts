@@ -1,5 +1,6 @@
 // What an export asks for, and the pure rules around it: the size it comes
 // out at, the SDK verb that makes it, its file name, and which choices apply.
+import { ENCODE_QUALITY } from "gptimgsdk/types";
 
 export const EXPORT_FORMATS = ["png", "jpeg", "webp"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -7,15 +8,13 @@ export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 export const UPSCALE_FACTORS = [2, 4] as const;
 export type UpscaleFactor = (typeof UPSCALE_FACTORS)[number];
 
-/** The quality JPEG and lossy WebP take, as the SDK checks it. */
-export const QUALITY_RANGE = { min: 1, max: 100 } as const;
 
 export type ExportSize = { kind: "original" } | { kind: "longSide"; px: number } | { kind: "upscale"; factor: UpscaleFactor };
 
 /** The choices an export remembers between uses (state.json). */
 export interface ExportPrefs {
   format: ExportFormat;
-  /** Within QUALITY_RANGE, for JPEG and lossy WebP. */
+  /** Within the SDK's ENCODE_QUALITY, for JPEG and lossy WebP. */
   quality: number;
   /** WebP only. */
   lossless: boolean;
@@ -52,7 +51,7 @@ export function parseExportPrefs(value: unknown): ExportPrefs {
   const raw = value as Record<string, unknown>;
   const format = (EXPORT_FORMATS as readonly unknown[]).includes(raw.format) ? (raw.format as ExportFormat) : base.format;
   const quality =
-    typeof raw.quality === "number" && Number.isInteger(raw.quality) && raw.quality >= QUALITY_RANGE.min && raw.quality <= QUALITY_RANGE.max ? raw.quality : base.quality;
+    typeof raw.quality === "number" && Number.isInteger(raw.quality) && raw.quality >= ENCODE_QUALITY.min && raw.quality <= ENCODE_QUALITY.max ? raw.quality : base.quality;
   const lossless = typeof raw.lossless === "boolean" ? raw.lossless : base.lossless;
   const fill = typeof raw.fill === "string" && isColour(raw.fill) ? raw.fill : null;
   return { format, quality, lossless, size: parseSize(raw.size) ?? base.size, fill };

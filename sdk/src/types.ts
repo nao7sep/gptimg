@@ -1610,13 +1610,23 @@ export {
   COMBINE_OPS,
   DESPECKLE_KEEP,
   ENCODE_FORMATS,
+  ENCODE_QUALITY,
   FRAMECHECK_AXES,
   LAYER_GRAVITIES,
   MASK_METHODS,
   RESAMPLE_KERNELS,
   VISION_DETAILS,
 } from "./enums.ts";
-export { MODEL_LINEUP, SUPPORTED_MODELS, defaultModelFor, modelsFor } from "./ai-models.ts";
+export {
+  IMAGE_INPUT_FORMATS,
+  MASK_RULE,
+  MODEL_LINEUP,
+  SUPPORTED_MODELS,
+  defaultModelFor,
+  findModelRow,
+  modelsFor,
+  sizeProblem,
+} from "./ai-models.ts";
 export type {
   AiKind,
   AiProvider,
@@ -1624,6 +1634,7 @@ export type {
   ImageModelRow,
   ImageSizeRule,
   ModelRow,
+  SizeProblem,
   SupportedModel,
   VisionModelRow,
 } from "./ai-models.ts";

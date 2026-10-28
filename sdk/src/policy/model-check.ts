@@ -2,7 +2,7 @@
 // (ai-model-routing-conventions). An id with no row is not checked: its request is the plain
 // one, and OpenAI's answer at call time is the verdict on it.
 
-import { findModelRow, type ImageModelRow, type VisionModelRow } from "../ai-models.ts";
+import { findModelRow, sizeProblem, type ImageModelRow, type VisionModelRow } from "../ai-models.ts";
 import { GptImgError } from "../errors.ts";
 import type { VisionDetail } from "../types.ts";
 import { VISION_DEFAULTS } from "../defaults.ts";
@@ -42,13 +42,12 @@ function checkSize(section: string, row: ImageModelRow, value: unknown): void {
   const width = Number(match[1]);
   const height = Number(match[2]);
   const pixels = width * height;
-  if (width % rule.multipleOf !== 0 || height % rule.multipleOf !== 0) {
+  const problem = sizeProblem(width, height, rule);
+  if (problem === "multiple") {
     invalidPolicy(section, `${row.id} takes sizes whose sides are divisible by ${rule.multipleOf}, not ${value}.`);
   }
-  if (Math.max(width, height) > rule.maxRatio * Math.min(width, height)) {
-    invalidPolicy(section, `${row.id} takes sizes up to a ${rule.maxRatio}:1 ratio, not ${value}.`);
-  }
-  if (pixels < rule.minPixels || pixels > rule.maxPixels) {
+  if (problem === "ratio") invalidPolicy(section, `${row.id} takes sizes up to a ${rule.maxRatio}:1 ratio, not ${value}.`);
+  if (problem === "format" || problem === "small" || problem === "large") {
     invalidPolicy(
       section,
       `${row.id} takes sizes of ${rule.minPixels.toLocaleString("en-US")} to ${rule.maxPixels.toLocaleString("en-US")} pixels, not ${value} (${pixels.toLocaleString("en-US")}).`,
@@ -62,14 +61,14 @@ export function checkImageParams(section: ImageSection, params: Readonly<Record<
   if (typeof model !== "string") return;
   const row = imageRow(model);
   if (!row) return;
-  const { qualities, backgrounds, outputFormats, compression } = row.image;
+  const { qualities, backgrounds, outputFormats, compression, transparentFormats } = row.image;
   checkListed(section, model, "quality", params.quality, qualities);
   checkListed(section, model, "background", params.background, backgrounds);
   checkListed(section, model, "output_format", params.output_format, outputFormats);
   // OpenAI's own default format is png, which takes neither compression nor a jpeg's opacity.
   const format = typeof params.output_format === "string" ? params.output_format : "png";
-  if (params.background === "transparent" && !["png", "webp"].includes(format)) {
-    invalidPolicy(section, `a transparent background needs output_format png or webp, not ${format}.`);
+  if (params.background === "transparent" && !transparentFormats.includes(format)) {
+    invalidPolicy(section, `a transparent background needs output_format ${transparentFormats.join(" or ")}, not ${format}.`);
   }
   const level = params.output_compression;
   if (level !== undefined) {

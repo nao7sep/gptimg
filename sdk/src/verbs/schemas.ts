@@ -28,6 +28,7 @@ import {
   COMBINE_OPS,
   DESPECKLE_KEEP,
   ENCODE_FORMATS,
+  ENCODE_QUALITY,
   FRAMECHECK_AXES,
   LAYER_GRAVITIES,
   MASK_METHODS,
@@ -117,7 +118,7 @@ const ENCODING_FIELDS = {
   format: oneOf(ENCODE_FORMATS, "format").optional(),
   quality: z
     .number()
-    .refine((v) => Number.isInteger(v) && v >= 1 && v <= 100, "must be an integer in [1..100]")
+    .refine((v) => Number.isInteger(v) && v >= ENCODE_QUALITY.min && v <= ENCODE_QUALITY.max, `must be an integer in [${ENCODE_QUALITY.min}..${ENCODE_QUALITY.max}]`)
     .optional(),
   lossless: z.boolean().optional(),
   smartSubsample: z.boolean().optional(),

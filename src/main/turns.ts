@@ -6,7 +6,6 @@ import { randomUUID } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import type { ChatResult, RefusedResult } from "gptimgsdk/types";
 import type { AppFailure, OpenedSession, SendRequest, TurnOutcome } from "../shared/api.ts";
-import { modelSpelling } from "../shared/ai-models.ts";
 import { errorDataOf, failureFromError, failureFromRefusal, lostWorkerFailure } from "../shared/failures.ts";
 import { message } from "../shared/i18n/translator.ts";
 import {
@@ -20,7 +19,7 @@ import {
   type SessionDoc,
   type UserTurn,
 } from "../shared/session.ts";
-import { effectiveThinking, OPENAI_ENDPOINT, type Settings } from "../shared/settings.ts";
+import { effectiveThinking, modelSpelling, OPENAI_ENDPOINT, type Settings } from "../shared/settings.ts";
 import type { Records } from "./records.ts";
 import type { CallSettlement, SdkHost } from "./sdk-host.ts";
 import type { PartialDraft } from "./sdk-protocol.ts";
@@ -248,9 +247,7 @@ export class TurnRunner {
           imageModel: modelSpelling(settings["openai.image"]),
           size: turn.options.size,
           quality: turn.options.quality,
-          // Transparency needs a format that holds it; PNG is the image model's own default.
-          ...(backgroundOf(turn.options) === "transparent" && { background: "transparent", output_format: "png" }),
-          ...(backgroundOf(turn.options) === "opaque" && { background: "opaque" }),
+          ...(backgroundOf(turn.options) !== "auto" && { background: backgroundOf(turn.options) }),
           ...(settings["openai.drafts"] > 0 && { partial_images: settings["openai.drafts"] }),
         },
       },

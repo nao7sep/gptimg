@@ -3,6 +3,7 @@
 // transparency kept or filled. The choices are remembered for next time.
 // The export and the upscaler download belong to the window (export-tasks.ts):
 // closing the dialog, by any path, hides it and leaves a running task running.
+import { ENCODE_QUALITY } from "gptimgsdk/types";
 import { useEffect, useRef, useState } from "react";
 import { imageUrl, type AppFailure, type UpscalerStatus } from "../../../shared/api.ts";
 import {
@@ -12,7 +13,6 @@ import {
   fillFor,
   LONG_SIDE,
   outputSize,
-  QUALITY_RANGE,
   UPSCALE_FACTORS,
   validLongSide,
   type ExportPrefs,
@@ -177,8 +177,8 @@ export function ExportModal({ path, prefs: initial, tasks, onClose, onExported }
           <span className="field-label">{t("export.quality", { value: prefs.quality })}</span>
           <input
             type="range"
-            min={QUALITY_RANGE.min}
-            max={QUALITY_RANGE.max}
+            min={ENCODE_QUALITY.min}
+            max={ENCODE_QUALITY.max}
             value={prefs.quality}
             disabled={task !== null}
             onChange={(e) => set({ quality: Number(e.target.value) })}

@@ -17,7 +17,7 @@ import { openBackups, type Backups } from "./backups.ts";
 import { loadConfig, saveConfig, type LoadedConfig } from "./config.ts";
 import { json, readText, writeTextAtomic } from "./files.ts";
 import { ExportRunner, folderOf } from "./export.ts";
-import { ImageAccess, isImagePath, registerImageScheme, REFERENCE_EXTENSIONS } from "./images.ts";
+import { IMAGE_EXTENSIONS, ImageAccess, isImagePath, registerImageScheme } from "./images.ts";
 import { chromiumLang, clearAppleLanguages, earlyPreferences, LanguageOwner, writeAppleLanguages } from "./language.ts";
 import { buildMenu } from "./menu.ts";
 import { RecordsWindow } from "./records-window.ts";
@@ -601,7 +601,7 @@ function installIpc(state: State): void {
       const options = {
         title: language.translator.t("dialog.pickImages"),
         properties: ["openFile", "multiSelections"] as ("openFile" | "multiSelections")[],
-        filters: [{ name: language.translator.t("dialog.imageFilter"), extensions: REFERENCE_EXTENSIONS.map((ext) => ext.slice(1)) }],
+        filters: [{ name: language.translator.t("dialog.imageFilter"), extensions: [...IMAGE_EXTENSIONS] }],
       };
       const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
       if (result.canceled) return [];

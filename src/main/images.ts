@@ -9,6 +9,7 @@ import { net, protocol } from "electron";
 import sharp from "sharp";
 import { IMAGE_SCHEME } from "../shared/api.ts";
 import { isInside } from "./sessions.ts";
+import { IMAGE_INPUT_FORMATS } from "gptimgsdk/types";
 
 const CACHE_LIMIT = 300;
 const MAX_THUMB_WIDTH = 2048;
@@ -114,11 +115,11 @@ export class ImageAccess {
   }
 }
 
-/** The formats OpenAI takes as a reference image. Main never loads the SDK itself; that is the worker's. */
-export const REFERENCE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"] as const;
+/** The file extensions of the formats OpenAI takes as an attached image, from the SDK's rule. */
+export const IMAGE_EXTENSIONS: readonly string[] = IMAGE_INPUT_FORMATS.flatMap((entry) => entry.extensions);
 
 export function isImagePath(path: string): boolean {
-  return (REFERENCE_EXTENSIONS as readonly string[]).includes(extname(path).toLowerCase());
+  return IMAGE_EXTENSIONS.includes(extname(path).slice(1).toLowerCase());
 }
 
 export function registerImageScheme(): void {

@@ -13,7 +13,16 @@ export type { ModelKey } from "./local/models/registry.ts";
 export { readSidecar } from "./sidecar/read.ts";
 export { validatePolicy } from "./policy/schemas.ts";
 export { SUPPORTED_IMAGE_EXTENSIONS } from "./image/formats.ts";
-export { MODEL_LINEUP, SUPPORTED_MODELS, defaultModelFor, modelsFor } from "./ai-models.ts";
+export {
+  IMAGE_INPUT_FORMATS,
+  MASK_RULE,
+  MODEL_LINEUP,
+  SUPPORTED_MODELS,
+  defaultModelFor,
+  findModelRow,
+  modelsFor,
+  sizeProblem,
+} from "./ai-models.ts";
 export type {
   AiKind,
   AiProvider,
@@ -21,6 +30,7 @@ export type {
   ImageModelRow,
   ImageSizeRule,
   ModelRow,
+  SizeProblem,
   SupportedModel,
   VisionModelRow,
 } from "./ai-models.ts";
@@ -166,6 +176,7 @@ export {
   LAYER_GRAVITIES,
   RESAMPLE_KERNELS,
   ENCODE_FORMATS,
+  ENCODE_QUALITY,
   MASK_METHODS,
   COMBINE_OPS,
   DESPECKLE_KEEP,

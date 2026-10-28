@@ -2,8 +2,7 @@
 // key and a built-in in code; config.json holds a set only while the user's
 // copy differs from its built-in. Everything here is pure, so main validates
 // what it loads and the renderer validates a draft with the same rules.
-import { OPENAI_BASE_URL } from "gptimgsdk/types";
-import { defaultModelFor, findModelRow, modelSpelling, type ChatModelRow, type ImageModelRow } from "./ai-models.ts";
+import { defaultModelFor, findModelRow as sdkModelRow, OPENAI_BASE_URL, type ImageModelRow, type VisionModelRow } from "gptimgsdk/types";
 import { LANGUAGE_PREFERENCES, type LanguagePreference } from "./i18n/languages.ts";
 
 export const THEMES = ["system", "light", "dark"] as const;
@@ -51,8 +50,20 @@ export function isEndpoint(value: string): boolean {
 
 export type SetKey = keyof Settings;
 
+// The app offers the SDK's chat models for the conversation and its image-edit models for the
+// image tool, suggesting the SDK's default for each; the SDK's table holds the rows and their rules.
 export const CHAT_KIND = "chat";
 export const IMAGE_KIND = "image-edit";
+
+/** The SDK's row for an id typed into Settings, compared trimmed and without regard to case. */
+function findModelRow(id: string) {
+  return sdkModelRow(id.trim());
+}
+
+/** An id as it is stored and sent: its row's spelling, or as entered (trimmed) when it has no row. */
+export function modelSpelling(id: string): string {
+  return findModelRow(id)?.id ?? id.trim();
+}
 
 export function builtInSettings(): Settings {
   const chat = defaultModelFor("openai", CHAT_KIND);
@@ -74,14 +85,14 @@ export function builtInSettings(): Settings {
 export const SET_KEYS = Object.keys(builtInSettings()) as SetKey[];
 
 /** The supported assistant row for an id, compared trimmed and case-insensitive; undefined for an id with no row. */
-export function chatRow(id: string): ChatModelRow | undefined {
+export function chatRow(id: string): VisionModelRow | undefined {
   const row = findModelRow(id);
   return row && "thinking" in row && row.kinds.includes(CHAT_KIND) ? row : undefined;
 }
 
 export function imageRow(id: string): ImageModelRow | undefined {
   const row = findModelRow(id);
-  return row && "image" in row ? row : undefined;
+  return row && "image" in row && row.kinds.includes(IMAGE_KIND) ? row : undefined;
 }
 
 export function defaultThinkingFor(model: string): string | undefined {

@@ -26,6 +26,8 @@ export interface ImageCapabilities {
   readonly outputFormats: readonly string[];
   /** `output_compression`'s range and the formats it applies to. */
   readonly compression: { readonly min: number; readonly max: number; readonly formats: readonly string[] };
+  /** The output formats that hold a transparent background. */
+  readonly transparentFormats: readonly string[];
   readonly size: ImageSizeRule;
 }
 
@@ -53,21 +55,22 @@ export type SupportedModel = ImageModelRow | VisionModelRow;
 const IMAGE_BACKGROUNDS = ["auto", "transparent", "opaque"] as const;
 const IMAGE_FORMATS = ["png", "jpeg", "webp"] as const;
 const IMAGE_COMPRESSION = { min: 0, max: 100, formats: ["jpeg", "webp"] } as const;
+const IMAGE_TRANSPARENT_FORMATS = ["png", "webp"] as const;
 const IMAGE_SIZE: ImageSizeRule = { multipleOf: 16, maxRatio: 3, minPixels: 655_360, maxPixels: 8_294_400 };
 const IMAGE_2_5_QUALITIES = ["auto", "low", "medium", "high", "xhigh", "max"] as const;
 
 export const SUPPORTED_MODELS: readonly SupportedModel[] = [
   {
     provider: "openai", id: "gpt-image-2.5-flare", kinds: ["image-generate", "image-edit"], defaultFor: ["image-generate"],
-    image: { qualities: IMAGE_2_5_QUALITIES, backgrounds: IMAGE_BACKGROUNDS, outputFormats: IMAGE_FORMATS, compression: IMAGE_COMPRESSION, size: IMAGE_SIZE },
+    image: { qualities: IMAGE_2_5_QUALITIES, backgrounds: IMAGE_BACKGROUNDS, outputFormats: IMAGE_FORMATS, compression: IMAGE_COMPRESSION, transparentFormats: IMAGE_TRANSPARENT_FORMATS, size: IMAGE_SIZE },
   },
   {
     provider: "openai", id: "gpt-image-2.5-sunburst", kinds: ["image-generate", "image-edit"], defaultFor: ["image-edit"],
-    image: { qualities: IMAGE_2_5_QUALITIES, backgrounds: IMAGE_BACKGROUNDS, outputFormats: IMAGE_FORMATS, compression: IMAGE_COMPRESSION, size: IMAGE_SIZE },
+    image: { qualities: IMAGE_2_5_QUALITIES, backgrounds: IMAGE_BACKGROUNDS, outputFormats: IMAGE_FORMATS, compression: IMAGE_COMPRESSION, transparentFormats: IMAGE_TRANSPARENT_FORMATS, size: IMAGE_SIZE },
   },
   {
     provider: "openai", id: "gpt-image-2", kinds: ["image-generate", "image-edit"], defaultFor: [],
-    image: { qualities: ["auto", "low", "medium", "high"], backgrounds: IMAGE_BACKGROUNDS, outputFormats: IMAGE_FORMATS, compression: IMAGE_COMPRESSION, size: IMAGE_SIZE },
+    image: { qualities: ["auto", "low", "medium", "high"], backgrounds: IMAGE_BACKGROUNDS, outputFormats: IMAGE_FORMATS, compression: IMAGE_COMPRESSION, transparentFormats: IMAGE_TRANSPARENT_FORMATS, size: IMAGE_SIZE },
   },
   // Each mainline model takes the Responses API's image_generation tool, so it can lead a chat.
   { provider: "openai", id: "gpt-6-astra", kinds: ["vision", "chat"], defaultFor: [], thinking: ["low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
@@ -76,6 +79,28 @@ export const SUPPORTED_MODELS: readonly SupportedModel[] = [
   { provider: "openai", id: "gpt-5.6-terra", kinds: ["vision", "chat"], defaultFor: ["chat"], thinking: ["none", "low", "medium", "high", "xhigh", "max"], defaultThinking: "medium" },
   { provider: "openai", id: "gpt-6-luna", kinds: ["vision", "chat"], defaultFor: ["vision"], thinking: ["none", "low", "medium", "high", "xhigh", "max"], defaultThinking: "none" },
 ];
+
+/** The image formats OpenAI takes as input (chat attachments, edit inputs), with the file extensions each is saved under. */
+export const IMAGE_INPUT_FORMATS = [
+  { format: "png", extensions: ["png"] },
+  { format: "jpeg", extensions: ["jpg", "jpeg"] },
+  { format: "webp", extensions: ["webp"] },
+] as const;
+
+/** A mask for an image request: a PNG the size of the image it applies to, with transparency where the image may change. */
+export const MASK_RULE = { format: "png", sameSizeAsImage: true, needsTransparency: true } as const;
+
+export type SizeProblem = "format" | "multiple" | "ratio" | "small" | "large";
+
+/** What is wrong with an exact width and height under an image row's size rule, or null when the model takes them. */
+export function sizeProblem(width: number, height: number, rule: ImageSizeRule): SizeProblem | null {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return "format";
+  if (width % rule.multipleOf !== 0 || height % rule.multipleOf !== 0) return "multiple";
+  if (Math.max(width, height) > rule.maxRatio * Math.min(width, height)) return "ratio";
+  if (width * height < rule.minPixels) return "small";
+  if (width * height > rule.maxPixels) return "large";
+  return null;
+}
 
 export const AI_ROLES = [
   // Creates images from a prompt; the fast everyday image model suits it.

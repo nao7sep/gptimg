@@ -48,6 +48,9 @@ export type ResampleKernel = (typeof RESAMPLE_KERNELS)[number];
 export const ENCODE_FORMATS = ["png", "webp", "jpeg"] as const;
 export type EncodeFormat = (typeof ENCODE_FORMATS)[number];
 
+/** The `quality` a lossy JPEG or WebP encoding takes: an integer in this range. */
+export const ENCODE_QUALITY = { min: 1, max: 100 } as const;
+
 export const MASK_METHODS = ["chroma", "ai"] as const;
 export type MaskMethod = (typeof MASK_METHODS)[number];
 

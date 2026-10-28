@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "../image/sharp.ts";
-import { defaultModelFor } from "../ai-models.ts";
+import { defaultModelFor, IMAGE_INPUT_FORMATS, MASK_RULE } from "../ai-models.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
 import { throwIfAborted, fsError, GptImgError } from "../errors.ts";
 import { inputImageError } from "../image/bridge.ts";
@@ -37,6 +37,8 @@ import { validateChatArgs } from "./schemas.ts";
 const HISTORY_IMAGE_TURNS = 8;
 const HISTORY_IMAGE_MAX_SIDE = 1536;
 
+const ACCEPTED_FORMATS: readonly string[] = IMAGE_INPUT_FORMATS.map((entry) => entry.format);
+
 /** An attached image, read before the paid call so an unreadable one fails first. */
 async function readAttachment(filePath: string): Promise<ChatImage & { sha256: string }> {
   let data: Buffer;
@@ -46,6 +48,9 @@ async function readAttachment(filePath: string): Promise<ChatImage & { sha256: s
     throw fsError(err, "Failed to read attached image", filePath);
   }
   const { format } = await detectFormat(data);
+  if (!ACCEPTED_FORMATS.includes(format)) {
+    throw new GptImgError("image.unsupportedFormat", `chat: attached image is ${format}; OpenAI takes ${ACCEPTED_FORMATS.join(", ")}.`, { subject: filePath });
+  }
   return { name: path.basename(filePath), data: new Uint8Array(data), format, sha256: hash(data) };
 }
 
@@ -58,7 +63,7 @@ async function readMask(filePath: string, first: ChatImage): Promise<ChatImage &
   const mask = await readAttachment(filePath);
   const invalid = (message: string, constraint: string) =>
     new GptImgError("args.invalid", `chat: ${message}`, { subject: filePath, details: { field: "mask", constraint } });
-  if (mask.format !== "png") throw invalid(`mask must be a PNG, not ${mask.format}.`, "a PNG");
+  if (mask.format !== MASK_RULE.format) throw invalid(`mask must be a PNG, not ${mask.format}.`, "a PNG");
   const [maskInfo, firstInfo] = await Promise.all([sharp(mask.data).metadata(), sharp(first.data).metadata()]);
   if (maskInfo.width !== firstInfo.width || maskInfo.height !== firstInfo.height) {
     throw invalid(
@@ -189,11 +194,13 @@ function planChat(ctx: SdkContext, args: ChatArgs) {
   const reasoning = resolveVisionReasoning(model, section.reasoning, "chat");
   const instructions = section.instructions ?? OPENAI_CHAT_INSTRUCTIONS;
   const imageModel = resolveModel(section.imageModel, defaultModelFor("openai", "image-edit"));
+  // A transparent background needs a format that holds it: PNG, OpenAI's own default, unless the caller names one.
+  const outputFormat = section.output_format ?? (section.background === "transparent" ? "png" : undefined);
   const toolValues = {
     ...(section.size !== undefined && { size: section.size }),
     ...(section.quality !== undefined && { quality: section.quality }),
     ...(section.background !== undefined && { background: section.background }),
-    ...(section.output_format !== undefined && { output_format: section.output_format }),
+    ...(outputFormat !== undefined && { output_format: outputFormat }),
     ...(section.output_compression !== undefined && { output_compression: section.output_compression }),
     ...(section.partial_images !== undefined && section.partial_images > 0 && { partial_images: section.partial_images }),
   };
