@@ -70,7 +70,7 @@ describe("image access", () => {
     expect(await access.png(path, 0)).toBeNull();
   });
 
-  it("encodes three images at a time, starts the rest as each finishes, and a later repeat finds the cached copy", async () => {
+  it("encodes three images at a time, starts the rest as each finishes", async () => {
     const dir = root();
     const files = await Promise.all(["a", "b", "c", "d", "e"].map((name) => image(dir, `${name}.png`)));
     const access = new ImageAccess(() => [dir]);
@@ -100,20 +100,6 @@ describe("image access", () => {
     while (release.length > 0) release.shift()!();
     await Promise.all(jobs);
     expect(peak).toBe(3);
-    expect(await access.png(files[0]!, 32)).toEqual(Buffer.from("png"));
     expect(encoded).toHaveBeenCalledTimes(5);
-  });
-
-  it("caches thumbnails and leaves full PNG conversions uncached", async () => {
-    const dir = root();
-    const file = await image(dir);
-    const access = new ImageAccess(() => [dir]);
-    const encoded = vi.spyOn(sharp.prototype, "toBuffer").mockResolvedValue(Buffer.alloc(8) as never);
-    await access.png(file, 32);
-    await access.png(file, 32);
-    expect(encoded).toHaveBeenCalledTimes(1);
-    await access.png(file);
-    await access.png(file);
-    expect(encoded).toHaveBeenCalledTimes(3);
   });
 });

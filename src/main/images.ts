@@ -11,7 +11,6 @@ import { IMAGE_SCHEME } from "../shared/api.ts";
 import { isInside } from "./sessions.ts";
 import { IMAGE_INPUT_FORMATS } from "gptimgsdk/types";
 
-const CACHE_LIMIT = 300;
 const MAX_THUMB_WIDTH = 2048;
 // Opening a long chat asks for every picture at once, since every print mounts. Measured on a
 // 10-core Mac with 40 PNGs at the generated sizes (1024 to 1536 px): one at a time took 2.8 to
@@ -23,7 +22,6 @@ const ENCODES_AT_ONCE = 3;
 
 export class ImageAccess {
   readonly #picked = new Set<string>();
-  readonly #thumbs = new Map<string, Buffer>();
   #encoding = 0;
   readonly #waiting: Array<() => void> = [];
 
@@ -75,27 +73,17 @@ export class ImageAccess {
     }
   }
 
-  /** A repeat that starts after the first finished finds its cached copy; one running alongside it encodes again. */
-  async #thumb(path: string, width: number): Promise<Buffer | null> {
-    const info = await stat(path);
-    const key = `${path}\0${width}\0${info.mtimeMs}\0${info.size}`;
-    return this.#queued(async () => {
-      const hit = this.#thumbs.get(key);
-      if (hit) {
-        this.#thumbs.delete(key);
-        this.#thumbs.set(key, hit);
-        return hit;
-      }
-      const png = await this.#encode(path, width);
-      if (png) {
-        this.#thumbs.set(key, png);
-        if (this.#thumbs.size > CACHE_LIMIT) this.#thumbs.delete(this.#thumbs.keys().next().value!);
-      }
-      return png;
-    });
+  // No thumbnail cache (rejected-mechanisms-conventions, Performance machinery for unmeasured
+  // scale). Measured in Electron with 40 pictures at the generated sizes: a chat's prints stay
+  // mounted and are asked for once while it is open, so a cache scoped to the open chat saved
+  // nothing; switching to another chat and back asks for all 40 again, since Chromium had
+  // dropped them, and only a cache kept across every chat visited, bounded by nothing but a cap,
+  // would answer that. Returning to a chat re-encodes its pictures as opening it did.
+  #thumb(path: string, width: number): Promise<Buffer | null> {
+    return this.#queued(() => this.#encode(path, width));
   }
 
-  /** Checked asynchronous PNG conversion. Full-size clipboard images are never cached. */
+  /** Checked asynchronous PNG conversion. */
   async png(path: string, width?: number): Promise<Buffer | null> {
     if (!this.allowed(path)) return null;
     const absolute = resolve(path);
