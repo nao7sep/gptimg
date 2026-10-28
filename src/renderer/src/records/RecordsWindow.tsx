@@ -42,11 +42,16 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
   const [detail, setDetail] = useState<RecordDetail | null | "loading" | "failed">(null);
   const [width, setWidth] = useState(boot.state.recordsListWidth ?? RECORDS_LIST_WIDTH.initial);
   const list = useRef<HTMLDivElement>(null);
-  const loadingMore = useRef(false);
-  const queryGeneration = useRef(0);
-  const liveGeneration = useRef(0);
-  const detailGeneration = useRef(0);
-  const selectedRef = useRef<string | null>(null);
+  // The window's one reader runs its reads one at a time. IPC cannot be cancelled,
+  // so a result checks the list token or the detail token it was asked under:
+  // the list token changes when the filters replace the list or a page extends
+  // it, the detail token when another record is chosen or the list is replaced.
+  const reader = useRef<Promise<unknown>>(Promise.resolve());
+  const listToken = useRef(0);
+  const detailToken = useRef(0);
+  const read = useCallback((job: () => Promise<void>) => {
+    reader.current = reader.current.then(job, job);
+  }, []);
 
   useEffect(() => {
     applyFonts(settings);
@@ -56,44 +61,28 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
   useEffect(() => api.onSettings(setSettings), []);
 
   useEffect(() => {
-    let active = true;
-    let chatsGeneration = 0;
-    const refreshChats = async () => {
-      const generation = ++chatsGeneration;
+    const refreshChats = () => read(async () => {
       try {
-        const found = await api.recordChats();
-        if (active && generation === chatsGeneration) setChats(found);
+        setChats(await api.recordChats());
       } catch {
-        if (active && generation === chatsGeneration) setState("failed");
+        setState("failed");
       }
-    };
-    void refreshChats();
-    const unsubscribe = api.onSessionsChanged(() => void refreshChats());
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, []);
+    });
+    refreshChats();
+    return api.onSessionsChanged(refreshChats);
+  }, [read]);
 
   useEffect(() => {
-    let active = true;
-    let launchesGeneration = 0;
-    const refreshLaunches = async () => {
-      const generation = ++launchesGeneration;
+    const refreshLaunches = () => read(async () => {
       try {
-        const found = await api.recordLaunches();
-        if (active && generation === launchesGeneration) setLaunches(found);
+        setLaunches(await api.recordLaunches());
       } catch {
-        if (active && generation === launchesGeneration) setState("failed");
+        setState("failed");
       }
-    };
-    void refreshLaunches();
-    const unsubscribe = api.onRecordsChanged(() => void refreshLaunches());
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, []);
+    });
+    refreshLaunches();
+    return api.onRecordsChanged(refreshLaunches);
+  }, [read]);
 
   // Search waits for a pause in typing.
   useEffect(() => {
@@ -106,53 +95,54 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
     [query, launch, chatId, kind, level],
   );
 
-  const choose = useCallback(async (row: RecordRow) => {
-    const generation = ++detailGeneration.current;
-    const pageGeneration = queryGeneration.current;
-    const key = keyOf(row);
-    selectedRef.current = key;
-    setSelected(key);
+  const choose = useCallback((row: RecordRow) => {
+    const token = ++detailToken.current;
+    setSelected(keyOf(row));
     setDetail("loading");
-    try {
-      const found = await api.recordDetail({ source: row.source, id: row.id });
-      if (generation === detailGeneration.current && pageGeneration === queryGeneration.current) setDetail(found ?? "failed");
-    } catch {
-      if (generation === detailGeneration.current && pageGeneration === queryGeneration.current) setDetail("failed");
-    }
-  }, []);
-
-  // A page joins the list only while no newer filter has replaced it. A failed
-  // query that still returned rows shows them beside the warning.
-  const loadFirst = useCallback(async () => {
-    const generation = ++queryGeneration.current;
-    try {
-      const page = await api.queryRecords(filters);
-      if (generation !== queryGeneration.current) return;
-      if (page.failed && page.rows.length === 0) {
-        setState("failed");
-        return;
+    read(async () => {
+      if (token !== detailToken.current) return;
+      try {
+        const found = await api.recordDetail({ source: row.source, id: row.id });
+        if (token === detailToken.current) setDetail(found ?? "failed");
+      } catch {
+        if (token === detailToken.current) setDetail("failed");
       }
-      setRows(page.rows);
-      setNext(page.next);
-      setState(page.failed ? "failed" : "ready");
-    } catch {
-      if (generation === queryGeneration.current) setState("failed");
-    }
-  }, [filters]);
+    });
+  }, [read]);
+
+  // A failed query that still returned rows shows them beside the warning.
+  const loadFirst = useCallback(() => {
+    const token = ++listToken.current;
+    read(async () => {
+      if (token !== listToken.current) return;
+      try {
+        const page = await api.queryRecords(filters);
+        if (token !== listToken.current) return;
+        if (page.failed && page.rows.length === 0) {
+          setState("failed");
+          return;
+        }
+        setRows(page.rows);
+        setNext(page.next);
+        setState(page.failed ? "failed" : "ready");
+      } catch {
+        if (token === listToken.current) setState("failed");
+      }
+    });
+  }, [filters, read]);
 
   useEffect(() => {
-    ++detailGeneration.current;
-    selectedRef.current = null;
+    ++detailToken.current;
     setSelected(null);
     setDetail(null);
     setRows([]);
     setNext(null);
     setState("loading");
     if (list.current) list.current.scrollTop = 0;
-    void loadFirst();
+    loadFirst();
     return () => {
-      ++queryGeneration.current;
-      ++detailGeneration.current;
+      ++listToken.current;
+      ++detailToken.current;
     };
   }, [loadFirst]);
 
@@ -165,38 +155,42 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
   // New records join the top while the list is scrolled there.
   useEffect(
     () =>
-      api.onRecordsChanged(async () => {
+      api.onRecordsChanged(() => {
         if ((list.current?.scrollTop ?? 0) > 8) return;
-        const generation = queryGeneration.current;
-        const live = ++liveGeneration.current;
-        const current = () => generation === queryGeneration.current && live === liveGeneration.current;
-        try {
-          const page = await api.queryRecords(filters);
-          if (!current()) return;
-          setRows((rows) => merge(rows, page.rows, true));
-          setState(page.failed ? "failed" : "ready");
-        } catch {
-          if (current()) setState("failed");
-        }
+        const token = listToken.current;
+        read(async () => {
+          if (token !== listToken.current) return;
+          try {
+            const page = await api.queryRecords(filters);
+            if (token !== listToken.current) return;
+            setRows((rows) => merge(rows, page.rows, true));
+            setState(page.failed ? "failed" : "ready");
+          } catch {
+            if (token === listToken.current) setState("failed");
+          }
+        });
       }),
-    [filters],
+    [filters, read],
   );
 
-  const loadMore = async () => {
-    if (!next || loadingMore.current) return;
-    loadingMore.current = true;
-    const generation = queryGeneration.current;
-    try {
-      const page = await api.queryRecords({ ...filters, cursor: next });
-      if (generation !== queryGeneration.current) return;
-      setRows((current) => merge(current, page.rows, false));
-      setNext(page.next);
-      setState(page.failed ? "failed" : "ready");
-    } catch {
-      if (generation === queryGeneration.current) setState("failed");
-    } finally {
-      loadingMore.current = false;
-    }
+  // Scrolling asks for the next page many times; the first to run extends the list and the rest find their token old.
+  const loadMore = () => {
+    if (!next) return;
+    const token = listToken.current;
+    const cursor = next;
+    read(async () => {
+      if (token !== listToken.current) return;
+      try {
+        const page = await api.queryRecords({ ...filters, cursor });
+        if (token !== listToken.current) return;
+        ++listToken.current;
+        setRows((current) => merge(current, page.rows, false));
+        setNext(page.next);
+        setState(page.failed ? "failed" : "ready");
+      } catch {
+        if (token === listToken.current) setState("failed");
+      }
+    });
   };
 
   const index = rows.findIndex((row) => keyOf(row) === selected);
@@ -205,7 +199,7 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
       const row = rows[Math.max(0, Math.min(rows.length - 1, i))];
       if (!row) return;
       event.preventDefault();
-      void choose(row);
+      choose(row);
       document.getElementById(`record-${keyOf(row)}`)?.scrollIntoView?.({ block: "nearest" });
     };
     if (event.key === "ArrowDown") go(index + 1);
@@ -306,7 +300,7 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
           onKeyDown={onListKey}
           onScroll={(e) => {
             const el = e.currentTarget;
-            if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) void loadMore();
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) loadMore();
           }}
         >
           {state === "loading" && <p className="records-state">{t("records.loading")}</p>}
@@ -319,7 +313,7 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
                 role="option"
                 aria-selected={keyOf(row) === selected}
                 className={`record-card${keyOf(row) === selected ? " selected" : ""}`}
-                onClick={() => void choose(row)}
+                onClick={() => choose(row)}
               >
                 <div className="record-line">
                   <span className="record-time">{when(row.at)}</span>

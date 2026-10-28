@@ -68,7 +68,7 @@ describe("Records list", () => {
     expect(queryRecords).toHaveBeenCalledTimes(2);
   });
 
-  it("resets the list, selection and detail when filters change, ignoring earlier queries", async () => {
+  it("resets the list, selection and detail when filters change, ignoring a query the change outdated", async () => {
     const late = deferred<RecordsPage>();
     const queryRecords = vi.fn<(query: RecordQuery) => Promise<RecordsPage>>()
       .mockResolvedValueOnce(page(0)).mockResolvedValueOnce(page(100)).mockImplementationOnce(() => late.promise).mockResolvedValueOnce(page(400, 1, false));
@@ -82,9 +82,11 @@ describe("Records list", () => {
     fireEvent.change(filters().getByRole("combobox", { name: "Kind" }), { target: { value: "call" } });
     expect(screen.queryByText("Detail 100")).toBeNull();
     expect(document.querySelectorAll(".record-card")).toHaveLength(0);
+    await act(async () => {});
+    expect(queryRecords).toHaveBeenCalledTimes(3);
     fireEvent.change(filters().getByRole("combobox", { name: "Level" }), { target: { value: "error" } });
-    await screen.findByText("Row 400");
     await act(async () => late.resolve(page(300, 1, false)));
+    await screen.findByText("Row 400");
     expect(screen.queryByText("Row 300")).toBeNull();
     expect(screen.getByText("Row 400")).toBeDefined();
     expect(document.querySelector('[aria-selected="true"]')).toBeNull();
@@ -124,7 +126,7 @@ describe("Records list", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("ignores earlier live results after a newer one settles", async () => {
+  it("reads live refreshes one at a time, each joining the top in turn", async () => {
     const first = deferred<RecordsPage>();
     const second = deferred<RecordsPage>();
     const queryRecords = vi.fn(async () => page(0, 1, false));
@@ -133,16 +135,20 @@ describe("Records list", () => {
     await screen.findByText("Row 0");
     queryRecords.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
     await act(async () => { t.emitRecords(); t.emitRecords(); });
+    expect(queryRecords).toHaveBeenCalledTimes(2);
+    await act(async () => first.resolve(page(1, 1, false)));
+    await screen.findByText("Row 1");
+    expect(queryRecords).toHaveBeenCalledTimes(3);
     await act(async () => second.resolve(page(2, 1, false)));
     await screen.findByText("Row 2");
-    await act(async () => first.resolve(page(1, 1, false)));
-    expect(screen.queryByText("Row 1")).toBeNull();
-    expect(screen.getByText("Row 2")).toBeDefined();
+    expect([...document.querySelectorAll(".record-card")].map((card) => card.textContent)).toEqual([
+      expect.stringContaining("Row 2"), expect.stringContaining("Row 1"), expect.stringContaining("Row 0"),
+    ]);
   });
 });
 
 describe("Records details and live settings", () => {
-  it("clears the old detail on selection and refuses late detail results after selection or a filter change", async () => {
+  it("clears the old detail on selection and ignores detail results that another selection or a filter change outdated", async () => {
     const old = deferred<RecordDetail | null>();
     const next = deferred<RecordDetail | null>();
     const late = deferred<RecordDetail | null>();
@@ -152,14 +158,17 @@ describe("Records details and live settings", () => {
     await t.render();
     await screen.findByText("Row 0");
     fireEvent.click(screen.getByText("Row 0"));
+    await act(async () => {});
+    expect(recordDetail).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByText("Row 1"));
-    await act(async () => next.resolve(detail(1)));
-    await screen.findByText("Detail 1");
     await act(async () => old.resolve(detail(0)));
     expect(screen.queryByText("Detail 0")).toBeNull();
+    await act(async () => next.resolve(detail(1)));
+    await screen.findByText("Detail 1");
     fireEvent.click(screen.getByText("Row 0"));
     expect(screen.queryByText("Detail 1")).toBeNull();
-    await waitFor(() => expect(recordDetail).toHaveBeenCalledTimes(3));
+    await act(async () => {});
+    expect(recordDetail).toHaveBeenCalledTimes(3);
     fireEvent.change(filters().getByRole("combobox", { name: "Kind" }), { target: { value: "call" } });
     await act(async () => late.resolve(detail(0)));
     expect(screen.queryByText("Detail 0")).toBeNull();
@@ -176,16 +185,17 @@ describe("Records details and live settings", () => {
     expect(document.documentElement.style.getPropertyValue("--font-content")).toBe("Updated Content");
   });
 
-  it("refreshes chat names with a stale guard and cleans up all subscriptions on unmount", async () => {
+  it("refreshes chat names in the order they were read and cleans up all subscriptions on unmount", async () => {
     const first = deferred<Array<{ id: string; title: string }>>();
     const second = deferred<Array<{ id: string; title: string }>>();
     const recordChats = vi.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
     const t = setup({ recordChats });
     const rendered = await t.render();
     await act(async () => t.emitSessions());
+    expect(recordChats).toHaveBeenCalledOnce();
+    await act(async () => first.resolve([{ id: "chat", title: "Stale chat title" }]));
     await act(async () => second.resolve([{ id: "chat", title: "Current chat title" }]));
     await screen.findByRole("option", { name: "Current chat title" });
-    await act(async () => first.resolve([{ id: "chat", title: "Stale chat title" }]));
     expect(screen.queryByRole("option", { name: "Stale chat title" })).toBeNull();
     rendered.unmount();
     expect(t.records.size).toBe(0);
