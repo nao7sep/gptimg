@@ -42,6 +42,10 @@ export interface TurnDeps {
   now?: () => Date;
 }
 
+/** What GptImg's assistant is told, sent with every turn: GptImg's own product text, not the SDK's. */
+export const CHAT_INSTRUCTIONS =
+  "You help the user create and refine images. When they ask for an image or a change to one, use the image generation tool; otherwise answer briefly. Reply in the language the user writes in. When a request is ambiguous, make a reasonable choice and say what you chose rather than asking first.";
+
 function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
 }
@@ -243,6 +247,7 @@ export class TurnRunner {
       policy: {
         chat: {
           model: modelSpelling(settings["openai.chat"]),
+          instructions: CHAT_INSTRUCTIONS,
           ...(reasoning && { reasoning }),
           imageModel: modelSpelling(settings["openai.image"]),
           size: turn.options.size,

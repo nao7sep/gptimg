@@ -53,7 +53,7 @@ export const SidecarV2Schema = z.discriminatedUnion("kind", [
     writer: WriterSchema,
     request: z.looseObject({
       model: z.string(),
-      instructions: z.string(),
+      instructions: z.string().optional(),
       tool: z.record(z.string(), z.unknown()),
       message: z.string(),
       images: z.array(z.looseObject({ name: z.string(), sha256: z.string() })),

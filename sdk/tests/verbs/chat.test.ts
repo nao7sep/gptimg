@@ -81,6 +81,12 @@ describe("chat", () => {
     expect(await readSidecar(path.join(session, "turn-3.json"))).toMatchObject({ kind: "chat", files: [], response: { usage: { input_tokens: 4 } } });
   });
 
+  it("sends no instructions of its own when the caller gives none", async () => {
+    provider.chat.mockResolvedValue(answer());
+    done(await sdk.chat({ message: "x", outDir: session }));
+    expect(provider.chat.mock.calls[0]![0].params.instructions).toBeUndefined();
+  });
+
   it("settles the policy before the call: the assistant's effort, the tool's values and the instructions", async () => {
     provider.chat.mockResolvedValue(answer());
     done(await sdk.chat({

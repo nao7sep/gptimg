@@ -87,7 +87,7 @@ export interface ChatProviderArgs {
   previousResponseId?: string | undefined;
   /** The earlier turns, loaded only when they are sent: without a previous response, or when it is gone. */
   loadHistory: () => Promise<ChatHistoryTurn[]>;
-  params: { model: string; reasoning?: string | undefined; instructions: string; tool: Record<string, unknown> };
+  params: { model: string; reasoning?: string | undefined; instructions?: string | undefined; tool: Record<string, unknown> };
   credentials: Credentials;
   network: ProviderNetworkCtx;
   /** Set when the tool asks for partial images: the response is streamed and each one is handed over as it arrives. */

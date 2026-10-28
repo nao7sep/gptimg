@@ -19,7 +19,6 @@ import { resolveNetworkForCall } from "../network/index.ts";
 import { checkImageParams, resolveChatModeration, resolveVisionReasoning } from "../policy/model-check.ts";
 import { getProvider } from "../providers/index.ts";
 import { resolveModel } from "../providers/openai/client.ts";
-import { OPENAI_CHAT_INSTRUCTIONS } from "../providers/openai/defaults.ts";
 import type { ChatHistoryTurn, ChatImage } from "../providers/types.ts";
 import type { RefusedResult } from "../refusal.ts";
 import { nullBase64InResponse } from "../sidecar/nullBase64.ts";
@@ -192,7 +191,8 @@ function planChat(ctx: SdkContext, args: ChatArgs) {
   // call, so the events and the records name what is sent.
   const model = resolveModel(section.model, defaultModelFor("openai", "chat"));
   const reasoning = resolveVisionReasoning(model, section.reasoning, "chat");
-  const instructions = section.instructions ?? OPENAI_CHAT_INSTRUCTIONS;
+  // The assistant's instructions are the caller's product text; without them none are sent.
+  const instructions = section.instructions;
   const imageModel = resolveModel(section.imageModel, defaultModelFor("openai", "image-edit"));
   // A transparent background needs a format that holds it: PNG, OpenAI's own default, unless the caller names one.
   const outputFormat = section.output_format ?? (section.background === "transparent" ? "png" : undefined);
@@ -270,7 +270,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     const requestRecord: ChatRequestRecord = {
       model,
       ...(reasoning !== undefined && { reasoning }),
-      instructions,
+      ...(instructions !== undefined && { instructions }),
       tool,
       message,
       images: attachments.map(({ name, sha256 }) => ({ name, sha256 })),

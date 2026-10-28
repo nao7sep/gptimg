@@ -7,7 +7,7 @@ import { startOpenAIDouble, type OpenAIDouble } from "gptimgsdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openRecords, type Records } from "../../src/main/records.ts";
 import { readSession } from "../../src/main/sessions.ts";
-import { TurnRunner } from "../../src/main/turns.ts";
+import { CHAT_INSTRUCTIONS, TurnRunner } from "../../src/main/turns.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
 import { inProcessHost } from "../helpers/in-process-host.ts";
 
@@ -63,6 +63,7 @@ describe("a turn through the real SDK", () => {
     expect(calls.rows[0]).toMatchObject({ title: "chat succeeded" });
     const appLines = records.query({ kind: "log", chatId: doc.id! }).rows.filter((r) => r.source === "app");
     expect(appLines.map((r) => r.title)).toEqual(["turn.replied", "turn.sent", "sessions.created"]);
+    expect(openai.requests[0]!.body).toMatchObject({ instructions: CHAT_INSTRUCTIONS });
   });
 
   it("asks for a transparent PNG when the message does", async () => {

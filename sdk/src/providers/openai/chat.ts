@@ -114,7 +114,7 @@ export async function openaiChat(args: ChatProviderArgs): Promise<ProviderChatRe
   const buildRequest = (history: readonly ChatHistoryTurn[] | null, withBytes: boolean): Record<string, unknown> =>
     buildChatRequest(model, {
       model,
-      instructions,
+      ...(instructions !== undefined && { instructions }),
       input: [...historyItems(history ?? [], withBytes), withMaskGuide(userMessage(args.message, args.images, withBytes), args.mask?.guide, withBytes)],
       tools: [{ type: "image_generation", ...tool, ...(args.mask && { input_image_mask: { image_url: imagePart(args.mask, withBytes).image_url } }) }],
       store: true,

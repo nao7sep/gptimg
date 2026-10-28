@@ -95,7 +95,7 @@ export interface ChatPolicy {
   model?: string;
   /** Its reasoning effort; default the row's own. */
   reasoning?: string;
-  /** Instructions for the assistant, replacing the built-in ones. */
+  /** Instructions for the assistant, sent as given; without them the assistant gets none. */
   instructions?: string;
   /** The image tool's model; default the edit role's. */
   imageModel?: string;
@@ -256,7 +256,8 @@ export interface VisionSidecar extends SidecarBase {
 export interface ChatRequestRecord {
   model: string;
   reasoning?: string;
-  instructions: string;
+  /** Present when the caller gave instructions. */
+  instructions?: string;
   tool: Record<string, unknown>;
   message: string;
   images: Array<{ name: string; sha256: string }>;
