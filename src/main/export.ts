@@ -35,17 +35,28 @@ function settledFailure(settlement: CallSettlement): { failure: AppFailure; canc
 export class ExportRunner {
   readonly #deps: ExportDeps;
   #cancel: (() => void) | null = null;
+  #task: Promise<unknown> | null = null;
 
   constructor(deps: ExportDeps) {
     this.#deps = deps;
   }
 
   get busy(): boolean {
-    return this.#cancel !== null;
+    return this.#task !== null;
   }
 
-  cancel(): void {
+  /** Cancels the running task; settles once it has ended. */
+  cancel(): Promise<void> {
     this.#cancel?.();
+    return Promise.resolve(this.#task).then(() => undefined);
+  }
+
+  /** The one task: an export (with its model release) or the upscaler's download. */
+  #exclusive<T>(work: () => Promise<Settled<T>>): Promise<Settled<T>> {
+    if (this.#task) return Promise.resolve({ ok: false, failure: { message: message("failure.taskRunning"), retryable: false }, cancelled: false });
+    const task = work().finally(() => { this.#task = null; });
+    this.#task = task;
+    return task;
   }
 
   async #run<T>(op: Parameters<SdkHost["call"]>[0], args: Record<string, unknown>, task: TaskProgress["task"] | null): Promise<Settled<T>> {
@@ -94,11 +105,12 @@ export class ExportRunner {
     return { installed: entry?.cached ?? false, downloadBytes: entry?.downloadBytes ?? null };
   }
 
-  async installUpscaler(): Promise<Settled<null>> {
-    if (this.busy) return { ok: false, failure: { message: message("failure.taskRunning"), retryable: false }, cancelled: false };
-    const outcome = await this.#run<unknown>("modelInstall", { key: UPSCALER }, "install");
-    this.#deps.records.log(outcome.ok ? "info" : "warn", outcome.ok ? "model.installed" : "model.installFailed", { key: UPSCALER });
-    return outcome.ok ? { ok: true, value: null } : outcome;
+  installUpscaler(): Promise<Settled<null>> {
+    return this.#exclusive(async () => {
+      const outcome = await this.#run<unknown>("modelInstall", { key: UPSCALER }, "install");
+      this.#deps.records.log(outcome.ok ? "info" : "warn", outcome.ok ? "model.installed" : "model.installFailed", { key: UPSCALER });
+      return outcome.ok ? { ok: true, value: null } : outcome;
+    });
   }
 
   /**
@@ -106,22 +118,23 @@ export class ExportRunner {
    * replace). The SDK writes it there whole or not at all, so a failed or cancelled export never
    * leaves a half-written file where they asked for one.
    */
-  async export(request: ExportRequest, info: ImageInfo, chosen: string): Promise<Settled<string>> {
-    if (this.busy) return { ok: false, failure: { message: message("failure.taskRunning"), retryable: false }, cancelled: false };
-    const target = exportTarget(chosen, request.format);
-    try {
-      const { op, args } = exportCall(request, info, target);
-      const outcome = await this.#run<{ output: string }>(op, args, "export");
-      if (!outcome.ok) {
-        if (!outcome.cancelled) this.#deps.records.log("warn", "export.failed", { op, format: request.format, size: request.size });
-        return outcome;
+  export(request: ExportRequest, info: ImageInfo, chosen: string): Promise<Settled<string>> {
+    return this.#exclusive(async () => {
+      const target = exportTarget(chosen, request.format);
+      try {
+        const { op, args } = exportCall(request, info, target);
+        const outcome = await this.#run<{ output: string }>(op, args, "export");
+        if (!outcome.ok) {
+          if (!outcome.cancelled) this.#deps.records.log("warn", "export.failed", { op, format: request.format, size: request.size });
+          return outcome;
+        }
+        this.#deps.records.log("info", "export.done", { op, format: request.format, size: request.size, target: outcome.value.output });
+        return { ok: true, value: outcome.value.output };
+      } finally {
+        // A loaded upscaler holds gigabytes; give them back once the export is done, however it ended.
+        if (request.size.kind === "upscale") await this.#release();
       }
-      this.#deps.records.log("info", "export.done", { op, format: request.format, size: request.size, target: outcome.value.output });
-      return { ok: true, value: outcome.value.output };
-    } finally {
-      // A loaded upscaler holds gigabytes; give them back once the export is done, however it ended.
-      if (request.size.kind === "upscale") void this.#release();
-    }
+    });
   }
 }
 

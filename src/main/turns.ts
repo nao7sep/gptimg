@@ -51,7 +51,7 @@ function plain(failure: AppFailure, session: OpenedSession | null, cancelled = f
   return { ok: false, session, failure, cancelled };
 }
 
-type TurnOperation = { cancelled: boolean; cancel?: () => void; keys: Set<string>; sessionId?: string };
+type TurnOperation = { cancelled: boolean; cancel?: () => void; keys: Set<string>; sessionId?: string; done?: Promise<TurnOutcome> };
 
 export class TurnRunner {
   readonly #running = new Map<string, TurnOperation>();
@@ -87,8 +87,14 @@ export class TurnRunner {
     if (operation) { operation.cancelled = true; operation.cancel?.(); }
   }
 
-  cancelAll(): void {
-    for (const key of this.#running.keys()) this.cancel(key);
+  /** Cancels every running turn; settles once each has recorded its outcome. */
+  cancelAll(): Promise<void> {
+    const settling = new Set<Promise<TurnOutcome>>();
+    for (const [key, operation] of this.#running) {
+      this.cancel(key);
+      if (operation.done) settling.add(operation.done);
+    }
+    return Promise.all(settling).then(() => undefined);
   }
 
   #now(): Date {
@@ -100,21 +106,24 @@ export class TurnRunner {
     if (text) this.deps.backup(`${sessionDir(root, id)}${sep}session.json`, text);
   }
 
-  async #own(key: string, run: (operation: TurnOperation) => Promise<TurnOutcome>): Promise<TurnOutcome> {
-    if (this.isRunning(key)) return plain({ message: message("failure.turnRunning"), retryable: false }, null);
+  #own(key: string, run: (operation: TurnOperation) => Promise<TurnOutcome>): Promise<TurnOutcome> {
+    if (this.isRunning(key)) return Promise.resolve(plain({ message: message("failure.turnRunning"), retryable: false }, null));
     const operation: TurnOperation = { cancelled: false, keys: new Set([key]) };
     this.#running.set(key, operation);
-    try {
-      return await run(operation);
-    } catch (error) {
-      this.deps.records.log("error", "turn.failed", { error: String(error) });
-      return plain(failureFromError(errorDataOf(error)), null);
-    } finally {
-      for (const owned of operation.keys) {
-        this.#running.delete(owned);
+    operation.done = (async () => {
+      try {
+        return await run(operation);
+      } catch (error) {
+        this.deps.records.log("error", "turn.failed", { error: String(error) });
+        return plain(failureFromError(errorDataOf(error)), null);
+      } finally {
+        for (const owned of operation.keys) {
+          this.#running.delete(owned);
+        }
+        if (operation.sessionId) this.deps.draft?.(operation.sessionId, null);
       }
-      if (operation.sessionId) this.deps.draft?.(operation.sessionId, null);
-    }
+    })();
+    return operation.done;
   }
 
   async send(request: SendRequest): Promise<TurnOutcome> {

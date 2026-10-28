@@ -55,19 +55,46 @@ describe("export", () => {
     expect(existsSync(target)).toBe(false);
   });
 
-  it("keeps a completed upscale export successful and records a model that will not unload", async () => {
-    let finish!: (value: CallSettlement) => void;
-    const release = new Promise<CallSettlement>((resolve) => (finish = resolve));
+  it("releases the model within the upscale export's task, keeping the export successful when the model will not unload", async () => {
+    const ops: string[] = [];
     const testRecords = { ...records, log: vi.fn() } as unknown as Records;
-    const host = { call: (op: string) => ({
-      done: op === "modelRelease" ? release : Promise.resolve({ kind: "result", result: { status: "completed", output: "/out/fox.png" } }),
-      cancel() {},
-    }) } as unknown as SdkHost;
+    const host = { call: (op: string) => {
+      ops.push(op);
+      return {
+        done: Promise.resolve(op === "modelRelease"
+          ? { kind: "error", error: { name: "GptImgError", code: "internal.unexpected", kind: "internal", effect: "unknown", message: "native release failed" } }
+          : { kind: "result", result: { status: "completed", output: "/out/fox.png" } }),
+        cancel() {},
+      };
+    } } as unknown as SdkHost;
     const exports = new ExportRunner({ host, records: testRecords, app: { name: "GptImg", version: "0" }, progress() {} });
     const outcome = await exports.export({ ...defaultExportPrefs(), path: "/s/fox.png", size: { kind: "upscale", factor: 2 } }, info, "/out/fox.png");
     expect(outcome).toEqual({ ok: true, value: "/out/fox.png" });
-    finish({ kind: "error", error: { name: "GptImgError", code: "internal.unexpected", kind: "internal", effect: "unknown", message: "native release failed" } });
-    await vi.waitFor(() => expect(testRecords.log).toHaveBeenCalledWith("warn", "model.releaseFailed", { failure: expect.objectContaining({ retryable: true }) }));
+    expect(ops).toEqual(["upscale", "modelRelease"]);
+    expect(testRecords.log).toHaveBeenCalledWith("warn", "model.releaseFailed", { failure: expect.objectContaining({ retryable: true }) });
+    expect(exports.busy).toBe(false);
+  });
+
+  it("cancels the running task and settles once it has ended", async () => {
+    let finish!: (value: CallSettlement) => void;
+    let cancelled = false;
+    const host = { call: () => ({
+      done: new Promise<CallSettlement>((resolve) => (finish = resolve)),
+      cancel: () => { cancelled = true; },
+    }) } as unknown as SdkHost;
+    const exports = new ExportRunner({ host, records, app: { name: "GptImg", version: "0" }, progress() {} });
+    const running = exports.installUpscaler();
+    expect(exports.busy).toBe(true);
+    await expect(exports.installUpscaler()).resolves.toMatchObject({ ok: false, failure: { message: { key: "failure.taskRunning" } } });
+    let settled = false;
+    const cancelling = exports.cancel().then(() => { settled = true; });
+    expect(cancelled).toBe(true);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finish({ kind: "error", error: { name: "GptImgError", code: "cancelled", kind: "cancelled", effect: "none", message: "x" } });
+    await cancelling;
+    await expect(running).resolves.toMatchObject({ ok: false, cancelled: true });
+    expect(exports.busy).toBe(false);
   });
 
   it.each([false, true])("reports the model's installed state as %s after a successful status check", async (cached) => {

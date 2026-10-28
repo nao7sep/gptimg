@@ -101,6 +101,29 @@ describe("a turn", () => {
     expect(outcome).toMatchObject({ ok: false, cancelled: true });
   });
 
+  it("cancels every running turn and settles only once each has recorded its outcome", async () => {
+    const calling = gate<void>();
+    const provider = gate<void>();
+    const t = setup(async (call) => {
+      calling.resolve();
+      await provider.promise;
+      return call.cancelled ? { kind: "error", error: { name: "GptImgError", code: "cancelled", kind: "cancelled", effect: "unknown", message: "x" } } : { kind: "lost" };
+    });
+    const pending = t.runner.send(request(null, "quit while paid"));
+    await calling.promise;
+    let settled = false;
+    const cancelling = t.runner.cancelAll().then(() => { settled = true; });
+    expect(t.calls[0]!.cancelled).toBe(true);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(t.turnsRecorded).toEqual([]);
+    provider.resolve();
+    await cancelling;
+    expect(t.turnsRecorded).toEqual([expect.objectContaining({ status: "cancelled" })]);
+    await expect(pending).resolves.toMatchObject({ ok: false, cancelled: true });
+    expect(t.runner.busy).toBe(false);
+  });
+
   it("reserves an existing session before a delayed key lookup so a second send cannot enter", async () => {
     const t = setup((call) => completed(call.args.outDir as string, "resp_one"));
     const id = await emptySession(t.root);

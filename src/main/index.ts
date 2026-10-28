@@ -35,6 +35,9 @@ declare const __APP_VERSION__: string;
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 const here = import.meta.dirname;
+const EXIT_DEADLINE_MS = 3_000;
+/** The OS-driven end of the app (shutdown, logout, session end), set once start has its owners. */
+let osExit: () => void = () => app.exit(0);
 
 app.setName("GptImg");
 registerImageScheme();
@@ -188,11 +191,35 @@ async function start(paths: AppPaths): Promise<void> {
     if (!state.window) createWindow(state);
   });
   app.on("window-all-closed", () => app.quit());
+  // Every quit has one exit deadline: running turns and exports are cancelled and
+  // given until then to settle, so a cancelled paid turn records its outcome before
+  // the SDK host stops; past it the quit goes on, and the turn's recorded
+  // `provider.call` event stays as the evidence (transaction conventions).
+  let exiting = false;
+  let exitReady = false;
+  const exitWithin = (then: () => void) => {
+    if (exiting) return;
+    exiting = true;
+    state.quitConfirmed = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => { timer = setTimeout(resolve, EXIT_DEADLINE_MS); });
+    void Promise.race([Promise.all([state.turns.cancelAll(), state.exports.cancel()]), deadline]).then(() => {
+      clearTimeout(timer);
+      then();
+    });
+  };
+  const teardown = () => {
+    host.stop();
+    records.log("info", "app.quit");
+    records.close();
+    backups.close();
+  };
   app.on("before-quit", (event) => {
+    if (exitReady) return;
     // Ordinary closes and launcher replacement keep the window alive until one decision.
     if (state.quitConfirmed || (!state.turns.busy && !state.exports.busy && !state.windowDirty)) {
-      state.turns.cancelAll();
-      state.exports.cancel();
+      event.preventDefault();
+      exitWithin(() => { exitReady = true; app.quit(); });
       return;
     }
     event.preventDefault();
@@ -212,19 +239,16 @@ async function start(paths: AppPaths): Promise<void> {
       state.quitAsking = false;
       if (response !== 1) return;
       state.quitConfirmed = true;
-      state.turns.cancelAll();
       app.quit();
     }).catch((error) => { state.quitAsking = false; records.log("error", "window.closeFailed", { error: String(error) }); });
   });
-  // OS takeover never asks or waits for optional history teardown.
-  powerMonitor.on("shutdown", () => { state.quitConfirmed = true; app.exit(0); });
-  app.on("will-quit", () => {
-    host.stop();
-    records.log("info", "app.quit");
-    records.close();
-    backups.close();
-  });
+  // OS takeover never asks; it draws on the same exit deadline and then exits.
+  osExit = () => exitWithin(() => { teardown(); app.exit(0); });
+  // Electron passes the event though its typings omit it; preventing it delays the shutdown until the exit ends.
+  powerMonitor.on("shutdown", (...args: unknown[]) => { (args[0] as Electron.Event).preventDefault(); osExit(); });
+  app.on("will-quit", teardown);
 }
+
 
 /**
  * GptImg could not start: an app-drawn window in the computer's language says
@@ -346,7 +370,7 @@ function createWindow(state: State): void {
     if (!state.quitConfirmed && (state.windowDirty || state.turns.busy || state.exports.busy)) { event.preventDefault(); app.quit(); }
   });
   win.on("query-session-end", () => { state.quitConfirmed = true; });
-  win.on("session-end", () => app.exit(0));
+  win.on("session-end", () => osExit());
   win.on("closed", () => {
     state.window = null;
     // Secondary windows go with the main one.
