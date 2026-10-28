@@ -19,17 +19,8 @@ function listen(
   });
 }
 
-async function withDeadline<T>(operation: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("network fixture did not settle")), 3_000);
-      }),
-    ]);
-  } finally { clearTimeout(timer); }
-}
+// A server that answers at once; the product's own download deadline bounds each call.
+const timeout = NETWORK_DEFAULTS.imageDownload.timeout;
 
 describe("resolveNetworkForCall", () => {
   it("rejects invalid recipe.network values", () => {
@@ -165,7 +156,7 @@ describe("fetchWithBudget", () => {
 
     await expect(
       fetchWithBudget(baseURL, {
-        timeout: 1000,
+        timeout,
         maxRetries: 1,
         retryIntervals: [],
       }),
@@ -184,7 +175,7 @@ describe("fetchWithBudget", () => {
 
     await expect(
       fetchWithBudget(baseURL, {
-        timeout: 1000,
+        timeout,
         maxRetries: 2,
         retryIntervals: [],
       }),
@@ -207,7 +198,7 @@ describe("fetchWithBudget", () => {
     servers.push(server);
 
     await expect(
-      fetchWithBudget(baseURL, { timeout: 1000, maxRetries: 1, retryIntervals: [] }),
+      fetchWithBudget(baseURL, { timeout, maxRetries: 1, retryIntervals: [] }),
     ).resolves.toEqual(new Uint8Array(Buffer.from("ok")));
     expect(calls).toBe(2);
   });
@@ -222,7 +213,7 @@ describe("fetchWithBudget", () => {
     servers.push(server);
 
     await expect(
-      fetchWithBudget(baseURL, { timeout: 1000, maxRetries: 2, retryIntervals: [] }),
+      fetchWithBudget(baseURL, { timeout, maxRetries: 2, retryIntervals: [] }),
     ).rejects.toMatchObject({ status: 526 });
     expect(calls).toBe(1);
   });
@@ -239,7 +230,7 @@ describe("fetchWithBudget", () => {
     await expect(
       fetchWithBudget(
         baseURL,
-        { timeout: 1000, maxRetries: 0, retryIntervals: [] },
+        { timeout, maxRetries: 0, retryIntervals: [] },
         { signal: ctrl.signal },
       ),
     ).rejects.toMatchObject({
@@ -256,7 +247,7 @@ describe("fetchWithBudget", () => {
     const rejected = expect(operation).rejects.toMatchObject({ name: "TimeoutError" });
     void rejected.catch(() => undefined);
     try {
-      await withDeadline(admitted);
+      await admitted;
       expect(calls()).toBe(1);
       expect(timeoutSignal).toHaveBeenCalledWith(100);
       timeout.abort(new DOMException("held response timed out", "TimeoutError"));
@@ -281,10 +272,10 @@ describe("fetchWithBudget", () => {
     // Observe rejection immediately, including a setup failure before admission.
     void operation.catch(() => undefined);
     try {
-      await withDeadline(admitted);
+      await admitted;
       expect(timeouts).toHaveLength(1);
       timeouts[0]!.abort(new DOMException("held attempt timed out", "TimeoutError"));
-      await expect(withDeadline(operation)).resolves.toEqual(new Uint8Array(Buffer.from("ok")));
+      await expect(operation).resolves.toEqual(new Uint8Array(Buffer.from("ok")));
       expect(calls()).toBe(2);
       expect(timeouts).toHaveLength(2);
       expect(timeoutSignal.mock.calls).toEqual([[250], [250]]);

@@ -5,10 +5,12 @@ import { callWithRetry } from "../../src/network/retry.ts";
 import type { NetworkBudget } from "../../src/network/defaults.ts";
 import type { Logger } from "../../src/events/index.ts";
 
+// Retries at once: these tests are about which failures retry and what they record;
+// the tests of the waits themselves run on fake timers.
 const fast: NetworkBudget = {
   timeout: 60_000,
   maxRetries: 3,
-  retryIntervals: [1, 1, 1],
+  retryIntervals: [],
 };
 
 function http(status: number, headers: Record<string, string> = {}): Error {

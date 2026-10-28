@@ -6,8 +6,9 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GptImg } from "../../src/gptimg.ts";
+import { NETWORK_DEFAULTS } from "../../src/network/index.ts";
 import { startOpenAIDouble, type OpenAIDouble } from "../../src/testing/index.ts";
 import type { PartialImage } from "../../src/types.ts";
 import { done } from "../helpers/results.ts";
@@ -81,13 +82,21 @@ describe("drafts while an image is drawn", () => {
 
   it("settles a stream that goes silent as a timeout that may have been paid", async () => {
     openai.reply({ kind: "streamStalled" });
-    await expect(
-      img.chat({
-        message: "a fox",
-        outDir: tmp,
-        policy: { chat: { partial_images: 1 }, network: { chat: { timeout: 300, maxRetries: 0 } } },
-      }),
-    ).rejects.toMatchObject({ code: "provider.timeout", effect: "unknown" });
+    let drawn!: () => void;
+    const firstDraft = new Promise<void>((resolve) => (drawn = resolve));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const turn = img.chat(
+        { message: "a fox", outDir: tmp, policy: { chat: { partial_images: 1 }, network: { chat: { maxRetries: 0 } } } },
+        { onPartialImage: () => drawn() },
+      );
+      const rejected = expect(turn).rejects.toMatchObject({ code: "provider.timeout", effect: "unknown" });
+      await firstDraft;
+      await vi.advanceTimersByTimeAsync(NETWORK_DEFAULTS.chat.timeout);
+      await rejected;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(openai.requests).toHaveLength(1);
   });
 

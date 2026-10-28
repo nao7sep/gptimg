@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GptImgApi } from "../../src/shared/api.ts";
 import type { RecordDetail, RecordQuery, RecordRow, RecordsPage } from "../../src/shared/records.ts";

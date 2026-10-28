@@ -88,11 +88,13 @@ describe("a turn", () => {
 
   it("cancels the running call", async () => {
     let release!: () => void;
+    const calling = gate<void>();
     const t = setup((call) => new Promise((resolve) => {
       release = () => resolve(call.cancelled ? { kind: "error", error: { name: "GptImgError", code: "cancelled", kind: "cancelled", effect: "unknown", message: "x" } } : { kind: "lost" });
+      calling.resolve();
     }));
     const pending = t.runner.send(request(null, "slow"));
-    await vi.waitFor(() => expect(typeof release).toBe("function"));
+    await calling.promise;
     const sessionId = readdirSync(t.root)[0]!;
     expect(t.runner.isRunning(sessionId)).toBe(true);
     t.runner.cancel(sessionId);

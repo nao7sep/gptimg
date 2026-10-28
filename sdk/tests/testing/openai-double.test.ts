@@ -86,8 +86,11 @@ describe("the OpenAI double", () => {
   it("can hang, so a test can cancel a call in flight", async () => {
     openai.reply({ kind: "hang" });
     const controller = new AbortController();
-    const call = img.chat({ message: "slow", outDir: out, outName: "h1" }, { signal: controller.signal });
-    setTimeout(() => controller.abort(), 50);
+    // Cancelled once the request is on its way, so the double is holding it.
+    const call = img.chat({ message: "slow", outDir: out, outName: "h1" }, {
+      signal: controller.signal,
+      onEvent: (event) => { if (event.event === "provider.call") controller.abort(); },
+    });
     await expect(call).rejects.toMatchObject({ code: "cancelled" });
   });
 });

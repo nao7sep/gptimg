@@ -5,7 +5,7 @@
 // order is the time of the session's latest sent message.
 import { utimesSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { CallSettlement } from "../../src/main/sdk-host.ts";
 import { listSessions, renameSession } from "../../src/main/sessions.ts";
 import { completed, request, setup } from "../helpers/turn-runner.ts";
@@ -42,13 +42,18 @@ describe("session order", () => {
 
   it("does not move a session when its reply arrives after the user has sent in another", async () => {
     let releaseSlow!: () => void;
+    let calling!: () => void;
+    const called = new Promise<void>((resolve) => (calling = resolve));
     const t = setup((call) =>
       call.args.message === "slow"
-        ? new Promise<CallSettlement>((resolve) => (releaseSlow = () => resolve(completed(call.args.outDir as string, "resp-slow"))))
+        ? new Promise<CallSettlement>((resolve) => {
+          releaseSlow = () => resolve(completed(call.args.outDir as string, "resp-slow"));
+          calling();
+        })
         : completed(call.args.outDir as string, "resp"),
     );
     const slow = t.runner.send(request(null, "slow"));
-    await vi.waitFor(() => expect(releaseSlow).toBeTypeOf("function"));
+    await called;
     await t.runner.send(request(null, "quick"));
     releaseSlow();
     await slow;

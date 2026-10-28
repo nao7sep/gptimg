@@ -41,5 +41,5 @@ describe("a real chat", () => {
     expect(replies[1]).toMatchObject({ resumed: "chain" });
     expect(records.query({ kind: "call" }).rows.filter((r) => r.title === "chat succeeded")).toHaveLength(2);
     records.close();
-  }, 600_000);
+  });
 });

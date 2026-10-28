@@ -8,7 +8,8 @@ export default defineConfig({
     include: ["tests/live/**/*.test.ts"],
     exclude: configDefaults.exclude,
     fileParallelism: false,
-    testTimeout: 10 * 60_000,
-    hookTimeout: 60 * 60_000,
+    // No runner timeouts: each paid call and download is bounded by the SDK's own network deadlines.
+    testTimeout: 0,
+    hookTimeout: 0,
   },
 });

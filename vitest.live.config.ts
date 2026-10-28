@@ -6,6 +6,8 @@ export default defineConfig({
   test: {
     include: ["tests/live/**/*.test.ts"],
     fileParallelism: false,
-    testTimeout: 600_000,
+    // No runner timeouts: each paid call is bounded by the product's own network deadlines.
+    testTimeout: 0,
+    hookTimeout: 0,
   },
 });

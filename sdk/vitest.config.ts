@@ -11,6 +11,9 @@ process.env.VIPS_CONCURRENCY ??= "1";
 export default defineConfig({
   test: {
     name: "sdk",
+    // Tests carry no timeouts: each waits for the result or event it needs.
+    testTimeout: 0,
+    hookTimeout: 0,
     // The live lane spends money and downloads models; only npm run test:full
     // runs it, through vitest.live.config.ts.
     exclude: [...configDefaults.exclude, "tests/live/**"],

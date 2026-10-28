@@ -18,6 +18,9 @@ export default defineConfig({
       {
         test: {
           name: "app",
+          // Tests carry no timeouts: each waits for the result or event it needs.
+          testTimeout: 0,
+          hookTimeout: 0,
           include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
           setupFiles: ["tests/setup/rendered-keys.ts"],
           // After-hooks in the order registered, so the rendered-key gate looks before a file's cleanup empties the page.

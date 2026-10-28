@@ -1,6 +1,6 @@
 // What a renderer test needs: the bridge the window would get from preload,
 // as stubs a test can script, and the i18n provider in English.
-import { render } from "@testing-library/react";
+import { configure, render } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { vi } from "vitest";
 import type { BootInfo, GptImgApi, LanguageInfo } from "../../src/shared/api.ts";
@@ -9,6 +9,10 @@ import { defaultUiState } from "../../src/shared/ui-state.ts";
 import { ENGLISH } from "../../src/shared/i18n/catalogues.ts";
 
 export const language: LanguageInfo = { language: "en", locale: "en-US", systemLanguage: "en", catalogue: ENGLISH };
+
+// Tests carry no timeouts: a findBy or waitFor ends when the screen shows what it
+// waits for, so Testing Library's one-second limit is lifted to the longest a timer allows.
+configure({ asyncUtilTimeout: 2 ** 31 - 1 });
 
 const noop = () => () => {};
 

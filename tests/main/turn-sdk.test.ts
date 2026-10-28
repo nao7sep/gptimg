@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startOpenAIDouble, type OpenAIDouble } from "gptimgsdk/testing";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openRecords, type Records } from "../../src/main/records.ts";
 import { readSession } from "../../src/main/sessions.ts";
 import { TurnRunner } from "../../src/main/turns.ts";
@@ -16,6 +16,7 @@ let root: string;
 let records: Records;
 let runner: TurnRunner;
 let drafts: { sessionId: string; image: number | null }[];
+let onDraft: () => void;
 let released: string[];
 let settings: Record<string, unknown>;
 
@@ -24,6 +25,7 @@ beforeEach(async () => {
   const home = mkdtempSync(join(tmpdir(), "gptimg-turn-sdk-"));
   root = join(home, "chats");
   drafts = [];
+  onDraft = () => {};
   released = [];
   settings = {};
   records = openRecords(join(home, "records.sqlite3"), join(home, "logs"), "launch", "test");
@@ -36,7 +38,7 @@ beforeEach(async () => {
     backup: () => {},
     releaseStaged: (path) => released.push(path),
     started: () => {},
-    draft: (sessionId, draft) => drafts.push({ sessionId, image: draft ? draft.image : null }),
+    draft: (sessionId, draft) => { drafts.push({ sessionId, image: draft ? draft.image : null }); onDraft(); },
   });
 });
 
@@ -147,8 +149,9 @@ describe("a turn through the real SDK", () => {
     if (!first.ok) throw new Error("turn failed");
     const id = first.session.id;
     openai.reply({ kind: "streamStalled" });
+    const drawing = new Promise<void>((resolve) => { onDraft = () => { if (drafts.filter((d) => d.image === 0).length === 3) resolve(); }; });
     const cancelled = send(id, "add a hat");
-    await vi.waitFor(() => expect(drafts.filter((d) => d.image === 0).length).toBe(3));
+    await drawing;
     runner.cancel(id);
     expect(await cancelled).toMatchObject({ ok: false, cancelled: true });
     expect(drafts.at(-1)).toEqual({ sessionId: id, image: null });

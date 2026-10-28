@@ -24,6 +24,8 @@ function setup(drafts = 0) {
   const root = join(home, "chats");
   const records = openRecords(join(home, "records.sqlite3"), join(home, "logs"), "live", "live");
   const seen: number[] = [];
+  let drawn!: () => void;
+  const firstDraft = new Promise<void>((resolve) => (drawn = resolve));
   const runner = new TurnRunner({
     host: inProcessHost(),
     records,
@@ -34,10 +36,13 @@ function setup(drafts = 0) {
     releaseStaged: () => {},
     started: () => {},
     draft: (_id, draft) => {
-      if (draft) seen.push(draft.index);
+      if (draft) {
+        seen.push(draft.index);
+        drawn();
+      }
     },
   });
-  return { home, root, records, runner, seen };
+  return { home, root, records, runner, seen, firstDraft };
 }
 
 /** What the image tool did in each successful call, oldest first: "generate", "edit", or none. */
@@ -73,7 +78,7 @@ describe("a real conversation", () => {
     console.log("image tool actions per turn:", JSON.stringify(actions(records)));
     console.log("held-back reply:", JSON.stringify(replies[1]!.text));
     records.close();
-  }, 900_000);
+  });
 
   it("makes an exact size with an opaque background, then changes only a painted area", async () => {
     const { root, records, runner } = setup();
@@ -109,13 +114,14 @@ describe("a real conversation", () => {
     expect((doc.turns[3] as AssistantTurn).images.length).toBeGreaterThan(0);
     console.log("mask turn actions:", JSON.stringify(actions(records)));
     records.close();
-  }, 900_000);
+  });
 
   it("streams drafts, and a turn stopped after its first draft keeps the message for Try again", async () => {
-    const { root, records, runner, seen } = setup(2);
+    const { root, records, runner, seen, firstDraft } = setup(2);
     const sending = runner.send({ requestId: "draft", sessionId: null, text: "A lighthouse at dusk. Make the image.", references: [], options: low });
     const started = Date.now();
-    while (seen.length === 0 && Date.now() - started < 240_000) await new Promise((r) => setTimeout(r, 200));
+    // The first draft, or the turn settling without one, which then fails the check below.
+    await Promise.race([firstDraft, sending]);
     expect(seen.length).toBeGreaterThan(0);
     const sessions = await import("node:fs/promises").then((fs) => fs.readdir(root));
     runner.cancel(sessions[0]!);
@@ -125,5 +131,5 @@ describe("a real conversation", () => {
     expect(doc.turns.map((t) => t.role)).toEqual(["user"]);
     console.log("drafts before stopping:", seen.length, "after", Math.round((Date.now() - started) / 1000), "s");
     records.close();
-  }, 900_000);
+  });
 });

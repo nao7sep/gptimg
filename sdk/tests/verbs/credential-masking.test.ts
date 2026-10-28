@@ -23,6 +23,7 @@ vi.mock("../../src/providers/openai/client.ts", async (importOriginal) => {
   };
 });
 import { GptImgError } from "../../src/errors.ts";
+import { NETWORK_DEFAULTS } from "../../src/network/index.ts";
 import type { EditResult, GenerateResult, SdkEvent, VisionResult } from "../../src/types.ts";
 import type { RefusedResult } from "../../src/refusal.ts";
 
@@ -60,12 +61,14 @@ describe("credential masking across every sink", () => {
   let server: http.Server;
   let mode: Mode;
   let receivedAuth: string[];
+  let requestArrived: () => void;
   let receivedBodies: string[];
   let sdk: GptImg;
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-masking-"));
     receivedAuth = [];
+    requestArrived = () => {};
     receivedBodies = [];
     server = http.createServer(async (req, res) => {
       if (req.url?.startsWith("/v1/")) {
@@ -74,6 +77,7 @@ describe("credential masking across every sink", () => {
         for await (const chunk of req) body += chunk.toString();
         receivedBodies.push(body);
         const { port } = server.address() as { port: number };
+        requestArrived();
         if (mode === "echo401") {
           res.writeHead(401, { "content-type": "application/json", "x-request-id": "request-fake", "x-provider-echo": FAKE });
           res.end(JSON.stringify({ error: { message: `Incorrect API key provided: ${FAKE}.`, code: "invalid_api_key", type: "invalid_request_error", details: { credential: FAKE } } }));
@@ -130,7 +134,7 @@ describe("credential masking across every sink", () => {
       const output = { outDir: path.join(tmp, "out"), outName: `${m}-${verb}` };
       const options = { onEvent: (e: SdkEvent) => events.push(e), ...(signal && { signal }) };
       const policy = m === "timeout"
-        ? { network: { imageGenerate: { timeout: 100, maxRetries: 0 }, imageVision: { timeout: 100, maxRetries: 0 } } }
+        ? { network: { imageGenerate: { maxRetries: 0 }, imageVision: { maxRetries: 0 } } }
         : undefined;
       const outcome = verb === "vision"
         ? await sdk.vision({ check: instruction, inputs: [INPUT], ...output, policy }, options)
@@ -218,7 +222,19 @@ describe("credential masking across every sink", () => {
   });
 
   it.each<Verb>(["generate", "edit", "vision"])("preserves %s's real SDK timeout and native fetch abort diagnostics", async (verb) => {
-    const { events, thrown, error, result } = await run("timeout", undefined, verb);
+    // The product's own request deadline, reached on a fake clock once the request is held.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let settled: Awaited<ReturnType<typeof run>>;
+    try {
+      const arrived = new Promise<void>((resolve) => { requestArrived = resolve; });
+      const running = run("timeout", undefined, verb);
+      await arrived;
+      await vi.advanceTimersByTimeAsync(verb === "vision" ? NETWORK_DEFAULTS.imageVision.timeout : NETWORK_DEFAULTS.imageGenerate.timeout);
+      settled = await running;
+    } finally {
+      vi.useRealTimers();
+    }
+    const { events, thrown, error, result } = settled;
     expect(error).toBeInstanceOf(GptImgError);
     expect(error).toMatchObject({ code: "provider.timeout", kind: "unavailable", effect: "unknown" });
     const sdkError = (error as Error).cause as APIConnectionTimeoutError;
@@ -275,8 +291,9 @@ describe("credential masking across every sink", () => {
 
   it("masks the key in the records of a cancelled call", async () => {
     const ctrl = new AbortController();
+    const arrived = new Promise<void>((resolve) => { requestArrived = resolve; });
     const pending = run("hang", ctrl.signal);
-    await vi.waitFor(() => expect(receivedAuth).toHaveLength(1));
+    await arrived;
     ctrl.abort();
     const { events, thrown } = await pending;
     expect(thrown).not.toBe("");
