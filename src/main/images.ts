@@ -13,12 +13,19 @@ import { IMAGE_INPUT_FORMATS } from "gptimgsdk/types";
 
 const CACHE_LIMIT = 300;
 const MAX_THUMB_WIDTH = 2048;
+// Opening a long chat asks for every picture at once, since every print mounts. Measured on a
+// 10-core Mac with 40 PNGs at the generated sizes (1024 to 1536 px): one at a time took 2.8 to
+// 3.6 s at the print width and 1.2 s at 240 px, with the process near 120% CPU, barely more than
+// one core, because PNG decoding and encoding are single-threaded inside sharp. Two at a time took
+// 1.7 to 1.9 s, three 1.3 s, four 1.1 s. Three leaves one of libuv's four threads, which sharp
+// shares with file reads, free; each encode holds one decoded image, about 6 MB at these sizes.
+const ENCODES_AT_ONCE = 3;
 
 export class ImageAccess {
   readonly #picked = new Set<string>();
   readonly #thumbs = new Map<string, Buffer>();
-  // One image encodes at a time (serial by default); sharp spreads each across its own threads.
-  #queue: Promise<unknown> = Promise.resolve();
+  #encoding = 0;
+  readonly #waiting: Array<() => void> = [];
 
   readonly #roots: () => string[];
 
@@ -55,17 +62,24 @@ export class ImageAccess {
     }
   }
 
-  #serial<T>(job: () => Promise<T>): Promise<T> {
-    const run = this.#queue.then(job, job);
-    this.#queue = run.catch(() => undefined);
-    return run;
+  /** Runs up to ENCODES_AT_ONCE jobs, starting the rest in arrival order as each finishes. */
+  async #queued<T>(job: () => Promise<T>): Promise<T> {
+    if (this.#encoding < ENCODES_AT_ONCE) this.#encoding++;
+    else await new Promise<void>((start) => this.#waiting.push(start));
+    try {
+      return await job();
+    } finally {
+      const next = this.#waiting.shift();
+      if (next) next();
+      else this.#encoding--;
+    }
   }
 
-  /** A repeated request waits its turn and then finds the copy the first one cached. */
+  /** A repeat that starts after the first finished finds its cached copy; one running alongside it encodes again. */
   async #thumb(path: string, width: number): Promise<Buffer | null> {
     const info = await stat(path);
     const key = `${path}\0${width}\0${info.mtimeMs}\0${info.size}`;
-    return this.#serial(async () => {
+    return this.#queued(async () => {
       const hit = this.#thumbs.get(key);
       if (hit) {
         this.#thumbs.delete(key);
@@ -90,7 +104,7 @@ export class ImageAccess {
         if (!Number.isFinite(width) || width <= 0) return null;
         return await this.#thumb(absolute, Math.max(1, Math.min(MAX_THUMB_WIDTH, Math.round(width))));
       }
-      return await this.#serial(() => this.#encode(absolute));
+      return await this.#queued(() => this.#encode(absolute));
     } catch {
       return null;
     }

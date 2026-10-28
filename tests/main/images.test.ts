@@ -70,35 +70,38 @@ describe("image access", () => {
     expect(await access.png(path, 0)).toBeNull();
   });
 
-  it("encodes one image at a time, and a repeated request finds the cached copy", async () => {
+  it("encodes three images at a time, starts the rest as each finishes, and a later repeat finds the cached copy", async () => {
     const dir = root();
-    const files = await Promise.all([image(dir, "a.png"), image(dir, "b.png")]);
+    const files = await Promise.all(["a", "b", "c", "d", "e"].map((name) => image(dir, `${name}.png`)));
     const access = new ImageAccess(() => [dir]);
     const release: Array<() => void> = [];
-    let entered!: () => void;
+    let started = 0;
+    let reached: { count: number; resolve: () => void } | undefined;
+    const startedCount = (count: number) => started >= count ? Promise.resolve() : new Promise<void>((resolve) => { reached = { count, resolve }; });
     let active = 0;
     let peak = 0;
     const encoded = vi.spyOn(sharp.prototype, "toBuffer").mockImplementation(() => {
       active++;
+      started++;
       peak = Math.max(peak, active);
-      entered();
+      if (reached && started >= reached.count) reached.resolve();
       return new Promise<Buffer>((resolve) => release.push(() => {
         active--;
         resolve(Buffer.from("png"));
       })) as never;
     });
-    const encoding = () => new Promise<void>((resolve) => { entered = resolve; });
-    let started = encoding();
-    const jobs = [access.png(files[0]!, 32), access.png(files[0]!, 32), access.png(files[1]!, 32)];
-    await started;
-    started = encoding();
+    const jobs = files.map((file) => access.png(file, 32));
+    await startedCount(3);
+    expect(active).toBe(3);
     release.shift()!();
-    await started;
+    await startedCount(4);
     release.shift()!();
-    const results = await Promise.all(jobs);
-    expect(peak).toBe(1);
-    expect(results[0]).toBe(results[1]);
-    expect(encoded).toHaveBeenCalledTimes(2);
+    await startedCount(5);
+    while (release.length > 0) release.shift()!();
+    await Promise.all(jobs);
+    expect(peak).toBe(3);
+    expect(await access.png(files[0]!, 32)).toEqual(Buffer.from("png"));
+    expect(encoded).toHaveBeenCalledTimes(5);
   });
 
   it("caches thumbnails and leaves full PNG conversions uncached", async () => {
