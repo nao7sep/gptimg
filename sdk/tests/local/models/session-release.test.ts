@@ -17,10 +17,12 @@ afterEach(async () => {
 });
 
 describe("releasing loaded models", () => {
-  it("retires a borrowed generation while independent new work and lazy reuse continue", async () => {
+  it("releases once the operation ahead of it settles, and the next operation loads again", async () => {
     const entered = deferred();
     const finish = deferred();
-    native.create.mockImplementation(async () => ({ run: async () => ({}), release: native.release }));
+    const order: string[] = [];
+    native.release.mockImplementation(async () => { order.push("release"); });
+    native.create.mockImplementation(async () => ({ run: async () => { order.push("run"); return {}; }, release: native.release }));
     const operation = withSession("/models/a.onnx", undefined, async (session) => {
       entered.resolve();
       await finish.promise;
@@ -28,34 +30,24 @@ describe("releasing loaded models", () => {
     });
     await entered.promise;
     const release = releaseSessions();
-    try {
-      const next = await withSession("/models/a.onnx", undefined, async (session) => session);
-      const cached = await withSession("/models/a.onnx", undefined, async (session) => session);
-      expect(cached).toBe(next);
-      expect(native.create).toHaveBeenCalledTimes(2);
-      expect(native.release).not.toHaveBeenCalled();
-    } finally {
-      finish.resolve();
-      await operation;
-      expect(await release).toBe(1);
-    }
+    const next = withSession("/models/a.onnx", undefined, async (session) => session);
+    finish.resolve();
+    await operation;
+    expect(await release).toBe(1);
+    const reloaded = await next;
+    expect(await withSession("/models/a.onnx", undefined, async (session) => session)).toBe(reloaded);
+    expect(order).toEqual(["run", "release"]);
+    expect(native.create).toHaveBeenCalledTimes(2);
   });
 
-  it("shares a concurrent disposal and releases other sessions even when one disposal fails", async () => {
-    const disposing = deferred();
-    const finish = deferred();
+  it("releases other sessions when one disposal fails, and keeps the failed one for a later release", async () => {
     const cause = new Error("cannot release a");
-    const releaseA = vi.fn(async (): Promise<void> => { disposing.resolve(); await finish.promise; throw cause; });
+    const releaseA = vi.fn(async (): Promise<void> => { throw cause; });
     native.create.mockImplementation(async (path: string) => ({ release: path.endsWith("a") ? releaseA : native.release }));
     await withSession("/models/a", undefined, async () => {});
     await withSession("/models/b", undefined, async () => {});
-    const first = releaseSessions();
-    const second = releaseSessions();
-    const results = Promise.allSettled([first, second]);
-    await disposing.promise;
+    await expect(releaseSessions()).rejects.toMatchObject({ code: "internal.unexpected", effect: "unknown", cause });
     expect(releaseA).toHaveBeenCalledOnce();
-    finish.resolve();
-    expect((await results).map((result) => result.status)).toEqual(["rejected", "rejected"]);
     expect(native.release).toHaveBeenCalledOnce();
     releaseA.mockResolvedValue(undefined);
     expect(await releaseSessions()).toBe(1);

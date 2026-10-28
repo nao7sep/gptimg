@@ -3,21 +3,29 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PartialDraft } from "./sdk-protocol.ts";
 
-/** The latest preview per chat, owned in staging until replaced or cleared. */
+/**
+ * The latest preview per chat, owned in staging until replaced or cleared. A
+ * chat's previews and its final clear take turns in the order they arrive.
+ */
 export class DraftPreviews {
   readonly #staging: string;
   readonly #publish: (sessionId: string, path: string | null) => void;
   readonly #shown = new Map<string, string>();
-  readonly #generation = new Map<string, number>();
+  readonly #queues = new Map<string, Promise<void>>();
 
   constructor(staging: string, publish: (sessionId: string, path: string | null) => void) {
     this.#staging = staging;
     this.#publish = publish;
   }
 
-  async show(sessionId: string, draft: PartialDraft | null): Promise<void> {
-    const mine = (this.#generation.get(sessionId) ?? 0) + 1;
-    this.#generation.set(sessionId, mine);
+  show(sessionId: string, draft: PartialDraft | null): Promise<void> {
+    const next = () => this.#show(sessionId, draft);
+    const run = (this.#queues.get(sessionId) ?? Promise.resolve()).then(next, next);
+    this.#queues.set(sessionId, run);
+    return run;
+  }
+
+  async #show(sessionId: string, draft: PartialDraft | null): Promise<void> {
     if (!draft) {
       const previous = this.#shown.get(sessionId);
       this.#shown.delete(sessionId);
@@ -29,10 +37,6 @@ export class DraftPreviews {
     try {
       await mkdir(this.#staging, { recursive: true, mode: 0o700 });
       await writeFile(path, draft.data, { mode: 0o600 });
-      if (this.#generation.get(sessionId) !== mine) {
-        await rm(path, { force: true }).catch(() => undefined);
-        return;
-      }
       const previous = this.#shown.get(sessionId);
       this.#shown.set(sessionId, path);
       this.#publish(sessionId, path);

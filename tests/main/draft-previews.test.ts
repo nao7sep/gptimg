@@ -27,37 +27,37 @@ describe("DraftPreviews", () => {
   });
   afterEach(() => { vi.resetAllMocks(); });
 
-  it("publishes only the latest generation when writes finish in reverse order", async () => {
+  it("writes a chat's previews one after another in the order they arrive", async () => {
     const first = gate();
-    const second = gate();
-    fs.writeFile.mockImplementation((_path, bytes) => bytes[0] === 1 ? first.promise : second.promise);
+    fs.writeFile.mockImplementation((_path, bytes) => bytes[0] === 1 ? first.promise : Promise.resolve());
     const publish = vi.fn();
     const previews = new DraftPreviews("/staging", publish);
     const old = previews.show("chat", draft(1));
     const latest = previews.show("chat", draft(2));
     await flush();
+    expect(fs.writeFile).toHaveBeenCalledOnce();
     const oldPath = fs.writeFile.mock.calls[0]![0];
-    const latestPath = fs.writeFile.mock.calls[1]![0];
-    second.resolve();
-    await latest;
     first.resolve();
     await old;
-    expect(publish).toHaveBeenCalledExactlyOnceWith("chat", latestPath);
+    await latest;
+    const latestPath = fs.writeFile.mock.calls[1]![0];
+    expect(publish.mock.calls).toEqual([["chat", oldPath], ["chat", latestPath]]);
     expect(fs.rm).toHaveBeenCalledExactlyOnceWith(oldPath, { force: true });
   });
 
-  it("does not publish a late preview after clear while its write is pending", async () => {
+  it("clears after a preview whose write is pending, removing that preview", async () => {
     const writing = gate();
     fs.writeFile.mockReturnValue(writing.promise);
     const publish = vi.fn();
     const previews = new DraftPreviews("/staging", publish);
     const pending = previews.show("chat", draft(1));
+    const cleared = previews.show("chat", null);
     await flush();
     const path = fs.writeFile.mock.calls[0]![0];
-    await previews.show("chat", null);
     writing.resolve();
     await pending;
-    expect(publish).toHaveBeenCalledExactlyOnceWith("chat", null);
+    await cleared;
+    expect(publish.mock.calls).toEqual([["chat", path], ["chat", null]]);
     expect(fs.rm).toHaveBeenCalledExactlyOnceWith(path, { force: true });
   });
 

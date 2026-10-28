@@ -15,19 +15,23 @@ import { isAbortError } from "../../network/failure.ts";
 import type { InferenceRecord, OnnxPolicy } from "../../types.ts";
 import { ONNX_DEFAULTS } from "../../defaults.ts";
 
-// One creation per model path and tuning: concurrent first callers await the
-// same promise instead of each loading its own copy of the weights.
-interface SessionEntry {
+// One loaded session per model path and tuning. Model operations and releases
+// take turns in one order, so a release waits for the inference ahead of it and
+// no inference runs on a session being released.
+interface Loaded {
   modelPath: string;
-  pending: Promise<Ort.InferenceSession>;
-  borrowers: number;
-  idle: Promise<void>;
-  signalIdle: () => void;
-  disposal?: Promise<boolean> | undefined;
+  session: Ort.InferenceSession;
 }
-const sessions = new Map<string, SessionEntry>();
-// Retired entries stay owned until disposal succeeds, including after a failed release.
-const retired = new Set<SessionEntry>();
+const sessions = new Map<string, Loaded>();
+// Sessions whose native disposal failed, released again by the next release.
+const unreleased: Loaded[] = [];
+let queue: Promise<unknown> = Promise.resolve();
+
+function inTurn<T>(job: () => Promise<T>): Promise<T> {
+  const run = queue.then(job, job);
+  queue = run.catch(() => undefined);
+  return run;
+}
 
 let runtime: Promise<typeof Ort> | null = null;
 
@@ -87,41 +91,26 @@ export async function inferenceRecord(model: { key: string; name: string; sha256
 }
 
 /**
- * Borrow a shared session for the entire model operation, including asynchronous
- * preprocessing and gaps between native runs. Admission is synchronous, before
- * creation is awaited, so release also waits for borrowers of a loading model.
+ * Run a model operation with its shared session, loading it on first use, in
+ * turn with every other model operation and release: through asynchronous
+ * preprocessing, gaps between native runs and the last tile.
  */
-export async function withSession<T>(
+export function withSession<T>(
   modelPath: string,
   onnx: OnnxPolicy | undefined,
   operation: (session: Ort.InferenceSession) => Promise<T>,
 ): Promise<T> {
-  const providers = executionProviders(onnx);
-  const threads = intraOpThreadCount(onnx);
-  const key = `${modelPath}\0${providers.join(",")}\0${threads}`;
-  let entry = sessions.get(key);
-  if (!entry) {
-    const created: SessionEntry = {
-      modelPath,
-      pending: createSession(modelPath, providers, threads),
-      borrowers: 0,
-      idle: Promise.resolve(),
-      signalIdle: () => {},
-    };
-    sessions.set(key, created);
-    created.pending.catch(() => {
-      if (sessions.get(key) === created) sessions.delete(key);
-    });
-    entry = created;
-  }
-  if (entry.borrowers++ === 0) {
-    entry.idle = new Promise<void>((resolve) => { entry.signalIdle = resolve; });
-  }
-  try {
-    return await operation(await entry.pending);
-  } finally {
-    if (--entry.borrowers === 0) entry.signalIdle();
-  }
+  return inTurn(async () => {
+    const providers = executionProviders(onnx);
+    const threads = intraOpThreadCount(onnx);
+    const key = `${modelPath}\0${providers.join(",")}\0${threads}`;
+    let loaded = sessions.get(key);
+    if (!loaded) {
+      loaded = { modelPath, session: await createSession(modelPath, providers, threads) };
+      sessions.set(key, loaded);
+    }
+    return operation(loaded.session);
+  });
 }
 
 /**
@@ -148,44 +137,33 @@ export async function runSession(
 }
 
 /**
- * Retire the current cache, then release it once all admitted operations settle.
- * New callers can load and use a fresh generation independently. Concurrent
- * releases share disposal; failed disposal stays owned for a later retry.
+ * Release every loaded session once the model operations ahead of it settle.
+ * The next operation loads its model again. A session whose disposal fails is
+ * kept for a later release, and the failure is thrown.
  */
-export async function releaseSessions(): Promise<number> {
-  for (const entry of sessions.values()) retired.add(entry);
-  sessions.clear();
-  const outcomes = await Promise.allSettled([...retired].map(disposeSession));
-  const failed = outcomes.find((outcome) => outcome.status === "rejected");
-  if (failed?.status === "rejected") throw failed.reason;
-  return outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value).length;
-}
-
-function disposeSession(entry: SessionEntry): Promise<boolean> {
-  entry.disposal ??= (async () => {
-    await entry.idle;
-    let session: Ort.InferenceSession;
-    try {
-      session = await entry.pending;
-    } catch {
-      // Failed creation owns no native session to dispose.
-      retired.delete(entry);
-      return false;
+export function releaseSessions(): Promise<number> {
+  return inTurn(async () => {
+    const all = [...unreleased.splice(0), ...sessions.values()];
+    sessions.clear();
+    let released = 0;
+    let failure: GptImgError | undefined;
+    for (const entry of all) {
+      try {
+        await entry.session.release();
+        released++;
+      } catch (cause) {
+        unreleased.push(entry);
+        failure ??= new GptImgError("internal.unexpected", `Failed to release ONNX session for ${entry.modelPath}.`, {
+          cause,
+          // A rejecting native disposer may already have freed part of its resources.
+          effect: "unknown",
+          subject: entry.modelPath,
+        });
+      }
     }
-    try {
-      await session.release();
-    } catch (cause) {
-      throw new GptImgError("internal.unexpected", `Failed to release ONNX session for ${entry.modelPath}.`, {
-        cause,
-        // A rejecting native disposer may already have freed part of its resources.
-        effect: "unknown",
-        subject: entry.modelPath,
-      });
-    }
-    retired.delete(entry);
-    return true;
-  })().finally(() => { entry.disposal = undefined; });
-  return entry.disposal;
+    if (failure) throw failure;
+    return released;
+  });
 }
 
 async function createSession(modelPath: string, providers: string[], threads: number): Promise<Ort.InferenceSession> {

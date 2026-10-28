@@ -81,7 +81,7 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
     expect(Array.from(data.subarray(0, 4))).toEqual(verb === "mask" ? [255, 255, 255, 255] : [128, 128, 128, 255]);
   }
 
-  it("types a native run failure without poisoning a concurrent peer or later cached reuse", async () => {
+  it("types a native run failure without poisoning the peer that waits its turn or later cached reuse", async () => {
     const entered = deferred();
     const released = deferred();
     const cause = new Error("native operation failed");
@@ -99,10 +99,11 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
     void rejected.catch(() => undefined);
     try {
       await entered.promise;
-      await assertPublished(await call("peer"), "peer");
-      expect(native.create).toHaveBeenCalledOnce();
+      const peer = call("peer");
       released.resolve();
       await rejected;
+      await assertPublished(await peer, "peer");
+      expect(native.create).toHaveBeenCalledOnce();
       const failure = await operation.catch((error: unknown) => error);
       expect(failure).toBeInstanceOf(GptImgError);
       expect((failure as Error).cause).toBe(cause);
@@ -135,7 +136,7 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
     expect((await readdir(tmp)).filter((name) => name.startsWith("rejected"))).toEqual([]);
   });
 
-  it("retains ownership until native settlement while a peer completes and cancellation discards only its result", async () => {
+  it("retains ownership until native settlement, with the peer after it, and cancellation discards only its result", async () => {
     const ctrl = new AbortController();
     const reason = cancelledError("stop this run");
     const entered = deferred();
@@ -153,10 +154,13 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
     try {
       await entered.promise;
       ctrl.abort(reason);
-      await assertPublished(await call("peer"), "peer");
+      const peer = call("peer");
+      await new Promise<void>((resolve) => setImmediate(resolve));
       expect(settled).toBe(false);
+      expect(native.run).toHaveBeenCalledOnce();
       released.resolve();
       await rejected;
+      await assertPublished(await peer, "peer");
       await assertPublished(await call("later"), "later");
       expect(native.create).toHaveBeenCalledOnce();
       expect(native.run).toHaveBeenCalledTimes(3);
