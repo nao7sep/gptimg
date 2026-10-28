@@ -23,7 +23,8 @@ import { buildMenu } from "./menu.ts";
 import { RecordsWindow } from "./records-window.ts";
 import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } from "./paths.ts";
 import { openRecords, type Records } from "./records.ts";
-import { SdkHost } from "./sdk-host.ts";
+import { GptImg } from "gptimgsdk";
+import { chatClients } from "./sdk.ts";
 import { isSessionId, listSessions, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
 import { chatIdOf } from "../shared/session.ts";
 import type { RecordQuery, RecordRef } from "../shared/records.ts";
@@ -61,7 +62,6 @@ interface State {
   records: Records;
   backups: Backups;
   language: LanguageOwner;
-  host: SdkHost;
   turns: TurnRunner;
   exports: ExportRunner;
   recordsWindow: RecordsWindow;
@@ -110,7 +110,7 @@ async function start(paths: AppPaths): Promise<void> {
   await rm(paths.staging, { recursive: true, force: true }).catch(() => {});
 
   const keys = new KeyStore(paths.apiKeys, process.env, (_event, fields) => records.log("warn", "apiKeys.modeTightened", fields));
-  const host = new SdkHost(join(here, "sdk-worker.js"), (code) => records.log(code === 0 ? "info" : "error", "sdk.workerExit", { code }));
+  const sdkApp = { name: "GptImg", version: __APP_VERSION__ };
 
   const state: State = {
     paths,
@@ -121,12 +121,10 @@ async function start(paths: AppPaths): Promise<void> {
     records,
     backups,
     language,
-    host,
     turns: null as unknown as TurnRunner,
     exports: new ExportRunner({
-      host,
+      sdk: new GptImg({ app: sdkApp }),
       records,
-      app: { name: "GptImg", version: __APP_VERSION__ },
       progress: (progress) => state.window?.webContents.send("progress", progress),
     }),
     recordsWindow: new RecordsWindow({
@@ -149,12 +147,11 @@ async function start(paths: AppPaths): Promise<void> {
     state.window?.webContents.send("turnDraft", { sessionId, path });
   });
   state.turns = new TurnRunner({
-    host,
+    sdk: chatClients(sdkApp),
     records,
     settings: () => state.config.settings,
     apiKey: () => keys.resolve(),
     authorizeImage: (path) => state.images.allowed(path),
-    app: { name: "GptImg", version: __APP_VERSION__ },
     backup: (path, text) => backups.keep(path, text),
     started: (requestId, session) => {
       state.window?.webContents.send("turnStarted", { requestId, session });
@@ -193,7 +190,7 @@ async function start(paths: AppPaths): Promise<void> {
   app.on("window-all-closed", () => app.quit());
   // Every quit has one exit deadline: running turns and exports are cancelled and
   // given until then to settle, so a cancelled paid turn records its outcome before
-  // the SDK host stops; past it the quit goes on, and the turn's recorded
+  // records and backups close; past it the quit goes on, and the turn's recorded
   // `provider.call` event stays as the evidence (transaction conventions).
   let exiting = false;
   let exitReady = false;
@@ -209,7 +206,6 @@ async function start(paths: AppPaths): Promise<void> {
     });
   };
   const teardown = () => {
-    host.stop();
     records.log("info", "app.quit");
     records.close();
     backups.close();
@@ -587,10 +583,6 @@ function installIpc(state: State): void {
     async retry(sessionId: string) {
       if (state.rootChanging) return { ...failure("failure.taskRunning"), session: null, cancelled: false };
       return state.turns.retry(sessionId);
-    },
-    async restartProcessing() {
-      try { await state.host.restart(); return { ok: true }; }
-      catch { return failure("failure.workerLost"); }
     },
     cancel(sessionId: string) {
       state.turns.cancel(sessionId);

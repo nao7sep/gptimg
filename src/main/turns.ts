@@ -1,12 +1,13 @@
 // One turn of a session: the user's message is saved first, so it survives a
-// failed or cancelled call; the SDK's chat runs in the utility process; the
-// reply's text and images are saved as the assistant turn. One turn runs per
-// session at a time.
+// failed or cancelled call; the SDK's chat runs; the reply's text and images
+// are saved as the assistant turn. Each chat is its own owner and runs one
+// turn at a time; different chats run side by side.
 import { randomUUID } from "node:crypto";
 import { join, relative, sep } from "node:path";
-import type { ChatResult, RefusedResult } from "gptimgsdk/types";
+import type { GptImg } from "gptimgsdk";
+import type { ChatArgs, ChatResult, PartialImage, RefusedResult } from "gptimgsdk/types";
 import type { AppFailure, OpenedSession, SendRequest, TurnOutcome } from "../shared/api.ts";
-import { errorDataOf, failureFromError, failureFromRefusal, lostWorkerFailure } from "../shared/failures.ts";
+import { failureFromError, failureFromRefusal } from "../shared/failures.ts";
 import { message } from "../shared/i18n/translator.ts";
 import {
   backgroundOf,
@@ -21,24 +22,23 @@ import {
 } from "../shared/session.ts";
 import { effectiveThinking, modelSpelling, OPENAI_ENDPOINT, type Settings } from "../shared/settings.ts";
 import type { Records } from "./records.ts";
-import type { CallSettlement, SdkHost } from "./sdk-host.ts";
-import type { PartialDraft } from "./sdk-protocol.ts";
+import { errorData } from "./sdk.ts";
 import { createSession, importReference, isInside, readSession, SessionError, sessionDir, withId, writeSession } from "./sessions.ts";
 
 export interface TurnDeps {
-  host: SdkHost;
+  /** The SDK client for a key and endpoint (OpenAI's own when null). */
+  sdk: (apiKey: string, baseURL: string | null) => Pick<GptImg, "chat">;
   records: Records;
   settings: () => Settings;
   apiKey: () => Promise<string | null>;
   authorizeImage?: (path: string) => boolean;
-  app: { name: string; version: string };
   backup: (path: string, text: string) => void;
   /** Called after the saved user turn owns its imported staged file. */
   releaseStaged: (path: string) => void;
   /** The user's turn is saved; the call is about to start. */
   started: (requestId: string, session: OpenedSession) => void;
   /** A draft of an image the session's turn is drawing; `null` once the turn settles. */
-  draft?: (sessionId: string, draft: PartialDraft | null) => void;
+  draft?: (sessionId: string, draft: PartialImage | null) => void;
   now?: () => Date;
 }
 
@@ -118,7 +118,7 @@ export class TurnRunner {
         return await run(operation);
       } catch (error) {
         this.deps.records.log("error", "turn.failed", { error: String(error) });
-        return plain(failureFromError(errorDataOf(error)), null);
+        return plain(failureFromError(errorData(error)), null);
       } finally {
         for (const owned of operation.keys) {
           this.#running.delete(owned);
@@ -235,7 +235,7 @@ export class TurnRunner {
     if (operation.cancelled) return plain({ message: message("failure.cancelled"), retryable: false }, opened(doc), true);
     const reasoning = effectiveThinking(settings);
     const previousResponseId = previousResponseBefore(doc.turns, index);
-    const args = {
+    const args: ChatArgs = {
       message: turn.text,
       ...(turn.images.length > 0 && { images: turn.images.map(absolute) }),
       ...(turn.mask && turn.images.length > 0 && { mask: absolute(turn.mask) }),
@@ -260,28 +260,23 @@ export class TurnRunner {
 
     const endpoint = settings["openai.endpoint"].trim();
     const chat = { id: chatIdOf(id, doc), folder: id };
-    const call = this.deps.host.chat(apiKey, endpoint === OPENAI_ENDPOINT ? null : endpoint, this.deps.app, args, {
-      onEvent: (event) => this.deps.records.sdkEvent(chat, event),
-      onPartial: (draft) => this.deps.draft?.(id, draft),
-    });
-    operation.cancel = call.cancel;
-    if (operation.cancelled) call.cancel();
-    const settlement: CallSettlement = await call.done;
+    const controller = new AbortController();
+    operation.cancel = () => controller.abort();
     const model = settings["openai.chat"];
-
-    if (settlement.kind === "lost") {
-      this.deps.records.turn({ chatId: chat.id, sessionFolder: id, turnId: turn.id, model, status: "failed", responseId: null, inputTokens: null, outputTokens: null, body: { lost: true } });
-      this.deps.records.log("error", "turn.failed", { chatId: chat.id, turnId: turn.id, reason: "workerLost" });
-      return plain(lostWorkerFailure(), opened(doc));
-    }
-    if (settlement.kind === "error") {
-      const error = errorDataOf(settlement.error);
+    let result: ChatResult | RefusedResult;
+    try {
+      result = await this.deps.sdk(apiKey, endpoint === OPENAI_ENDPOINT ? null : endpoint).chat(args, {
+        signal: controller.signal,
+        onEvent: (event) => this.deps.records.sdkEvent(chat, event as unknown as Record<string, unknown>),
+        onPartialImage: (draft) => this.deps.draft?.(id, draft),
+      });
+    } catch (thrown) {
+      const error = errorData(thrown);
       const status = error.code === "cancelled" ? "cancelled" : "failed";
       this.deps.records.turn({ chatId: chat.id, sessionFolder: id, turnId: turn.id, model, status, responseId: null, inputTokens: null, outputTokens: null, body: error });
       this.deps.records.log(status === "cancelled" ? "info" : "warn", status === "cancelled" ? "turn.cancelled" : "turn.failed", { chatId: chat.id, turnId: turn.id, code: error.code });
       return plain(failureFromError(error), opened(doc), operation.cancelled || error.code === "cancelled");
     }
-    const result = settlement.result as unknown as ChatResult | RefusedResult;
     if (result.status === "refused") {
       const usage = result.usage ?? null;
       this.deps.records.log("warn", "turn.failed", { chatId: chat.id, turnId: turn.id, refusal: result.refusal.code });

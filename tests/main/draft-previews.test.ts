@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DraftPreviews } from "../../src/main/draft-previews.ts";
-import type { PartialDraft } from "../../src/main/sdk-protocol.ts";
+import type { PartialImage } from "gptimgsdk/types";
 
 const fs = vi.hoisted(() => ({
   mkdir: vi.fn<(...args: unknown[]) => Promise<void>>(),
@@ -14,7 +14,7 @@ function gate() {
   const promise = new Promise<void>((done) => { resolve = done; });
   return { promise, resolve };
 }
-function draft(index: number, format = "png"): PartialDraft {
+function draft(index: number, format = "png"): PartialImage {
   return { image: 0, index, data: new Uint8Array([index]), format };
 }
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };

@@ -138,7 +138,6 @@ export interface GptImgApi {
   send(request: SendRequest): Promise<TurnOutcome>;
   retry(sessionId: string): Promise<TurnOutcome>;
   cancel(sessionId: string): void;
-  restartProcessing(): Promise<Outcome<object>>;
 
   /** Native picker for reference images; the chosen paths are registered for preview. */
   pickImages(): Promise<string[]>;

@@ -34,7 +34,6 @@ const paneSizes = {
 
 type ModalSpec =
   | { kind: "settings" }
-  | { kind: "restart" }
   | { kind: "setup" }
   | { kind: "about" }
   | { kind: "shortcuts" }
@@ -409,9 +408,6 @@ export function App({ boot }: { boot: BootInfo }) {
           onReuse={(path) => setDraft({ ...draft, references: [...draft.references.filter((r) => r.path !== path), { path, absolute: absoluteIn(opened, path) }] })}
         />
         {front?.kind !== "export" && <TaskStrip tasks={exportTasks} />}
-        {(Object.keys(running).length > 0 || pendingRun !== null || exportTasks.task !== null) && (
-          <button type="button" className="quiet-button" onClick={() => pushModal({ kind: "restart" })}>{t("processing.restart")}</button>
-        )}
         <Composer
           key={draftKey}
           disabled={currentId !== NEW && opened?.id !== currentId}
@@ -461,20 +457,6 @@ export function App({ boot }: { boot: BootInfo }) {
               setCurrentId(NEW);
               setOpened(null);
             }
-          }}
-        />
-      )}
-      {front?.kind === "restart" && (
-        <ConfirmModal
-          title={t("processing.restart")}
-          body={t("processing.restartWarning")}
-          confirmLabel={t("processing.restart")}
-          onClose={popModal}
-          onConfirm={async () => {
-            const outcome = await api.restartProcessing();
-            if (!outcome.ok) return outcome.failure;
-            setModals((current) => current.at(-1) === front ? current.slice(0, -1) : current);
-            return null;
           }}
         />
       )}

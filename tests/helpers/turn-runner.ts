@@ -1,11 +1,11 @@
-// A TurnRunner over a real chats folder, with a scripted SDK host and a clock
+// A TurnRunner over a real chats folder, with a scripted SDK chat and a clock
 // that advances a second per reading, for tests of turns and of session order.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { GptImgError, type ErrorCode, type ErrorEffect, type VerbCallOptions } from "gptimgsdk";
 import type { Records } from "../../src/main/records.ts";
-import type { CallSettlement, SdkHost } from "../../src/main/sdk-host.ts";
-import { TurnRunner } from "../../src/main/turns.ts";
+import { TurnRunner, type TurnDeps } from "../../src/main/turns.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
 
 export interface Call {
@@ -13,28 +13,38 @@ export interface Call {
   cancelled: boolean;
 }
 
-export function setup(answer: (call: Call) => CallSettlement | Promise<CallSettlement>, key: string | null = "sk-test") {
+/** What the scripted chat does: return a result, or throw the SDK's error with this code and effect. */
+export type Answer = { kind: "result"; result: Record<string, unknown> } | { kind: "error"; code: ErrorCode; effect?: ErrorEffect };
+
+/** A call that failed after it may have reached OpenAI. */
+export const dropped: Answer = { kind: "error", code: "provider.connectionLost", effect: "unknown" };
+export const cancelled: Answer = { kind: "error", code: "cancelled", effect: "unknown" };
+
+export function setup(answer: (call: Call) => Answer | Promise<Answer>, key: string | null = "sk-test") {
   const root = mkdtempSync(join(tmpdir(), "gptimg-turns-"));
   const calls: Call[] = [];
-  const host = {
-    chat(_key: string, _baseURL: string | null, _app: unknown, args: Record<string, unknown>, { onEvent }: { onEvent: (e: Record<string, unknown>) => void }) {
-      const call: Call = { args, cancelled: false };
+  const sdk: TurnDeps["sdk"] = () => ({
+    async chat(args: unknown, options: VerbCallOptions = {}) {
+      const call: Call = { args: args as Record<string, unknown>, cancelled: false };
       calls.push(call);
-      onEvent({ event: "verb.start", level: "info" });
-      return { id: "c", done: Promise.resolve().then(() => answer(call)), cancel: () => (call.cancelled = true) };
+      options.signal?.addEventListener("abort", () => (call.cancelled = true));
+      options.onEvent?.({ event: "verb.start", level: "info" } as never);
+      await Promise.resolve();
+      const settled = await answer(call);
+      if (settled.kind === "error") throw new GptImgError(settled.code, "x", { effect: settled.effect ?? "none" });
+      return settled.result as never;
     },
-  } as unknown as SdkHost;
+  });
   const turnsRecorded: unknown[] = [];
   const records = { sessionId: "l", log() {}, sdkEvent() {}, turn: (r: unknown) => turnsRecorded.push(r), close() {} } as unknown as Records;
   const started: string[] = [];
   const released: string[] = [];
   let tick = 0;
   const runner = new TurnRunner({
-    host,
+    sdk,
     records,
     settings: () => ({ ...builtInSettings(), sessionsDir: root }),
     apiKey: async () => key,
-    app: { name: "GptImg", version: "0" },
     backup: () => {},
     releaseStaged: (p) => released.push(p),
     started: (requestId) => started.push(requestId),
@@ -43,7 +53,7 @@ export function setup(answer: (call: Call) => CallSettlement | Promise<CallSettl
   return { root, runner, calls, turnsRecorded, started, released };
 }
 
-export const completed = (outDir: string, responseId: string, file = "img.png"): CallSettlement => ({
+export const completed = (outDir: string, responseId: string, file = "img.png"): Answer => ({
   kind: "result",
   result: {
     status: "completed",

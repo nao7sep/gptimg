@@ -49,7 +49,6 @@ export const APP_EVENTS = {
   "model.installFailed": "upscaling model could not be downloaded",
   "model.released": "upscaling model unloaded",
   "model.releaseFailed": "upscaling model could not be unloaded",
-  "sdk.workerExit": "image engine process exited",
   "window.closeFailed": "close confirmation could not be shown",
   "window.loadFailed": "window could not load",
   "window.rendererGone": "window renderer stopped",

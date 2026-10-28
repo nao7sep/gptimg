@@ -6,11 +6,10 @@
 import { utimesSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CallSettlement } from "../../src/main/sdk-host.ts";
 import { listSessions, renameSession } from "../../src/main/sessions.ts";
-import { completed, request, setup } from "../helpers/turn-runner.ts";
+import { completed, request, setup, type Answer } from "../helpers/turn-runner.ts";
 
-const refused: CallSettlement = {
+const refused: Answer = {
   kind: "result",
   result: { status: "refused", refusal: { code: "provider.moderationBlocked", message: "x", safeReason: null }, usage: null, responseId: null },
 };
@@ -21,7 +20,7 @@ async function order(root: string): Promise<string[]> {
 
 describe("session order", () => {
   it("moves a session to the top when a message is sent, and keeps it there through an image reply or a failure", async () => {
-    let answer: (outDir: string) => CallSettlement = (outDir) => completed(outDir, "resp");
+    let answer: (outDir: string) => Answer = (outDir) => completed(outDir, "resp");
     const t = setup((call) => answer(call.args.outDir as string));
     const older = await t.runner.send(request(null, "older"));
     await t.runner.send(request(null, "newer"));
@@ -46,7 +45,7 @@ describe("session order", () => {
     const called = new Promise<void>((resolve) => (calling = resolve));
     const t = setup((call) =>
       call.args.message === "slow"
-        ? new Promise<CallSettlement>((resolve) => {
+        ? new Promise<Answer>((resolve) => {
           releaseSlow = () => resolve(completed(call.args.outDir as string, "resp-slow"));
           calling();
         })

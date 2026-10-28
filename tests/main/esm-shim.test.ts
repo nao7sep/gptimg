@@ -1,8 +1,8 @@
 // electron-vite gives every main-process bundle its own top-level `__dirname`
 // and `__filename`, so a bundled module that declares either makes the bundle a
 // syntax error at load: the app fails to start while the tests, which never load
-// the bundle, still pass. Modules use `import.meta.dirname` instead. The main and
-// worker bundles take in the main process's modules, the shared ones and the SDK.
+// the bundle, still pass. Modules use `import.meta.dirname` instead. The main
+// bundle takes in the main process's modules, the shared ones and the SDK.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parse } from "@babel/parser";

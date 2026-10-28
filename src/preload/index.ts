@@ -35,7 +35,6 @@ const api = {
   send: invoke("send"),
   retry: invoke("retry"),
   cancel: fire("cancel"),
-  restartProcessing: invoke("restartProcessing"),
   pickImages: invoke("pickImages"),
   pasteImage: invoke("pasteImage"),
   saveMask: invoke("saveMask"),

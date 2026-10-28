@@ -14,7 +14,7 @@ import { readSession } from "../../src/main/sessions.ts";
 import { TurnRunner } from "../../src/main/turns.ts";
 import type { AssistantTurn } from "../../src/shared/session.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
-import { inProcessHost } from "../helpers/in-process-host.ts";
+import { chatClients } from "../../src/main/sdk.ts";
 
 const key = process.env.OPENAI_API_KEY?.trim();
 
@@ -27,11 +27,10 @@ function setup(drafts = 0) {
   let drawn!: () => void;
   const firstDraft = new Promise<void>((resolve) => (drawn = resolve));
   const runner = new TurnRunner({
-    host: inProcessHost(),
+    sdk: chatClients({ name: "GptImg", version: "live" }),
     records,
     settings: () => ({ ...builtInSettings(), sessionsDir: root, "openai.drafts": drafts }),
     apiKey: async () => key,
-    app: { name: "GptImg", version: "live" },
     backup: () => {},
     releaseStaged: () => {},
     started: () => {},

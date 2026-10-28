@@ -1,5 +1,5 @@
-// Which code may import what: the renderer never reaches Node, Electron or the
-// main side; only the SDK's worker loads the SDK itself; nothing in the app or
+// Which code may import what: the renderer never reaches Node, Electron, the
+// SDK's runtime or the main side; nothing in the app or
 // its tests reaches into the SDK's files, only its public entries
 // (sdk-conventions). Derived from the source and test trees, with planted violations.
 import { readdirSync, readFileSync } from "node:fs";
@@ -55,10 +55,6 @@ function violations(file: string, imported: string): string | null {
     if (imported === "gptimgsdk") return "the SDK's runtime in the browser side";
     if (/\/(main|preload)\//.test(imported)) return "main-side module in the browser side";
   }
-  // Only the utility process loads the SDK: its entry and the op table it runs.
-  const worker = file.endsWith("sdk-worker.ts") || file.endsWith("sdk-ops.ts");
-  if (area === "main" && imported === "gptimgsdk" && !worker) return "the SDK loaded outside its worker";
-  if (area === "main" && imported.endsWith("/sdk-ops.ts") && !worker) return "the SDK's op table loaded outside its worker";
   if (area === "preload" && imported !== "electron" && !imported.includes("/shared/")) return "preload reaching beyond electron and shared";
   return null;
 }
@@ -72,11 +68,11 @@ describe("import boundaries", () => {
       "gptimgsdk",
     ]);
     expect(violations("src/renderer/src/App.tsx", "node:fs")).not.toBeNull();
-    expect(violations("src/main/index.ts", "gptimgsdk")).not.toBeNull();
-    expect(violations("src/main/index.ts", "./sdk-ops.ts")).not.toBeNull();
-    expect(violations("src/main/sdk-worker.ts", "gptimgsdk/src/verbs/chat.ts")).not.toBeNull();
+    expect(violations("src/shared/settings.ts", "gptimgsdk")).not.toBeNull();
+    expect(violations("src/main/index.ts", "gptimgsdk")).toBeNull();
+    expect(violations("src/main/sdk.ts", "gptimgsdk/src/verbs/chat.ts")).not.toBeNull();
     expect(violations("tests/main/export.test.ts", "../../sdk/src/errors.ts")).not.toBeNull();
-    expect(violations("tests/helpers/in-process-host.ts", "../../sdk/package.json")).not.toBeNull();
+    expect(violations("tests/helpers/turn-runner.ts", "../../sdk/package.json")).not.toBeNull();
     expect(violations("src/main/index.ts", "../../sdk/src/index.ts")).not.toBeNull();
     expect(violations("tests/main/turn-sdk.test.ts", "gptimgsdk/testing")).toBeNull();
     expect(violations("tests/main/turn-sdk.test.ts", "gptimgsdk")).toBeNull();

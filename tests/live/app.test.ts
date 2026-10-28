@@ -9,7 +9,7 @@ import { openRecords } from "../../src/main/records.ts";
 import { readSession } from "../../src/main/sessions.ts";
 import { TurnRunner } from "../../src/main/turns.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
-import { inProcessHost } from "../helpers/in-process-host.ts";
+import { chatClients } from "../../src/main/sdk.ts";
 
 const key = process.env.OPENAI_API_KEY?.trim();
 
@@ -20,11 +20,10 @@ describe("a real chat", () => {
     const root = join(home, "chats");
     const records = openRecords(join(home, "records.sqlite3"), join(home, "logs"), "live", "live");
     const runner = new TurnRunner({
-      host: inProcessHost(),
+      sdk: chatClients({ name: "GptImg", version: "live" }),
       records,
       settings: () => ({ ...builtInSettings(), sessionsDir: root }),
       apiKey: async () => key,
-      app: { name: "GptImg", version: "live" },
       backup: () => {},
       releaseStaged: () => {},
       started: () => {},

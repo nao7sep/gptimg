@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as sessions from "../../src/main/sessions.ts";
 import { createSession, readSession, writeSession } from "../../src/main/sessions.ts";
-import { completed, request, setup } from "../helpers/turn-runner.ts";
+import { cancelled, completed, dropped, request, setup } from "../helpers/turn-runner.ts";
 
 function gate<T>() {
   let resolve!: (value: T) => void;
@@ -59,7 +59,7 @@ describe("a turn", () => {
 
   it("retries an unanswered message as it was saved", async () => {
     let fail = true;
-    const t = setup((call) => (fail ? { kind: "lost" } : completed(call.args.outDir as string, "resp_2")));
+    const t = setup((call) => (fail ? dropped : completed(call.args.outDir as string, "resp_2")));
     const lost = await t.runner.send(request(null, "try me"));
     expect(lost.ok).toBe(false);
     fail = false;
@@ -70,7 +70,7 @@ describe("a turn", () => {
   });
 
   it("stops before saving anything without a key", async () => {
-    const t = setup(() => ({ kind: "lost" }), null);
+    const t = setup(() => dropped, null);
     const outcome = await t.runner.send(request(null, "x"));
     expect(outcome).toMatchObject({ ok: false, session: null, failure: { message: { key: "failure.apiKeyMissing" } } });
     expect(t.calls).toHaveLength(0);
@@ -90,7 +90,7 @@ describe("a turn", () => {
     let release!: () => void;
     const calling = gate<void>();
     const t = setup((call) => new Promise((resolve) => {
-      release = () => resolve(call.cancelled ? { kind: "error", error: { name: "GptImgError", code: "cancelled", kind: "cancelled", effect: "unknown", message: "x" } } : { kind: "lost" });
+      release = () => resolve(call.cancelled ? cancelled : dropped);
       calling.resolve();
     }));
     const pending = t.runner.send(request(null, "slow"));
@@ -109,7 +109,7 @@ describe("a turn", () => {
     const t = setup(async (call) => {
       calling.resolve();
       await provider.promise;
-      return call.cancelled ? { kind: "error", error: { name: "GptImgError", code: "cancelled", kind: "cancelled", effect: "unknown", message: "x" } } : { kind: "lost" };
+      return call.cancelled ? cancelled : dropped;
     });
     const pending = t.runner.send(request(null, "quit while paid"));
     await calling.promise;
@@ -250,7 +250,7 @@ describe("a turn", () => {
 
   it("a session reservation blocks Send and Retry before key lookup and allows both after release", async () => {
     let lose = true;
-    const t = setup((call) => lose ? { kind: "lost" } : completed(call.args.outDir as string, "resp_after_reservation"));
+    const t = setup((call) => lose ? dropped : completed(call.args.outDir as string, "resp_after_reservation"));
     const id = await emptySession(t.root);
     const apiKey = vi.fn(async () => "sk-test");
     t.runner.deps.apiKey = apiKey;
@@ -279,7 +279,7 @@ describe("a turn", () => {
   });
 
   it("a released reservation callback cannot release a later owner", async () => {
-    const t = setup(() => ({ kind: "lost" }));
+    const t = setup(() => dropped);
     const id = await emptySession(t.root);
     const first = t.runner.reserveSession(id)!;
     first();
@@ -295,7 +295,7 @@ describe("a turn", () => {
   });
 
   it("does not reserve a session already owned by a pending send", async () => {
-    const t = setup(() => ({ kind: "lost" }));
+    const t = setup(() => dropped);
     const id = await emptySession(t.root);
     const key = gate<string | null>();
     t.runner.deps.apiKey = () => key.promise;

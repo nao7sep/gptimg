@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AppFailure, BootInfo, GptImgApi, MenuCommand, OpenedSession, SessionsListing } from "../../src/shared/api.ts";
 import { summarize } from "../../src/shared/session.ts";
@@ -26,7 +26,6 @@ async function mount(over: Partial<GptImgApi> = {}, boot: BootInfo = bootInfo())
     onMenu: (handler) => { menu = handler; return () => {}; },
     saveState: vi.fn(), setWindowDirty: vi.fn(),
     send: vi.fn<GptImgApi["send"]>(async () => ({ ok: false, session: null, cancelled: false, failure })),
-    restartProcessing: vi.fn<GptImgApi["restartProcessing"]>(async () => ({ ok: true })),
     ...over,
   });
   const rendered = await renderInApp(() => <App boot={boot} />);
@@ -90,24 +89,6 @@ it("applies delayed image paste to its original draft and keeps newer text", asy
   expect(document.querySelector('.chips img')?.getAttribute("src")).toContain("reference.png");
   expect(api.setWindowDirty).toHaveBeenLastCalledWith(true);
 });
-
-it("requires explicit restart confirmation, reports failure inline, and does not retry automatically", async () => {
-  const pending = deferred<Awaited<ReturnType<GptImgApi["send"]>>>();
-  const { api } = await mount({ send: vi.fn<GptImgApi["send"]>(() => pending.promise), restartProcessing: vi.fn<GptImgApi["restartProcessing"]>().mockResolvedValueOnce({ ok: false, failure }).mockResolvedValueOnce({ ok: true }) });
-  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Draw" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  fireEvent.click(screen.getByRole("button", { name: "Restart image processing" }));
-  const dialog = screen.getByRole("dialog", { name: "Restart image processing" });
-  expect(api.restartProcessing).not.toHaveBeenCalled();
-  fireEvent.click(within(dialog).getByRole("button", { name: "Restart image processing" }));
-  await within(dialog).findByRole("alert");
-  expect(api.restartProcessing).toHaveBeenCalledOnce();
-  fireEvent.click(within(dialog).getByRole("button", { name: "Restart image processing" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(api.restartProcessing).toHaveBeenCalledTimes(2);
-  await act(async () => pending.resolve({ ok: false, session: null, cancelled: false, failure }));
-});
-
 
 it("consumes startup restoration once rather than restoring the saved chat on a return to its folder", async () => {
   const boot = bootInfo();

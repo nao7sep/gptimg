@@ -9,7 +9,7 @@ import { openRecords, type Records } from "../../src/main/records.ts";
 import { readSession } from "../../src/main/sessions.ts";
 import { CHAT_INSTRUCTIONS, TurnRunner } from "../../src/main/turns.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
-import { inProcessHost } from "../helpers/in-process-host.ts";
+import { chatClients } from "../../src/main/sdk.ts";
 
 let openai: OpenAIDouble;
 let root: string;
@@ -30,11 +30,10 @@ beforeEach(async () => {
   settings = {};
   records = openRecords(join(home, "records.sqlite3"), join(home, "logs"), "launch", "test");
   runner = new TurnRunner({
-    host: inProcessHost(),
+    sdk: chatClients({ name: "GptImg", version: "test" }),
     records,
     settings: () => ({ ...builtInSettings(), sessionsDir: root, "openai.endpoint": openai.baseURL, ...settings }),
     apiKey: async () => "sk-test",
-    app: { name: "GptImg", version: "test" },
     backup: () => {},
     releaseStaged: (path) => released.push(path),
     started: () => {},
