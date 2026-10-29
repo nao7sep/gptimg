@@ -28,7 +28,7 @@ import { createSession, importReference, isInside, readSession, SessionError, se
 export interface TurnDeps {
   /** The SDK client for a key and endpoint (OpenAI's own when null). */
   sdk: (apiKey: string, baseURL: string | null) => Pick<GptImg, "chat">;
-  records: Records;
+  records: Pick<Records, "log" | "sdkEvent" | "turn">;
   settings: () => Settings;
   apiKey: () => Promise<string | null>;
   authorizeImage?: (path: string) => boolean;

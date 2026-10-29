@@ -14,7 +14,7 @@ export const UPSCALER = "swin2sr";
 
 export interface ExportDeps {
   sdk: Pick<GptImg, "inspect" | "encode" | "resize" | "upscale" | "model">;
-  records: Records;
+  records: Pick<Records, "log" | "sdkEvent" | "turn">;
   progress: (progress: TaskProgress) => void;
 }
 

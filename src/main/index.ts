@@ -13,7 +13,6 @@ import { INITIAL_WINDOW, windowMinimum } from "../shared/layout.ts";
 import { SET_KEYS, validateSet, type Settings } from "../shared/settings.ts";
 import { parseUiState, type UiState } from "../shared/ui-state.ts";
 import { KeyStore } from "./api-keys.ts";
-import { openBackups, type Backups } from "./backups.ts";
 import { loadConfig, saveConfig, type LoadedConfig } from "./config.ts";
 import { json, readText, writeTextAtomic } from "./files.ts";
 import { ExportRunner, folderOf } from "./export.ts";
@@ -22,7 +21,7 @@ import { chromiumLang, clearAppleLanguages, earlyPreferences, LanguageOwner, wri
 import { buildMenu } from "./menu.ts";
 import { RecordsWindow } from "./records-window.ts";
 import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } from "./paths.ts";
-import { openRecords, type Records } from "./records.ts";
+import { startStores, type Stores, type StoreRecords } from "./stores.ts";
 import { GptImg } from "gptimgsdk";
 import { chatClients } from "./sdk.ts";
 import { isSessionId, listSessions, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
@@ -37,6 +36,14 @@ declare const __APP_VERSION__: string;
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 const here = import.meta.dirname;
 const EXIT_DEADLINE_MS = 3_000;
+/**
+ * Ends the process at once at the exit deadline. A worker blocked in SQLite or
+ * on a stalled disk keeps Electron's `app.exit` waiting, while SIGKILL ends it.
+ */
+function endNow(): void {
+  console.error("[gptimg] quitting did not finish in time; ending GptImg");
+  process.kill(process.pid, "SIGKILL");
+}
 /** The OS-driven end of the app (shutdown, logout, session end), set once start has its owners. */
 let osExit: () => void = () => app.exit(0);
 
@@ -59,8 +66,8 @@ interface State {
   configExisted: boolean;
   ui: UiState;
   keys: KeyStore;
-  records: Records;
-  backups: Backups;
+  records: StoreRecords;
+  backups: Stores["backups"];
   language: LanguageOwner;
   turns: TurnRunner;
   exports: ExportRunner;
@@ -81,8 +88,10 @@ async function start(paths: AppPaths): Promise<void> {
   await app.whenReady();
 
   const launchId = randomUUID();
-  const records = openRecords(paths.records, paths.logs, launchId, __APP_VERSION__);
-  const backups = openBackups(paths.backups, launchId, (error) => records.log("warn", "backups.failed", { error: String(error) }));
+  const stores = startStores({
+    recordsPath: paths.records, logsDir: paths.logs, backupsPath: paths.backups, sessionId: launchId, version: __APP_VERSION__,
+  });
+  const { records, backups } = stores;
   records.log("info", "app.start", { version: __APP_VERSION__, platform: process.platform, dataDir: paths.root });
 
   const language = new LanguageOwner();
@@ -188,27 +197,23 @@ async function start(paths: AppPaths): Promise<void> {
     if (!state.window) createWindow(state);
   });
   app.on("window-all-closed", () => app.quit());
-  // Every quit has one exit deadline: running turns and exports are cancelled and
-  // given until then to settle, so a cancelled paid turn records its outcome before
-  // records and backups close; past it the quit goes on, and the turn's recorded
-  // `provider.call` event stays as the evidence (transaction conventions).
+  // Every quit has one exit deadline: running turns and exports are cancelled,
+  // then the store worker writes what is pending, so a cancelled paid turn records
+  // its outcome before the stores close. Whatever has not finished at the deadline
+  // ends with the process, and the turn's recorded `provider.call` event stays as
+  // the evidence (transaction conventions).
   let exiting = false;
   let exitReady = false;
   const exitWithin = (then: () => void) => {
     if (exiting) return;
     exiting = true;
     state.quitConfirmed = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<void>((resolve) => { timer = setTimeout(resolve, EXIT_DEADLINE_MS); });
-    void Promise.race([Promise.all([state.turns.cancelAll(), state.exports.cancel()]), deadline]).then(() => {
-      clearTimeout(timer);
-      then();
-    });
+    setTimeout(endNow, EXIT_DEADLINE_MS);
+    void Promise.all([state.turns.cancelAll(), state.exports.cancel()]).then(then);
   };
-  const teardown = () => {
+  const teardown = (drain: boolean) => {
     records.log("info", "app.quit");
-    records.close();
-    backups.close();
+    return stores.close({ drain });
   };
   app.on("before-quit", (event) => {
     if (exitReady) return;
@@ -239,10 +244,14 @@ async function start(paths: AppPaths): Promise<void> {
     }).catch((error) => { state.quitAsking = false; records.log("error", "window.closeFailed", { error: String(error) }); });
   });
   // OS takeover never asks; it draws on the same exit deadline and then exits.
-  osExit = () => exitWithin(() => { teardown(); app.exit(0); });
+  // Its pending writes are skipped, so nothing holds up the restart.
+  osExit = () => exitWithin(() => { void teardown(false).then(() => app.exit(0)); });
   // Electron passes the event though its typings omit it; preventing it delays the shutdown until the exit ends.
   powerMonitor.on("shutdown", (...args: unknown[]) => { (args[0] as Electron.Event).preventDefault(); osExit(); });
-  app.on("will-quit", teardown);
+  app.on("will-quit", (event) => {
+    event.preventDefault();
+    void teardown(true).then(() => app.exit(0));
+  });
 }
 
 

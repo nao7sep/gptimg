@@ -19,7 +19,7 @@ export default defineConfig({
       // external and ship in the app's own dependencies.
       externalizeDeps: { exclude: ["gptimgsdk"] },
       rollupOptions: {
-        input: { index: resolve("src/main/index.ts") },
+        input: { index: resolve("src/main/index.ts"), "store-worker": resolve("src/main/store-worker.ts") },
         // The app's own dependencies are the native modules, shipped beside the bundle.
         external: Object.keys(manifest.dependencies),
       },

@@ -5,7 +5,8 @@
 // with its token usage. Each row carries its launch and, where it has one,
 // the chat it belongs to. Credentials are masked by the SDK before an event
 // or response leaves it; the app's own lines never carry one. A write that
-// fails falls back to a JSON line under logs/, then to the console.
+// fails falls back to a JSON line under logs/, then to the console. The store
+// worker (store-worker.ts) opens it and is its only connection.
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
