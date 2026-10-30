@@ -1,8 +1,15 @@
 // The Records window: everything GptImg recorded, newest first. A filter
 // block (search, launch, chat, kind, level) over a keyboard-navigable list,
-// a splitter, and the chosen record whole: its fields and its JSON. New
-// records arrive while the list is at the top; scrolled away, they wait.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// a splitter, and the chosen record whole: its fields and its JSON.
+//
+// The list reads 100 records a page, newest first. The next page loads when
+// what is left below the visible part is no taller than the visible part, and
+// again while the list does not fill the window. New records appear only while
+// the list is at its top (scroll offset under 1); scrolled away, nothing moves,
+// including a newest page already being read, and they appear once the list
+// is back at the top. The selection and its detail stay put meanwhile. Every
+// measurement is the list's own scroll offset, visible height and content height.
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BootInfo } from "../../../shared/api.ts";
 import {
   RECORD_KINDS,
@@ -23,6 +30,9 @@ type LevelFilter = RecordLevel | "attention" | "";
 
 const keyOf = (row: { source: string; id: number }) => `${row.source}:${row.id}`;
 
+const atTop = (el: HTMLElement) => el.scrollTop < 1;
+const nearEnd = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight <= el.clientHeight;
+
 export function RecordsWindow({ boot }: { boot: BootInfo }) {
   const { t, translator } = useI18n();
   const [settings, setSettings] = useState(boot.settings);
@@ -36,7 +46,12 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
   const [launches, setLaunches] = useState<LaunchEntry[]>([]);
   const [chats, setChats] = useState<{ id: string; title: string }[]>([]);
   const [rows, setRows] = useState<RecordRow[]>([]);
-  const [next, setNext] = useState<RecordCursor | null>(null);
+  // The list as the reads left it, for the next read to build on before React renders.
+  const loaded = useRef<{ rows: RecordRow[]; next: RecordCursor | null }>({ rows: [], next: null });
+  const show = useCallback((shown: RecordRow[], cursor: RecordCursor | null) => {
+    loaded.current = { rows: shown, next: cursor };
+    setRows(shown);
+  }, []);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<RecordDetail | null | "loading" | "failed">(null);
@@ -49,6 +64,8 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
   const reader = useRef<Promise<unknown>>(Promise.resolve());
   const listToken = useRef(0);
   const detailToken = useRef(0);
+  // New records were stored while the list was away from its top.
+  const waiting = useRef(false);
   const read = useCallback((job: () => Promise<void>) => {
     reader.current = reader.current.then(job, job);
   }, []);
@@ -94,6 +111,8 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
     () => ({ ...(query.trim() && { search: query }), ...(launch && { launch }), ...(chatId && { chatId }), ...(kind && { kind }), ...(level && { level }) }),
     [query, launch, chatId, kind, level],
   );
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
   const choose = useCallback((row: RecordRow) => {
     const token = ++detailToken.current;
@@ -122,76 +141,108 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
           setState("failed");
           return;
         }
-        setRows(page.rows);
-        setNext(page.next);
+        show(page.rows, page.next);
         setState(page.failed ? "failed" : "ready");
       } catch {
         if (token === listToken.current) setState("failed");
       }
     });
-  }, [filters, read]);
+  }, [filters, read, show]);
 
   useEffect(() => {
     ++detailToken.current;
     setSelected(null);
     setDetail(null);
-    setRows([]);
-    setNext(null);
+    show([], null);
     setState("loading");
+    waiting.current = false;
     if (list.current) list.current.scrollTop = 0;
     loadFirst();
     return () => {
       ++listToken.current;
       ++detailToken.current;
     };
-  }, [loadFirst]);
+  }, [loadFirst, show]);
 
-  const merge = (current: RecordRow[], page: RecordRow[], atTop: boolean) => {
-    const fresh = new Set(page.map(keyOf));
-    const kept = current.filter((row) => !fresh.has(keyOf(row)));
-    return atTop ? [...page, ...kept] : [...kept, ...page];
-  };
+  // The newest page joins the top. A page that shares no record with the list
+  // while more lie beyond it may leave a gap, so it replaces the list instead.
+  // It asks under the token current when it runs, so a page extending the list
+  // meanwhile does not drop it; only a filter change does.
+  const readNewest = useCallback(() => {
+    read(async () => {
+      if (filters !== filtersRef.current) return;
+      const token = listToken.current;
+      try {
+        const page = await api.queryRecords(filters);
+        if (token !== listToken.current) return;
+        if (!list.current || !atTop(list.current)) {
+          waiting.current = true;
+          return;
+        }
+        const current = loaded.current;
+        const shown = new Set(current.rows.map(keyOf));
+        if (current.rows.length > 0 && page.next && !page.rows.some((row) => shown.has(keyOf(row)))) {
+          ++listToken.current;
+          show(page.rows, page.next);
+        } else {
+          const fresh = new Set(page.rows.map(keyOf));
+          show([...page.rows, ...current.rows.filter((row) => !fresh.has(keyOf(row)))], current.next);
+        }
+        setState(page.failed ? "failed" : "ready");
+      } catch {
+        if (token === listToken.current) setState("failed");
+      }
+    });
+  }, [filters, read, show]);
 
-  // New records join the top while the list is scrolled there.
   useEffect(
     () =>
       api.onRecordsChanged(() => {
-        if ((list.current?.scrollTop ?? 0) > 8) return;
-        const token = listToken.current;
-        read(async () => {
-          if (token !== listToken.current) return;
-          try {
-            const page = await api.queryRecords(filters);
-            if (token !== listToken.current) return;
-            setRows((rows) => merge(rows, page.rows, true));
-            setState(page.failed ? "failed" : "ready");
-          } catch {
-            if (token === listToken.current) setState("failed");
-          }
-        });
+        if (list.current && atTop(list.current)) readNewest();
+        else waiting.current = true;
       }),
-    [filters, read],
+    [readNewest],
   );
 
   // Scrolling asks for the next page many times; the first to run extends the list and the rest find their token old.
-  const loadMore = () => {
-    if (!next) return;
+  const loadMore = useCallback(() => {
+    const cursor = loaded.current.next;
+    if (!cursor) return;
     const token = listToken.current;
-    const cursor = next;
     read(async () => {
       if (token !== listToken.current) return;
       try {
         const page = await api.queryRecords({ ...filters, cursor });
         if (token !== listToken.current) return;
         ++listToken.current;
-        setRows((current) => merge(current, page.rows, false));
-        setNext(page.next);
+        const fresh = new Set(page.rows.map(keyOf));
+        show([...loaded.current.rows.filter((row) => !fresh.has(keyOf(row))), ...page.rows], page.next);
         setState(page.failed ? "failed" : "ready");
       } catch {
         if (token === listToken.current) setState("failed");
       }
     });
+  }, [filters, read, show]);
+
+  const onListScroll = () => {
+    const el = list.current;
+    if (!el) return;
+    if (waiting.current && atTop(el)) {
+      waiting.current = false;
+      readNewest();
+    }
+    if (nearEnd(el)) loadMore();
   };
+
+  // A page, or a taller window, that leaves the list short of filling it asks for the next.
+  useEffect(() => {
+    const fill = () => {
+      if (state === "ready" && list.current && nearEnd(list.current)) loadMore();
+    };
+    fill();
+    window.addEventListener("resize", fill);
+    return () => window.removeEventListener("resize", fill);
+  }, [rows, state, loadMore]);
 
   const index = rows.findIndex((row) => keyOf(row) === selected);
   const onListKey = (event: React.KeyboardEvent) => {
@@ -231,18 +282,21 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
   };
 
   // Times to the millisecond; Intl takes either the style options or the fields, never both.
-  const when = (iso: string) =>
-    translator.dateTime(iso, zone, {
-      dateStyle: undefined,
-      timeStyle: undefined,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      fractionalSecondDigits: 3,
-    });
+  const when = useCallback(
+    (iso: string) =>
+      translator.dateTime(iso, zone, {
+        dateStyle: undefined,
+        timeStyle: undefined,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        fractionalSecondDigits: 3,
+      }),
+    [translator, zone],
+  );
   const launchLabel = (entry: LaunchEntry) =>
     entry.current ? t("records.launch.current", { time: when(entry.startedAt) }) : t("records.launch.entry", { time: when(entry.startedAt) });
   const chatTitle = (id: string | null) => (id ? (chats.find((c) => c.id === id)?.title ?? id) : null);
@@ -298,32 +352,14 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
           aria-label={t("records.title")}
           aria-activedescendant={selected ? `record-${selected}` : undefined}
           onKeyDown={onListKey}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) loadMore();
-          }}
+          onScroll={onListScroll}
         >
           {state === "loading" && <p className="records-state">{t("records.loading")}</p>}
           {state === "failed" && <p role="alert" className="records-state problem">{t("records.failed")}</p>}
           {state === "ready" && rows.length === 0 && <p className="records-state">{t("records.empty")}</p>}
           {rows.map((row) => (
-              <div
-                key={keyOf(row)}
-                id={`record-${keyOf(row)}`}
-                role="option"
-                aria-selected={keyOf(row) === selected}
-                className={`record-card${keyOf(row) === selected ? " selected" : ""}`}
-                onClick={() => choose(row)}
-              >
-                <div className="record-line">
-                  <span className="record-time">{when(row.at)}</span>
-                  <span className={`pill level-${row.level}`}>{t(`records.level.${row.level}`)}</span>
-                  {row.kind === "call" && <span className="pill">{t("records.kind.call")}</span>}
-                </div>
-                <div className="record-title">{row.title}</div>
-                {row.text && <div className="record-text">{row.text}</div>}
-              </div>
-            ))}
+            <RecordCard key={keyOf(row)} row={row} selected={keyOf(row) === selected} when={when} onChoose={choose} />
+          ))}
         </div>
       </aside>
       <div
@@ -382,6 +418,30 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
     </div>
   );
 }
+
+// A card renders again only when its own record, selection or time format changes,
+// so a list of thousands stays cheap as new records join it.
+const RecordCard = memo(function RecordCard(props: { row: RecordRow; selected: boolean; when: (iso: string) => string; onChoose: (row: RecordRow) => void }) {
+  const { t } = useI18n();
+  const { row, selected } = props;
+  return (
+    <div
+      id={`record-${keyOf(row)}`}
+      role="option"
+      aria-selected={selected}
+      className={`record-card${selected ? " selected" : ""}`}
+      onClick={() => props.onChoose(row)}
+    >
+      <div className="record-line">
+        <span className="record-time">{props.when(row.at)}</span>
+        <span className={`pill level-${row.level}`}>{t(`records.level.${row.level}`)}</span>
+        {row.kind === "call" && <span className="pill">{t("records.kind.call")}</span>}
+      </div>
+      <div className="record-title">{row.title}</div>
+      {row.text && <div className="record-text">{row.text}</div>}
+    </div>
+  );
+});
 
 function FieldRow({ label, value }: { label: string; value: string }) {
   return (
