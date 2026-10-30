@@ -8,6 +8,7 @@ import type { SessionSummary } from "../../../shared/session.ts";
 import { RAIL_WIDTH } from "../../../shared/ui-state.ts";
 import type { Running } from "../App.tsx";
 import { useI18n } from "../i18n.tsx";
+import { useSettledSave } from "../settled-save.ts";
 import { AppMenu } from "./AppMenu.tsx";
 import { FrameIcon, PlusIcon } from "./icons.tsx";
 import { relativeDay } from "./time.ts";
@@ -39,6 +40,12 @@ export function Rail(props: RailProps) {
   const list = useRef<HTMLDivElement>(null);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [drag, setDrag] = useState<number | null>(null);
+  // Keyboard steps show at once and save once the stepping pauses.
+  const [stepped, setStepped] = useState<number | null>(null);
+  const steps = useSettledSave((next: number) => {
+    props.onWidth(next);
+    setStepped(null);
+  });
 
   useEffect(() => {
     const onResize = () => setWindowWidth(window.innerWidth);
@@ -46,7 +53,7 @@ export function Rail(props: RailProps) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const width = railWidth(drag ?? props.width, windowWidth, props.imagesPane);
+  const width = railWidth(drag ?? stepped ?? props.width, windowWidth, props.imagesPane);
   const activeIndex = sessions.findIndex((s) => s.id === currentId);
 
   useEffect(() => {
@@ -93,6 +100,7 @@ export function Rail(props: RailProps) {
 
   const startDrag = (event: React.PointerEvent) => {
     event.preventDefault();
+    steps.flush();
     const startX = event.clientX;
     const startWidth = width;
     const target = event.currentTarget as HTMLElement;
@@ -118,7 +126,8 @@ export function Rail(props: RailProps) {
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       const next = Math.max(RAIL_WIDTH.min, Math.min(RAIL_WIDTH.max, width + (event.key === "ArrowRight" ? step : -step)));
-      props.onWidth(next);
+      setStepped(next);
+      steps.push(next);
     }
   };
 
@@ -188,6 +197,7 @@ export function Rail(props: RailProps) {
         style={{ width: PANES.splitter.width }}
         onPointerDown={startDrag}
         onKeyDown={onSplitterKey}
+        onBlur={steps.flush}
       />
     </>
   );

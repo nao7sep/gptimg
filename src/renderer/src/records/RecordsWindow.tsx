@@ -25,6 +25,7 @@ import { RECORDS_LIST_WIDTH } from "../../../shared/ui-state.ts";
 import { api } from "../api.ts";
 import { applyFonts } from "../fonts.ts";
 import { useI18n } from "../i18n.tsx";
+import { useSettledSave } from "../settled-save.ts";
 
 type LevelFilter = RecordLevel | "attention" | "";
 
@@ -261,8 +262,12 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
     else if (event.key === "PageUp") go(index - 10);
   };
 
+  // Keyboard steps save once the stepping pauses.
+  const widthSteps = useSettledSave((next: number) => api.saveRecordsLayout(next));
+
   const startDrag = (event: React.PointerEvent) => {
     event.preventDefault();
+    widthSteps.flush();
     const startX = event.clientX;
     const start = width;
     const target = event.currentTarget as HTMLElement;
@@ -377,8 +382,9 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
           e.preventDefault();
           const next = Math.max(RECORDS_LIST_WIDTH.min, Math.min(RECORDS_LIST_WIDTH.max, width + (e.key === "ArrowRight" ? 16 : -16)));
           setWidth(next);
-          api.saveRecordsLayout(next);
+          widthSteps.push(next);
         }}
+        onBlur={widthSteps.flush}
       />
       <section className="records-detail">
         {detail === null && <p className="records-state">{t("records.select")}</p>}
