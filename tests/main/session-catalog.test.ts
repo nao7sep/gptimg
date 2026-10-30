@@ -1,7 +1,7 @@
 // Main's session listing reads every session.json only when a folder is first
 // listed and when the folder setting changes; each save, rename or trash then
 // updates its one entry and sends that one change to the windows.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SessionCatalog } from "../../src/main/session-catalog.ts";
@@ -52,6 +52,27 @@ describe("session catalog", () => {
     t.catalog.change(t.root, made.id, summarize(renamed.id, renamed.doc));
     expect((await t.catalog.list(t.root)).sessions.map((s) => [s.id, s.title])).toEqual([[renamed.id, "new"]]);
     t.catalog.change(t.root, renamed.id, null);
+    expect(await titles(t.catalog, t.root)).toEqual([]);
+  });
+
+  it("keeps the true title when a rename writes it and then fails to move the folder", async () => {
+    const t = setup(() => ({ kind: "error", code: "cancelled" }));
+    const made = await createSession(t.root, new Date(Date.UTC(2026, 0, 1)), "old");
+    await writeSession(t.root, made.id, made.doc);
+    await t.catalog.list(t.root);
+    // A read-only sessions folder: the title inside the session saves, the folder rename fails.
+    chmodSync(t.root, 0o555);
+    try {
+      await expect(renameSession(t.root, made.id, "new")).rejects.toThrow();
+    } finally {
+      chmodSync(t.root, 0o755);
+    }
+    await t.catalog.reread(t.root, made.id);
+    expect((await t.catalog.list(t.root)).sessions.map((s) => [s.id, s.title])).toEqual([[made.id, "new"]]);
+    expect(t.changes.at(-1)).toMatchObject({ kind: "entry", id: made.id, session: { id: made.id, title: "new" } });
+    // A session gone meanwhile leaves the list.
+    rmSync(join(t.root, made.id), { recursive: true });
+    await t.catalog.reread(t.root, made.id);
     expect(await titles(t.catalog, t.root)).toEqual([]);
   });
 

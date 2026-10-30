@@ -6,14 +6,15 @@ import type { RecordDetail, RecordQuery, RecordRow, RecordsPage } from "../../sr
 import type { Settings } from "../../src/shared/settings.ts";
 import type { SessionChange } from "../../src/shared/session.ts";
 import { RecordsWindow } from "../../src/renderer/src/records/RecordsWindow.tsx";
-import { bootInfo, fakeApi, renderInApp } from "./harness.tsx";
+import { bootInfo, fakeApi, renderInApp, resized } from "./harness.tsx";
 
 afterEach(cleanup);
 
 // jsdom lays nothing out, so the list reports the geometry a window would:
 // a 500px visible height over 50px rows, and an offset kept within them.
-const ROW = 50;
-const VISIBLE = 500;
+let ROW = 50;
+let VISIBLE = 500;
+afterEach(() => { ROW = 50; VISIBLE = 500; });
 const offsets = new WeakMap<Element, number>();
 const isList = (el: Element) => el.classList.contains("records-rows");
 const contentHeight = (el: Element) => Math.max(VISIBLE, el.children.length * ROW);
@@ -102,6 +103,30 @@ describe("Records list", () => {
     await act(async () => t.emitRecords());
     await screen.findByText("Row 1");
     expect([...document.querySelectorAll(".record-card")].map((card) => card.textContent)).toEqual([expect.stringContaining("Row 1"), expect.stringContaining("Row 0")]);
+  });
+
+  it("reads the next page when the window or the splitter resizes the list short of filling", async () => {
+    const queryRecords = vi.fn(async (query: RecordQuery) => page(query.cursor ? query.cursor.id + 1 : 0, 20));
+    const t = setup({ queryRecords });
+    VISIBLE = 400;
+    await t.render();
+    await screen.findByText("Row 19");
+    // 1000px of rows against 400px visible leaves 600px below: nothing more.
+    expect(queryRecords).toHaveBeenCalledOnce();
+    // A taller window: 500px visible leaves 500px below.
+    VISIBLE = 500;
+    await act(async () => resized());
+    await screen.findByText("Row 39");
+    expect(queryRecords).toHaveBeenCalledTimes(2);
+    // 2000px of rows leave 1500px below. A wider list from the splitter: rows
+    // wrap less, and 1000px of rows leave 500px below.
+    await act(async () => resized());
+    expect(queryRecords).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(screen.getByRole("separator", { name: "Resize the record list" }), { key: "ArrowRight" });
+    ROW = 25;
+    await act(async () => resized());
+    await screen.findByText("Row 59");
+    expect(queryRecords).toHaveBeenCalledTimes(3);
   });
 
   it("holds new records while scrolled away, including a page already being read, and shows them back at the top", async () => {

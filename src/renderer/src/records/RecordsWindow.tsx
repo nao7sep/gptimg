@@ -235,14 +235,18 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
     if (nearEnd(el)) loadMore();
   };
 
-  // A page, or a taller window, that leaves the list short of filling it asks for the next.
+  // A page, or a list resized by the window or the splitter, that leaves the
+  // list short of filling it asks for the next.
   useEffect(() => {
+    const el = list.current;
     const fill = () => {
-      if (state === "ready" && list.current && nearEnd(list.current)) loadMore();
+      if (state === "ready" && el && nearEnd(el)) loadMore();
     };
     fill();
-    window.addEventListener("resize", fill);
-    return () => window.removeEventListener("resize", fill);
+    if (!el) return;
+    const observer = new ResizeObserver(fill);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [rows, state, loadMore]);
 
   const index = rows.findIndex((row) => keyOf(row) === selected);

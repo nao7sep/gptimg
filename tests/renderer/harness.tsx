@@ -16,6 +16,22 @@ configure({ asyncUtilTimeout: 2 ** 31 - 1 });
 
 const noop = () => () => {};
 
+// jsdom has no layout, so nothing resizes: a test reports a resize by calling `resized()`.
+const observed = new Set<() => void>();
+class FakeResizeObserver {
+  readonly #notify: () => void;
+  constructor(callback: ResizeObserverCallback) {
+    this.#notify = () => callback([], this as unknown as ResizeObserver);
+  }
+  observe() { observed.add(this.#notify); }
+  unobserve() { observed.delete(this.#notify); }
+  disconnect() { observed.delete(this.#notify); }
+}
+if (typeof window !== "undefined") window.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
+export function resized(): void {
+  for (const notify of [...observed]) notify();
+}
+
 export function fakeApi(over: Partial<GptImgApi> = {}): GptImgApi {
   const api = {
     onLanguage: noop,

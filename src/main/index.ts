@@ -550,11 +550,8 @@ function installIpc(state: State): void {
         return { ok: true, session: { id: renamed.id, doc: renamed.doc, dir: sessionDir(root, renamed.id) } };
       } catch (error) {
         records.log("error", "sessions.renameFailed", { error: String(error) });
-        // The title may have been written before the folder rename failed: the one entry is read again.
-        await readSession(root, id).then(
-          (doc) => state.catalog.change(root, id, summarize(id, doc)),
-          (readError) => { if (readError instanceof SessionError && readError.code === "notFound") state.catalog.change(root, id, null); },
-        );
+        // The title may have been written before the folder rename failed.
+        await state.catalog.reread(root, id);
         return sessionFailure(error);
       } finally {
         release();

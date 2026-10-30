@@ -3,9 +3,9 @@
 // setting changes; after that each saved, renamed or trashed session updates
 // its one entry, and every window is told that one change. A session folder
 // added or edited outside GptImg shows once the folder is listed anew.
-import { applySessionChange, type SessionChange, type SessionSummary } from "../shared/session.ts";
+import { applySessionChange, summarize, type SessionChange, type SessionSummary } from "../shared/session.ts";
 import type { SessionsListing } from "../shared/api.ts";
-import { listSessions } from "./sessions.ts";
+import { listSessions, readSession, SessionError } from "./sessions.ts";
 
 export class SessionCatalog {
   #root = "";
@@ -43,6 +43,15 @@ export class SessionCatalog {
       if (this.#sessions) this.#sessions = applySessionChange(this.#sessions, id, session);
       this.#notify({ kind: "entry", id, session });
     });
+  }
+
+  /** Reads the one session at folder `id` again, after an operation on it failed partway. */
+  async reread(root: string, id: string): Promise<void> {
+    try {
+      this.change(root, id, summarize(id, await readSession(root, id)));
+    } catch (error) {
+      if (error instanceof SessionError && error.code === "notFound") this.change(root, id, null);
+    }
   }
 
   /** The sessions folder setting changed: the next listing reads the new folder. */
