@@ -26,6 +26,7 @@ describe("a real chat", () => {
       apiKey: async () => key,
       backup: () => {},
       releaseStaged: () => {},
+      saved: () => {},
       started: () => {},
     });
     const options = { size: "1024x1024", quality: "low" };

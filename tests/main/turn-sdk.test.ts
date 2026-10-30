@@ -36,6 +36,7 @@ beforeEach(async () => {
     apiKey: async () => "sk-test",
     backup: () => {},
     releaseStaged: (path) => released.push(path),
+    saved: () => {},
     started: () => {},
     draft: (sessionId, draft) => { drafts.push({ sessionId, image: draft ? draft.image : null }); onDraft(); },
   });

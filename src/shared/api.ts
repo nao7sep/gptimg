@@ -5,7 +5,7 @@ import type { LaunchEntry, RecordDetail, RecordQuery, RecordRef, RecordsPage } f
 import type { Catalogue } from "./i18n/catalogues.ts";
 import type { Language } from "./i18n/languages.ts";
 import type { Message } from "./i18n/translator.ts";
-import type { SessionDoc, SessionSummary, TurnOptions } from "./session.ts";
+import type { SessionChange, SessionDoc, SessionSummary, TurnOptions } from "./session.ts";
 import type { Settings } from "./settings.ts";
 import type { UiState } from "./ui-state.ts";
 
@@ -177,7 +177,8 @@ export interface GptImgApi {
   closeWindow(): void;
   onMenu(handler: (command: MenuCommand) => void): () => void;
   onSettings(handler: (settings: Settings) => void): () => void;
-  onSessionsChanged(handler: () => void): () => void;
+  /** One session was added, saved, renamed or trashed, or the sessions folder changed. */
+  onSessionsChanged(handler: (change: SessionChange) => void): () => void;
   onLanguage(handler: (info: LanguageInfo) => void): () => void;
   /** The user's turn is saved and the call has started: the session as it now stands. */
   onTurnStarted(handler: (event: { requestId: string; session: OpenedSession }) => void): () => void;

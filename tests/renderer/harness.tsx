@@ -21,6 +21,7 @@ export function fakeApi(over: Partial<GptImgApi> = {}): GptImgApi {
     onLanguage: noop,
     onMenu: noop,
     onTurnStarted: noop,
+    onSessionsChanged: noop,
     onProgress: noop,
     registerFiles: vi.fn(async (paths: string[]) => paths),
     pickImages: vi.fn(async () => []),

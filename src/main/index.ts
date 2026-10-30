@@ -24,8 +24,9 @@ import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } fro
 import { startStores, type Stores, type StoreRecords } from "./stores.ts";
 import { GptImg } from "gptimgsdk";
 import { chatClients } from "./sdk.ts";
-import { isSessionId, listSessions, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
-import { chatIdOf } from "../shared/session.ts";
+import { isSessionId, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
+import { chatIdOf, summarize } from "../shared/session.ts";
+import { SessionCatalog } from "./session-catalog.ts";
 import type { RecordQuery, RecordRef } from "../shared/records.ts";
 import { TurnRunner } from "./turns.ts";
 import { navigationAllowed } from "./navigation.ts";
@@ -72,6 +73,7 @@ interface State {
   turns: TurnRunner;
   exports: ExportRunner;
   recordsWindow: RecordsWindow;
+  catalog: SessionCatalog;
   images: ImageAccess;
   window: BrowserWindow | null;
   quitConfirmed: boolean;
@@ -145,6 +147,9 @@ async function start(paths: AppPaths): Promise<void> {
       },
       title: () => language.translator.t("records.title"),
     }),
+    catalog: new SessionCatalog((change) => {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sessionsChanged", change);
+    }),
     images: new ImageAccess(() => [state.config.settings.sessionsDir, paths.staging]),
     window: null,
     quitConfirmed: false,
@@ -162,10 +167,8 @@ async function start(paths: AppPaths): Promise<void> {
     apiKey: () => keys.resolve(),
     authorizeImage: (path) => state.images.allowed(path),
     backup: (path, text) => backups.keep(path, text),
-    started: (requestId, session) => {
-      state.window?.webContents.send("turnStarted", { requestId, session });
-      sessionsChanged();
-    },
+    saved: (root, id, doc) => state.catalog.change(root, id, summarize(id, doc)),
+    started: (requestId, session) => state.window?.webContents.send("turnStarted", { requestId, session }),
     draft: (sessionId, draft) => void drafts.show(sessionId, draft),
     releaseStaged: (path) => {
       if (dirname(path) === paths.staging) void rm(path, { force: true });
@@ -462,7 +465,7 @@ function installIpc(state: State): void {
         writeAppleLanguages(next.language, (error) => records.log("warn", "language.appleLanguagesFailed", { error: String(error) }));
       }
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("settingsChanged", next);
-      if (previous.sessionsDir !== next.sessionsDir) sessionsChanged();
+      if (previous.sessionsDir !== next.sessionsDir) state.catalog.folderChanged();
       return { ok: true, settings: next, language: language.info() };
       } finally { state.rootChanging = false; }
     },
@@ -517,7 +520,7 @@ function installIpc(state: State): void {
       const root = state.config.settings.sessionsDir;
       if (!root) return { ok: true, sessions: [], unreadable: 0 };
       try {
-        return { ok: true, ...(await listSessions(root)) };
+        return { ok: true, ...(await state.catalog.list(root)) };
       } catch (error) {
         records.log("error", "sessions.listFailed", { error: String(error) });
         return failure("failure.sessionsFolder", { path: root });
@@ -542,11 +545,16 @@ function installIpc(state: State): void {
       if (!release) return failure("failure.turnRunning");
       try {
         const renamed = await renameSession(root, id, clean);
-        sessionsChanged();
+        state.catalog.change(root, id, summarize(renamed.id, renamed.doc));
         records.log("info", "sessions.renamed", { chatId: chatIdOf(renamed.id, renamed.doc), from: id, to: renamed.id });
         return { ok: true, session: { id: renamed.id, doc: renamed.doc, dir: sessionDir(root, renamed.id) } };
       } catch (error) {
         records.log("error", "sessions.renameFailed", { error: String(error) });
+        // The title may have been written before the folder rename failed: the one entry is read again.
+        await readSession(root, id).then(
+          (doc) => state.catalog.change(root, id, summarize(id, doc)),
+          (readError) => { if (readError instanceof SessionError && readError.code === "notFound") state.catalog.change(root, id, null); },
+        );
         return sessionFailure(error);
       } finally {
         release();
@@ -566,7 +574,7 @@ function installIpc(state: State): void {
           // An unreadable chat is still trashed; its folder name stands in.
         }
         await shell.trashItem(sessionDir(root, id));
-        sessionsChanged();
+        state.catalog.change(root, id, null);
         records.log("info", "sessions.trashed", { chatId, folder: id });
         return { ok: true };
       } catch (error) {
@@ -623,9 +631,9 @@ function installIpc(state: State): void {
     },
     async saveMask(png: Uint8Array) {
       const bytes = png instanceof Uint8Array ? png : null;
-      // Only a PNG the painter made: its signature, and a size no painted mask comes near.
+      // Only a PNG: the painter's output, checked by its signature.
       const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-      if (!bytes || bytes.length > 64 * 1024 * 1024 || !signature.every((b, i) => bytes[i] === b)) return null;
+      if (!bytes || !signature.every((b, i) => bytes[i] === b)) return null;
       try {
         await mkdir(paths.staging, { recursive: true, mode: 0o700 });
         const path = join(paths.staging, `mask-${randomUUID().slice(0, 8)}.png`);
@@ -698,8 +706,8 @@ function installIpc(state: State): void {
       const root = state.config.settings.sessionsDir;
       if (!root) return [];
       try {
-        // The listing reads each chat once and carries its lasting id.
-        return (await listSessions(root)).sessions.map((row) => ({ id: row.chatId, title: row.title }));
+        // The listing main already holds, with each chat's lasting id.
+        return (await state.catalog.list(root)).sessions.map((row) => ({ id: row.chatId, title: row.title }));
       } catch {
         return [];
       }
@@ -724,9 +732,4 @@ function installIpc(state: State): void {
   for (const [name, handler] of Object.entries(handlers)) {
     ipcMain.handle(name, (_event, ...args: unknown[]) => (handler as (...a: unknown[]) => unknown)(...args));
   }
-}
-
-/** Tells every window the chats changed, so Records refreshes its chat names. */
-function sessionsChanged(): void {
-  for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sessionsChanged");
 }

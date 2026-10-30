@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GptImgApi } from "../../src/shared/api.ts";
 import type { RecordDetail, RecordQuery, RecordRow, RecordsPage } from "../../src/shared/records.ts";
 import type { Settings } from "../../src/shared/settings.ts";
+import type { SessionChange } from "../../src/shared/session.ts";
 import { RecordsWindow } from "../../src/renderer/src/records/RecordsWindow.tsx";
 import { bootInfo, fakeApi, renderInApp } from "./harness.tsx";
 
@@ -22,7 +23,7 @@ const filters = () => within(document.querySelector<HTMLElement>(".records-filte
 
 function setup(over: Partial<GptImgApi> = {}) {
   const records = new Set<() => void>();
-  const sessions = new Set<() => void>();
+  const sessions = new Set<(change: SessionChange) => void>();
   const settings = new Set<(value: Settings) => void>();
   const api = fakeApi({
     onRecordsChanged: (handler) => { records.add(handler); return () => { records.delete(handler); }; },
@@ -33,7 +34,7 @@ function setup(over: Partial<GptImgApi> = {}) {
   return {
     api, records, sessions, settings,
     emitRecords: () => records.forEach((handler) => handler()),
-    emitSessions: () => sessions.forEach((handler) => handler()),
+    emitSessions: () => sessions.forEach((handler) => handler({ kind: "folder" })),
     emitSettings: (value: Settings) => settings.forEach((handler) => handler(value)),
     render: async () => { const boot = bootInfo(); boot.settings.timeZone = "UTC"; return renderInApp(() => <RecordsWindow boot={boot} />); },
   };

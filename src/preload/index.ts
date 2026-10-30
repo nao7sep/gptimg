@@ -3,6 +3,7 @@
 import type { Settings } from "../shared/settings.ts";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { GptImgApi, LanguageInfo, MenuCommand, OpenedSession, TaskProgress } from "../shared/api.ts";
+import type { SessionChange } from "../shared/session.ts";
 
 const invoke =
   (name: string) =>
@@ -81,9 +82,10 @@ const api = {
     ipcRenderer.on("settingsChanged", listener);
     return () => ipcRenderer.off("settingsChanged", listener);
   },
-  onSessionsChanged: (handler: () => void) => {
-    ipcRenderer.on("sessionsChanged", handler);
-    return () => ipcRenderer.off("sessionsChanged", handler);
+  onSessionsChanged: (handler: (change: SessionChange) => void) => {
+    const listener = (_event: unknown, change: SessionChange) => handler(change);
+    ipcRenderer.on("sessionsChanged", listener);
+    return () => ipcRenderer.off("sessionsChanged", listener);
   },
   onLanguage: (handler: (info: LanguageInfo) => void) => {
     const listener = (_event: unknown, info: LanguageInfo) => handler(info);

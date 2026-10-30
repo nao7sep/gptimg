@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AppFailure, BootInfo, GptImgApi, MenuCommand, OpenedSession, SessionsListing } from "../../src/shared/api.ts";
-import { summarize } from "../../src/shared/session.ts";
+import { summarize, type SessionChange } from "../../src/shared/session.ts";
 import { bootInfo, fakeApi, renderInApp } from "./harness.tsx";
 import { App } from "../../src/renderer/src/App.tsx";
 
@@ -139,4 +139,17 @@ it("keeps an accepted new chat open when startup discovery finishes later", asyn
   expect(screen.getByTestId("conversation").textContent).toBe("Created");
   expect(screen.getByRole("button", { name: "A" })).toBeTruthy();
   await act(async () => pending.resolve({ ok: true, session: session("Created") }));
+});
+
+it("updates the one changed chat in the rail without listing the folder again", async () => {
+  let emit: (change: SessionChange) => void = () => {};
+  const { api } = await mount({ onSessionsChanged: (handler) => { emit = handler; return () => {}; } });
+  await screen.findByRole("button", { name: "A" });
+  const renamed = summarize("A2", { ...session("A").doc, title: "Renamed" });
+  await act(async () => emit({ kind: "entry", id: "A", session: renamed }));
+  expect(screen.queryByRole("button", { name: "A" })).toBeNull();
+  await act(async () => emit({ kind: "entry", id: "B", session: null }));
+  await act(async () => emit({ kind: "entry", id: "C", session: summarize("C", { ...session("C").doc, createdAt: "2026-10-24T00:00:00.000Z" }) }));
+  expect(screen.getAllByRole("button").filter((b) => b.closest("nav")).map((b) => b.textContent)).toEqual(["New chat", "C", "Renamed"]);
+  expect(api.listSessions).toHaveBeenCalledOnce();
 });

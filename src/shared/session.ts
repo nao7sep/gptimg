@@ -195,6 +195,25 @@ export function summarize(id: string, doc: SessionDoc): SessionSummary {
   return { id, chatId: chatIdOf(id, doc), title: doc.title, createdAt: doc.createdAt, updatedAt: last?.at ?? doc.createdAt, sentAt: lastSent?.at ?? doc.createdAt, cover, imageCount };
 }
 
+/** The session list's order: latest sent first, then by folder name. */
+export function bySent(a: SessionSummary, b: SessionSummary): number {
+  return a.sentAt < b.sentAt ? 1 : a.sentAt > b.sentAt ? -1 : a.id < b.id ? 1 : -1;
+}
+
+/**
+ * One change to the sessions folder's listing. `entry`: the session once at
+ * folder `id` is now `session` (a rename gives it a new id), or is gone when
+ * `session` is null. `folder`: the sessions folder itself changed, so the
+ * listing is read anew.
+ */
+export type SessionChange = { kind: "entry"; id: string; session: SessionSummary | null } | { kind: "folder" };
+
+/** A listing with one entry change applied, in list order. */
+export function applySessionChange(sessions: SessionSummary[], id: string, session: SessionSummary | null): SessionSummary[] {
+  const rest = sessions.filter((entry) => entry.id !== id && entry.id !== session?.id);
+  return session ? [...rest, session].sort(bySent) : rest;
+}
+
 function isString(value: unknown): value is string {
   return typeof value === "string";
 }

@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GptImgError, type ErrorCode, type ErrorEffect, type VerbCallOptions } from "gptimgsdk";
 import type { Records } from "../../src/main/records.ts";
+import { SessionCatalog } from "../../src/main/session-catalog.ts";
 import { TurnRunner, type TurnDeps } from "../../src/main/turns.ts";
+import { summarize, type SessionChange } from "../../src/shared/session.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
 
 export interface Call {
@@ -39,6 +41,9 @@ export function setup(answer: (call: Call) => Answer | Promise<Answer>, key: str
   const records = { sessionId: "l", log() {}, sdkEvent() {}, turn: (r: unknown) => turnsRecorded.push(r), close() {} } as unknown as Records;
   const started: string[] = [];
   const released: string[] = [];
+  // Main's listing, kept by the runner's saves as in the app.
+  const changes: SessionChange[] = [];
+  const catalog = new SessionCatalog((change) => changes.push(change));
   let tick = 0;
   const runner = new TurnRunner({
     sdk,
@@ -47,10 +52,11 @@ export function setup(answer: (call: Call) => Answer | Promise<Answer>, key: str
     apiKey: async () => key,
     backup: () => {},
     releaseStaged: (p) => released.push(p),
+    saved: (dir, id, doc) => catalog.change(dir, id, summarize(id, doc)),
     started: (requestId) => started.push(requestId),
     now: () => new Date(Date.UTC(2026, 9, 19, 3, 0, tick++)),
   });
-  return { root, runner, calls, turnsRecorded, started, released };
+  return { root, runner, calls, turnsRecorded, started, released, catalog, changes };
 }
 
 export const completed = (outDir: string, responseId: string, file = "img.png"): Answer => ({

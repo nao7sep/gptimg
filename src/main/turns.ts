@@ -35,6 +35,8 @@ export interface TurnDeps {
   backup: (path: string, text: string) => void;
   /** Called after the saved user turn owns its imported staged file. */
   releaseStaged: (path: string) => void;
+  /** session.json was written: the session as it now stands on disk. */
+  saved: (root: string, id: string, doc: SessionDoc) => void;
   /** The user's turn is saved; the call is about to start. */
   started: (requestId: string, session: OpenedSession) => void;
   /** A draft of an image the session's turn is drawing; `null` once the turn settles. */
@@ -107,6 +109,7 @@ export class TurnRunner {
   async #save(root: string, id: string, doc: SessionDoc): Promise<void> {
     const text = await writeSession(root, id, doc);
     if (text) this.deps.backup(`${sessionDir(root, id)}${sep}session.json`, text);
+    this.deps.saved(root, id, doc);
   }
 
   #own(key: string, run: (operation: TurnOperation) => Promise<TurnOutcome>): Promise<TurnOutcome> {

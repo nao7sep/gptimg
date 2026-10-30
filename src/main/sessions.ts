@@ -9,6 +9,7 @@ import {
   INPUTS_DIR,
   SESSION_FILE,
   SESSION_FORMAT,
+  bySent,
   fileStamp,
   folderPart,
   folderStamp,
@@ -66,7 +67,7 @@ export async function listSessions(root: string): Promise<{ sessions: SessionSum
       unreadable++;
     }
   }
-  sessions.sort((a, b) => (a.sentAt < b.sentAt ? 1 : a.sentAt > b.sentAt ? -1 : a.id < b.id ? 1 : -1));
+  sessions.sort(bySent);
   return { sessions, unreadable };
 }
 

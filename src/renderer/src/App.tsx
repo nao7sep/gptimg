@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PANES } from "../../shared/layout.ts";
 import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedSession, TurnOutcome } from "../../shared/api.ts";
-import { type SessionSummary, type TurnOptions } from "../../shared/session.ts";
+import { applySessionChange, type SessionSummary, type TurnOptions } from "../../shared/session.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { commandFor } from "../../shared/shortcuts.ts";
 import type { UiState } from "../../shared/ui-state.ts";
@@ -111,7 +111,9 @@ export function App({ boot }: { boot: BootInfo }) {
     api.saveState(patch);
   }, []);
 
-  const refreshList = useCallback(async () => {
+  // The whole listing is read only when the sessions folder changes (and at
+  // startup); after that main sends each session's change on its own.
+  const loadList = useCallback(async () => {
     const generation = ++listingGeneration.current;
     const root = rootRef.current;
     const outcome = await api.listSessions();
@@ -162,10 +164,18 @@ export function App({ boot }: { boot: BootInfo }) {
     const restoreId = !restored.current && root === boot.settings.sessionsDir ? boot.state.lastSessionId : null;
     restored.current = true;
     const selection = openingGeneration.current;
-    void refreshList().then(() => {
+    void loadList().then(() => {
       if (restoreId && rootRef.current === root && openingGeneration.current === selection) void openSession(restoreId);
     });
   }, [settings.sessionsDir]);
+
+  useEffect(
+    () =>
+      api.onSessionsChanged((change) => {
+        if (change.kind === "entry") setSessions((list) => applySessionChange(list, change.id, change.session));
+      }),
+    [],
+  );
 
   useEffect(
     () =>
@@ -191,9 +201,8 @@ export function App({ boot }: { boot: BootInfo }) {
         } else if (currentRef.current === session.id) {
           setOpened(session);
         }
-        void refreshList();
       }),
-    [refreshList],
+    [],
   );
 
   useEffect(
@@ -220,9 +229,8 @@ export function App({ boot }: { boot: BootInfo }) {
         // Nothing was saved (no key, no folder): the failure belongs to the new-session composer.
         setFailures((f) => ({ ...f, [NEW]: outcome.failure }));
       }
-      void refreshList();
     },
-    [refreshList],
+    [],
   );
 
   const send = useCallback(
@@ -469,7 +477,6 @@ export function App({ boot }: { boot: BootInfo }) {
           onRename={async (title) => {
             const outcome = await api.renameSession(front.id, title);
             if (!outcome.ok) {
-              await refreshList();
               if (currentRef.current === front.id) await openSession(front.id);
               return outcome.failure;
             }
@@ -480,7 +487,6 @@ export function App({ boot }: { boot: BootInfo }) {
               saveUi({ ...ui, lastSessionId: outcome.session.id });
             }
             setDrafts(({ [`${settings.sessionsDir}\0${front.id}`]: moved, ...rest }) => (moved ? { ...rest, [`${settings.sessionsDir}\0${outcome.session.id}`]: moved } : rest));
-            await refreshList();
             return null;
           }}
         />
@@ -496,7 +502,6 @@ export function App({ boot }: { boot: BootInfo }) {
             if (!outcome.ok) return outcome.failure;
             popModal();
             if (currentRef.current === front.id) void openSession(NEW);
-            await refreshList();
             return null;
           }}
         />

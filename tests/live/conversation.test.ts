@@ -33,6 +33,7 @@ function setup(drafts = 0) {
     apiKey: async () => key,
     backup: () => {},
     releaseStaged: () => {},
+    saved: () => {},
     started: () => {},
     draft: (_id, draft) => {
       if (draft) {
