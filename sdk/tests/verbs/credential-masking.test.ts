@@ -28,7 +28,7 @@ import type { EditResult, GenerateResult, SdkEvent, VisionResult } from "../../s
 import type { RefusedResult } from "../../src/refusal.ts";
 
 // End to end against a local stand-in for the OpenAI API, with a fake key: the
-// key must reach the server and no sink — log file, progress event, thrown
+// key must reach the server and no sink — progress event, thrown
 // error or sidecar.
 const FAKE = "sk-test-FAKE-0123456789abcdef";
 const SIG = "TOKEN-FAKE-xyz";

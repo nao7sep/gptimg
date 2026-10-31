@@ -46,9 +46,6 @@ describe.each(["mask", "upscale"] as const)("native execution through public %s"
   let sdk: GptImg;
 
   beforeEach(async () => {
-    vi.stubEnv("GPTIMG_ONNX_INTRA_OP_THREADS", undefined);
-    vi.stubEnv("GPTIMG_ONNX_EP", undefined);
-    vi.stubEnv("GPTIMG_MODELS_DIR", undefined);
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-native-run-"));
     sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     input = path.join(tmp, "input.png");

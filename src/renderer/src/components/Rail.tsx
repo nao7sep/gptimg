@@ -1,10 +1,10 @@
-// The session rail: a contact sheet. Each row leads with its latest print, so
-// a session is found by its picture. One tab stop: a listbox whose active row
+// The chat rail: a contact sheet. Each row leads with its latest print, so
+// a chat is found by its picture. One tab stop: a listbox whose active row
 // moves with the arrow keys (composite-control-conventions).
 import { useEffect, useRef, useState } from "react";
 import { imageUrl, type AppFailure, type MenuCommand } from "../../../shared/api.ts";
 import { PANES, railWidth } from "../../../shared/layout.ts";
-import type { SessionSummary } from "../../../shared/session.ts";
+import type { ChatSummary } from "../../../shared/chat.ts";
 import { RAIL_WIDTH } from "../../../shared/ui-state.ts";
 import type { Running } from "../App.tsx";
 import { useI18n } from "../i18n.tsx";
@@ -14,12 +14,12 @@ import { FrameIcon, PlusIcon } from "./icons.tsx";
 import { relativeDay } from "./time.ts";
 
 interface RailProps {
-  sessions: SessionSummary[];
+  chats: ChatSummary[];
   currentId: string;
   running: Record<string, Running>;
   unreadable: number;
   failure: AppFailure | null;
-  sessionsDir: string;
+  chatsDir: string;
   timeZone: string;
   width: number | null;
   imagesPane?: boolean;
@@ -36,7 +36,7 @@ const THUMB = 44;
 
 export function Rail(props: RailProps) {
   const { t, of, translator } = useI18n();
-  const { sessions, currentId } = props;
+  const { chats, currentId } = props;
   const list = useRef<HTMLDivElement>(null);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [drag, setDrag] = useState<number | null>(null);
@@ -54,21 +54,21 @@ export function Rail(props: RailProps) {
   }, []);
 
   const width = railWidth(drag ?? stepped ?? props.width, windowWidth, props.imagesPane);
-  const activeIndex = sessions.findIndex((s) => s.id === currentId);
+  const activeIndex = chats.findIndex((s) => s.id === currentId);
 
   useEffect(() => {
     if (activeIndex < 0) return;
-    document.getElementById(`session-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+    document.getElementById(`chat-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (sessions.length === 0) return;
+    if (chats.length === 0) return;
     const move = (index: number) => {
       event.preventDefault();
-      const next = sessions[Math.max(0, Math.min(sessions.length - 1, index))];
+      const next = chats[Math.max(0, Math.min(chats.length - 1, index))];
       if (next && next.id !== currentId) props.onOpen(next.id);
     };
-    const current = sessions[activeIndex];
+    const current = chats[activeIndex];
     switch (event.key) {
       case "ArrowDown":
         move(activeIndex < 0 ? 0 : activeIndex + 1);
@@ -80,7 +80,7 @@ export function Rail(props: RailProps) {
         move(0);
         break;
       case "End":
-        move(sessions.length - 1);
+        move(chats.length - 1);
         break;
       case "F2":
         if (current) {
@@ -143,44 +143,44 @@ export function Rail(props: RailProps) {
         </div>
         <div
           ref={list}
-          className="session-list"
+          className="chat-list"
           role="listbox"
           tabIndex={0}
-          aria-label={t("rail.sessions")}
-          aria-activedescendant={activeIndex >= 0 ? `session-${activeIndex}` : undefined}
+          aria-label={t("rail.chats")}
+          aria-activedescendant={activeIndex >= 0 ? `chat-${activeIndex}` : undefined}
           onKeyDown={onKeyDown}
         >
-          {sessions.map((session, index) => {
-            const isRunning = !!props.running[session.id];
-            const cover = session.cover ? `${props.sessionsDir}/${session.id}/${session.cover}` : null;
+          {chats.map((chat, index) => {
+            const isRunning = !!props.running[chat.id];
+            const cover = chat.cover ? `${props.chatsDir}/${chat.id}/${chat.cover}` : null;
             return (
               <div
-                key={session.id}
-                id={`session-${index}`}
+                key={chat.id}
+                id={`chat-${index}`}
                 role="option"
-                aria-selected={session.id === currentId}
-                className={`session-row${session.id === currentId ? " selected" : ""}`}
-                onClick={() => props.onOpen(session.id)}
-                onDoubleClick={() => props.onRename(session.id, session.title)}
+                aria-selected={chat.id === currentId}
+                className={`chat-row${chat.id === currentId ? " selected" : ""}`}
+                onClick={() => props.onOpen(chat.id)}
+                onDoubleClick={() => props.onRename(chat.id, chat.title)}
               >
-                <span className="session-cover" style={{ width: THUMB, height: THUMB }}>
+                <span className="chat-cover" style={{ width: THUMB, height: THUMB }}>
                   {cover ? <img src={imageUrl(cover, THUMB * 2)} alt="" draggable={false} /> : <FrameIcon size={22} />}
-                  {isRunning && <span className="session-working" aria-hidden="true" />}
+                  {isRunning && <span className="chat-working" aria-hidden="true" />}
                 </span>
-                <span className="session-text">
-                  <span className="session-title">{session.title || t("rail.untitled")}</span>
-                  <span className="session-meta">
+                <span className="chat-text">
+                  <span className="chat-title">{chat.title || t("rail.untitled")}</span>
+                  <span className="chat-meta">
                     {isRunning
                       ? t("rail.working")
-                      : session.imageCount > 0
-                        ? t("rail.meta", { when: relativeDay(session.updatedAt, props.timeZone, translator), count: session.imageCount })
-                        : relativeDay(session.updatedAt, props.timeZone, translator)}
+                      : chat.imageCount > 0
+                        ? t("rail.meta", { when: relativeDay(chat.updatedAt, props.timeZone, translator), count: chat.imageCount })
+                        : relativeDay(chat.updatedAt, props.timeZone, translator)}
                   </span>
                 </span>
               </div>
             );
           })}
-          {sessions.length === 0 && !props.failure && <p className="rail-empty">{t("rail.empty")}</p>}
+          {chats.length === 0 && !props.failure && <p className="rail-empty">{t("rail.empty")}</p>}
           {props.failure && <p className="rail-problem" role="alert">{of(props.failure.message)}</p>}
           {props.unreadable > 0 && <p className="rail-note">{t("rail.unreadable", { count: props.unreadable })}</p>}
         </div>

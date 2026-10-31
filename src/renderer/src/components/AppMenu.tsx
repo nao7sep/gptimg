@@ -13,7 +13,7 @@ import { MenuIcon } from "./icons.tsx";
 type Item = { command: MenuCommand | "chatsFolder"; label: MessageKey } | "separator";
 
 const ITEMS: readonly Item[] = [
-  { command: "newSession", label: "rail.new" },
+  { command: "newChat", label: "rail.new" },
   { command: "chatsFolder", label: "menu.showChatsFolder" },
   "separator",
   { command: "settings", label: "nativeMenu.settings" },

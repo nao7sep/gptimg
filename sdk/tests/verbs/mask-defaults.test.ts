@@ -7,7 +7,7 @@ function args(over: Partial<MaskArgs> = {}): MaskArgs {
 }
 
 describe("applyChromaPolicyDefaults", () => {
-  it("fills every unset field from the recipe", () => {
+  it("fills every unset field from the policy", () => {
     const merged = applyChromaPolicyDefaults(args(), {
       color: "#00ff00",
       preserveInterior: true,
@@ -31,7 +31,7 @@ describe("applyChromaPolicyDefaults", () => {
     expect(merged.saturationRatio).toBe(0.9);
   });
 
-  it("treats a blank or absent recipe color as no key default", () => {
+  it("treats a blank or absent policy color as no key default", () => {
     expect(applyChromaPolicyDefaults(args(), { color: "" }).key).toBeUndefined();
     expect(applyChromaPolicyDefaults(args(), {}).key).toBeUndefined();
   });

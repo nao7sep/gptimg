@@ -20,13 +20,13 @@ import { IMAGE_EXTENSIONS, ImageAccess, isImagePath, registerImageScheme } from 
 import { chromiumLang, clearAppleLanguages, earlyPreferences, LanguageOwner, writeAppleLanguages } from "./language.ts";
 import { buildMenu } from "./menu.ts";
 import { RecordsWindow } from "./records-window.ts";
-import { DataDirError, ensureDataRoot, suggestedSessionsDir, type AppPaths } from "./paths.ts";
+import { DataDirError, ensureDataRoot, suggestedChatsDir, type AppPaths } from "./paths.ts";
 import { startStores, type Stores, type StoreRecords } from "./stores.ts";
 import { GptImg } from "gptimgsdk";
 import { chatClients } from "./sdk.ts";
-import { isSessionId, readSession, renameSession, SessionError, sessionDir } from "./sessions.ts";
-import { chatIdOf, summarize } from "../shared/session.ts";
-import { SessionCatalog } from "./session-catalog.ts";
+import { isChatFolder, readChat, renameChat, ChatError, chatDir } from "./chats.ts";
+import { summarize } from "../shared/chat.ts";
+import { ChatCatalog } from "./chat-catalog.ts";
 import type { RecordQuery, RecordRef } from "../shared/records.ts";
 import { TurnRunner } from "./turns.ts";
 import { navigationAllowed } from "./navigation.ts";
@@ -73,7 +73,7 @@ interface State {
   turns: TurnRunner;
   exports: ExportRunner;
   recordsWindow: RecordsWindow;
-  catalog: SessionCatalog;
+  catalog: ChatCatalog;
   images: ImageAccess;
   window: BrowserWindow | null;
   quitConfirmed: boolean;
@@ -147,18 +147,18 @@ async function start(paths: AppPaths): Promise<void> {
       },
       title: () => language.translator.t("records.title"),
     }),
-    catalog: new SessionCatalog((change) => {
-      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sessionsChanged", change);
+    catalog: new ChatCatalog((change) => {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("chatsChanged", change);
     }),
-    images: new ImageAccess(() => [state.config.settings.sessionsDir, paths.staging]),
+    images: new ImageAccess(() => [state.config.settings.chatsDir, paths.staging]),
     window: null,
     quitConfirmed: false,
     quitAsking: false,
     windowDirty: false,
     rootChanging: false,
   };
-  const drafts = new DraftPreviews(paths.staging, (sessionId, path) => {
-    state.window?.webContents.send("turnDraft", { sessionId, path });
+  const drafts = new DraftPreviews(paths.staging, (chatFolder, path) => {
+    state.window?.webContents.send("turnDraft", { chatFolder, path });
   });
   state.turns = new TurnRunner({
     sdk: chatClients(sdkApp),
@@ -168,8 +168,8 @@ async function start(paths: AppPaths): Promise<void> {
     authorizeImage: (path) => state.images.allowed(path),
     backup: (path, text) => backups.keep(path, text),
     saved: (root, id, doc) => state.catalog.change(root, id, summarize(id, doc)),
-    started: (requestId, session) => state.window?.webContents.send("turnStarted", { requestId, session }),
-    draft: (sessionId, draft) => void drafts.show(sessionId, draft),
+    started: (requestId, chat) => state.window?.webContents.send("turnStarted", { requestId, chat }),
+    draft: (chatFolder, draft) => void drafts.show(chatFolder, draft),
     releaseStaged: (path) => {
       if (dirname(path) === paths.staging) void rm(path, { force: true });
     },
@@ -393,12 +393,12 @@ function failure(key: Parameters<typeof message>[0], values?: Record<string, str
   return { ok: false, failure: { message: message(key, values), retryable } };
 }
 
-function sessionFailure(error: unknown): { ok: false; failure: AppFailure } {
-  if (error instanceof SessionError) {
-    if (error.code === "notFound") return failure("failure.sessionMissing");
-    if (error.code === "malformed") return failure("failure.sessionMalformed");
+function chatFailure(error: unknown): { ok: false; failure: AppFailure } {
+  if (error instanceof ChatError) {
+    if (error.code === "notFound") return failure("failure.chatMissing");
+    if (error.code === "malformed") return failure("failure.chatMalformed");
   }
-  return failure("failure.sessionRead");
+  return failure("failure.chatRead");
 }
 
 type Handlers = { [K in keyof GptImgApi]?: (...args: never[]) => unknown };
@@ -431,20 +431,20 @@ function installIpc(state: State): void {
         settingsLocked: state.config.locked,
         key: await keys.status(),
         state: state.ui,
-        suggestedSessionsDir: suggestedSessionsDir(app.getPath("documents")),
+        suggestedChatsDir: suggestedChatsDir(app.getPath("documents")),
         systemTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
     },
 
     async saveSettings(next: Settings) {
       if (state.rootChanging) return failure("failure.taskRunning");
-      if (next.sessionsDir !== state.config.settings.sessionsDir && state.turns.busy) return failure("failure.turnRunning");
+      if (next.chatsDir !== state.config.settings.chatsDir && state.turns.busy) return failure("failure.turnRunning");
       if (state.config.locked) return failure("settings.problem.locked", { path: paths.config });
       for (const key of SET_KEYS) {
         const problem = validateSet(key, next[key]);
         if (problem) return failure("failure.settingsInvalid");
       }
-      state.rootChanging = next.sessionsDir !== state.config.settings.sessionsDir;
+      state.rootChanging = next.chatsDir !== state.config.settings.chatsDir;
       try {
       try {
         const text = await saveConfig(paths.config, next, state.config.unknown, state.configExisted);
@@ -465,7 +465,7 @@ function installIpc(state: State): void {
         writeAppleLanguages(next.language, (error) => records.log("warn", "language.appleLanguagesFailed", { error: String(error) }));
       }
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("settingsChanged", next);
-      if (previous.sessionsDir !== next.sessionsDir) state.catalog.folderChanged();
+      if (previous.chatsDir !== next.chatsDir) state.catalog.folderChanged();
       return { ok: true, settings: next, language: language.info() };
       } finally { state.rootChanging = false; }
     },
@@ -479,8 +479,8 @@ function installIpc(state: State): void {
     async pickFolder(current: string) {
       const owner = state.window;
       const options = {
-        title: language.translator.t("dialog.pickSessionsFolder"),
-        defaultPath: current || suggestedSessionsDir(app.getPath("documents")),
+        title: language.translator.t("dialog.pickChatsFolder"),
+        defaultPath: current || suggestedChatsDir(app.getPath("documents")),
         properties: ["openDirectory", "createDirectory"] as ("openDirectory" | "createDirectory")[],
       };
       const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
@@ -516,90 +516,90 @@ function installIpc(state: State): void {
       return { ok: true, status: await keys.status() };
     },
 
-    async listSessions() {
-      const root = state.config.settings.sessionsDir;
-      if (!root) return { ok: true, sessions: [], unreadable: 0 };
+    async listChats() {
+      const root = state.config.settings.chatsDir;
+      if (!root) return { ok: true, chats: [], unreadable: 0 };
       try {
         return { ok: true, ...(await state.catalog.list(root)) };
       } catch (error) {
-        records.log("error", "sessions.listFailed", { error: String(error) });
-        return failure("failure.sessionsFolder", { path: root });
+        records.log("error", "chats.listFailed", { error: String(error) });
+        return failure("failure.chatsFolder", { path: root });
       }
     },
-    async openSession(id: string) {
-      const root = state.config.settings.sessionsDir;
-      if (!isSessionId(id)) return failure("failure.sessionMissing");
+    async openChat(id: string) {
+      const root = state.config.settings.chatsDir;
+      if (!isChatFolder(id)) return failure("failure.chatMissing");
       try {
-        const doc = await readSession(root, id);
-        return { ok: true, session: { id, doc, dir: sessionDir(root, id) } };
+        const doc = await readChat(root, id);
+        return { ok: true, chat: { id, doc, dir: chatDir(root, id) } };
       } catch (error) {
-        return sessionFailure(error);
+        return chatFailure(error);
       }
     },
-    async renameSession(id: string, title: string) {
+    async renameChat(id: string, title: string) {
       if (state.rootChanging) return failure("failure.taskRunning");
-      const root = state.config.settings.sessionsDir;
+      const root = state.config.settings.chatsDir;
       const clean = title.replace(/\s+/g, " ").trim();
-      if (!isSessionId(id) || !clean) return failure("failure.titleRequired");
-      const release = state.turns.reserveSession(id);
+      if (!isChatFolder(id) || !clean) return failure("failure.titleRequired");
+      const release = state.turns.reserveChat(id);
       if (!release) return failure("failure.turnRunning");
       try {
-        const renamed = await renameSession(root, id, clean);
+        const renamed = await renameChat(root, id, clean);
         state.catalog.change(root, id, summarize(renamed.id, renamed.doc));
-        records.log("info", "sessions.renamed", { chatId: chatIdOf(renamed.id, renamed.doc), from: id, to: renamed.id });
-        return { ok: true, session: { id: renamed.id, doc: renamed.doc, dir: sessionDir(root, renamed.id) } };
+        records.log("info", "chats.renamed", { chatId: renamed.doc.id, from: id, to: renamed.id });
+        return { ok: true, chat: { id: renamed.id, doc: renamed.doc, dir: chatDir(root, renamed.id) } };
       } catch (error) {
-        records.log("error", "sessions.renameFailed", { error: String(error) });
+        records.log("error", "chats.renameFailed", { error: String(error) });
         // The title may have been written before the folder rename failed.
         await state.catalog.reread(root, id);
-        return sessionFailure(error);
+        return chatFailure(error);
       } finally {
         release();
       }
     },
-    async trashSession(id: string) {
+    async trashChat(id: string) {
       if (state.rootChanging) return failure("failure.taskRunning");
-      const root = state.config.settings.sessionsDir;
-      if (!isSessionId(id)) return failure("failure.sessionMissing");
-      const release = state.turns.reserveSession(id);
+      const root = state.config.settings.chatsDir;
+      if (!isChatFolder(id)) return failure("failure.chatMissing");
+      const release = state.turns.reserveChat(id);
       if (!release) return failure("failure.turnRunning");
       try {
         let chatId = id;
         try {
-          chatId = chatIdOf(id, await readSession(root, id));
+          chatId = (await readChat(root, id)).id;
         } catch {
           // An unreadable chat is still trashed; its folder name stands in.
         }
-        await shell.trashItem(sessionDir(root, id));
+        await shell.trashItem(chatDir(root, id));
         state.catalog.change(root, id, null);
-        records.log("info", "sessions.trashed", { chatId, folder: id });
+        records.log("info", "chats.trashed", { chatId, folder: id });
         return { ok: true };
       } catch (error) {
-        records.log("error", "sessions.trashFailed", { error: String(error) });
+        records.log("error", "chats.trashFailed", { error: String(error) });
         return failure(process.platform === "darwin" ? "failure.trashMac" : "failure.trashOther");
       } finally {
         release();
       }
     },
     showChatsFolder() {
-      const root = state.config.settings.sessionsDir;
+      const root = state.config.settings.chatsDir;
       if (root) void mkdir(root, { recursive: true }).then(() => shell.openPath(root));
     },
-    revealSession(id: string) {
-      const root = state.config.settings.sessionsDir;
-      if (isSessionId(id)) shell.showItemInFolder(join(sessionDir(root, id), "session.json"));
+    revealChat(id: string) {
+      const root = state.config.settings.chatsDir;
+      if (isChatFolder(id)) shell.showItemInFolder(join(chatDir(root, id), "chat.json"));
     },
 
     async send(request: SendRequest) {
-      if (state.rootChanging) return { ...failure("failure.taskRunning"), session: null, cancelled: false };
+      if (state.rootChanging) return { ...failure("failure.taskRunning"), chat: null, cancelled: false };
       return state.turns.send(request);
     },
-    async retry(sessionId: string) {
-      if (state.rootChanging) return { ...failure("failure.taskRunning"), session: null, cancelled: false };
-      return state.turns.retry(sessionId);
+    async retry(chatFolder: string) {
+      if (state.rootChanging) return { ...failure("failure.taskRunning"), chat: null, cancelled: false };
+      return state.turns.retry(chatFolder);
     },
-    cancel(sessionId: string) {
-      state.turns.cancel(sessionId);
+    cancel(chatFolder: string) {
+      state.turns.cancel(chatFolder);
     },
 
     async pickImages() {
@@ -700,11 +700,11 @@ function installIpc(state: State): void {
       return records.launches();
     },
     async recordChats() {
-      const root = state.config.settings.sessionsDir;
+      const root = state.config.settings.chatsDir;
       if (!root) return [];
       try {
         // The listing main already holds, with each chat's lasting id.
-        return (await state.catalog.list(root)).sessions.map((row) => ({ id: row.chatId, title: row.title }));
+        return (await state.catalog.list(root)).chats.map((row) => ({ id: row.chatId, title: row.title }));
       } catch {
         return [];
       }

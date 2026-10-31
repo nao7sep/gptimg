@@ -149,7 +149,7 @@ describe("ensureModel", () => {
     const abandoned = `birefnet-${tag}-99999999-${nanoid21}.tmp`;
     const ours = `birefnet-${tag}-${process.pid}-${nanoid21}.tmp`;
     const parents = `birefnet-${tag}-${process.ppid}-${nanoid21}.tmp`;
-    // A dead-here pid tagged for a different host: GPTIMG_MODELS_DIR can point
+    // A dead-here pid tagged for a different host: a caller's `modelsDir` can point
     // several hosts at the same shared directory, and this host's pid table
     // says nothing about whether that other host's download is still running,
     // so it must survive the sweep untouched.

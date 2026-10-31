@@ -23,7 +23,7 @@ function listen(
 const timeout = NETWORK_DEFAULTS.imageDownload.timeout;
 
 describe("resolveNetworkForCall", () => {
-  it("rejects invalid recipe.network values", () => {
+  it("rejects invalid policy.network values", () => {
     const cases: [string, unknown][] = [
       [
         "unknown category",
@@ -38,12 +38,12 @@ describe("resolveNetworkForCall", () => {
         { network: { imageGenerate: { timeout: "slow" } } },
       ],
     ];
-    for (const [name, recipe] of cases) {
-      expect(() => validatePolicy(recipe), name).toThrow(GptImgError);
+    for (const [name, policy] of cases) {
+      expect(() => validatePolicy(policy), name).toThrow(GptImgError);
     }
   });
 
-  it("returns defaults when no recipe.network is provided", () => {
+  it("returns defaults when no policy.network is provided", () => {
     const cfg = resolveNetworkForCall({});
     expect(cfg).toEqual(NETWORK_DEFAULTS);
   });

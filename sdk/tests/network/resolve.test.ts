@@ -9,7 +9,7 @@ describe("resolveNetworkConfig", () => {
     expect(cfg).toEqual(NETWORK_DEFAULTS);
   });
 
-  it("recipe values override defaults per leaf", () => {
+  it("policy values override defaults per leaf", () => {
     const cfg = resolveNetworkConfig({
       imageGenerate: { timeout: 9999 },
     });

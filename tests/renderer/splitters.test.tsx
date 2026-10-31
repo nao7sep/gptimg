@@ -27,7 +27,7 @@ describe("keyboard splitters", () => {
     function Owner() {
       const [width, setWidth] = useState(240);
       return (
-        <Rail sessions={[]} currentId="" running={{}} unreadable={0} failure={null} sessionsDir="/chats" timeZone="UTC" width={width}
+        <Rail chats={[]} currentId="" running={{}} unreadable={0} failure={null} chatsDir="/chats" timeZone="UTC" width={width}
           onWidth={(next) => { onWidth(next); setWidth(next); }}
           onNew={() => {}} onOpen={() => {}} onRename={() => {}} onTrash={() => {}} mac onMenu={() => {}} />
       );
@@ -47,7 +47,7 @@ describe("keyboard splitters", () => {
   });
 
   it("saves the record list's width once the stepping pauses", async () => {
-    const api = fakeApi({ onRecordsChanged: () => () => {}, onSessionsChanged: () => () => {}, onSettings: () => () => {} });
+    const api = fakeApi({ onRecordsChanged: () => () => {}, onChatsChanged: () => () => {}, onSettings: () => () => {} });
     const boot = bootInfo();
     boot.state.recordsListWidth = 400;
     await renderInApp(() => <RecordsWindow boot={boot} />);

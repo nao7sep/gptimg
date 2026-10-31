@@ -1,4 +1,4 @@
-// First run, in order: the OpenAI key, then the folder sessions live in. Each
+// First run, in order: the OpenAI key, then the folder chats live in. Each
 // step asks one thing; a skipped step writes nothing, and both stay
 // changeable in Settings (config-sets-conventions, first-run setup).
 import { useState } from "react";
@@ -21,7 +21,7 @@ export function SetupModal(props: SetupModalProps) {
   const [step, setStep] = useState<"key" | "folder">("key");
   const [key, setKey] = useState("");
   const [status, setStatus] = useState(props.keyStatus);
-  const [folder, setFolder] = useState(props.settings.sessionsDir || props.boot.suggestedSessionsDir);
+  const [folder, setFolder] = useState(props.settings.chatsDir || props.boot.suggestedChatsDir);
   const [failure, setFailure] = useState<Message | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -41,7 +41,7 @@ export function SetupModal(props: SetupModalProps) {
   const saveFolder = async () => {
     setWorking(true);
     setFailure(null);
-    const next = { ...props.settings, sessionsDir: folder };
+    const next = { ...props.settings, chatsDir: folder };
     const outcome = await api.saveSettings(next);
     setWorking(false);
     if (!outcome.ok) {

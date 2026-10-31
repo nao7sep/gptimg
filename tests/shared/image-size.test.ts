@@ -24,9 +24,8 @@ describe("an exact size", () => {
 });
 
 describe("the composer's remembered choices", () => {
-  it("keep a background, ignore retired disposable transparency state, and keep the images pane open unless closed", () => {
+  it("keep a background and keep the images pane open unless closed", () => {
     expect(parseUiState({ composer: { size: "1024x1024", quality: "low", background: "opaque" } }).composer).toEqual({ size: "1024x1024", quality: "low", background: "opaque" });
-    expect(parseUiState({ composer: { size: "auto", quality: "auto", transparent: true } }).composer).toEqual({ size: "auto", quality: "auto" });
     expect(parseUiState({ composer: { size: "auto", quality: "auto", background: "sparkly" } }).composer).toEqual({ size: "auto", quality: "auto" });
     expect(parseUiState({}).imagesPane).toBe(true);
     expect(parseUiState({ imagesPane: false }).imagesPane).toBe(false);

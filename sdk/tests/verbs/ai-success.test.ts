@@ -378,7 +378,7 @@ describe("AI verb implementations with mocked provider", () => {
   });
 
   it("edit uses edit-scoped policy values without leaking generate settings", async () => {
-    const input = path.join(tmp, "recipe-edit-input.png");
+    const input = path.join(tmp, "policy-edit-input.png");
     await copyFile(fixture("green-disk.png"), input);
     const scoped = new GptImg({ apiKey: "sk-test-key", policy: { generate: { quality: "medium" }, edit: { size: "1024x1024", n: 1 } } });
     providerCalls.edit.mockResolvedValue({
@@ -387,10 +387,10 @@ describe("AI verb implementations with mocked provider", () => {
     });
 
     done(await scoped.edit({
-      prompt: "recipe edit",
+      prompt: "policy edit",
       in: input,
-      outDir: path.join(tmp, "recipe-edit-out"),
-      outName: "recipe-edit",
+      outDir: path.join(tmp, "policy-edit-out"),
+      outName: "policy-edit",
       policy: { edit: { size: "1536x1024", n: 2 } },
     }));
 
@@ -419,7 +419,7 @@ describe("AI verb implementations with mocked provider", () => {
     ).resolves.toMatchObject({ failures: [] });
   });
 
-  it("generate --overwrite refuses a group holding a newer-format sidecar before a provider charge", async () => {
+  it("generate with overwrite refuses a group holding a newer-format sidecar before a provider charge", async () => {
     const outDir = path.join(tmp, "newer-out");
     await mkdir(outDir);
     const newer = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: [] });
@@ -437,7 +437,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(await readFile(path.join(outDir, "same-2.json"), "utf-8")).toBe(newer);
   });
 
-  it("generate --overwrite refuses a case-only rename of the group before a provider charge", async () => {
+  it("generate with overwrite refuses a case-only rename of the group before a provider charge", async () => {
     const outDir = path.join(tmp, "case-out");
     await mkdir(outDir);
     await writeFile(path.join(outDir, "Photo.png"), png);
@@ -450,7 +450,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect((await readdir(outDir)).sort()).toEqual(["Photo.json", "Photo.png"]);
   });
 
-  it("vision --overwrite refuses a newer-format sidecar before a provider charge", async () => {
+  it("vision with overwrite refuses a newer-format sidecar before a provider charge", async () => {
     const input = path.join(tmp, "vision-newer-input.png");
     const outDir = path.join(tmp, "vision-newer-out");
     await copyFile(fixture("green-disk.png"), input);
@@ -618,7 +618,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(providerCalls.generate).toHaveBeenCalledTimes(4);
   });
 
-  it("generate refuses --overwrite when stale indexed siblings from a prior n exist", async () => {
+  it("generate refuses overwrite: true when stale indexed siblings from a prior n exist", async () => {
     providerCalls.generate.mockResolvedValue({
       raw: {
         data: [
@@ -662,7 +662,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(existsSync(path.join(outDir, "same-3.png"))).toBe(true);
   });
 
-  it("generate --overwrite succeeds when the prior group exactly matches the new plan", async () => {
+  it("generate with overwrite succeeds when the prior group exactly matches the new plan", async () => {
     providerCalls.generate.mockResolvedValue({
       raw: {
         data: [
@@ -692,7 +692,7 @@ describe("AI verb implementations with mocked provider", () => {
     ).resolves.toMatchObject({ failures: [] });
   });
 
-  it("generate --overwrite replaces an old image format without leaving its sibling", async () => {
+  it("generate with overwrite replaces an old image format without leaving its sibling", async () => {
     const outDir = path.join(tmp, "format-overwrite");
     const jpg = new Uint8Array(await sharp(png).jpeg().toBuffer());
     providerCalls.generate.mockResolvedValue({
@@ -720,7 +720,7 @@ describe("AI verb implementations with mocked provider", () => {
 
   // A paid response that fills fewer slots than the prior run must still be
   // delivered: the unfilled slots are this run's to clear, not stale siblings.
-  it("generate --overwrite delivers a partial response and clears the slots it could not fill", async () => {
+  it("generate with overwrite delivers a partial response and clears the slots it could not fill", async () => {
     const outDir = path.join(tmp, "partial-overwrite");
     const two = {
       raw: { data: [{ b64_json: "x" }, { b64_json: "x" }] },
@@ -750,7 +750,7 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("generate --overwrite returns partial and keeps the earlier files when every item fails", async () => {
+  it("generate with overwrite returns partial and keeps the earlier files when every item fails", async () => {
     const outDir = path.join(tmp, "all-failed-overwrite");
     providerCalls.generate.mockResolvedValue({ raw: { data: [{}] }, images: [{ data: png }] });
     done(await sdk.generate({ prompt: "first", outDir, outName: "same" }));
@@ -764,7 +764,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(sidecar.request.prompt).toBe("first");
   });
 
-  it("edit --overwrite delivers a partial response and clears the slot it could not fill", async () => {
+  it("edit with overwrite delivers a partial response and clears the slot it could not fill", async () => {
     const input = path.join(tmp, "partial-edit-input.png");
     const outDir = path.join(tmp, "partial-edit-overwrite");
     await copyFile(fixture("green-disk.png"), input);
@@ -915,7 +915,7 @@ describe("AI verb implementations with mocked provider", () => {
     expect(existsSync(path.join(outDir, "same-2.png"))).toBe(false);
   });
 
-  it("edit --overwrite replaces an old image format without leaving its sibling", async () => {
+  it("edit with overwrite replaces an old image format without leaving its sibling", async () => {
     const input = path.join(tmp, "format-edit-input.png");
     const outDir = path.join(tmp, "format-edit-overwrite");
     const jpg = new Uint8Array(await sharp(png).jpeg().toBuffer());
@@ -1111,7 +1111,7 @@ describe("AI verb implementations with mocked provider", () => {
   });
 
   it("vision applies custom shrink settings from instance policy", async () => {
-    const input = path.join(tmp, "recipe-vision.png");
+    const input = path.join(tmp, "policy-vision.png");
     await copyFile(fixture("green-disk.png"), input);
     const shrinking = new GptImg({ apiKey: "sk-test-key", policy: { vision: { shrink: { width: 32, height: 32 } } } });
     providerCalls.vision.mockResolvedValue({
@@ -1122,8 +1122,8 @@ describe("AI verb implementations with mocked provider", () => {
     const result = done(await shrinking.vision({
       inputs: [input],
       check: "small enough",
-      outDir: path.join(tmp, "recipe-vision-out"),
-      outName: "recipe-vision",
+      outDir: path.join(tmp, "policy-vision-out"),
+      outName: "policy-vision",
     }));
 
     const sidecar = JSON.parse(await readFile(result.sidecarPath, "utf-8")) as {
@@ -1211,7 +1211,7 @@ describe("AI verb implementations with mocked provider", () => {
     ).rejects.toMatchObject({ code: "policy.invalid" });
   });
 
-  it("generate sends an id with no row exactly what the recipe chose, with no moderation", async () => {
+  it("generate sends an id with no row exactly what the policy chose, with no moderation", async () => {
     providerCalls.generate.mockResolvedValue({ raw: { data: [{ b64_json: "x" }] }, images: [{ data: png }] });
     const outDir = path.join(tmp, "moderation-unlisted");
     for (const model of ["some-future-image-model", "gpt-image-1.5", "not a model"]) {
@@ -1255,7 +1255,7 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("generate and edit refuse a recipe that sets moderation, before any provider call", async () => {
+  it("generate and edit refuse a policy that sets moderation, before any provider call", async () => {
     await expect(
       sdk.generate({
         prompt: "a disk",
@@ -1307,7 +1307,7 @@ describe("AI verb implementations with mocked provider", () => {
     });
   });
 
-  it("vision sends detail auto and the model's own default effort when the recipe sets neither", async () => {
+  it("vision sends detail auto and the model's own default effort when the policy sets neither", async () => {
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
     const input = path.join(tmp, "effort.png");
     await copyFile(fixture("green-disk.png"), input);
@@ -1332,7 +1332,7 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("vision adds neither effort nor detail for an id with no row when the recipe sets neither", async () => {
+  it("vision adds neither effort nor detail for an id with no row when the policy sets neither", async () => {
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
     const input = path.join(tmp, "unlisted-vision.png");
     await copyFile(fixture("green-disk.png"), input);
@@ -1350,7 +1350,7 @@ describe("AI verb implementations with mocked provider", () => {
     }
   });
 
-  it("vision sends an id with no row the recipe's own effort and detail unchanged, and records both", async () => {
+  it("vision sends an id with no row the policy's own effort and detail unchanged, and records both", async () => {
     providerCalls.vision.mockResolvedValue({ raw: {}, verdict: { ok: true, score: 1, reasons: [] } });
     const input = path.join(tmp, "unlisted-chosen.png");
     await copyFile(fixture("green-disk.png"), input);
@@ -1387,7 +1387,7 @@ describe("AI verb implementations with mocked provider", () => {
     ).rejects.toMatchObject({ code: "policy.invalid", message: expect.stringContaining("gpt-6-astra takes reasoning") });
     expect(providerCalls.vision).not.toHaveBeenCalled();
   });
-  it("vision refuses a recipe that sets reasoning_effort, which the chosen effort would overwrite", async () => {
+  it("vision refuses a policy that sets reasoning_effort, which the chosen effort would overwrite", async () => {
     // A supported model's branch sends `reasoning` as reasoning_effort, so a passed-through
     // reasoning_effort would be replaced by the model's default without a word.
     const input = path.join(tmp, "wire-effort.png");

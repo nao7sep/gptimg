@@ -32,7 +32,7 @@ import { validateChatArgs } from "./schemas.ts";
 
 // When a conversation has to be resent, the images of its most recent turns go with it, each
 // fitted within this many pixels: enough for the assistant to see and refer to them, and a
-// request that stays bounded however long the session grew. Older turns are resent as text.
+// request that stays bounded however long the conversation grew. Older turns are resent as text.
 const HISTORY_IMAGE_TURNS = 8;
 const HISTORY_IMAGE_MAX_SIDE = 1536;
 

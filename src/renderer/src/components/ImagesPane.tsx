@@ -3,27 +3,27 @@
 // selects it for the next message; clicking again removes that attachment.
 // Recent images are resent automatically when the provider conversation expires.
 // The assistant has no tool for looking up other images in this pane.
-import { imageUrl, type OpenedSession } from "../../../shared/api.ts";
+import { imageUrl, type OpenedChat } from "../../../shared/api.ts";
 import { useI18n } from "../i18n.tsx";
 import { CheckIcon } from "./icons.tsx";
 
 export interface PaneImage {
-  /** Session-relative path: what an attachment sends. */
+  /** Chat-relative path: what an attachment sends. */
   path: string;
   absolute: string;
   /** The user attached it, rather than the assistant making it. */
   attached: boolean;
 }
 
-export function paneImages(session: OpenedSession): PaneImage[] {
-  const sep = session.dir.includes("\\") ? "\\" : "/";
+export function paneImages(chat: OpenedChat): PaneImage[] {
+  const sep = chat.dir.includes("\\") ? "\\" : "/";
   const seen = new Set<string>();
   const out: PaneImage[] = [];
-  for (const turn of [...session.doc.turns].reverse()) {
+  for (const turn of [...chat.doc.turns].reverse()) {
     for (const path of [...turn.images].reverse()) {
       if (seen.has(path)) continue;
       seen.add(path);
-      out.push({ path, absolute: `${session.dir}${sep}${path.split("/").join(sep)}`, attached: turn.role === "user" });
+      out.push({ path, absolute: `${chat.dir}${sep}${path.split("/").join(sep)}`, attached: turn.role === "user" });
     }
   }
   return out;

@@ -3,7 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, parse, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig, saveConfig } from "../../src/main/config.ts";
-import { DATA_DIR_ENV, DataDirError, dataRoot, ensureDataRoot, suggestedSessionsDir } from "../../src/main/paths.ts";
+import { DATA_DIR_ENV, DataDirError, dataRoot, ensureDataRoot, suggestedChatsDir } from "../../src/main/paths.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
 
 const temporary: string[] = [];
@@ -76,12 +76,12 @@ describe("machine storage root", () => {
       ensureDataRoot({ [DATA_DIR_ENV]: dir });
       expect(statSync(dir).mode & 0o777).toBe(0o700);
     }
-    const sessionsDir = join(base, "$LITERAL", "%PHOTOS%");
-    const settings = { ...builtInSettings(), sessionsDir };
+    const chatsDir = join(base, "$LITERAL", "%PHOTOS%");
+    const settings = { ...builtInSettings(), chatsDir };
     await saveConfig(paths.config, settings, {}, false);
-    expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).sessionsDir).toBe(sessionsDir);
-    expect((await loadConfig(paths.config)).settings.sessionsDir).toBe(sessionsDir);
-    expect(existsSync(sessionsDir)).toBe(false);
-    expect(suggestedSessionsDir(join(base, "Documents"))).toBe(join(base, "Documents", "GptImg"));
+    expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).chatsDir).toBe(chatsDir);
+    expect((await loadConfig(paths.config)).settings.chatsDir).toBe(chatsDir);
+    expect(existsSync(chatsDir)).toBe(false);
+    expect(suggestedChatsDir(join(base, "Documents"))).toBe(join(base, "Documents", "GptImg"));
   });
 });

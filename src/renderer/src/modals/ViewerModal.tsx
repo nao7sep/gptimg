@@ -1,5 +1,5 @@
 // A print at full size: the window darkens and the image fits it; the arrow
-// keys move through the session's prints; a click on the image toggles
+// keys move through the chat's prints; a click on the image toggles
 // between fitting and actual pixels.
 import { useEffect, useState } from "react";
 import { imageUrl } from "../../../shared/api.ts";

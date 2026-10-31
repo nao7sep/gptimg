@@ -1,9 +1,9 @@
-// A session as it is kept in its folder's session.json, and the pure rules
+// A chat as it is kept in its folder's chat.json, and the pure rules
 // around it: naming, titles, the history a turn sends, token totals.
 import type { Usage } from "gptimgsdk/types";
 
-export const SESSION_FORMAT = 1;
-export const SESSION_FILE = "session.json";
+export const CHAT_FORMAT = 1;
+export const CHAT_FILE = "chat.json";
 export const INPUTS_DIR = "inputs";
 
 export const BACKGROUNDS = ["auto", "transparent", "opaque"] as const;
@@ -16,13 +16,11 @@ export interface TurnOptions {
   quality: string;
   /** Ask the image model for a transparent or an opaque background; absent, the model decides. */
   background?: "transparent" | "opaque";
-  /** Turns saved before `background`: true asked for a transparent one. Read, never written. */
-  transparent?: boolean;
 }
 
-/** The background a turn asks for, from either form. */
+/** The background a turn asks for. */
 export function backgroundOf(options: TurnOptions): Background {
-  return options.background ?? (options.transparent ? "transparent" : "auto");
+  return options.background ?? "auto";
 }
 
 /** A turn's tokens: the assistant model's, and the image tool's apart, since the two are billed at different rates. */
@@ -34,9 +32,9 @@ export interface UserTurn {
   role: "user";
   at: string;
   text: string;
-  /** Session-relative paths of the images attached to this message. */
+  /** Chat-relative paths of the images attached to this message. */
   images: string[];
-  /** A painted mask (session-relative) for the first of `images`: only its transparent area may change. */
+  /** A painted mask (chat-relative) for the first of `images`: only its transparent area may change. */
   mask?: string;
   options: TurnOptions;
 }
@@ -46,7 +44,7 @@ export interface AssistantTurn {
   role: "assistant";
   at: string;
   text: string;
-  /** Session-relative paths of the images the turn produced. */
+  /** Chat-relative paths of the images the turn produced. */
   images: string[];
   responseId: string;
   resumed: "chain" | "resent" | null;
@@ -54,7 +52,7 @@ export interface AssistantTurn {
   usage: TokenUsage | null;
   /** How many images arrived but could not be saved. */
   failedImages: number;
-  /** How many images the provider's moderation blocked. Absent in turns saved before it was told apart. */
+  /** How many images the provider's moderation blocked; absent when none were. */
   blockedImages?: number;
   /** How many images the image tool failed to return for another reason. */
   missingImages?: number;
@@ -62,38 +60,33 @@ export interface AssistantTurn {
 
 export type Turn = UserTurn | AssistantTurn;
 
-export interface SessionDoc {
-  format: typeof SESSION_FORMAT;
-  /** The chat's lasting id: its records carry it, since the folder's name changes with the title. Absent in chats saved before ids existed, until their next write. */
-  id?: string;
+export interface ChatDoc {
+  format: typeof CHAT_FORMAT;
+  /** The chat's lasting id: its records carry it, since the folder's name changes with the title. */
+  id: string;
   title: string;
   createdAt: string;
   turns: Turn[];
 }
 
-/** The id a chat's records carry: its own, or for a chat saved before ids existed, its folder's name. */
-export function chatIdOf(folder: string, doc: SessionDoc): string {
-  return doc.id ?? folder;
-}
-
-/** What the rail shows for one session. */
-export interface SessionSummary {
-  /** The folder's name inside the sessions folder: the session's identity. */
+/** What the rail shows for one chat. */
+export interface ChatSummary {
+  /** The folder's name inside the chats folder: the chat's identity. */
   id: string;
-  /** The lasting id used by chat records, including the legacy folder fallback. */
+  /** The lasting id used by chat records. */
   chatId: string;
   title: string;
   createdAt: string;
   /** The last turn's time, else the creation time. */
   updatedAt: string;
   /**
-   * The last message the user sent, else the creation time: what the session
+   * The last message the user sent, else the creation time: what the chat
    * list orders by (developer decision, as ChatGPT orders chats). Sending moves
-   * a session to the top; a reply arriving later, even while the user has since
-   * sent in another session, does not move it.
+   * a chat to the top; a reply arriving later, even while the user has since
+   * sent in another chat, does not move it.
    */
   sentAt: string;
-  /** Session-relative path of the latest image, if any. */
+  /** Chat-relative path of the latest image, if any. */
   cover: string | null;
   imageCount: number;
 }
@@ -107,7 +100,7 @@ export function fileStamp(date: Date): string {
 const TITLE_WORDS = 8;
 const TITLE_CHARS = 60;
 
-/** A new session's title: the first message's opening words. */
+/** A new chat's title: the first message's opening words. */
 export function titleFrom(text: string): string {
   const line = text.replace(/\s+/g, " ").trim();
   if (!line) return "";
@@ -127,14 +120,14 @@ export function folderPart(title: string): string {
     .trim()
     .replace(/[. ]+$/g, "");
   const short = [...cleaned].slice(0, FOLDER_TITLE_CHARS).join("").trim().replace(/[. ]+$/g, "");
-  return short || "session";
+  return short || "chat";
 }
 
-export function sessionFolderName(createdAt: Date, title: string): string {
+export function chatFolderName(createdAt: Date, title: string): string {
   return `${fileStamp(createdAt)}-${folderPart(title)}`;
 }
 
-/** The stamp a session folder name starts with, kept across renames. */
+/** The stamp a chat folder name starts with, kept across renames. */
 export function folderStamp(id: string): string | null {
   return /^\d{8}-\d{6}-utc/.exec(id)?.[0] ?? null;
 }
@@ -169,7 +162,7 @@ export function previousResponseBefore(turns: readonly Turn[], index: number): s
   return undefined;
 }
 
-export function sessionTotals(turns: readonly Turn[]): { images: number; tokens: number } {
+export function chatTotals(turns: readonly Turn[]): { images: number; tokens: number } {
   let images = 0;
   let tokens = 0;
   for (const turn of turns) {
@@ -181,7 +174,7 @@ export function sessionTotals(turns: readonly Turn[]): { images: number; tokens:
   return { images, tokens };
 }
 
-export function summarize(id: string, doc: SessionDoc): SessionSummary {
+export function summarize(id: string, doc: ChatDoc): ChatSummary {
   let cover: string | null = null;
   let imageCount = 0;
   for (const turn of doc.turns) {
@@ -192,26 +185,26 @@ export function summarize(id: string, doc: SessionDoc): SessionSummary {
   }
   const last = doc.turns[doc.turns.length - 1];
   const lastSent = doc.turns.findLast((turn) => turn.role === "user");
-  return { id, chatId: chatIdOf(id, doc), title: doc.title, createdAt: doc.createdAt, updatedAt: last?.at ?? doc.createdAt, sentAt: lastSent?.at ?? doc.createdAt, cover, imageCount };
+  return { id, chatId: doc.id, title: doc.title, createdAt: doc.createdAt, updatedAt: last?.at ?? doc.createdAt, sentAt: lastSent?.at ?? doc.createdAt, cover, imageCount };
 }
 
-/** The session list's order: latest sent first, then by folder name. */
-export function bySent(a: SessionSummary, b: SessionSummary): number {
+/** The chat list's order: latest sent first, then by folder name. */
+export function bySent(a: ChatSummary, b: ChatSummary): number {
   return a.sentAt < b.sentAt ? 1 : a.sentAt > b.sentAt ? -1 : a.id < b.id ? 1 : -1;
 }
 
 /**
- * One change to the sessions folder's listing. `entry`: the session once at
- * folder `id` is now `session` (a rename gives it a new id), or is gone when
- * `session` is null. `folder`: the sessions folder itself changed, so the
+ * One change to the chats folder's listing. `entry`: the chat once at
+ * folder `id` is now `chat` (a rename gives it a new id), or is gone when
+ * `chat` is null. `folder`: the chats folder itself changed, so the
  * listing is read anew.
  */
-export type SessionChange = { kind: "entry"; id: string; session: SessionSummary | null } | { kind: "folder" };
+export type ChatChange = { kind: "entry"; id: string; chat: ChatSummary | null } | { kind: "folder" };
 
 /** A listing with one entry change applied, in list order. */
-export function applySessionChange(sessions: SessionSummary[], id: string, session: SessionSummary | null): SessionSummary[] {
-  const rest = sessions.filter((entry) => entry.id !== id && entry.id !== session?.id);
-  return session ? [...rest, session].sort(bySent) : rest;
+export function applyChatChange(chats: ChatSummary[], id: string, chat: ChatSummary | null): ChatSummary[] {
+  const rest = chats.filter((entry) => entry.id !== id && entry.id !== chat?.id);
+  return chat ? [...rest, chat].sort(bySent) : rest;
 }
 
 function isString(value: unknown): value is string {
@@ -249,12 +242,12 @@ function isUsage(value: unknown): boolean {
     && (usage.imageOutput === undefined || isNonnegative(usage.imageOutput));
 }
 
-/** Validates a parsed session.json; null when it is not a session this version can read. */
-export function parseSession(value: unknown): SessionDoc | null {
+/** Validates a parsed chat.json; null when it is not a chat this version can read. */
+export function parseChat(value: unknown): ChatDoc | null {
   if (!value || typeof value !== "object") return null;
   const doc = value as Record<string, unknown>;
-  if (doc.format !== SESSION_FORMAT || !isString(doc.title) || !isTimestamp(doc.createdAt) || !Array.isArray(doc.turns)) return null;
-  if (doc.id !== undefined && !isString(doc.id)) return null;
+  if (doc.format !== CHAT_FORMAT || !isString(doc.title) || !isTimestamp(doc.createdAt) || !Array.isArray(doc.turns)) return null;
+  if (!isString(doc.id)) return null;
   for (const raw of doc.turns) {
     if (!raw || typeof raw !== "object") return null;
     const turn = raw as Record<string, unknown>;
@@ -265,7 +258,6 @@ export function parseSession(value: unknown): SessionDoc | null {
       if (!options || typeof options !== "object" || Array.isArray(options) || !isString(options.size) || !isString(options.quality)) return null;
       if (turn.mask !== undefined && (!isString(turn.mask) || !isRelative(turn.mask))) return null;
       if (options.background !== undefined && options.background !== "transparent" && options.background !== "opaque") return null;
-      if (options.transparent !== undefined && typeof options.transparent !== "boolean") return null;
     } else if (turn.role === "assistant") {
       if (!isString(turn.responseId)) return null;
       if (turn.resumed !== null && turn.resumed !== "chain" && turn.resumed !== "resent") return null;
@@ -277,5 +269,5 @@ export function parseSession(value: unknown): SessionDoc | null {
       return null;
     }
   }
-  return value as SessionDoc;
+  return value as ChatDoc;
 }

@@ -36,7 +36,7 @@ export function buildMenu(t: Translator, send: (command: MenuCommand) => void, d
   const file: MenuItemConstructorOptions = {
     label: t.t("nativeMenu.file"),
     submenu: [
-      item("newSession", t.t("nativeMenu.newSession")),
+      item("newChat", t.t("nativeMenu.newChat")),
       item("attach", t.t("nativeMenu.attach")),
       { type: "separator" },
       item("rename", t.t("nativeMenu.rename")),

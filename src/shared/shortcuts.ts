@@ -15,7 +15,7 @@ export interface Shortcut {
 }
 
 export const SHORTCUTS: readonly Shortcut[] = [
-  { command: "newSession", accelerator: "CmdOrCtrl+N", key: "n", label: "shortcuts.newSession" },
+  { command: "newChat", accelerator: "CmdOrCtrl+N", key: "n", label: "shortcuts.newChat" },
   { command: "attach", accelerator: "CmdOrCtrl+O", key: "o", label: "shortcuts.attach" },
   { command: "settings", accelerator: "CmdOrCtrl+,", key: ",", label: "shortcuts.settings" },
   { command: "shortcuts", accelerator: "CmdOrCtrl+/", key: "/", label: "shortcuts.shortcuts" },
@@ -27,7 +27,7 @@ export const LOCAL_KEYS: readonly { keys: readonly string[]; label: MessageKey }
   { keys: ["Enter"], label: "shortcuts.send" },
   { keys: ["Shift", "Enter"], label: "shortcuts.newLine" },
   { keys: ["Escape"], label: "shortcuts.escape" },
-  { keys: ["Up", "Down"], label: "shortcuts.moveSessions" },
+  { keys: ["Up", "Down"], label: "shortcuts.moveChats" },
   { keys: ["F2"], label: "shortcuts.rename" },
 ];
 

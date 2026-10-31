@@ -28,8 +28,8 @@ export interface Settings {
   timeZone: string;
   uiFont: string;
   contentFont: ContentFont;
-  /** Absolute path of the folder holding session folders; "" until first run chooses it. */
-  sessionsDir: string;
+  /** Absolute path of the folder holding chat folders; "" until first run chooses it. */
+  chatsDir: string;
   "openai.endpoint": string;
   "openai.chat": string;
   "openai.thinking.chat": string;
@@ -73,7 +73,7 @@ export function builtInSettings(): Settings {
     timeZone: "system",
     uiFont: SYSTEM_UI_FONT,
     contentFont: { family: SYSTEM_UI_FONT, readingSize: 15, writingSize: 14, lineHeight: 1.55 },
-    sessionsDir: "",
+    chatsDir: "",
     "openai.endpoint": OPENAI_ENDPOINT,
     "openai.chat": chat,
     "openai.thinking.chat": defaultThinkingFor(chat) ?? "",
@@ -140,7 +140,7 @@ export function validateSet<K extends SetKey>(key: K, value: unknown): string | 
       }
       return null;
     }
-    case "sessionsDir":
+    case "chatsDir":
       return typeof value === "string" ? null : "settings.error.shape";
     case "openai.endpoint":
       return typeof value === "string" && isEndpoint(value) ? null : "settings.error.endpoint";

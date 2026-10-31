@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openRecords } from "../../src/main/records.ts";
-import { readSession } from "../../src/main/sessions.ts";
+import { readChat } from "../../src/main/chats.ts";
 import { TurnRunner } from "../../src/main/turns.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
 import { chatClients } from "../../src/main/sdk.ts";
@@ -22,7 +22,7 @@ describe("a real chat", () => {
     const runner = new TurnRunner({
       sdk: chatClients({ name: "GptImg", version: "live" }),
       records,
-      settings: () => ({ ...builtInSettings(), sessionsDir: root }),
+      settings: () => ({ ...builtInSettings(), chatsDir: root }),
       apiKey: async () => key,
       backup: () => {},
       releaseStaged: () => {},
@@ -30,11 +30,11 @@ describe("a real chat", () => {
       started: () => {},
     });
     const options = { size: "1024x1024", quality: "low" };
-    const first = await runner.send({ requestId: "1", sessionId: null, text: "A small red circle on white. Make the image.", references: [], options });
+    const first = await runner.send({ requestId: "1", chatFolder: null, text: "A small red circle on white. Make the image.", references: [], options });
     if (!first.ok) throw new Error(`first turn failed: ${JSON.stringify(first.failure)}`);
-    const second = await runner.send({ requestId: "2", sessionId: first.session.id, text: "Make the circle blue. Make the image.", references: [], options });
+    const second = await runner.send({ requestId: "2", chatFolder: first.chat.id, text: "Make the circle blue. Make the image.", references: [], options });
     if (!second.ok) throw new Error(`second turn failed: ${JSON.stringify(second.failure)}`);
-    const doc = await readSession(root, second.session.id);
+    const doc = await readChat(root, second.chat.id);
     const replies = doc.turns.filter((t) => t.role === "assistant");
     expect(replies).toHaveLength(2);
     expect(replies.every((t) => t.role === "assistant" && t.images.length >= 1 && (t.usage?.input ?? 0) > 0)).toBe(true);

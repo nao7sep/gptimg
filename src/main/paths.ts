@@ -75,7 +75,7 @@ export function ensureDataRoot(env: NodeJS.ProcessEnv = process.env): AppPaths {
   return pathsUnder(dir);
 }
 
-/** The sessions folder offered at first run: a user-document location, outside the storage root. */
-export function suggestedSessionsDir(documents: string): string {
+/** The chats folder offered at first run: a user-document location, outside the storage root. */
+export function suggestedChatsDir(documents: string): string {
   return join(documents, "GptImg");
 }

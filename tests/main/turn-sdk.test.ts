@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { startOpenAIDouble, type OpenAIDouble } from "gptimgsdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openRecords, type Records } from "../../src/main/records.ts";
-import { readSession } from "../../src/main/sessions.ts";
+import { readChat } from "../../src/main/chats.ts";
 import { CHAT_INSTRUCTIONS, TurnRunner } from "../../src/main/turns.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
 import { chatClients } from "../../src/main/sdk.ts";
@@ -15,7 +15,7 @@ let openai: OpenAIDouble;
 let root: string;
 let records: Records;
 let runner: TurnRunner;
-let drafts: { sessionId: string; image: number | null }[];
+let drafts: { chatFolder: string; image: number | null }[];
 let onDraft: () => void;
 let released: string[];
 let settings: Record<string, unknown>;
@@ -32,13 +32,13 @@ beforeEach(async () => {
   runner = new TurnRunner({
     sdk: chatClients({ name: "GptImg", version: "test" }),
     records,
-    settings: () => ({ ...builtInSettings(), sessionsDir: root, "openai.endpoint": openai.baseURL, ...settings }),
+    settings: () => ({ ...builtInSettings(), chatsDir: root, "openai.endpoint": openai.baseURL, ...settings }),
     apiKey: async () => "sk-test",
     backup: () => {},
     releaseStaged: (path) => released.push(path),
     saved: () => {},
     started: () => {},
-    draft: (sessionId, draft) => { drafts.push({ sessionId, image: draft ? draft.image : null }); onDraft(); },
+    draft: (chatFolder, draft) => { drafts.push({ chatFolder, image: draft ? draft.image : null }); onDraft(); },
   });
 });
 
@@ -47,8 +47,8 @@ afterEach(async () => {
   await openai.close();
 });
 
-const send = (sessionId: string | null, text: string, transparent = false) =>
-  runner.send({ requestId: text, sessionId, text, references: [], options: { size: "1024x1024", quality: "low", ...(transparent && { transparent }) } });
+const send = (chatFolder: string | null, text: string, transparent = false) =>
+  runner.send({ requestId: text, chatFolder, text, references: [], options: { size: "1024x1024", quality: "low", ...(transparent && { background: "transparent" as const }) } });
 
 describe("a turn through the real SDK", () => {
   it("saves the reply's text, image and both kinds of tokens, and records the call", async () => {
@@ -56,13 +56,13 @@ describe("a turn through the real SDK", () => {
     const outcome = await send(null, "a fox");
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    const doc = await readSession(root, outcome.session.id);
+    const doc = await readChat(root, outcome.chat.id);
     expect(doc.turns[1]).toMatchObject({ role: "assistant", text: "**A fox.**", usage: { input: 10, output: 20, imageInput: 30, imageOutput: 40 } });
     expect(doc.turns[1]!.images[0]).toMatch(/\.png$/);
     const calls = records.query({ kind: "call", chatId: doc.id! });
     expect(calls.rows[0]).toMatchObject({ title: "chat succeeded" });
     const appLines = records.query({ kind: "log", chatId: doc.id! }).rows.filter((r) => r.source === "app");
-    expect(appLines.map((r) => r.title)).toEqual(["turn.replied", "turn.sent", "sessions.created"]);
+    expect(appLines.map((r) => r.title)).toEqual(["turn.replied", "turn.sent", "chats.created"]);
     expect(openai.requests[0]!.body).toMatchObject({ instructions: CHAT_INSTRUCTIONS });
   });
 
@@ -75,8 +75,8 @@ describe("a turn through the real SDK", () => {
     const first = await send(null, "a fox");
     if (!first.ok) throw new Error("first turn failed");
     openai.reply({ kind: "previousResponseGone" }, { kind: "success" });
-    const second = await send(first.session.id, "at night");
-    expect(second).toMatchObject({ ok: true, session: { doc: { turns: [{}, {}, {}, { resumed: "resent" }] } } });
+    const second = await send(first.chat.id, "at night");
+    expect(second).toMatchObject({ ok: true, chat: { doc: { turns: [{}, {}, {}, { resumed: "resent" }] } } });
     expect((openai.requests[1]!.body as { previous_response_id?: string }).previous_response_id).toMatch(/^resp_double_/);
   });
 
@@ -91,12 +91,10 @@ describe("a turn through the real SDK", () => {
     expect(await send(null, "x")).toMatchObject({ ok: false, failure: { message: { key: "failure.keyRejected" } } });
   });
 
-  it("asks for an opaque background, and still reads the transparency of turns saved before backgrounds", async () => {
-    await runner.send({ requestId: "o", sessionId: null, text: "a card", references: [], options: { size: "1536x1024", quality: "low", background: "opaque" } });
+  it("asks for an opaque background", async () => {
+    await runner.send({ requestId: "o", chatFolder: null, text: "a card", references: [], options: { size: "1536x1024", quality: "low", background: "opaque" } });
     expect(openai.requests[0]!.body).toMatchObject({ tools: [{ background: "opaque", size: "1536x1024" }] });
     expect((openai.requests[0]!.body as { tools: Record<string, unknown>[] }).tools[0]!.output_format).toBeUndefined();
-    await send(null, "a sticker", true);
-    expect(openai.requests[1]!.body).toMatchObject({ tools: [{ background: "transparent", output_format: "png" }] });
   });
 
   it("shows drafts while the image is drawn and clears them when the turn settles; with drafts off it does not stream", async () => {
@@ -104,9 +102,9 @@ describe("a turn through the real SDK", () => {
     if (!outcome.ok) throw new Error("turn failed");
     expect(openai.requests[0]!.body).toMatchObject({ stream: true, tools: [{ partial_images: 2 }] });
     expect(drafts.map((d) => d.image)).toEqual([0, 0, null]);
-    expect(drafts.every((d) => d.sessionId === outcome.session.id)).toBe(true);
+    expect(drafts.every((d) => d.chatFolder === outcome.chat.id)).toBe(true);
     settings = { "openai.drafts": 0 };
-    await send(outcome.session.id, "at night");
+    await send(outcome.chat.id, "at night");
     expect((openai.requests[1]!.body as { stream?: boolean }).stream).toBeUndefined();
   });
 
@@ -114,10 +112,10 @@ describe("a turn through the real SDK", () => {
     openai.reply({ kind: "success", images: 1, blockedImages: 2 }, { kind: "noImage" });
     const first = await send(null, "three portraits");
     if (!first.ok) throw new Error("turn failed");
-    expect(first.session.doc.turns[1]).toMatchObject({ images: [expect.any(String)], failedImages: 0, blockedImages: 2 });
-    const second = await send(first.session.id, "one more");
+    expect(first.chat.doc.turns[1]).toMatchObject({ images: [expect.any(String)], failedImages: 0, blockedImages: 2 });
+    const second = await send(first.chat.id, "one more");
     if (!second.ok) throw new Error("turn failed");
-    expect(second.session.doc.turns[3]).toMatchObject({ images: [], failedImages: 0, missingImages: 1 });
+    expect(second.chat.doc.turns[3]).toMatchObject({ images: [], failedImages: 0, missingImages: 1 });
   });
 
   it("saves a painted mask into the chat and sends it with its image first", async () => {
@@ -131,14 +129,14 @@ describe("a turn through the real SDK", () => {
     writeFileSync(mask, await sharp({ create: { width: 64, height: 48, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer());
     const outcome = await runner.send({
       requestId: "m",
-      sessionId: null,
+      chatFolder: null,
       text: "a hat on him",
       references: [other, photo],
       mask: { image: photo, mask },
       options: { size: "auto", quality: "low" },
     });
     if (!outcome.ok) throw new Error(`turn failed: ${JSON.stringify(outcome)}`);
-    const turn = outcome.session.doc.turns[0]!;
+    const turn = outcome.chat.doc.turns[0]!;
     expect(turn).toMatchObject({ role: "user", images: [expect.stringMatching(/^inputs\/.*photo\.png$/), expect.stringMatching(/other\.png$/)], mask: expect.stringMatching(/^inputs\/.*mask-1\.png$/) });
     expect(released).toContain(mask);
     const body = openai.requests[0]!.body as { tools: { input_image_mask?: { image_url: string } }[] };
@@ -148,15 +146,15 @@ describe("a turn through the real SDK", () => {
   it("keeps the message when a streaming turn is cancelled, clears the draft, and lets the next message leave it out", async () => {
     const first = await send(null, "a fox");
     if (!first.ok) throw new Error("turn failed");
-    const id = first.session.id;
+    const id = first.chat.id;
     openai.reply({ kind: "streamStalled" });
     const drawing = new Promise<void>((resolve) => { onDraft = () => { if (drafts.filter((d) => d.image === 0).length === 3) resolve(); }; });
     const cancelled = send(id, "add a hat");
     await drawing;
     runner.cancel(id);
     expect(await cancelled).toMatchObject({ ok: false, cancelled: true });
-    expect(drafts.at(-1)).toEqual({ sessionId: id, image: null });
-    const doc = await readSession(root, id);
+    expect(drafts.at(-1)).toEqual({ chatFolder: id, image: null });
+    const doc = await readChat(root, id);
     expect(doc.turns.map((t) => t.role)).toEqual(["user", "assistant", "user"]);
     // The next message chains from the last reply: the cancelled message was never part of OpenAI's conversation.
     const next = await send(id, "a scarf instead");
@@ -171,9 +169,9 @@ describe("a turn through the real SDK", () => {
     const failed = await send(null, "a fox");
     expect(failed).toMatchObject({ ok: false, cancelled: false, failure: { retryable: true } });
     expect(openai.requests).toHaveLength(1);
-    if (!failed.session) throw new Error("no session");
-    const retried = await runner.retry(failed.session.id);
-    expect(retried).toMatchObject({ ok: true, session: { doc: { turns: [{ role: "user" }, { role: "assistant" }] } } });
+    if (!failed.chat) throw new Error("no chat");
+    const retried = await runner.retry(failed.chat.id);
+    expect(retried).toMatchObject({ ok: true, chat: { doc: { turns: [{ role: "user" }, { role: "assistant" }] } } });
     expect(openai.requests).toHaveLength(2);
   });
 });

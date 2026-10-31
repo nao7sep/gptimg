@@ -10,7 +10,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { fileStamp } from "../shared/session.ts";
+import { fileStamp } from "../shared/chat.ts";
 import { queryRecords, detailOf } from "./records-query.ts";
 import type { LaunchEntry, RecordDetail, RecordQuery, RecordRef, RecordsPage } from "../shared/records.ts";
 
@@ -30,12 +30,12 @@ export const APP_EVENTS = {
   "apiKeys.writeFailed": "API key could not be saved",
   "apiKeys.modeTightened": "API key file permissions tightened to owner-only",
   "backups.failed": "a backup could not be written",
-  "sessions.created": "chat created",
-  "sessions.renamed": "chat renamed",
-  "sessions.renameFailed": "chat could not be renamed",
-  "sessions.trashed": "chat moved to the trash",
-  "sessions.trashFailed": "chat could not be moved to the trash",
-  "sessions.listFailed": "chats folder could not be read",
+  "chats.created": "chat created",
+  "chats.renamed": "chat renamed",
+  "chats.renameFailed": "chat could not be renamed",
+  "chats.trashed": "chat moved to the trash",
+  "chats.trashFailed": "chat could not be moved to the trash",
+  "chats.listFailed": "chats folder could not be read",
   "turn.sent": "message sent",
   "turn.replied": "reply received",
   "turn.failed": "reply did not arrive",
@@ -61,7 +61,7 @@ export type AppEvent = keyof typeof APP_EVENTS;
 
 export interface TurnRecord {
   chatId: string;
-  sessionFolder: string;
+  chatFolder: string;
   turnId: string;
   model: string;
   status: "completed" | "refused" | "failed" | "cancelled";
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS sdk_events (
   id INTEGER PRIMARY KEY,
   session_id TEXT NOT NULL,
   at_utc TEXT NOT NULL,
-  session_folder TEXT,
+  chat_folder TEXT,
   chat_id TEXT,
   level TEXT NOT NULL,
   event TEXT NOT NULL,
@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS turns (
   id INTEGER PRIMARY KEY,
   session_id TEXT NOT NULL,
   at_utc TEXT NOT NULL,
-  session_folder TEXT NOT NULL,
+  chat_folder TEXT NOT NULL,
   chat_id TEXT,
   turn_id TEXT NOT NULL,
   model TEXT NOT NULL,
@@ -169,9 +169,9 @@ export function openRecords(file: string, logsDir: string, sessionId: string, ve
     db.exec(SCHEMA);
     logStmt = db.prepare("INSERT INTO log (session_id, at_utc, level, event, message, chat_id, fields) VALUES (?, ?, ?, ?, ?, ?, ?)");
     eventStmt = db.prepare(
-      "INSERT INTO sdk_events (session_id, at_utc, session_folder, chat_id, level, event, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO sdk_events (session_id, at_utc, chat_folder, chat_id, level, event, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
     );
-    turnStmt = db.prepare(`INSERT INTO turns (session_id, at_utc, session_folder, chat_id, turn_id, model, status,
+    turnStmt = db.prepare(`INSERT INTO turns (session_id, at_utc, chat_folder, chat_id, turn_id, model, status,
       response_id, input_tokens, output_tokens, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     db.exec(INDEXES);
     db.prepare("INSERT INTO launches (session_id, started_at_utc, app_version, platform) VALUES (?, ?, ?, ?)").run(
@@ -239,7 +239,7 @@ export function openRecords(file: string, logsDir: string, sessionId: string, ve
           turnStmt!.run(
             sessionId,
             new Date().toISOString(),
-            record.sessionFolder,
+            record.chatFolder,
             record.chatId,
             record.turnId,
             record.model,

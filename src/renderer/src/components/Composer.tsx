@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import { imageUrl } from "../../../shared/api.ts";
 import { DEFAULT_SIZE_RULE, parseSize, sizeProblem, sizeRuleOf } from "../../../shared/image-size.ts";
-import { BACKGROUNDS, backgroundOf, type Background, type TurnOptions } from "../../../shared/session.ts";
+import { BACKGROUNDS, backgroundOf, type Background, type TurnOptions } from "../../../shared/chat.ts";
 import { imageRow } from "../../../shared/settings.ts";
 import { QUALITIES, SIZES } from "../../../shared/ui-state.ts";
 import { api } from "../api.ts";
@@ -13,7 +13,7 @@ import { useI18n } from "../i18n.tsx";
 import { BrushIcon, ClipIcon, CloseIcon, SendIcon, ShapeGlyph, StopIcon } from "./icons.tsx";
 
 export interface Reference {
-  /** What is sent: an absolute path main registered, or a path relative to the session. */
+  /** What is sent: an absolute path main registered, or a path relative to the chat. */
   path: string;
   /** Where to load its preview from. */
   absolute: string;
@@ -34,7 +34,7 @@ interface ComposerProps {
   imageModel: string;
   busy: boolean;
   keyMissing: boolean;
-  sessionDir: string | null;
+  chatDir: string | null;
   focusRef: MutableRefObject<() => void>;
   attachRef: MutableRefObject<() => void>;
   onSend: (draft: Draft, options: TurnOptions) => void;

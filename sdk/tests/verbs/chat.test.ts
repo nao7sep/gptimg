@@ -19,14 +19,14 @@ vi.mock("../../src/providers/index.ts", () => ({
 
 describe("chat", () => {
   let tmp: string;
-  let session: string;
+  let chatDir: string;
   let png: Buffer;
   let sdk: GptImg;
 
   beforeEach(async () => {
     for (const fn of Object.values(provider)) fn.mockReset();
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-chat-"));
-    session = path.join(tmp, "session");
+    chatDir = path.join(tmp, "chat");
     png = await sharp({ create: { width: 64, height: 32, channels: 3, background: "#336699" } }).png().toBuffer();
     sdk = new GptImg({ apiKey: "sk-chat-test", app: { name: "GptImg", version: "0.1.0" } });
   });
@@ -48,13 +48,13 @@ describe("chat", () => {
 
   it("writes the turn's image with a chat record and returns the reply, the response id and the usage", async () => {
     provider.chat.mockResolvedValue(answer());
-    const result = done(await sdk.chat({ message: "a lighthouse", previousResponseId: "resp_1", outDir: session, outName: "turn-2" }));
+    const result = done(await sdk.chat({ message: "a lighthouse", previousResponseId: "resp_1", outDir: chatDir, outName: "turn-2" }));
     expect(result).toMatchObject({ text: "Here you go.", responseId: "resp_2", resumed: "chain", incomplete: null, recordPath: null, failures: [] });
     expect(result.files).toHaveLength(1);
-    expect(result.files[0]!.path).toBe(path.join(session, "turn-2.png"));
+    expect(result.files[0]!.path).toBe(path.join(chatDir, "turn-2.png"));
     expect(result.response).toMatchObject({ usage: { input_tokens: 9 }, output: [{ result: null }] });
 
-    const record = await readSidecar(path.join(session, "turn-2.json"));
+    const record = await readSidecar(path.join(chatDir, "turn-2.json"));
     expect(record).toMatchObject({
       formatVersion: 2,
       kind: "chat",
@@ -70,20 +70,20 @@ describe("chat", () => {
       },
       files: [{ index: 1, name: "turn-2.png", format: "png" }],
     });
-    expect(await readFile(path.join(session, "turn-2.json"), "utf8")).not.toContain(png.toString("base64"));
+    expect(await readFile(path.join(chatDir, "turn-2.json"), "utf8")).not.toContain(png.toString("base64"));
   });
 
   it("keeps a turn without images as its record alone", async () => {
     provider.chat.mockResolvedValue(answer({ images: [], text: "Which colour?", resumed: null, raw: { id: "resp_2", output: [], usage: { input_tokens: 4 } } }));
-    const result = done(await sdk.chat({ message: "change it", outDir: session, outName: "turn-3" }));
-    expect(result).toMatchObject({ text: "Which colour?", files: [], recordPath: path.join(session, "turn-3.json") });
-    expect(await readdir(session)).toEqual(["turn-3.json"]);
-    expect(await readSidecar(path.join(session, "turn-3.json"))).toMatchObject({ kind: "chat", files: [], response: { usage: { input_tokens: 4 } } });
+    const result = done(await sdk.chat({ message: "change it", outDir: chatDir, outName: "turn-3" }));
+    expect(result).toMatchObject({ text: "Which colour?", files: [], recordPath: path.join(chatDir, "turn-3.json") });
+    expect(await readdir(chatDir)).toEqual(["turn-3.json"]);
+    expect(await readSidecar(path.join(chatDir, "turn-3.json"))).toMatchObject({ kind: "chat", files: [], response: { usage: { input_tokens: 4 } } });
   });
 
   it("sends no instructions of its own when the caller gives none", async () => {
     provider.chat.mockResolvedValue(answer());
-    done(await sdk.chat({ message: "x", outDir: session }));
+    done(await sdk.chat({ message: "x", outDir: chatDir }));
     expect(provider.chat.mock.calls[0]![0].params.instructions).toBeUndefined();
   });
 
@@ -91,7 +91,7 @@ describe("chat", () => {
     provider.chat.mockResolvedValue(answer());
     done(await sdk.chat({
       message: "x",
-      outDir: session,
+      outDir: chatDir,
       policy: { chat: { model: "gpt-6-luna", reasoning: "low", instructions: "be terse", imageModel: "gpt-image-2.5-flare", quality: "high", size: "1536x1024" } },
     }));
     expect(provider.chat.mock.calls[0]![0].params).toEqual({
@@ -100,14 +100,14 @@ describe("chat", () => {
       instructions: "be terse",
       tool: { model: "gpt-image-2.5-flare", quality: "high", size: "1536x1024", moderation: "low" },
     });
-    await expect(sdk.chat({ message: "x", outDir: session, policy: { chat: { model: "gpt-6-astra", reasoning: "none" } } })).rejects.toMatchObject({
+    await expect(sdk.chat({ message: "x", outDir: chatDir, policy: { chat: { model: "gpt-6-astra", reasoning: "none" } } })).rejects.toMatchObject({
       code: "policy.invalid",
       details: { section: "chat" },
     });
-    await expect(sdk.chat({ message: "x", outDir: session, policy: { chat: { imageModel: "gpt-image-2", quality: "max" } } })).rejects.toMatchObject({
+    await expect(sdk.chat({ message: "x", outDir: chatDir, policy: { chat: { imageModel: "gpt-image-2", quality: "max" } } })).rejects.toMatchObject({
       code: "policy.invalid",
     });
-    await expect(sdk.chat({ message: "x", outDir: session, policy: { chat: { temperature: 1 } as never } })).rejects.toMatchObject({ code: "policy.invalid" });
+    await expect(sdk.chat({ message: "x", outDir: chatDir, policy: { chat: { temperature: 1 } as never } })).rejects.toMatchObject({ code: "policy.invalid" });
     expect(provider.chat).toHaveBeenCalledTimes(1);
   });
 
@@ -127,27 +127,27 @@ describe("chat", () => {
       expect(args.images[0]).toMatchObject({ name: "big.png", format: "png" });
       return answer({ resumed: null, historyTurns: loaded.length });
     });
-    const result = done(await sdk.chat({ message: "again", images: [big], history: turns, outDir: session }));
+    const result = done(await sdk.chat({ message: "again", images: [big], history: turns, outDir: chatDir }));
     expect(result.resumed).toBeNull();
     const record = await readSidecar(result.files[0]!.sidecarPath);
     expect(record.request).toMatchObject({ images: [{ name: "big.png", sha256: expect.stringMatching(/^[0-9a-f]{64}$/) }], previousResponseId: null, historyTurns: 11 });
 
-    await expect(sdk.chat({ message: "x", images: [path.join(tmp, "nope.png")], outDir: session })).rejects.toMatchObject({ code: "fs.notFound" });
+    await expect(sdk.chat({ message: "x", images: [path.join(tmp, "nope.png")], outDir: chatDir })).rejects.toMatchObject({ code: "fs.notFound" });
     expect(provider.chat).toHaveBeenCalledTimes(1);
   });
 
   it("refuses relative paths, needs a key, and returns a provider's refusal with its paid answer", async () => {
-    await expect(sdk.chat({ message: "x", outDir: session, history: [{ role: "user", text: "a", images: ["rel.png"] }] })).rejects.toMatchObject({
+    await expect(sdk.chat({ message: "x", outDir: chatDir, history: [{ role: "user", text: "a", images: ["rel.png"] }] })).rejects.toMatchObject({
       code: "args.invalid",
       details: { field: "history[0].images[0]" },
     });
-    await expect(new GptImg().chat({ message: "x", outDir: session })).rejects.toMatchObject({ code: "apiKey.missing" });
+    await expect(new GptImg().chat({ message: "x", outDir: chatDir })).rejects.toMatchObject({ code: "apiKey.missing" });
     provider.chat.mockImplementation(async () => {
       const signal = new RefusalSignal({ code: "provider.refused", message: "declined", safeReason: "no" });
       signal.response = { usage: { input_tokens: 3 } };
       throw signal;
     });
-    await expect(sdk.chat({ message: "x", outDir: session })).resolves.toMatchObject({
+    await expect(sdk.chat({ message: "x", outDir: chatDir })).resolves.toMatchObject({
       status: "refused",
       refusal: { code: "provider.refused", safeReason: "no" },
       response: { usage: { input_tokens: 3 } },

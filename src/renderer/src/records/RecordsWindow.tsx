@@ -87,7 +87,7 @@ export function RecordsWindow({ boot }: { boot: BootInfo }) {
       }
     });
     refreshChats();
-    return api.onSessionsChanged(refreshChats);
+    return api.onChatsChanged(refreshChats);
   }, [read]);
 
   useEffect(() => {

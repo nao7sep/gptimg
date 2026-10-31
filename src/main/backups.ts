@@ -1,5 +1,5 @@
 // backups.sqlite3 (data-backup-conventions): the bytes of each settings or
-// session file the app writes, one row per path per launch, newest kept.
+// chat file the app writes, one row per path per launch, newest kept.
 // Best effort: a backup that fails never stops the write it protects.
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";

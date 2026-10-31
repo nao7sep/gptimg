@@ -80,7 +80,7 @@ export const CloseIcon = (p: IconProps) => (
   </Svg>
 );
 
-/** An empty print: the rail's cover for a session with no image yet. */
+/** An empty print: the rail's cover for a chat with no image yet. */
 export const FrameIcon = (p: IconProps) => (
   <Svg {...p}>
     <rect x="3" y="4" width="14" height="12" rx="1.8" />

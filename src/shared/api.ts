@@ -5,7 +5,7 @@ import type { LaunchEntry, RecordDetail, RecordQuery, RecordRef, RecordsPage } f
 import type { Catalogue } from "./i18n/catalogues.ts";
 import type { Language } from "./i18n/languages.ts";
 import type { Message } from "./i18n/translator.ts";
-import type { SessionChange, SessionDoc, SessionSummary, TurnOptions } from "./session.ts";
+import type { ChatChange, ChatDoc, ChatSummary, TurnOptions } from "./chat.ts";
 import type { Settings } from "./settings.ts";
 import type { UiState } from "./ui-state.ts";
 
@@ -38,8 +38,8 @@ export interface BootInfo {
   settingsLocked: boolean;
   key: KeyStatus;
   state: UiState;
-  /** The folder sessions live in by default, offered at first run. */
-  suggestedSessionsDir: string;
+  /** The folder chats live in by default, offered at first run. */
+  suggestedChatsDir: string;
   /** The zone "system" means on this computer. */
   systemTimeZone: string;
 }
@@ -56,15 +56,15 @@ export interface AppFailure {
 
 export type Outcome<T> = ({ ok: true } & T) | { ok: false; failure: AppFailure };
 
-export interface SessionsListing {
-  sessions: SessionSummary[];
-  /** Folders in the sessions folder that hold no readable session.json. */
+export interface ChatsListing {
+  chats: ChatSummary[];
+  /** Folders in the chats folder that hold no readable chat.json. */
   unreadable: number;
 }
 
-export interface OpenedSession {
+export interface OpenedChat {
   id: string;
-  doc: SessionDoc;
+  doc: ChatDoc;
   /** The absolute folder, for building image URLs and reveal. */
   dir: string;
 }
@@ -72,20 +72,20 @@ export interface OpenedSession {
 export interface SendRequest {
   /** The window's own token for this send, echoed by `onTurnStarted`. */
   requestId: string;
-  /** Null starts a new session with this message. */
-  sessionId: string | null;
+  /** Null starts a new chat with this message. */
+  chatFolder: string | null;
   text: string;
-  /** Absolute paths of attached images (registered through `attach.*`) or session-relative paths. */
+  /** Absolute paths of attached images (registered through `attach.*`) or chat-relative paths. */
   references: string[];
   /** A painted mask (an absolute staged path) for one of `references`, which is sent first. */
   mask?: { image: string; mask: string };
   options: TurnOptions;
 }
 
-/** A turn's end: the session as it now stands, with the failure when the reply did not come. */
+/** A turn's end: the chat as it now stands, with the failure when the reply did not come. */
 export type TurnOutcome =
-  | { ok: true; session: OpenedSession }
-  | { ok: false; session: OpenedSession | null; failure: AppFailure; cancelled: boolean };
+  | { ok: true; chat: OpenedChat }
+  | { ok: false; chat: OpenedChat | null; failure: AppFailure; cancelled: boolean };
 
 /** A long local task's progress: an export (its upscale passes) or the upscaling model's download. */
 export interface TaskProgress {
@@ -104,7 +104,7 @@ export interface UpscalerStatus {
   downloadBytes: number | null;
 }
 
-export type MenuCommand = "newSession" | "settings" | "shortcuts" | "about" | "records" | "attach" | "close" | "rename" | "reveal" | "trash";
+export type MenuCommand = "newChat" | "settings" | "shortcuts" | "about" | "records" | "attach" | "close" | "rename" | "reveal" | "trash";
 
 export interface StartupFailure {
   language: LanguageInfo;
@@ -127,17 +127,17 @@ export interface GptImgApi {
   setKey(value: string): Promise<Outcome<{ status: KeyStatus }>>;
   clearKey(): Promise<Outcome<{ status: KeyStatus }>>;
 
-  listSessions(): Promise<Outcome<SessionsListing>>;
-  openSession(id: string): Promise<Outcome<{ session: OpenedSession }>>;
-  renameSession(id: string, title: string): Promise<Outcome<{ session: OpenedSession }>>;
-  trashSession(id: string): Promise<Outcome<object>>;
-  revealSession(id: string): void;
+  listChats(): Promise<Outcome<ChatsListing>>;
+  openChat(id: string): Promise<Outcome<{ chat: OpenedChat }>>;
+  renameChat(id: string, title: string): Promise<Outcome<{ chat: OpenedChat }>>;
+  trashChat(id: string): Promise<Outcome<object>>;
+  revealChat(id: string): void;
   /** Opens the chats folder in Finder or Explorer. */
   showChatsFolder(): void;
 
   send(request: SendRequest): Promise<TurnOutcome>;
-  retry(sessionId: string): Promise<TurnOutcome>;
-  cancel(sessionId: string): void;
+  retry(chatFolder: string): Promise<TurnOutcome>;
+  cancel(chatFolder: string): void;
 
   /** Native picker for reference images; the chosen paths are registered for preview. */
   pickImages(): Promise<string[]>;
@@ -177,13 +177,13 @@ export interface GptImgApi {
   closeWindow(): void;
   onMenu(handler: (command: MenuCommand) => void): () => void;
   onSettings(handler: (settings: Settings) => void): () => void;
-  /** One session was added, saved, renamed or trashed, or the sessions folder changed. */
-  onSessionsChanged(handler: (change: SessionChange) => void): () => void;
+  /** One chat was added, saved, renamed or trashed, or the chats folder changed. */
+  onChatsChanged(handler: (change: ChatChange) => void): () => void;
   onLanguage(handler: (info: LanguageInfo) => void): () => void;
-  /** The user's turn is saved and the call has started: the session as it now stands. */
-  onTurnStarted(handler: (event: { requestId: string; session: OpenedSession }) => void): () => void;
+  /** The user's turn is saved and the call has started: the chat as it now stands. */
+  onTurnStarted(handler: (event: { requestId: string; chat: OpenedChat }) => void): () => void;
   /** The latest draft of the image a chat's turn is drawing, or null once the turn settles. */
-  onTurnDraft(handler: (event: { sessionId: string; path: string | null }) => void): () => void;
+  onTurnDraft(handler: (event: { chatFolder: string; path: string | null }) => void): () => void;
 }
 
 /** The URL the renderer loads an image through; `width` asks main for a copy decoded at that size. */

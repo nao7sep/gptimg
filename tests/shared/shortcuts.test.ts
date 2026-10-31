@@ -12,15 +12,15 @@ const key = (k: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; altK
 
 describe("shortcuts", () => {
   it("binds both Cmd and Ctrl, never with Alt", () => {
-    expect(commandFor(key("n", { metaKey: true }), true, false)).toBe("newSession");
-    expect(commandFor(key("n", { ctrlKey: true }), true, false)).toBe("newSession");
-    expect(commandFor(key("N", { ctrlKey: true }), false, true)).toBe("newSession");
+    expect(commandFor(key("n", { metaKey: true }), true, false)).toBe("newChat");
+    expect(commandFor(key("n", { ctrlKey: true }), true, false)).toBe("newChat");
+    expect(commandFor(key("N", { ctrlKey: true }), false, true)).toBe("newChat");
     expect(commandFor(key("n", { metaKey: true, altKey: true }), true, false)).toBeNull();
   });
 
   it("lets the macOS Ctrl half stand down in text, where Ctrl keys move the caret", () => {
     expect(commandFor(key("n", { ctrlKey: true }), true, true)).toBeNull();
-    expect(commandFor(key("n", { metaKey: true }), true, true)).toBe("newSession");
+    expect(commandFor(key("n", { metaKey: true }), true, true)).toBe("newChat");
   });
 
   it("shows Cmd on macOS and Ctrl elsewhere, with keys spelled out", () => {

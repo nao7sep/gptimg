@@ -37,7 +37,7 @@ export function fakeApi(over: Partial<GptImgApi> = {}): GptImgApi {
     onLanguage: noop,
     onMenu: noop,
     onTurnStarted: noop,
-    onSessionsChanged: noop,
+    onChatsChanged: noop,
     onProgress: noop,
     registerFiles: vi.fn(async (paths: string[]) => paths),
     pickImages: vi.fn(async () => []),
@@ -73,12 +73,12 @@ export function bootInfo(): BootInfo {
     platform: "darwin",
     version: "0.0.0",
     language,
-    settings: { ...builtInSettings(), sessionsDir: "/chats" },
+    settings: { ...builtInSettings(), chatsDir: "/chats" },
     settingsProblem: null,
     settingsLocked: false,
     key: { source: "stored", problem: null },
     state: defaultUiState(),
-    suggestedSessionsDir: "/Users/x/Documents/GptImg",
+    suggestedChatsDir: "/Users/x/Documents/GptImg",
     systemTimeZone: "UTC",
   };
 }

@@ -272,7 +272,7 @@ describe("OutputGroup", () => {
       await expect(assertOutputGroupAvailable(group, planned, false)).rejects.toThrow(/Output exists/);
     });
 
-    it("blocks --overwrite when stale siblings exist that the plan would not replace", async () => {
+    it("blocks overwrite: true when stale siblings exist that the plan would not replace", async () => {
       for (const name of ["stem-01.png", "stem-02.png", "stem.json"]) {
         await writeFile(path.join(tmp, name), "");
       }
@@ -281,7 +281,7 @@ describe("OutputGroup", () => {
       await expect(assertOutputGroupAvailable(group, planned, true)).rejects.toThrow(/output\.staleSiblings|stale|prior run|staleSiblings/);
     });
 
-    it("allows --overwrite when the plan supersedes every existing sibling", async () => {
+    it("allows overwrite: true when the plan supersedes every existing sibling", async () => {
       for (const name of ["stem-1.png", "stem-2.png", "stem.json"]) {
         await writeFile(path.join(tmp, name), "");
       }
@@ -290,7 +290,7 @@ describe("OutputGroup", () => {
       await expect(assertOutputGroupAvailable(group, planned, true)).resolves.toBeUndefined();
     });
 
-    it("allows --overwrite to supersede the same image slot in another supported format", async () => {
+    it("allows overwrite: true to supersede the same image slot in another supported format", async () => {
       await writeFile(path.join(tmp, "stem.jpg"), "");
       await writeFile(path.join(tmp, "stem.json"), "");
       const group = createOutputGroup(tmp, "stem", "png");
@@ -304,7 +304,7 @@ describe("OutputGroup", () => {
       await expect(assertOutputGroupAvailable(group, [path.join(tmp, "stem.json")], true)).rejects.toThrow(/prior run/);
     });
 
-    it("refuses under --overwrite to replace a member whose name differs only in case", async () => {
+    it("refuses under overwrite: true to replace a member whose name differs only in case", async () => {
       await writeFile(path.join(tmp, "Photo.png"), "");
       await writeFile(path.join(tmp, "Photo.json"), "{}");
       const group = createOutputGroup(tmp, "photo", "png");

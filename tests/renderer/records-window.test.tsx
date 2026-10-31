@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import type { GptImgApi } from "../../src/shared/api.ts";
 import type { RecordDetail, RecordQuery, RecordRow, RecordsPage } from "../../src/shared/records.ts";
 import type { Settings } from "../../src/shared/settings.ts";
-import type { SessionChange } from "../../src/shared/session.ts";
+import type { ChatChange } from "../../src/shared/chat.ts";
 import { RecordsWindow } from "../../src/renderer/src/records/RecordsWindow.tsx";
 import { bootInfo, fakeApi, renderInApp, resized } from "./harness.tsx";
 
@@ -48,18 +48,18 @@ const filters = () => within(document.querySelector<HTMLElement>(".records-filte
 
 function setup(over: Partial<GptImgApi> = {}) {
   const records = new Set<() => void>();
-  const sessions = new Set<(change: SessionChange) => void>();
+  const chats = new Set<(change: ChatChange) => void>();
   const settings = new Set<(value: Settings) => void>();
   const api = fakeApi({
     onRecordsChanged: (handler) => { records.add(handler); return () => { records.delete(handler); }; },
-    onSessionsChanged: (handler) => { sessions.add(handler); return () => { sessions.delete(handler); }; },
+    onChatsChanged: (handler) => { chats.add(handler); return () => { chats.delete(handler); }; },
     onSettings: (handler) => { settings.add(handler); return () => { settings.delete(handler); }; },
     ...over,
   });
   return {
-    api, records, sessions, settings,
+    api, records, chats, settings,
     emitRecords: () => records.forEach((handler) => handler()),
-    emitSessions: () => sessions.forEach((handler) => handler({ kind: "folder" })),
+    emitChats: () => chats.forEach((handler) => handler({ kind: "folder" })),
     emitSettings: (value: Settings) => settings.forEach((handler) => handler(value)),
     render: async () => { const boot = bootInfo(); boot.settings.timeZone = "UTC"; return renderInApp(() => <RecordsWindow boot={boot} />); },
   };
@@ -332,7 +332,7 @@ describe("Records details and live settings", () => {
     const recordChats = vi.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
     const t = setup({ recordChats });
     const rendered = await t.render();
-    await act(async () => t.emitSessions());
+    await act(async () => t.emitChats());
     expect(recordChats).toHaveBeenCalledOnce();
     await act(async () => first.resolve([{ id: "chat", title: "Stale chat title" }]));
     await act(async () => second.resolve([{ id: "chat", title: "Current chat title" }]));
@@ -340,7 +340,7 @@ describe("Records details and live settings", () => {
     expect(screen.queryByRole("option", { name: "Stale chat title" })).toBeNull();
     rendered.unmount();
     expect(t.records.size).toBe(0);
-    expect(t.sessions.size).toBe(0);
+    expect(t.chats.size).toBe(0);
     expect(t.settings.size).toBe(0);
   });
 });

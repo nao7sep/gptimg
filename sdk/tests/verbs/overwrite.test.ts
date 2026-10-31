@@ -53,7 +53,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("trim rejects an existing output without --overwrite, accepts with it", async () => {
+  it("trim rejects an existing output without overwrite, accepts with it", async () => {
     const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
@@ -70,7 +70,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     expect(res.output).toBe(out);
   });
 
-  it("encode rejects an existing output without --overwrite, accepts with it", async () => {
+  it("encode rejects an existing output without overwrite, accepts with it", async () => {
     const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
@@ -87,7 +87,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     expect(res.output).toBe(out);
   });
 
-  it("backplate rejects an existing output without --overwrite, accepts with it", async () => {
+  it("backplate rejects an existing output without overwrite, accepts with it", async () => {
     const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const out = path.join(tmp, "plate.png");
     await writeFile(out, "blocker");
@@ -115,7 +115,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     expect(res.output).toBe(out);
   });
 
-  it("layer rejects an existing output without --overwrite, accepts with it", async () => {
+  it("layer rejects an existing output without overwrite, accepts with it", async () => {
     const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const basePath = path.join(tmp, "base.png");
     const topPath = path.join(tmp, "top.png");
@@ -139,7 +139,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     expect(res.output).toBe(out);
   });
 
-  it("despeckle rejects an existing output without --overwrite, accepts with it", async () => {
+  it("despeckle rejects an existing output without overwrite, accepts with it", async () => {
     const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 200, 0, 0));
@@ -156,7 +156,7 @@ describe("verb-level overwrite check (assertSingleFileAvailable wiring)", () => 
     expect(res.output).toBe(out);
   });
 
-  it("mask (chroma) rejects an existing output without --overwrite, accepts with it", async () => {
+  it("mask (chroma) rejects an existing output without overwrite, accepts with it", async () => {
     const sdk = new GptImg({ modelsDir: path.join(tmp, "models") });
     const input = path.join(tmp, "in.png");
     await writeRawPng(input, 16, 16, makeOpaque(16, 16, 0, 255, 0));

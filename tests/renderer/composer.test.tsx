@@ -16,7 +16,7 @@ async function composer(onSend = vi.fn()) {
       imageModel="gpt-image-2.5-sunburst"
       busy={false}
       keyMissing={false}
-      sessionDir={null}
+      chatDir={null}
       focusRef={{ current: () => {} }}
       attachRef={{ current: () => {} }}
       onSend={onSend}
@@ -47,7 +47,7 @@ describe("the composer", () => {
           imageModel="gpt-image-2.5-sunburst"
           busy={false}
           keyMissing={false}
-          sessionDir={null}
+          chatDir={null}
           focusRef={{ current: () => {} }}
           attachRef={{ current: () => {} }}
           onSend={onSend}
@@ -87,7 +87,7 @@ describe("the composer", () => {
           imageModel="gpt-image-2.5-sunburst"
           busy={false}
           keyMissing={false}
-          sessionDir={null}
+          chatDir={null}
           focusRef={{ current: () => {} }}
           attachRef={{ current: () => {} }}
           onSend={onSend}
@@ -136,7 +136,7 @@ describe("the composer", () => {
         imageModel="gpt-image-2.5-sunburst"
         busy={false}
         keyMissing={false}
-        sessionDir={null}
+        chatDir={null}
         focusRef={{ current: () => {} }}
         attachRef={{ current: () => {} }}
         onSend={onSend}
@@ -170,7 +170,7 @@ async function configuredComposer(imageOnly: boolean) {
     imageModel="gpt-image-2"
     busy={false}
     keyMissing={false}
-    sessionDir={null}
+    chatDir={null}
     focusRef={{ current: () => {} }}
     attachRef={{ current: () => {} }}
     onSend={onSend}

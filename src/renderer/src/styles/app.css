@@ -248,19 +248,19 @@ select {
 }
 
 
-.session-list {
+.chat-list {
   position: relative;
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 4px 8px 8px;
   outline: none;
 }
-.session-list:focus-visible {
+.chat-list:focus-visible {
   box-shadow: inset 0 0 0 2px var(--focus);
   border-radius: var(--radius-control);
 }
 
-.session-row {
+.chat-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -269,15 +269,15 @@ select {
   cursor: pointer;
   transition: background var(--motion);
 }
-.session-row:hover {
+.chat-row:hover {
   background: var(--sunken);
 }
-.session-row.selected {
+.chat-row.selected {
   background: var(--surface);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.session-cover {
+.chat-cover {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -289,12 +289,12 @@ select {
   color: var(--ink-3);
   box-shadow: inset 0 0 0 1px var(--line-row);
 }
-.session-cover img {
+.chat-cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.session-working {
+.chat-working {
   position: absolute;
   inset: auto 4px 4px auto;
   width: 8px;
@@ -304,18 +304,18 @@ select {
   box-shadow: 0 0 0 2px var(--surface);
 }
 
-.session-text {
+.chat-text {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.session-title {
+.chat-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
 }
-.session-meta {
+.chat-meta {
   color: var(--ink-3);
   font-size: 12px;
   white-space: nowrap;
@@ -732,7 +732,7 @@ select {
   flex: none;
 }
 
-.session-foot {
+.chat-foot {
   margin: 8px 0 0;
   text-align: center;
   color: var(--ink-3);

@@ -28,7 +28,7 @@ describe("Settings", () => {
     expect(screen.getByText(picked)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
-    expect(api.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ sessionsDir: picked }));
+    expect(api.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ chatsDir: picked }));
   });
 
   it("leaves the saved folder unchanged when the picker is cancelled or its draft is discarded", async () => {

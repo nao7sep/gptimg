@@ -9,27 +9,27 @@ import type { PartialImage } from "gptimgsdk/types";
  */
 export class DraftPreviews {
   readonly #staging: string;
-  readonly #publish: (sessionId: string, path: string | null) => void;
+  readonly #publish: (chatFolder: string, path: string | null) => void;
   readonly #shown = new Map<string, string>();
   readonly #queues = new Map<string, Promise<void>>();
 
-  constructor(staging: string, publish: (sessionId: string, path: string | null) => void) {
+  constructor(staging: string, publish: (chatFolder: string, path: string | null) => void) {
     this.#staging = staging;
     this.#publish = publish;
   }
 
-  show(sessionId: string, draft: PartialImage | null): Promise<void> {
-    const next = () => this.#show(sessionId, draft);
-    const run = (this.#queues.get(sessionId) ?? Promise.resolve()).then(next, next);
-    this.#queues.set(sessionId, run);
+  show(chatFolder: string, draft: PartialImage | null): Promise<void> {
+    const next = () => this.#show(chatFolder, draft);
+    const run = (this.#queues.get(chatFolder) ?? Promise.resolve()).then(next, next);
+    this.#queues.set(chatFolder, run);
     return run;
   }
 
-  async #show(sessionId: string, draft: PartialImage | null): Promise<void> {
+  async #show(chatFolder: string, draft: PartialImage | null): Promise<void> {
     if (!draft) {
-      const previous = this.#shown.get(sessionId);
-      this.#shown.delete(sessionId);
-      this.#publish(sessionId, null);
+      const previous = this.#shown.get(chatFolder);
+      this.#shown.delete(chatFolder);
+      this.#publish(chatFolder, null);
       if (previous) await rm(previous, { force: true }).catch(() => undefined);
       return;
     }
@@ -37,9 +37,9 @@ export class DraftPreviews {
     try {
       await mkdir(this.#staging, { recursive: true, mode: 0o700 });
       await writeFile(path, draft.data, { mode: 0o600 });
-      const previous = this.#shown.get(sessionId);
-      this.#shown.set(sessionId, path);
-      this.#publish(sessionId, path);
+      const previous = this.#shown.get(chatFolder);
+      this.#shown.set(chatFolder, path);
+      this.#publish(chatFolder, path);
       if (previous) await rm(previous, { force: true }).catch(() => undefined);
     } catch {
       // A draft is only a preview; its write or cleanup cannot fail the turn.

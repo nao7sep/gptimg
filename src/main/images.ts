@@ -1,5 +1,5 @@
 // The gptimg-image: protocol. The renderer loads every picture through it:
-// only files inside the sessions folder, the staging folder, or files the
+// only files inside the chats folder, the staging folder, or files the
 // user picked or dropped this launch are served. `?w=` returns a copy decoded
 // at that width (volume-handling-conventions: decode at the size shown).
 import { stat } from "node:fs/promises";
@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { net, protocol } from "electron";
 import sharp from "sharp";
 import { IMAGE_SCHEME } from "../shared/api.ts";
-import { isInside } from "./sessions.ts";
+import { isInside } from "./chats.ts";
 import { IMAGE_INPUT_FORMATS } from "gptimgsdk/types";
 
 const MAX_THUMB_WIDTH = 2048;

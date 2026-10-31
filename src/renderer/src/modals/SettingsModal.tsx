@@ -41,7 +41,7 @@ interface SettingsModalProps {
 
 const TABS = ["general", "chats", "openai"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_LABEL = { general: "settings.general", chats: "settings.sessions", openai: "settings.openai" } as const;
+const TAB_LABEL = { general: "settings.general", chats: "settings.chats", openai: "settings.openai" } as const;
 
 export function SettingsModal(props: SettingsModalProps) {
   const { t, of, info } = useI18n();
@@ -267,23 +267,23 @@ export function SettingsModal(props: SettingsModalProps) {
           {tab === "chats" && (
             <section className="settings-group">
               <div className="field">
-                <span className="field-label">{t("settings.sessionsFolder")}</span>
+                <span className="field-label">{t("settings.chatsFolder")}</span>
                 <div className="path-row">
-                  <span className="path-value" title={draft.sessionsDir}>
-                    <bdi dir="ltr">{draft.sessionsDir || t("settings.notChosen")}</bdi>
+                  <span className="path-value" title={draft.chatsDir}>
+                    <bdi dir="ltr">{draft.chatsDir || t("settings.notChosen")}</bdi>
                   </span>
                   <button
                     type="button"
                     className="button"
                     onClick={async () => {
-                      const picked = await api.pickFolder(draft.sessionsDir);
-                      if (picked) set("sessionsDir", picked);
+                      const picked = await api.pickFolder(draft.chatsDir);
+                      if (picked) set("chatsDir", picked);
                     }}
                   >
                     {t("settings.choose")}
                   </button>
                 </div>
-                <span className="field-help">{t("settings.sessionsHelp")}</span>
+                <span className="field-help">{t("settings.chatsHelp")}</span>
               </div>
             </section>
           )}

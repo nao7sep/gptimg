@@ -1,10 +1,10 @@
-// The main window: the session rail, the open conversation and its composer,
+// The main window: the chat rail, the open conversation and its composer,
 // and the one modal host. App is the single writer of the window's state; the
 // panes receive what they show and report what the user did.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PANES } from "../../shared/layout.ts";
-import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedSession, TurnOutcome } from "../../shared/api.ts";
-import { applySessionChange, type SessionSummary, type TurnOptions } from "../../shared/session.ts";
+import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedChat, TurnOutcome } from "../../shared/api.ts";
+import { applyChatChange, type ChatSummary, type TurnOptions } from "../../shared/chat.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { commandFor } from "../../shared/shortcuts.ts";
 import type { UiState } from "../../shared/ui-state.ts";
@@ -68,11 +68,11 @@ export function App({ boot }: { boot: BootInfo }) {
   // The latest UI state, for a task that finishes after the render that started it.
   const uiRef = useRef(ui);
   uiRef.current = ui;
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
   const [unreadable, setUnreadable] = useState(0);
   const [listFailure, setListFailure] = useState<AppFailure | null>(null);
   const [currentId, setCurrentId] = useState<string>(NEW);
-  const [opened, setOpened] = useState<OpenedSession | null>(null);
+  const [opened, setOpened] = useState<OpenedChat | null>(null);
   const [openFailure, setOpenFailure] = useState<AppFailure | null>(null);
   const [running, setRunning] = useState<Record<string, Running>>({});
   const [failures, setFailures] = useState<Record<string, AppFailure>>({});
@@ -84,13 +84,13 @@ export function App({ boot }: { boot: BootInfo }) {
   const [exported, setExported] = useState<{ path: string; count: number } | null>(null);
   const exportTasks = useExportTasks();
   const [modals, setModals] = useState<ModalSpec[]>(() =>
-    boot.settings.sessionsDir === "" ? [{ kind: "setup" }] : [],
+    boot.settings.chatsDir === "" ? [{ kind: "setup" }] : [],
   );
   const pendingNew = useRef<{ requestId: string; running: Running } | null>(null);
-  // Mirrors pendingNew for rendering: the new-session composer shows its turn as working.
+  // Mirrors pendingNew for rendering: the new-chat composer shows its turn as working.
   const [pendingRun, setPendingRun] = useState<Running | null>(null);
-  const rootRef = useRef(settings.sessionsDir);
-  rootRef.current = settings.sessionsDir;
+  const rootRef = useRef(settings.chatsDir);
+  rootRef.current = settings.chatsDir;
   const restored = useRef(false);
   const listingGeneration = useRef(0);
   const openingGeneration = useRef(0);
@@ -111,23 +111,23 @@ export function App({ boot }: { boot: BootInfo }) {
     api.saveState(patch);
   }, []);
 
-  // The whole listing is read only when the sessions folder changes (and at
-  // startup); after that main sends each session's change on its own.
+  // The whole listing is read only when the chats folder changes (and at
+  // startup); after that main sends each chat's change on its own.
   const loadList = useCallback(async () => {
     const generation = ++listingGeneration.current;
     const root = rootRef.current;
-    const outcome = await api.listSessions();
+    const outcome = await api.listChats();
     if (root !== rootRef.current || generation !== listingGeneration.current) return;
     if (!outcome.ok) {
       setListFailure(outcome.failure);
       return;
     }
     setListFailure(null);
-    setSessions(outcome.sessions);
+    setChats(outcome.chats);
     setUnreadable(outcome.unreadable);
   }, []);
 
-  const openSession = useCallback(
+  const openChat = useCallback(
     async (id: string) => {
       const generation = ++openingGeneration.current;
       const root = rootRef.current;
@@ -139,11 +139,11 @@ export function App({ boot }: { boot: BootInfo }) {
         setOpened(null);
         return;
       }
-      const outcome = await api.openSession(id);
+      const outcome = await api.openChat(id);
       if (currentRef.current !== id || root !== rootRef.current || generation !== openingGeneration.current) return;
       if (outcome.ok) {
-        setOpened(outcome.session);
-        saveUi({ ...uiRef.current, lastSessionId: id });
+        setOpened(outcome.chat);
+        saveUi({ ...uiRef.current, lastChatId: id });
       } else {
         setOpened(null);
         setOpenFailure(outcome.failure);
@@ -158,28 +158,28 @@ export function App({ boot }: { boot: BootInfo }) {
     currentRef.current = NEW;
     setCurrentId(NEW);
     setOpened(null);
-    setSessions([]);
+    setChats([]);
     setFailures({});
-    const root = settings.sessionsDir;
-    const restoreId = !restored.current && root === boot.settings.sessionsDir ? boot.state.lastSessionId : null;
+    const root = settings.chatsDir;
+    const restoreId = !restored.current && root === boot.settings.chatsDir ? boot.state.lastChatId : null;
     restored.current = true;
     const selection = openingGeneration.current;
     void loadList().then(() => {
-      if (restoreId && rootRef.current === root && openingGeneration.current === selection) void openSession(restoreId);
+      if (restoreId && rootRef.current === root && openingGeneration.current === selection) void openChat(restoreId);
     });
-  }, [settings.sessionsDir]);
+  }, [settings.chatsDir]);
 
   useEffect(
     () =>
-      api.onSessionsChanged((change) => {
-        if (change.kind === "entry") setSessions((list) => applySessionChange(list, change.id, change.session));
+      api.onChatsChanged((change) => {
+        if (change.kind === "entry") setChats((list) => applyChatChange(list, change.id, change.chat));
       }),
     [],
   );
 
   useEffect(
     () =>
-      api.onTurnStarted(({ requestId, session }) => {
+      api.onTurnStarted(({ requestId, chat }) => {
         const submission = submitted.current.get(requestId);
         if (submission) {
           submitted.current.delete(requestId);
@@ -191,15 +191,15 @@ export function App({ boot }: { boot: BootInfo }) {
         if (pending?.requestId === requestId) {
           pendingNew.current = null;
           setPendingRun(null);
-          setRunning((r) => ({ ...r, [session.id]: pending.running }));
+          setRunning((r) => ({ ...r, [chat.id]: pending.running }));
           if (currentRef.current === NEW) {
             ++openingGeneration.current;
-            currentRef.current = session.id;
-            setCurrentId(session.id);
-            setOpened(session);
+            currentRef.current = chat.id;
+            setCurrentId(chat.id);
+            setOpened(chat);
           }
-        } else if (currentRef.current === session.id) {
-          setOpened(session);
+        } else if (currentRef.current === chat.id) {
+          setOpened(chat);
         }
       }),
     [],
@@ -207,26 +207,26 @@ export function App({ boot }: { boot: BootInfo }) {
 
   useEffect(
     () =>
-      api.onTurnDraft(({ sessionId, path }) =>
+      api.onTurnDraft(({ chatFolder, path }) =>
         setRunning((r) => {
-          const run = r[sessionId];
+          const run = r[chatFolder];
           if (!run) return r;
           const { draft: _old, ...rest } = run;
-          return { ...r, [sessionId]: path ? { ...rest, draft: path } : rest };
+          return { ...r, [chatFolder]: path ? { ...rest, draft: path } : rest };
         }),
       ),
     [],
   );
 
   const settle = useCallback(
-    (sessionId: string | null, outcome: TurnOutcome) => {
-      const id = outcome.session?.id ?? sessionId;
+    (chatFolder: string | null, outcome: TurnOutcome) => {
+      const id = outcome.chat?.id ?? chatFolder;
       if (id) {
         setRunning(({ [id]: _done, ...rest }) => rest);
         setFailures(({ [id]: _old, ...rest }) => (!outcome.ok && !outcome.cancelled ? { ...rest, [id]: outcome.failure } : rest));
-        if (outcome.session && currentRef.current === id) setOpened(outcome.session);
+        if (outcome.chat && currentRef.current === id) setOpened(outcome.chat);
       } else if (!outcome.ok) {
-        // Nothing was saved (no key, no folder): the failure belongs to the new-session composer.
+        // Nothing was saved (no key, no folder): the failure belongs to the new-chat composer.
         setFailures((f) => ({ ...f, [NEW]: outcome.failure }));
       }
     },
@@ -236,10 +236,10 @@ export function App({ boot }: { boot: BootInfo }) {
   const send = useCallback(
     async (draft: Draft, options: TurnOptions) => {
       if (currentId !== NEW && opened?.id !== currentId) return;
-      const sessionId = currentId === NEW ? null : currentId;
+      const chatFolder = currentId === NEW ? null : currentId;
       const requestId = crypto.randomUUID();
       const run: Running = { startedAt: performance.now(), size: options.size };
-      if (sessionId) setRunning((r) => ({ ...r, [sessionId]: run }));
+      if (chatFolder) setRunning((r) => ({ ...r, [chatFolder]: run }));
       else {
         pendingNew.current = { requestId, running: run };
         setPendingRun(run);
@@ -248,24 +248,24 @@ export function App({ boot }: { boot: BootInfo }) {
       const key = `${rootRef.current}\0${currentId}`;
       submitted.current.set(requestId, { key, version: draftVersions.current.get(key) ?? 0 });
       saveUi({ ...ui, composer: options });
-      const outcome = await api.send({ requestId, sessionId, text: draft.text, references: draft.references.map((r) => r.path), ...(draft.mask && { mask: draft.mask }), options });
-      if (!sessionId && pendingNew.current?.requestId === requestId) {
+      const outcome = await api.send({ requestId, chatFolder, text: draft.text, references: draft.references.map((r) => r.path), ...(draft.mask && { mask: draft.mask }), options });
+      if (!chatFolder && pendingNew.current?.requestId === requestId) {
         pendingNew.current = null;
         setPendingRun(null);
       }
       submitted.current.delete(requestId);
-      settle(sessionId, outcome);
+      settle(chatFolder, outcome);
     },
     [currentId, opened, saveUi, settle, ui],
   );
 
   const retry = useCallback(
-    async (sessionId: string) => {
+    async (chatFolder: string) => {
       const lastUser = [...(opened?.doc.turns ?? [])].reverse().find((turn) => turn.role === "user");
       const size = lastUser?.role === "user" ? lastUser.options.size : "auto";
-      setRunning((r) => ({ ...r, [sessionId]: { startedAt: performance.now(), size } }));
-      setFailures(({ [sessionId]: _old, ...rest }) => rest);
-      settle(sessionId, await api.retry(sessionId));
+      setRunning((r) => ({ ...r, [chatFolder]: { startedAt: performance.now(), size } }));
+      setFailures(({ [chatFolder]: _old, ...rest }) => rest);
+      settle(chatFolder, await api.retry(chatFolder));
     },
     [opened, settle],
   );
@@ -273,7 +273,7 @@ export function App({ boot }: { boot: BootInfo }) {
   const pushModal = useCallback((spec: ModalSpec) => setModals((m) => [...m, spec]), []);
   const popModal = useCallback(() => setModals((m) => m.slice(0, -1)), []);
 
-  const currentTitle = sessions.find((s) => s.id === currentId)?.title ?? opened?.doc.title ?? "";
+  const currentTitle = chats.find((s) => s.id === currentId)?.title ?? opened?.doc.title ?? "";
 
   const runCommand = useCallback(
     (command: MenuCommand) => {
@@ -284,8 +284,8 @@ export function App({ boot }: { boot: BootInfo }) {
       }
       if (modals.length > 0 && command !== "shortcuts" && command !== "settings") return;
       switch (command) {
-        case "newSession":
-          void openSession(NEW);
+        case "newChat":
+          void openChat(NEW);
           setTimeout(() => composerFocus.current(), 0);
           break;
         case "settings":
@@ -307,14 +307,14 @@ export function App({ boot }: { boot: BootInfo }) {
           if (currentId !== NEW) pushModal({ kind: "rename", id: currentId, title: currentTitle });
           break;
         case "reveal":
-          if (currentId !== NEW) api.revealSession(currentId);
+          if (currentId !== NEW) api.revealChat(currentId);
           break;
         case "trash":
           if (currentId !== NEW) pushModal({ kind: "trash", id: currentId, title: currentTitle });
           break;
       }
     },
-    [currentId, currentTitle, modals, openSession, popModal, pushModal],
+    [currentId, currentTitle, modals, openChat, popModal, pushModal],
   );
 
   useEffect(() => api.onMenu(runCommand), [runCommand]);
@@ -350,7 +350,7 @@ export function App({ boot }: { boot: BootInfo }) {
     };
   }, []);
 
-  const draftKey = `${settings.sessionsDir}\0${currentId}`;
+  const draftKey = `${settings.chatsDir}\0${currentId}`;
   const storedDraft = drafts[draftKey] ?? { text: "", references: [] };
   const draft = { ...storedDraft, references: storedDraft.references.map((reference) => ({ ...reference, absolute: absoluteIn(opened, reference.path) })) };
   const setDraft = useCallback((next: Draft | ((current: Draft) => Draft)) => {
@@ -379,18 +379,18 @@ export function App({ boot }: { boot: BootInfo }) {
   return (
     <div className="shell" style={paneSizes}>
       <Rail
-        sessions={sessions}
+        chats={chats}
         imagesPane={paneShown}
         currentId={currentId}
         running={running}
         unreadable={unreadable}
         failure={listFailure}
-        sessionsDir={settings.sessionsDir}
+        chatsDir={settings.chatsDir}
         timeZone={settings.timeZone}
         width={ui.railWidth}
         onWidth={(railWidth) => saveUi({ ...ui, railWidth })}
-        onNew={() => runCommand("newSession")}
-        onOpen={(id) => void openSession(id)}
+        onNew={() => runCommand("newChat")}
+        onOpen={(id) => void openChat(id)}
         onRename={(id, title) => pushModal({ kind: "rename", id, title })}
         onTrash={(id, title) => pushModal({ kind: "trash", id, title })}
         mac={mac}
@@ -398,7 +398,7 @@ export function App({ boot }: { boot: BootInfo }) {
       />
       <main className="stage">
         <Conversation
-          session={currentId === NEW ? null : opened}
+          chat={currentId === NEW ? null : opened}
           openFailure={openFailure}
           running={runningHere}
           failure={failures[currentId] ?? null}
@@ -425,7 +425,7 @@ export function App({ boot }: { boot: BootInfo }) {
           imageModel={settings["openai.image"]}
           busy={runningHere !== null}
           keyMissing={keyStatus.source === "none"}
-          sessionDir={opened?.dir ?? null}
+          chatDir={opened?.dir ?? null}
           focusRef={composerFocus}
           attachRef={attachRef}
           onSend={(d, o) => void send(d, o)}
@@ -457,7 +457,7 @@ export function App({ boot }: { boot: BootInfo }) {
           onClose={popModal}
           onDirtyChange={setSettingsDirty}
           onSaved={(next, status) => {
-            const folderMoved = next.sessionsDir !== settings.sessionsDir;
+            const folderMoved = next.chatsDir !== settings.chatsDir;
             setSettings(next);
             setSettingsProblem(null);
             setKeyStatus(status);
@@ -475,18 +475,18 @@ export function App({ boot }: { boot: BootInfo }) {
           title={front.title}
           onClose={popModal}
           onRename={async (title) => {
-            const outcome = await api.renameSession(front.id, title);
+            const outcome = await api.renameChat(front.id, title);
             if (!outcome.ok) {
-              if (currentRef.current === front.id) await openSession(front.id);
+              if (currentRef.current === front.id) await openChat(front.id);
               return outcome.failure;
             }
             popModal();
             if (currentRef.current === front.id) {
-              setCurrentId(outcome.session.id);
-              setOpened(outcome.session);
-              saveUi({ ...ui, lastSessionId: outcome.session.id });
+              setCurrentId(outcome.chat.id);
+              setOpened(outcome.chat);
+              saveUi({ ...ui, lastChatId: outcome.chat.id });
             }
-            setDrafts(({ [`${settings.sessionsDir}\0${front.id}`]: moved, ...rest }) => (moved ? { ...rest, [`${settings.sessionsDir}\0${outcome.session.id}`]: moved } : rest));
+            setDrafts(({ [`${settings.chatsDir}\0${front.id}`]: moved, ...rest }) => (moved ? { ...rest, [`${settings.chatsDir}\0${outcome.chat.id}`]: moved } : rest));
             return null;
           }}
         />
@@ -498,10 +498,10 @@ export function App({ boot }: { boot: BootInfo }) {
           confirmLabel={t(mac ? "trash.confirmMac" : "trash.confirmOther")}
           onClose={popModal}
           onConfirm={async () => {
-            const outcome = await api.trashSession(front.id);
+            const outcome = await api.trashChat(front.id);
             if (!outcome.ok) return outcome.failure;
             popModal();
-            if (currentRef.current === front.id) void openSession(NEW);
+            if (currentRef.current === front.id) void openChat(NEW);
             return null;
           }}
         />
@@ -545,8 +545,8 @@ export function App({ boot }: { boot: BootInfo }) {
   );
 }
 
-function absoluteIn(session: OpenedSession | null, relative: string): string {
-  if (!session) return relative;
-  const sep = session.dir.includes("\\") ? "\\" : "/";
-  return `${session.dir}${sep}${relative.split("/").join(sep)}`;
+function absoluteIn(chat: OpenedChat | null, relative: string): string {
+  if (!chat) return relative;
+  const sep = chat.dir.includes("\\") ? "\\" : "/";
+  return `${chat.dir}${sep}${relative.split("/").join(sep)}`;
 }

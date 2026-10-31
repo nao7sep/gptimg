@@ -2,8 +2,8 @@
 // shared interface it satisfies.
 import type { Settings } from "../shared/settings.ts";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { GptImgApi, LanguageInfo, MenuCommand, OpenedSession, TaskProgress } from "../shared/api.ts";
-import type { SessionChange } from "../shared/session.ts";
+import type { GptImgApi, LanguageInfo, MenuCommand, OpenedChat, TaskProgress } from "../shared/api.ts";
+import type { ChatChange } from "../shared/chat.ts";
 
 const invoke =
   (name: string) =>
@@ -27,11 +27,11 @@ const api = {
   peekKey: invoke("peekKey"),
   setKey: invoke("setKey"),
   clearKey: invoke("clearKey"),
-  listSessions: invoke("listSessions"),
-  openSession: invoke("openSession"),
-  renameSession: invoke("renameSession"),
-  trashSession: invoke("trashSession"),
-  revealSession: fire("revealSession"),
+  listChats: invoke("listChats"),
+  openChat: invoke("openChat"),
+  renameChat: invoke("renameChat"),
+  trashChat: invoke("trashChat"),
+  revealChat: fire("revealChat"),
   showChatsFolder: fire("showChatsFolder"),
   send: invoke("send"),
   retry: invoke("retry"),
@@ -82,23 +82,23 @@ const api = {
     ipcRenderer.on("settingsChanged", listener);
     return () => ipcRenderer.off("settingsChanged", listener);
   },
-  onSessionsChanged: (handler: (change: SessionChange) => void) => {
-    const listener = (_event: unknown, change: SessionChange) => handler(change);
-    ipcRenderer.on("sessionsChanged", listener);
-    return () => ipcRenderer.off("sessionsChanged", listener);
+  onChatsChanged: (handler: (change: ChatChange) => void) => {
+    const listener = (_event: unknown, change: ChatChange) => handler(change);
+    ipcRenderer.on("chatsChanged", listener);
+    return () => ipcRenderer.off("chatsChanged", listener);
   },
   onLanguage: (handler: (info: LanguageInfo) => void) => {
     const listener = (_event: unknown, info: LanguageInfo) => handler(info);
     ipcRenderer.on("language", listener);
     return () => ipcRenderer.off("language", listener);
   },
-  onTurnStarted: (handler: (event: { requestId: string; session: OpenedSession }) => void) => {
-    const listener = (_event: unknown, payload: { requestId: string; session: OpenedSession }) => handler(payload);
+  onTurnStarted: (handler: (event: { requestId: string; chat: OpenedChat }) => void) => {
+    const listener = (_event: unknown, payload: { requestId: string; chat: OpenedChat }) => handler(payload);
     ipcRenderer.on("turnStarted", listener);
     return () => ipcRenderer.off("turnStarted", listener);
   },
-  onTurnDraft: (handler: (event: { sessionId: string; path: string | null }) => void) => {
-    const listener = (_event: unknown, payload: { sessionId: string; path: string | null }) => handler(payload);
+  onTurnDraft: (handler: (event: { chatFolder: string; path: string | null }) => void) => {
+    const listener = (_event: unknown, payload: { chatFolder: string; path: string | null }) => handler(payload);
     ipcRenderer.on("turnDraft", listener);
     return () => ipcRenderer.off("turnDraft", listener);
   },

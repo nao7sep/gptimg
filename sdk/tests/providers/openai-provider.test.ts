@@ -799,9 +799,9 @@ describe("OpenAI provider failure records", () => {
   }
 
   function failingNetwork() {
-    const logPath = "call";
-    const logger = makeLogger(logPath, "generate");
-    return { network: { ...network, logger }, logPath };
+    const sinkKey = "call";
+    const logger = makeLogger(sinkKey, "generate");
+    return { network: { ...network, logger }, sinkKey };
   }
 
   function records(key: string): { text: string; lines: Array<Record<string, any>> } {
@@ -814,7 +814,7 @@ describe("OpenAI provider failure records", () => {
 
   it("generate records every attempt's whole request, headers with the key masked, and its status", async () => {
     openaiMock.generate.mockRejectedValueOnce(apiError(429)).mockRejectedValueOnce(apiError(400));
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
 
     await expect(
       openaiGenerate({
@@ -825,7 +825,7 @@ describe("OpenAI provider failure records", () => {
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
 
-    const { lines } = records(logPath);
+    const { lines } = records(sinkKey);
     const request = {
       headers,
       body: {
@@ -858,7 +858,7 @@ describe("OpenAI provider failure records", () => {
 
   it("records the caller's organization and project headers beside the key", async () => {
     openaiMock.generate.mockRejectedValue(apiError(400));
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
     await expect(
       openaiGenerate({
         prompt: "p",
@@ -867,7 +867,7 @@ describe("OpenAI provider failure records", () => {
         network: net,
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
-    const { lines } = records(logPath);
+    const { lines } = records(sinkKey);
     expect(lines[0]!.data.request.headers).toEqual({
       Authorization: "Bearer [REDACTED]",
       "OpenAI-Organization": "org-1",
@@ -881,13 +881,13 @@ describe("OpenAI provider failure records", () => {
     });
     const usage = { total_tokens: 7, input_tokens: 3, output_tokens: 4 };
     openaiMock.generate.mockResolvedValue({ created: 1, data: [{ b64_json: pngBase64(png) }, { url }], usage });
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
 
     await openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, credentials, network: net }).finally(
       () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
     );
 
-    const { text, lines } = records(logPath);
+    const { text, lines } = records(sinkKey);
     expect(lines.map((line) => line.message)).toEqual(["attempt.succeeded", "attempt.failed"]);
     expect(lines[0]).toMatchObject({
       level: "info",
@@ -914,14 +914,14 @@ describe("OpenAI provider failure records", () => {
     });
     const signedUrl = `${url}?se=2026-10-05&sig=secret-token`;
     openaiMock.generate.mockResolvedValue({ data: [{ url: signedUrl }] });
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
 
     const result = await openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, credentials, network: net }).finally(
       () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
     );
 
     expect(result.images[0]).toMatchObject({ data: null });
-    const { text, lines } = records(logPath);
+    const { text, lines } = records(sinkKey);
     expect(text).not.toContain("secret-token");
     expect(lines).toEqual([
       expect.objectContaining({
@@ -948,13 +948,13 @@ describe("OpenAI provider failure records", () => {
         error: body,
       }),
     );
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
 
     await expect(openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, credentials, network: net })).rejects.toMatchObject({
       code: "provider.rejected",
     });
 
-    const { lines } = records(logPath);
+    const { lines } = records(sinkKey);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.data.response).toEqual({ status: 400, headers: { "x-request-id": "req_123" }, requestId: "req_123", body });
   });
@@ -965,14 +965,14 @@ describe("OpenAI provider failure records", () => {
       cause: Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("refused"), { code: "ECONNREFUSED" }) }),
     });
     openaiMock.generate.mockRejectedValue(refused);
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
 
     // A refused connection proves the request never started work: nothing was spent.
     await expect(
       openaiGenerate({ prompt: "p", params: { model: "gpt-image-2" }, credentials, network: net }),
     ).rejects.toMatchObject({ code: "provider.unreachable", effect: "none" });
 
-    const { lines } = records(logPath);
+    const { lines } = records(sinkKey);
     expect(lines).toHaveLength(NETWORK_DEFAULTS.imageGenerate.maxRetries + 1);
     for (const line of lines) {
       expect(line.data).toMatchObject({
@@ -988,7 +988,7 @@ describe("OpenAI provider failure records", () => {
 
   it("edit records its uploads by file name, which hold their bytes, beside the headers", async () => {
     openaiMock.edit.mockRejectedValue(apiError(400));
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
 
     await expect(
       openaiEdit({
@@ -1001,7 +1001,7 @@ describe("OpenAI provider failure records", () => {
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
 
-    const { lines } = records(logPath);
+    const { lines } = records(sinkKey);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.data.request).toEqual({
       headers,
@@ -1017,7 +1017,7 @@ describe("OpenAI provider failure records", () => {
 
   it("vision records its whole request but each image's data URL, which the input file holds", async () => {
     openaiMock.create.mockRejectedValue(apiError(400));
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
 
     await expect(
       openaiVision({
@@ -1029,7 +1029,7 @@ describe("OpenAI provider failure records", () => {
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
 
-    const { text, lines } = records(logPath);
+    const { text, lines } = records(sinkKey);
     expect(lines).toHaveLength(1);
     const { headers: recordedHeaders, body } = lines[0]!.data.request;
     expect(recordedHeaders).toEqual(headers);
@@ -1047,8 +1047,8 @@ describe("OpenAI provider failure records", () => {
 
   it("vision records an id with no row's caller-set detail and effort in the attempt's request", async () => {
     openaiMock.create.mockRejectedValueOnce(apiError(400));
-    const logPath = String("vision-unlisted.log");
-    const logger = makeLogger(logPath, "vision");
+    const sinkKey = "vision-unlisted";
+    const logger = makeLogger(sinkKey, "vision");
     await expect(
       openaiVision({
         check: "is it green?",
@@ -1059,7 +1059,7 @@ describe("OpenAI provider failure records", () => {
       }),
     ).rejects.toMatchObject({ code: "provider.rejected", kind: "invalid", effect: "none" });
 
-    const { lines } = records(logPath);
+    const { lines } = records(sinkKey);
     expect(lines).toHaveLength(1);
     const body = lines[0]!.data.request.body;
     expect(body).toMatchObject({ model: "some-future-chat-model", reasoning_effort: "high" });
@@ -1074,8 +1074,8 @@ describe("OpenAI provider failure records", () => {
     ];
     for (const [i, answer] of answers.entries()) {
       openaiMock.create.mockResolvedValueOnce(answer);
-      const logPath = String(`vision-${i}.log`);
-      const logger = makeLogger(logPath, "vision");
+      const sinkKey = `vision-${i}`;
+      const logger = makeLogger(sinkKey, "vision");
       await expect(
         openaiVision({
           check: "is it green?",
@@ -1086,7 +1086,7 @@ describe("OpenAI provider failure records", () => {
         }),
       ).rejects.toMatchObject({ code: expect.stringMatching(/^provider\./) });
 
-      const { text, lines } = records(logPath);
+      const { text, lines } = records(sinkKey);
       expect(lines).toHaveLength(2);
       expect(lines[0]).toMatchObject({ stage: "response", data: { response: { body: answer } } });
       expect(lines[1]).toMatchObject({ level: "warn", stage: "response", data: { response: answer } });
@@ -1103,7 +1103,7 @@ describe("OpenAI provider failure records", () => {
       ctrl.abort(new Error("stop"));
       throw Object.assign(new Error("Request was aborted."), { name: "AbortError" });
     });
-    const { network: net, logPath } = failingNetwork();
+    const { network: net, sinkKey } = failingNetwork();
 
     await expect(
       openaiGenerate({
@@ -1114,7 +1114,7 @@ describe("OpenAI provider failure records", () => {
       }),
     ).rejects.toMatchObject({ code: "cancelled" });
 
-    const { lines } = records(logPath);
+    const { lines } = records(sinkKey);
     expect(lines).toEqual([
       expect.objectContaining({
         stage: "cancelled",

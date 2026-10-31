@@ -1,13 +1,13 @@
 // A TurnRunner over a real chats folder, with a scripted SDK chat and a clock
-// that advances a second per reading, for tests of turns and of session order.
+// that advances a second per reading, for tests of turns and of chat order.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GptImgError, type ErrorCode, type ErrorEffect, type VerbCallOptions } from "gptimgsdk";
 import type { Records } from "../../src/main/records.ts";
-import { SessionCatalog } from "../../src/main/session-catalog.ts";
+import { ChatCatalog } from "../../src/main/chat-catalog.ts";
 import { TurnRunner, type TurnDeps } from "../../src/main/turns.ts";
-import { summarize, type SessionChange } from "../../src/shared/session.ts";
+import { summarize, type ChatChange } from "../../src/shared/chat.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
 
 export interface Call {
@@ -38,17 +38,17 @@ export function setup(answer: (call: Call) => Answer | Promise<Answer>, key: str
     },
   });
   const turnsRecorded: unknown[] = [];
-  const records = { sessionId: "l", log() {}, sdkEvent() {}, turn: (r: unknown) => turnsRecorded.push(r), close() {} } as unknown as Records;
+  const records = { chatFolder: "l", log() {}, sdkEvent() {}, turn: (r: unknown) => turnsRecorded.push(r), close() {} } as unknown as Records;
   const started: string[] = [];
   const released: string[] = [];
   // Main's listing, kept by the runner's saves as in the app.
-  const changes: SessionChange[] = [];
-  const catalog = new SessionCatalog((change) => changes.push(change));
+  const changes: ChatChange[] = [];
+  const catalog = new ChatCatalog((change) => changes.push(change));
   let tick = 0;
   const runner = new TurnRunner({
     sdk,
     records,
-    settings: () => ({ ...builtInSettings(), sessionsDir: root }),
+    settings: () => ({ ...builtInSettings(), chatsDir: root }),
     apiKey: async () => key,
     backup: () => {},
     releaseStaged: (p) => released.push(p),
@@ -74,9 +74,9 @@ export const completed = (outDir: string, responseId: string, file = "img.png"):
   },
 });
 
-export const request = (sessionId: string | null, text: string, references: string[] = []) => ({
+export const request = (chatFolder: string | null, text: string, references: string[] = []) => ({
   requestId: `r-${text}`,
-  sessionId,
+  chatFolder,
   text,
   references,
   options: { size: "1024x1024", quality: "low" },

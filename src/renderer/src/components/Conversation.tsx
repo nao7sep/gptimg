@@ -1,9 +1,9 @@
-// The open session: a compact header, and the transcript as text and prints.
+// The open chat: a compact header, and the transcript as text and prints.
 // No bubbles: the user's turns carry a persimmon margin rule; the assistant's
 // text reads in the content font with its prints at column width.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { imageUrl, type AppFailure, type OpenedSession } from "../../../shared/api.ts";
-import { sessionTotals, type AssistantTurn, type UserTurn } from "../../../shared/session.ts";
+import { imageUrl, type AppFailure, type OpenedChat } from "../../../shared/api.ts";
+import { chatTotals, type AssistantTurn, type UserTurn } from "../../../shared/chat.ts";
 import type { Running } from "../App.tsx";
 import { useI18n } from "../i18n.tsx";
 import { CloseIcon, FolderIcon, ImagesIcon, PencilIcon, RetryIcon } from "./icons.tsx";
@@ -12,7 +12,7 @@ import { Print } from "./Print.tsx";
 import { elapsed, relativeDay } from "./time.ts";
 
 interface ConversationProps {
-  session: OpenedSession | null;
+  chat: OpenedChat | null;
   openFailure: AppFailure | null;
   running: Running | null;
   failure: AppFailure | null;
@@ -33,14 +33,14 @@ interface ConversationProps {
 
 export function Conversation(props: ConversationProps) {
   const { t, of, translator } = useI18n();
-  const { session, running } = props;
+  const { chat, running } = props;
   const scroller = useRef<HTMLDivElement>(null);
   const column = useRef<HTMLDivElement>(null);
   // Whether the reader is at the end; prints load after layout, so the end moves.
   const pinned = useRef(true);
-  const turns = session?.doc.turns ?? [];
-  const totals = sessionTotals(turns);
-  const absolute = (rel: string) => (session ? `${session.dir}/${rel}` : rel);
+  const turns = chat?.doc.turns ?? [];
+  const totals = chatTotals(turns);
+  const absolute = (rel: string) => (chat ? `${chat.dir}/${rel}` : rel);
   const allImages = turns.flatMap((turn) => (turn.role === "assistant" ? turn.images.map(absolute) : []));
   const last = turns[turns.length - 1];
   const unanswered = last?.role === "user" && !running;
@@ -51,7 +51,7 @@ export function Conversation(props: ConversationProps) {
     pinned.current = true;
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [turns.length, running !== null, session?.id]);
+  }, [turns.length, running !== null, chat?.id]);
 
   useEffect(() => {
     const el = scroller.current;
@@ -67,10 +67,10 @@ export function Conversation(props: ConversationProps) {
   return (
     <section className="conversation" aria-label={t("conversation.label")}>
       <header className="conversation-head">
-        {session ? (
+        {chat ? (
           <>
             <button type="button" className="title-button" onClick={props.onRename} title={t("conversation.rename")}>
-              <span className="title-text">{session.doc.title || t("rail.untitled")}</span>
+              <span className="title-text">{chat.doc.title || t("rail.untitled")}</span>
               <PencilIcon size={14} />
             </button>
             {totals.tokens > 0 && (
@@ -109,7 +109,7 @@ export function Conversation(props: ConversationProps) {
               {of(props.openFailure.message)}
             </div>
           )}
-          {!session && !props.openFailure && !running && (
+          {!chat && !props.openFailure && !running && (
             <div className="empty-state">
               <p className="empty-line">{t("conversation.empty")}</p>
             </div>
@@ -165,8 +165,8 @@ export function Conversation(props: ConversationProps) {
               </div>
             </div>
           )}
-          {session && turns.length > 0 && (
-            <p className="session-foot">{t("conversation.started", { when: relativeDay(session.doc.createdAt, props.timeZone, translator) })}</p>
+          {chat && turns.length > 0 && (
+            <p className="chat-foot">{t("conversation.started", { when: relativeDay(chat.doc.createdAt, props.timeZone, translator) })}</p>
           )}
         </div>
       </div>

@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { OpenedSession } from "../../src/shared/api.ts";
-import type { SessionDoc } from "../../src/shared/session.ts";
+import type { OpenedChat } from "../../src/shared/api.ts";
+import type { ChatDoc } from "../../src/shared/chat.ts";
 import { fakeApi, renderInApp } from "./harness.tsx";
 
 afterEach(cleanup);
 
 const at = "2026-10-19T06:00:00.000Z";
 const usage = { input: 1, output: 1 };
-const doc: SessionDoc = {
+const doc: ChatDoc = {
   format: 1,
   id: "chat-1",
   title: "Foxes",
@@ -21,18 +21,18 @@ const doc: SessionDoc = {
     { id: "a2", role: "assistant", at, text: "", images: ["t4-1.png", "t4-2.png"], responseId: "r2", resumed: "chain", incomplete: null, usage, failedImages: 0 },
   ],
 };
-const session: OpenedSession = { id: "folder", doc, dir: "/chats/folder" };
+const chat: OpenedChat = { id: "folder", doc, dir: "/chats/folder" };
 
 describe("the images pane", () => {
   it("lists every image of the chat once, newest first, and tells attached ones from made ones", async () => {
     const { paneImages } = await import("../../src/renderer/src/components/ImagesPane.tsx");
-    expect(paneImages(session).map((i) => [i.path, i.attached])).toEqual([
+    expect(paneImages(chat).map((i) => [i.path, i.attached])).toEqual([
       ["t4-2.png", false],
       ["t4-1.png", false],
       ["t2.png", true],
       ["inputs/photo.png", true],
     ]);
-    expect(paneImages(session)[0]!.absolute).toBe("/chats/folder/t4-2.png");
+    expect(paneImages(chat)[0]!.absolute).toBe("/chats/folder/t4-2.png");
   });
 
   it("attaches an image on click and takes it off on a second click", async () => {
@@ -44,7 +44,7 @@ describe("the images pane", () => {
       const [chosen, setChosen] = useState<Set<string>>(new Set());
       return (
         <ImagesPane
-          images={paneImages(session)}
+          images={paneImages(chat)}
           chosen={chosen}
           onToggle={(image) => {
             toggled(image.path);
@@ -89,7 +89,7 @@ describe("the conversation's notes", () => {
   it("says which images were blocked or missing, which message the assistant never saw, and what a mask limited", async () => {
     fakeApi();
     const { Conversation } = await import("../../src/renderer/src/components/Conversation.tsx");
-    const turns: SessionDoc["turns"] = [
+    const turns: ChatDoc["turns"] = [
       { id: "u1", role: "user", at, text: "three portraits", images: [], options: { size: "auto", quality: "low" } },
       { id: "a1", role: "assistant", at, text: "", images: ["t2.png"], responseId: "r1", resumed: null, incomplete: null, usage, failedImages: 0, blockedImages: 2, missingImages: 1 },
       { id: "u2", role: "user", at, text: "add a hat", images: [], options: { size: "auto", quality: "low" } },
@@ -97,7 +97,7 @@ describe("the conversation's notes", () => {
     ];
     await renderInApp(() => (
       <Conversation
-        session={{ id: "folder", dir: "/chats/folder", doc: { ...doc, turns } }}
+        chat={{ id: "folder", dir: "/chats/folder", doc: { ...doc, turns } }}
         openFailure={null}
         running={null}
         failure={null}
