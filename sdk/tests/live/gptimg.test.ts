@@ -128,7 +128,7 @@ async function expectCompleteImageSidecar(
   const text = await readFile(file.sidecarPath, "utf8");
   expect(text).not.toContain(process.env.OPENAI_API_KEY!.trim());
   const sidecar = JSON.parse(text) as ImageSidecar;
-  expect(sidecar.formatVersion).toBe(2);
+  expect(sidecar.formatVersion).toBe(1);
   expect(sidecar.kind).toBe(kind);
   expect(sidecar.writer).toEqual({ name: "gptimgsdk", version: expect.stringMatching(/^\d+\.\d+\.\d+/), app: { name: "gptimgsdk-live", version: "1" } });
   // The result carries the same record the sidecar holds.
@@ -341,7 +341,7 @@ describe("the live SDK", () => {
       response: { verdict: unknown; raw: { created?: unknown; model?: unknown; usage?: unknown } };
       files: unknown[];
     };
-    expect(sidecar.formatVersion).toBe(2);
+    expect(sidecar.formatVersion).toBe(1);
     expect(holds.sidecar).toEqual({ status: "published" });
     expect(holds.record).toEqual(sidecar);
     expect(sidecar.request).toMatchObject({

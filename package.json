@@ -1,7 +1,7 @@
 {
   "name": "gptimg",
   "productName": "GptImg",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "packageManager": "npm@12.2.0",
   "description": "Make and edit images by chatting with OpenAI's models, and keep every conversation to pick up again later.",

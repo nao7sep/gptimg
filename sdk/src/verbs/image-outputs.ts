@@ -1,4 +1,5 @@
 import path from "node:path";
+import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { GptImgError } from "../errors.ts";
 import sharp from "../image/sharp.ts";
 import { detectFormat } from "../image/detectFormat.ts";
@@ -180,7 +181,7 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
     // `files` carries only this image's entry, so each sidecar describes
     // its own image.
     const record = {
-      formatVersion: 2,
+      formatVersion: SIDECAR_FORMAT_VERSION,
       kind: args.kind,
       writer: args.writer,
       request: snapshot.request,

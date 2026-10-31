@@ -1,5 +1,5 @@
 {
-  "formatVersion": 2,
+  "formatVersion": 1,
   "kind": "vision",
   "writer": {
     "name": "gptimgsdk",

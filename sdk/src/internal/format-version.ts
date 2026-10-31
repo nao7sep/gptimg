@@ -6,9 +6,8 @@ import { GptImgError } from "../errors.ts";
  * build does not know a newer format's shape.
  *
  * Only the current format reads. One that is not a JSON object, or whose
- * `formatVersion` is absent, is not a positive integer (`null` included) or
- * is older than the current one, is `sidecar.malformed`; a newer version is
- * `sidecar.newerFormat`. Each error names the file. Neither writes anything.
+ * `formatVersion` is absent or not a positive integer (`null` included), is
+ * `sidecar.malformed`; a newer version is `sidecar.newerFormat`. Each error names the file. Neither writes anything.
  */
 export function takeFormatVersion(parsed: unknown, current: number, subject: string): Record<string, unknown> {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
@@ -25,9 +24,6 @@ export function takeFormatVersion(parsed: unknown, current: number, subject: str
         `it was left unchanged. Use the newer gptimgsdk that wrote it.`,
       { subject, details: { expected: current, actual: formatVersion } },
     );
-  }
-  if (formatVersion < current) {
-    throw new GptImgError("sidecar.malformed", `${subject} has format version ${formatVersion}; this gptimgsdk reads only ${current}`, { subject });
   }
   return body;
 }

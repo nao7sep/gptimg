@@ -11,7 +11,7 @@ const WRITER = { name: "gptimgsdk" as const, version: "1.2.3" };
 
 function generateRecord(overrides: Partial<GenerateSidecar> = {}): GenerateSidecar {
   return {
-    formatVersion: 2,
+    formatVersion: 1,
     kind: "generate",
     writer: WRITER,
     request: { model: "gpt-image-2.5-flare", prompt: "a red disc", n: 1, chroma: { color: "#00ff00" } },
@@ -34,7 +34,7 @@ describe("sidecar read/write", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("writes format 2 with a fixed key order and trailing newline, and reads it back as the typed record", async () => {
+  it("writes the current format with a fixed key order and trailing newline, and reads it back as the typed record", async () => {
     const record = generateRecord();
     await writeSidecar(sidecarPath, record, { overwrite: false });
     const text = await readFile(sidecarPath, "utf-8");
@@ -45,10 +45,9 @@ describe("sidecar read/write", () => {
     await expect(readSidecar(sidecarPath)).resolves.toEqual(record);
   });
 
-  it("refuses an unmarked or older-format sidecar as malformed and leaves it unchanged", async () => {
+  it("refuses an unmarked sidecar as malformed and leaves it unchanged", async () => {
     for (const old of [
       { request: { prompt: "old", n: 1 }, response: {}, files: [{ index: 1, name: "a.png", sha256: "ab", format: "png" }] },
-      { formatVersion: 1, request: { prompt: "e", n: 1, input: "a.png", mask: null }, response: {}, files: [] },
     ]) {
       const text = JSON.stringify(old);
       await writeFile(sidecarPath, text);
@@ -58,7 +57,7 @@ describe("sidecar read/write", () => {
   });
 
   it("treats a formatVersion that is not a positive integer as malformed", async () => {
-    for (const formatVersion of [1.5, null]) {
+    for (const formatVersion of [0, 1.5, null]) {
       await writeFile(sidecarPath, JSON.stringify({ formatVersion, request: {}, response: {}, files: [] }));
       await expect(readSidecar(sidecarPath)).rejects.toMatchObject({ code: "sidecar.malformed", subject: sidecarPath });
     }
@@ -92,8 +91,8 @@ describe("sidecar read/write", () => {
     expect(await readFile(sidecarPath, "utf-8")).toBe("existing");
   });
 
-  it("reports a format-2 sidecar of the wrong shape with its path and leaves it untouched", async () => {
-    const wrong = JSON.stringify({ formatVersion: 2, kind: "edit", writer: WRITER, request: { prompt: "x", n: 1 }, response: {}, files: [] });
+  it("reports a sidecar of the wrong shape with its path and leaves it untouched", async () => {
+    const wrong = JSON.stringify({ formatVersion: 1, kind: "edit", writer: WRITER, request: { prompt: "x", n: 1 }, response: {}, files: [] });
     await writeFile(sidecarPath, wrong);
     await expect(readSidecar(sidecarPath)).rejects.toMatchObject({ code: "sidecar.malformed", subject: sidecarPath });
     expect(await readFile(sidecarPath, "utf-8")).toBe(wrong);

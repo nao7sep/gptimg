@@ -5,4 +5,4 @@
  */
 
 /** The `<stem>.json` sidecar beside each paid output. It names its `kind` and its `writer`. */
-export const SIDECAR_FORMAT_VERSION = 2;
+export const SIDECAR_FORMAT_VERSION = 1;

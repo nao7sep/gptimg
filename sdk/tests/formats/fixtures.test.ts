@@ -1,7 +1,7 @@
 // Every supported persisted format, pinned by a fixture (sdk-conventions,
 // *Persisted formats are pinned by fixtures*): the current code reads each to
 // its typed value, refuses the newer-format sample without touching it, and
-// the current writer reproduces the format-2 sidecars byte for byte. A change
+// the current writer reproduces the sidecars byte for byte. A change
 // to how output is read or written fails here first.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -15,15 +15,15 @@ const fixture = (name: string): string => path.join(FORMATS, name);
 
 describe("sidecar fixtures", () => {
   it.each([
-    ["sidecar-v2-generate.json", "generate"],
-    ["sidecar-v2-edit.json", "edit"],
-    ["sidecar-v2-vision.json", "vision"],
-    ["sidecar-v2-chat.json", "chat"],
-  ] as const)("reads %s as a format-2 %s record and the writer reproduces it byte for byte", async (name, kind) => {
+    ["sidecar-generate.json", "generate"],
+    ["sidecar-edit.json", "edit"],
+    ["sidecar-vision.json", "vision"],
+    ["sidecar-chat.json", "chat"],
+  ] as const)("reads %s as a %s record and the writer reproduces it byte for byte", async (name, kind) => {
     const bytes = await readFile(fixture(name), "utf8");
     const record = await readSidecar(fixture(name));
     expect(record).toMatchObject({
-      formatVersion: 2,
+      formatVersion: 1,
       kind,
       writer: { name: "gptimgsdk", version: "0.1.0", app: { name: "GptImg", version: "0.1.0" } },
     });

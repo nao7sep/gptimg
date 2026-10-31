@@ -1,4 +1,5 @@
 import type { RefusedResult } from "../refusal.ts";
+import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
 import { sidecarWriter } from "../sidecar/writer.ts";
 import { defaultModelFor } from "../ai-models.ts";
@@ -171,7 +172,7 @@ export async function visionImpl(
     logger.emit("info", "response", { event: "provider.returned", operation: "vision", summary: { ok: providerResult.verdict.ok, score: providerResult.verdict.score } });
 
     const record = maskDiagnosticCopy({
-      formatVersion: 2,
+      formatVersion: SIDECAR_FORMAT_VERSION,
       kind: "vision",
       writer: sidecarWriter(ctx),
       request: {

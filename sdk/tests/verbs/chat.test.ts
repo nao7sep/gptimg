@@ -28,7 +28,7 @@ describe("chat", () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-chat-"));
     chatDir = path.join(tmp, "chat");
     png = await sharp({ create: { width: 64, height: 32, channels: 3, background: "#336699" } }).png().toBuffer();
-    sdk = new GptImg({ apiKey: "sk-chat-test", app: { name: "GptImg", version: "0.1.0" } });
+    sdk = new GptImg({ apiKey: "sk-chat-test", app: { name: "GptImg", version: "1.0.0" } });
   });
 
   afterEach(async () => {
@@ -56,7 +56,7 @@ describe("chat", () => {
 
     const record = await readSidecar(path.join(chatDir, "turn-2.json"));
     expect(record).toMatchObject({
-      formatVersion: 2,
+      formatVersion: 1,
       kind: "chat",
       writer: { name: "gptimgsdk", app: { name: "GptImg" } },
       request: {

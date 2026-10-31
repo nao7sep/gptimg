@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import path from "node:path";
 import sharp from "../image/sharp.ts";
 import { defaultModelFor, IMAGE_INPUT_FORMATS, MASK_RULE } from "../ai-models.ts";
@@ -296,7 +297,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     let recordPublication: FilePublication | null = null;
     if (published.files.length === 0) {
       const record = maskDiagnosticCopy({
-        formatVersion: 2,
+        formatVersion: SIDECAR_FORMAT_VERSION,
         kind: "chat",
         writer: sidecarWriter(ctx),
         request: requestRecord,

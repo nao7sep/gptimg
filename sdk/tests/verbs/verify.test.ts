@@ -31,7 +31,7 @@ describe("verify", () => {
   });
 
   async function sidecar(name: string, entry: Record<string, unknown>): Promise<void> {
-    await writeFile(path.join(tmp, "raw.json"), JSON.stringify({ formatVersion: 2, kind: "generate", writer: WRITER, request: { prompt: "p", n: 1 }, response: {}, files: [{ index: 1, name, sha256, format: "png", ...entry }] }));
+    await writeFile(path.join(tmp, "raw.json"), JSON.stringify({ formatVersion: 1, kind: "generate", writer: WRITER, request: { prompt: "p", n: 1 }, response: {}, files: [{ index: 1, name, sha256, format: "png", ...entry }] }));
   }
 
   it("passes an image whose sidecar names it, carries its digest and records its format", async () => {
@@ -42,7 +42,7 @@ describe("verify", () => {
 
   it("chooses a later matching name and digest", async () => {
     const record = {
-      formatVersion: 2, kind: "generate", writer: WRITER,
+      formatVersion: 1, kind: "generate", writer: WRITER,
       request: { prompt: "p", n: 2 }, response: {},
       files: [
         { index: 1, name: "other.png", sha256, format: "webp" },

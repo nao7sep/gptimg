@@ -17,8 +17,8 @@ export function sidecarPathBeside(imagePath: string): string {
 
 /**
  * Read the sidecar at the absolute `sidecarPath` (`<image stem>.json`), in the
- * current format, as its typed record. An older format is malformed; a newer
- * one is refused. Either way the file is left unchanged.
+ * current format, as its typed record. An unmarked file is malformed; a newer
+ * format is refused. Either way the file is left unchanged.
  */
 export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
   assertAbsolutePath(sidecarPath, "sidecar path");

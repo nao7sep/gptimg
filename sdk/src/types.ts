@@ -167,7 +167,7 @@ export interface SidecarFileEntry {
   format: string;
 }
 
-/** Who wrote a format-2 sidecar: this SDK and its version, and the calling app when the caller named one. */
+/** Who wrote a sidecar: this SDK and its version, and the calling app when the caller named one. */
 export interface SidecarWriter {
   name: "gptimgsdk";
   version: string;
@@ -178,8 +178,8 @@ export type SidecarKind = "generate" | "edit" | "vision" | "chat";
 
 /** The common shape of every sidecar as `readSidecar` returns it. */
 interface SidecarBase {
-  /** The file's format: always the current one, 2. */
-  formatVersion: 2;
+  /** The file's format: always the current one, 1. */
+  formatVersion: 1;
   writer: SidecarWriter;
 }
 
@@ -200,10 +200,9 @@ export interface GenerateRequestRecord {
 /** An edit's request: as generate's, plus the source image and optional mask by name and SHA-256. */
 export interface EditRequestRecord extends GenerateRequestRecord {
   input: string;
-  /** Absent only in format-1 records written before digests were recorded. */
-  inputSha256?: string;
+  inputSha256: string;
   mask: string | null;
-  maskSha256?: string | null;
+  maskSha256: string | null;
 }
 
 /** A vision check's request: the parameters sent, the check, and each input by name, SHA-256 and shrink. */
@@ -214,8 +213,7 @@ export interface VisionRequestRecord {
   reasoning?: string;
   inputs: Array<{
     name: string;
-    /** Absent only in format-1 records written before digests were recorded. */
-    sha256?: string;
+    sha256: string;
     shrink: { applied: boolean; originalWidth: number; originalHeight: number; outputWidth: number; outputHeight: number };
   }>;
   [param: string]: unknown;
