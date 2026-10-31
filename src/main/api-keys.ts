@@ -2,6 +2,7 @@
 // api-keys.json's `openai` entry in the obf: form, the file kept at 0600.
 import { chmodSync, statSync } from "node:fs";
 import { message, type Message } from "../shared/i18n/translator.ts";
+import { readHeader, withHeader } from "./file-header.ts";
 import { json, readText, writeTextAtomic } from "./files.ts";
 
 export const KEY_ID = "openai";
@@ -42,11 +43,13 @@ export class KeyStore {
     if (read.kind === "absent") return { kind: "absent" };
     if (read.kind === "failed") return { kind: "failed", problem: message("key.problem.unreadable") };
     try {
-      const raw = JSON.parse(read.text) as unknown;
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("shape");
-      const keys = (raw as Record<string, unknown>).keys;
+      // A newer format is refused like a malformed one, so it is never written over.
+      const header = readHeader(JSON.parse(read.text), "apiKeys");
+      if (header.kind !== "ok") throw new Error("header");
+      const raw = header.body;
+      const keys = raw.keys;
       if (keys !== undefined && (!keys || typeof keys !== "object" || Array.isArray(keys))) throw new Error("shape");
-      return { kind: "ok", keys: (keys ?? {}) as Record<string, unknown>, raw: raw as Record<string, unknown> };
+      return { kind: "ok", keys: (keys ?? {}) as Record<string, unknown>, raw };
     } catch {
       return { kind: "failed", problem: message("key.problem.malformed") };
     }
@@ -105,7 +108,7 @@ export class KeyStore {
     if (read.kind === "failed") return read.problem;
     const raw = read.kind === "ok" ? read.raw : {};
     const keys = read.kind === "ok" ? read.keys : {};
-    await writeTextAtomic(this.file, json({ ...raw, keys: { ...keys, [KEY_ID]: encodeKey(trimmed) } }), 0o600);
+    await writeTextAtomic(this.file, json(withHeader("apiKeys", { ...raw, keys: { ...keys, [KEY_ID]: encodeKey(trimmed) } })), 0o600);
     this.#tighten();
     return null;
   }
@@ -116,7 +119,7 @@ export class KeyStore {
     if (read.kind === "failed") return read.problem;
     if (!Object.hasOwn(read.keys, KEY_ID)) return null;
     const { [KEY_ID]: _removed, ...rest } = read.keys;
-    await writeTextAtomic(this.file, json({ ...read.raw, keys: rest }), 0o600);
+    await writeTextAtomic(this.file, json(withHeader("apiKeys", { ...read.raw, keys: rest })), 0o600);
     return null;
   }
 }

@@ -59,7 +59,7 @@ describe("Unicode output names through public verbs", () => {
       const slot = (stem: string, index: number): string => `${stem}${count === 1 ? "" : `-${index}`}`;
       for (let index = 1; index <= count; index++) {
         await writeFile(path.join(outDir, `${slot(existing, index)}.png`), `old image ${index}`);
-        await writeFile(path.join(outDir, `${slot(existing, index)}.json`), JSON.stringify({ formatVersion: index === count ? 3 : 1, request: {}, files: [] }));
+        await writeFile(path.join(outDir, `${slot(existing, index)}.json`), JSON.stringify({ format: { owner: "gptimg", kind: "sidecar", version: index === count ? 3 : 1 }, request: {}, files: [] }));
       }
       generate.mockResolvedValue({ raw: {}, images: Array.from({ length: count }, () => ({ data: png })) });
       const names = (await readdir(outDir)).sort();

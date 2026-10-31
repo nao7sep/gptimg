@@ -1,14 +1,18 @@
 {
-  "formatVersion": 1,
-  "kind": "vision",
+  "format": {
+    "owner": "gptimg",
+    "kind": "sidecar",
+    "version": 1
+  },
   "writer": {
     "name": "gptimgsdk",
     "version": "1.0.0",
-    "app": {
-      "name": "GptImg",
+    "caller": {
+      "name": "gptimg",
       "version": "1.0.0"
     }
   },
+  "operation": "vision",
   "request": {
     "model": "gpt-6-luna",
     "reasoning": "none",

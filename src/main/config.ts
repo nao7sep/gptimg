@@ -4,6 +4,7 @@
 // (store-recovery-conventions).
 import { message, type Message } from "../shared/i18n/translator.ts";
 import { builtInSettings, differingSets, readSets, type SetKey, type Settings } from "../shared/settings.ts";
+import { readHeader, withHeader } from "./file-header.ts";
 import { json, readText, writeTextAtomic, type ReadResult } from "./files.ts";
 
 export interface LoadedConfig {
@@ -28,10 +29,12 @@ export async function loadConfig(path: string, snapshot?: ReadResult): Promise<L
   } catch {
     parsed = null;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  // A newer format is held like a malformed one: Save never writes over it.
+  const header = readHeader(parsed, "config");
+  if (header.kind !== "ok") {
     return { settings: builtInSettings(), unknown: {}, invalid: [], locked: true, problem: message("settings.problem.malformed", { path }) };
   }
-  const { settings, invalid, unknown } = readSets(parsed as Record<string, unknown>);
+  const { settings, invalid, unknown } = readSets(header.body);
   return {
     settings,
     unknown,
@@ -43,7 +46,7 @@ export async function loadConfig(path: string, snapshot?: ReadResult): Promise<L
 
 /** The bytes Save writes: the differing sets whole, unknown keys preserved. */
 export function configText(settings: Settings, unknown: Record<string, unknown>): string {
-  return json({ ...unknown, ...differingSets(settings) });
+  return json(withHeader("config", { ...unknown, ...differingSets(settings) }));
 }
 
 export async function saveConfig(path: string, settings: Settings, unknown: Record<string, unknown>, existed: boolean): Promise<string | null> {

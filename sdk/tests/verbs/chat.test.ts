@@ -28,7 +28,7 @@ describe("chat", () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-chat-"));
     chatDir = path.join(tmp, "chat");
     png = await sharp({ create: { width: 64, height: 32, channels: 3, background: "#336699" } }).png().toBuffer();
-    sdk = new GptImg({ apiKey: "sk-chat-test", app: { name: "GptImg", version: "1.0.0" } });
+    sdk = new GptImg({ apiKey: "sk-chat-test", caller: { name: "gptimg", version: "1.0.0" } });
   });
 
   afterEach(async () => {
@@ -54,11 +54,11 @@ describe("chat", () => {
     expect(result.files[0]!.path).toBe(path.join(chatDir, "turn-2.png"));
     expect(result.response).toMatchObject({ usage: { input_tokens: 9 }, output: [{ result: null }] });
 
+    const header = JSON.parse(await readFile(path.join(chatDir, "turn-2.json"), "utf8")) as Record<string, unknown>;
+    expect(header).toMatchObject({ format: { owner: "gptimg", kind: "sidecar", version: 1 }, writer: { name: "gptimgsdk", caller: { name: "gptimg", version: "1.0.0" } } });
     const record = await readSidecar(path.join(chatDir, "turn-2.json"));
     expect(record).toMatchObject({
-      formatVersion: 1,
-      kind: "chat",
-      writer: { name: "gptimgsdk", app: { name: "GptImg" } },
+      operation: "chat",
       request: {
         model: "gpt-5.6-terra",
         reasoning: "medium",
@@ -78,7 +78,7 @@ describe("chat", () => {
     const result = done(await sdk.chat({ message: "change it", outDir: chatDir, outName: "turn-3" }));
     expect(result).toMatchObject({ text: "Which colour?", files: [], recordPath: path.join(chatDir, "turn-3.json") });
     expect(await readdir(chatDir)).toEqual(["turn-3.json"]);
-    expect(await readSidecar(path.join(chatDir, "turn-3.json"))).toMatchObject({ kind: "chat", files: [], response: { usage: { input_tokens: 4 } } });
+    expect(await readSidecar(path.join(chatDir, "turn-3.json"))).toMatchObject({ operation: "chat", files: [], response: { usage: { input_tokens: 4 } } });
   });
 
   it("sends no instructions of its own when the caller gives none", async () => {

@@ -2,16 +2,17 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { GptImgError, fsError } from "../errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
+import { fileHeader } from "../internal/file-header.ts";
 import { writeProviderOutput } from "../internal/output-files.ts";
 import { formatZodError } from "../internal/zodError.ts";
-import type { Sidecar } from "../types.ts";
+import type { Sidecar, SidecarWriter } from "../types.ts";
 import { refuseNewerSidecar } from "./read.ts";
 import { SidecarSchema } from "./schema.ts";
 
-/** The bytes of a current-format sidecar: fixed key order, two-space indent, trailing newline. */
-export function serializeSidecar(sidecar: Sidecar): string {
-  const { kind, writer, request, response, files } = sidecar;
-  return JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION, kind, writer, request, response, files }, null, 2) + "\n";
+/** The bytes of a current-format sidecar: the header, then the content in a fixed key order, two-space indent, trailing newline. */
+export function serializeSidecar(sidecar: Sidecar, writer: SidecarWriter): string {
+  const { operation, request, response, files } = sidecar;
+  return JSON.stringify({ ...fileHeader("sidecar", SIDECAR_FORMAT_VERSION, writer), operation, request, response, files }, null, 2) + "\n";
 }
 
 /**
@@ -23,10 +24,12 @@ export function serializeSidecar(sidecar: Sidecar): string {
 export async function writeSidecar(
   sidecarPath: string,
   sidecar: Sidecar,
+  writer: SidecarWriter,
   opts: { overwrite: boolean },
 ): Promise<void> {
-  const text = serializeSidecar(sidecar);
-  const check = SidecarSchema.safeParse(JSON.parse(text));
+  const text = serializeSidecar(sidecar, writer);
+  const { format: _format, writer: _writer, ...content } = JSON.parse(text) as Record<string, unknown>;
+  const check = SidecarSchema.safeParse(content);
   if (!check.success) {
     throw new GptImgError("internal.invariant", `Sidecar for ${sidecarPath} would be invalid: ${formatZodError(check.error)}`, {
       subject: sidecarPath,

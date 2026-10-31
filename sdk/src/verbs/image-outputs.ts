@@ -1,5 +1,4 @@
 import path from "node:path";
-import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { GptImgError } from "../errors.ts";
 import sharp from "../image/sharp.ts";
 import { detectFormat } from "../image/detectFormat.ts";
@@ -34,7 +33,7 @@ import type {
 import { planGenerateOutputs, type DetectedImage } from "./generate-plan.ts";
 
 export interface PublishProviderImagesArgs {
-  kind: "generate" | "edit" | "chat";
+  operation: "generate" | "edit" | "chat";
   outDir: string;
   stem: string;
   /** The image count the run requested, which its pre-call check reserved. */
@@ -181,16 +180,14 @@ export async function publishProviderImages(args: PublishProviderImagesArgs): Pr
     // `files` carries only this image's entry, so each sidecar describes
     // its own image.
     const record = {
-      formatVersion: SIDECAR_FORMAT_VERSION,
-      kind: args.kind,
-      writer: args.writer,
+      operation: args.operation,
       request: snapshot.request,
       response: snapshot.response,
       files: [{ index: item.index, name: path.basename(item.filePath), sha256, format: item.fmt.format }],
     } as GenerateSidecar | EditSidecar | ChatSidecar;
     let sidecar: FilePublication = { status: "published" };
     try {
-      await writeSidecar(sidecarPath, record, { overwrite });
+      await writeSidecar(sidecarPath, record, args.writer, { overwrite });
     } catch (err) {
       sidecar = failedPublication(err);
       logger.emit("warn", "write", { event: "sidecar.unpublished", index: item.index, path: sidecarPath, error: diagnosticOf(err) });

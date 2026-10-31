@@ -14,7 +14,7 @@ afterEach(cleanup);
 
 const failure: AppFailure = { message: { key: "failure.internal" }, retryable: false };
 const at = "2026-10-23T00:00:00.000Z";
-function chat(id: string): OpenedChat { return { id, dir: `/chats/${id}`, doc: { format: 1, id: `chat-${id}`, title: id, createdAt: at, turns: [] } }; }
+function chat(id: string): OpenedChat { return { id, dir: `/chats/${id}`, doc: { id: `chat-${id}`, title: id, createdAt: at, turns: [] } }; }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
 
 async function mount(over: Partial<GptImgApi> = {}, boot: BootInfo = bootInfo()) {

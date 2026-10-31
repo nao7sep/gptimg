@@ -128,9 +128,7 @@ async function recordBeside(imagePath: string): Promise<InspectRecord | null> {
     return {
       path: sidecarPath,
       status: "readable",
-      kind: sidecar.kind,
-      formatVersion: sidecar.formatVersion,
-      writer: sidecar.writer,
+      operation: sidecar.operation,
       chromaKey: typeof chroma === "string" ? chroma : null,
     };
   } catch (err) {

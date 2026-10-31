@@ -28,8 +28,8 @@ import { createOutputGroup, ownedSlotFiles, removeUnpublishedSlots } from "../..
 
 describe("unpublished output cleanup", () => {
   let tmp: string;
-  const current = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION, request: {}, response: {}, files: [] });
-  const newer = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, future: true });
+  const current = JSON.stringify({ format: { owner: "gptimg", kind: "sidecar", version: SIDECAR_FORMAT_VERSION }, request: {}, response: {}, files: [] });
+  const newer = JSON.stringify({ format: { owner: "gptimg", kind: "sidecar", version: SIDECAR_FORMAT_VERSION + 1 }, future: true });
 
   beforeEach(async () => {
     tmp = await mkdtemp(path.join(tmpdir(), "gptimg-group-cleanup-"));

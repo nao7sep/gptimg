@@ -105,7 +105,7 @@ export async function generateImpl(
     };
     if (chromaColor) requestRecord.chroma = { color: chromaColor };
     const { files, failures, leftovers, response } = await publishProviderImages({
-      kind: "generate",
+      operation: "generate",
       outDir,
       stem,
       n,

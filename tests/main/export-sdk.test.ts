@@ -23,7 +23,7 @@ describe("exports through the real SDK", () => {
   });
 
   function runner() {
-    return new ExportRunner({ sdk: new GptImg({ app: { name: "GptImg", version: "test" } }), records, progress() {} });
+    return new ExportRunner({ sdk: new GptImg({ caller: { name: "gptimg", version: "test" } }), records, progress() {} });
   }
 
   it("inspects and exports an image", async () => {

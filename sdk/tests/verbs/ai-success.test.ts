@@ -422,7 +422,7 @@ describe("AI verb implementations with mocked provider", () => {
   it("generate with overwrite refuses a group holding a newer-format sidecar before a provider charge", async () => {
     const outDir = path.join(tmp, "newer-out");
     await mkdir(outDir);
-    const newer = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: [] });
+    const newer = JSON.stringify({ format: { owner: "gptimg", kind: "sidecar", version: SIDECAR_FORMAT_VERSION + 1 }, request: {}, files: [] });
     await writeFile(path.join(outDir, "same-1.png"), png);
     await writeFile(path.join(outDir, "same-1.json"), "{}");
     await writeFile(path.join(outDir, "same-2.png"), png);
@@ -455,7 +455,7 @@ describe("AI verb implementations with mocked provider", () => {
     const outDir = path.join(tmp, "vision-newer-out");
     await copyFile(fixture("green-disk.png"), input);
     await mkdir(outDir);
-    const newer = JSON.stringify({ formatVersion: SIDECAR_FORMAT_VERSION + 1, request: {}, files: [] });
+    const newer = JSON.stringify({ format: { owner: "gptimg", kind: "sidecar", version: SIDECAR_FORMAT_VERSION + 1 }, request: {}, files: [] });
     await writeFile(path.join(outDir, "same.json"), newer);
 
     await expect(

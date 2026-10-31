@@ -67,7 +67,7 @@ async function freshSdk(label: string): Promise<{ img: GptImg; home: string }> {
   // Inside a test, a failure keeps this folder; the install step in beforeAll has no test.
   if (expect.getState().currentTestName !== undefined) onTestFailed(() => void keptHomes.add(home));
   const apiKey = process.env.OPENAI_API_KEY?.trim() || undefined;
-  const sdk = new GptImg({ apiKey, modelsDir: MODELS, debug: true, app: { name: "gptimgsdk-live", version: "1" } });
+  const sdk = new GptImg({ apiKey, modelsDir: MODELS, debug: true, caller: { name: "gptimgsdk-live", version: "1" } });
   const record = (event: SdkEvent): void => appendFileSync(join(home, "events.jsonl"), `${JSON.stringify(event)}\n`);
   const img = new Proxy(sdk, {
     get(target, prop, receiver) {
@@ -106,9 +106,9 @@ async function sentRequest(sidecarPath: string): Promise<Record<string, unknown>
 }
 
 interface ImageSidecar {
-  formatVersion: number;
-  kind: string;
-  writer: { name: string; version: string; app?: { name: string; version: string } };
+  format: { owner: string; kind: string; version: number };
+  writer: { name: string; version: string; caller?: { name: string; version: string } };
+  operation: string;
   request: Record<string, unknown>;
   response: { created?: unknown; usage?: unknown; data?: Array<{ b64_json?: unknown }> };
   files: Array<{ index: number; name: string; sha256: string; format: string }>;
@@ -128,11 +128,12 @@ async function expectCompleteImageSidecar(
   const text = await readFile(file.sidecarPath, "utf8");
   expect(text).not.toContain(process.env.OPENAI_API_KEY!.trim());
   const sidecar = JSON.parse(text) as ImageSidecar;
-  expect(sidecar.formatVersion).toBe(1);
-  expect(sidecar.kind).toBe(kind);
-  expect(sidecar.writer).toEqual({ name: "gptimgsdk", version: expect.stringMatching(/^\d+\.\d+\.\d+/), app: { name: "gptimgsdk-live", version: "1" } });
-  // The result carries the same record the sidecar holds.
-  expect(file.record).toEqual({ ...sidecar });
+  expect(sidecar.format).toEqual({ owner: "gptimg", kind: "sidecar", version: 1 });
+  expect(sidecar.operation).toBe(kind);
+  expect(sidecar.writer).toEqual({ name: "gptimgsdk", version: expect.stringMatching(/^\d+\.\d+\.\d+/), caller: { name: "gptimgsdk-live", version: "1" } });
+  // The result carries the same record the sidecar holds, without its header.
+  const { format: _format, writer: _writer, ...content } = sidecar;
+  expect(file.record).toEqual(content);
   expect(sidecar.request).toMatchObject({ n: 1, ...request });
   expect(typeof sidecar.request.prompt, "the prompt is recorded").toBe("string");
   expect(typeof sidecar.response.created, "the provider's creation time is kept").toBe("number");
@@ -335,13 +336,14 @@ describe("the live SDK", () => {
     // The verdict's record: what was asked of which image, and the answer with its time and usage.
     const text = await readFile(holds.sidecarPath, "utf8");
     expect(text).not.toContain(process.env.OPENAI_API_KEY!.trim());
-    const sidecar = JSON.parse(text) as {
-      formatVersion: number;
+    const { format, writer: _writer, ...sidecar } = JSON.parse(text) as {
+      format: unknown;
+      writer: unknown;
       request: Record<string, unknown>;
       response: { verdict: unknown; raw: { created?: unknown; model?: unknown; usage?: unknown } };
       files: unknown[];
     };
-    expect(sidecar.formatVersion).toBe(1);
+    expect(format).toEqual({ owner: "gptimg", kind: "sidecar", version: 1 });
     expect(holds.sidecar).toEqual({ status: "published" });
     expect(holds.record).toEqual(sidecar);
     expect(sidecar.request).toMatchObject({

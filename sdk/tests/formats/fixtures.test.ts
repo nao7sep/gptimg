@@ -19,15 +19,13 @@ describe("sidecar fixtures", () => {
     ["sidecar-edit.json", "edit"],
     ["sidecar-vision.json", "vision"],
     ["sidecar-chat.json", "chat"],
-  ] as const)("reads %s as a %s record and the writer reproduces it byte for byte", async (name, kind) => {
+  ] as const)("reads %s as a %s record and the writer reproduces it byte for byte", async (name, operation) => {
     const bytes = await readFile(fixture(name), "utf8");
     const record = await readSidecar(fixture(name));
-    expect(record).toMatchObject({
-      formatVersion: 1,
-      kind,
-      writer: { name: "gptimgsdk", version: "1.0.0", app: { name: "GptImg", version: "1.0.0" } },
-    });
-    expect(serializeSidecar(record)).toBe(bytes);
+    expect(record).toMatchObject({ operation });
+    expect(record).not.toHaveProperty("format");
+    expect(record).not.toHaveProperty("writer");
+    expect(serializeSidecar(record, { name: "gptimgsdk", version: "1.0.0", caller: { name: "gptimg", version: "1.0.0" } })).toBe(bytes);
   });
 
   it("refuses the newer-format sample without changing it", async () => {

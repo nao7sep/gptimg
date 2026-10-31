@@ -100,7 +100,7 @@ export async function editImpl(
       n,
     };
     const { files, failures, leftovers, response } = await publishProviderImages({
-      kind: "edit",
+      operation: "edit",
       outDir,
       stem,
       n,

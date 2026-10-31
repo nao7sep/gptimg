@@ -11,6 +11,7 @@ import { GptImg } from "../../src/index.ts";
 import { done } from "../helpers/results.ts";
 
 const WRITER = { name: "gptimgsdk", version: "1.0.0" };
+const FORMAT = { owner: "gptimg", kind: "sidecar", version: 1 };
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "green-disk.png");
 
 describe("verify", () => {
@@ -31,18 +32,18 @@ describe("verify", () => {
   });
 
   async function sidecar(name: string, entry: Record<string, unknown>): Promise<void> {
-    await writeFile(path.join(tmp, "raw.json"), JSON.stringify({ formatVersion: 1, kind: "generate", writer: WRITER, request: { prompt: "p", n: 1 }, response: {}, files: [{ index: 1, name, sha256, format: "png", ...entry }] }));
+    await writeFile(path.join(tmp, "raw.json"), JSON.stringify({ format: FORMAT, writer: WRITER, operation: "generate", request: { prompt: "p", n: 1 }, response: {}, files: [{ index: 1, name, sha256, format: "png", ...entry }] }));
   }
 
   it("passes an image whose sidecar names it, carries its digest and records its format", async () => {
     await sidecar("raw.png", {});
     const result = done(await img.verify({ in: image }));
-    expect(result).toMatchObject({ ok: true, findings: [], sidecarPath: path.join(tmp, "raw.json"), record: { kind: "generate" } });
+    expect(result).toMatchObject({ ok: true, findings: [], sidecarPath: path.join(tmp, "raw.json"), record: { operation: "generate" } });
   });
 
   it("chooses a later matching name and digest", async () => {
     const record = {
-      formatVersion: 1, kind: "generate", writer: WRITER,
+      format: FORMAT, writer: WRITER, operation: "generate",
       request: { prompt: "p", n: 2 }, response: {},
       files: [
         { index: 1, name: "other.png", sha256, format: "webp" },
@@ -64,7 +65,7 @@ describe("verify", () => {
     expect(done(await img.verify({ in: image })).findings.map((f) => f.code)).toEqual(["sidecar.missing"]);
     await writeFile(path.join(tmp, "raw.json"), "{ nope");
     expect(done(await img.verify({ in: image })).findings.map((f) => f.code)).toEqual(["sidecar.malformed"]);
-    await writeFile(path.join(tmp, "raw.json"), JSON.stringify({ formatVersion: 99 }));
+    await writeFile(path.join(tmp, "raw.json"), JSON.stringify({ format: { ...FORMAT, version: 99 } }));
     expect(done(await img.verify({ in: image })).findings.map((f) => f.code)).toEqual(["sidecar.newerFormat"]);
     await sidecar("raw.png", { format: "webp" });
     expect(done(await img.verify({ in: image })).findings.map((f) => f.code)).toEqual(["image.formatMismatch"]);

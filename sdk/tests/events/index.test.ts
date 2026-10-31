@@ -92,7 +92,7 @@ describe("events through the public verbs", () => {
   });
 
   it("sends one startup event per instance, to the first call that listens, with the version and configuration", async () => {
-    const sdk = new GptImg({ apiKey: "sk-startup-secret", modelsDir: path.join(tmp, "models"), app: { name: "GptImg", version: "9.9.9" }, policy: { chat: { quality: "low" } } });
+    const sdk = new GptImg({ apiKey: "sk-startup-secret", modelsDir: path.join(tmp, "models"), caller: { name: "gptimg", version: "9.9.9" }, policy: { chat: { quality: "low" } } });
     const plate = (name: string) => ({ size: 8, from: "#ffffff", to: "#000000", outDir: tmp, outName: name });
     await sdk.backplate(plate("unwatched"));
     const first: SdkEvent[] = [];
@@ -109,7 +109,7 @@ describe("events through the public verbs", () => {
       node: process.versions.node,
       modelsDir: path.join(tmp, "models"),
       debug: false,
-      app: { name: "GptImg", version: "9.9.9" },
+      caller: { name: "gptimg", version: "9.9.9" },
       apiKey: true,
       policy: { chat: { quality: "low" } },
     });

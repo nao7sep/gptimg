@@ -1,5 +1,12 @@
 {
-  "formatVersion": 2,
-  "kind": "generate",
+  "format": {
+    "owner": "gptimg",
+    "kind": "sidecar",
+    "version": 2
+  },
+  "writer": {
+    "name": "gptimgsdk",
+    "version": "2.0.0"
+  },
   "future": true
 }

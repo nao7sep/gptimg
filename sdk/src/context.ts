@@ -20,8 +20,8 @@ export interface SdkContext {
   startup: { emitted: boolean };
   /** The instance's policy, checked whole. */
   policy: Policy;
-  /** The calling app, recorded in sidecars beside the SDK's own name and version. */
-  app?: { name: string; version: string };
+  /** The calling program, recorded in each sidecar's `writer.caller`. */
+  caller?: { name: string; version: string };
 }
 
 // The constructor's options, so an unknown one is refused as a verb refuses an unknown argument;
@@ -34,7 +34,7 @@ const OPTIONS: Record<keyof GptImgOptions, true> = {
   modelsDir: true,
   debug: true,
   policy: true,
-  app: true,
+  caller: true,
 };
 const OPTION_NAMES: readonly string[] = Object.keys(OPTIONS);
 
@@ -84,16 +84,16 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
     throw new GptImgError("args.invalid", "debug must be a boolean.", { details: { field: "debug", constraint: "boolean" } });
   }
   const policy = opts.policy !== undefined ? validatePolicy(opts.policy) : {};
-  let app: SdkContext["app"];
-  if (opts.app !== undefined) {
-    const name = optionalString(opts.app?.name, "app.name");
-    const version = optionalString(opts.app?.version, "app.version");
+  let caller: SdkContext["caller"];
+  if (opts.caller !== undefined) {
+    const name = optionalString(opts.caller?.name, "caller.name");
+    const version = optionalString(opts.caller?.version, "caller.version");
     if (name === undefined || version === undefined) {
-      throw new GptImgError("args.invalid", "app needs both name and version.", {
-        details: { field: "app", constraint: "name and version" },
+      throw new GptImgError("args.invalid", "caller needs both name and version.", {
+        details: { field: "caller", constraint: "name and version" },
       });
     }
-    app = { name, version };
+    caller = { name, version };
   }
   return {
     apiKey: apiKey ?? null,
@@ -104,7 +104,7 @@ export function createContext(opts: GptImgOptions = {}): SdkContext {
     debug: opts.debug ?? false,
     startup: { emitted: false },
     policy,
-    ...(app !== undefined && { app }),
+    ...(caller !== undefined && { caller }),
   };
 }
 

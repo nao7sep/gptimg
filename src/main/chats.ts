@@ -8,7 +8,6 @@ import { basename, extname, join, relative, resolve, sep } from "node:path";
 import {
   INPUTS_DIR,
   CHAT_FILE,
-  CHAT_FORMAT,
   bySent,
   fileStamp,
   folderPart,
@@ -19,6 +18,7 @@ import {
   type ChatDoc,
   type ChatSummary,
 } from "../shared/chat.ts";
+import { readHeader, withHeader } from "./file-header.ts";
 import { copyFileAtomic, json, readText, writeTextAtomic } from "./files.ts";
 
 export class ChatError extends Error {
@@ -72,11 +72,15 @@ export async function listChats(root: string): Promise<{ chats: ChatSummary[]; u
 }
 
 function parseJson(text: string): ChatDoc | null {
+  let parsed: unknown;
   try {
-    return parseChat(JSON.parse(text));
+    parsed = JSON.parse(text);
   } catch {
     return null;
   }
+  // A newer format is refused like a malformed one; neither is ever written over.
+  const header = readHeader(parsed, "chat");
+  return header.kind === "ok" ? parseChat(header.body) : null;
 }
 
 export async function readChat(root: string, id: string): Promise<ChatDoc> {
@@ -91,7 +95,7 @@ export async function readChat(root: string, id: string): Promise<ChatDoc> {
 
 /** Writes chat.json; returns the bytes written, or null when nothing changed. */
 export async function writeChat(root: string, id: string, doc: ChatDoc): Promise<string | null> {
-  const text = json(doc);
+  const text = json(withHeader("chat", { ...doc }));
   return (await writeTextAtomic(join(chatDir(root, id), CHAT_FILE), text)) ? text : null;
 }
 
@@ -116,7 +120,7 @@ export async function createChat(root: string, now: Date, title: string): Promis
   await mkdir(root, { recursive: true });
   const id = await freeName(root, chatFolderName(now, title));
   await mkdir(join(root, id));
-  return { id, doc: { format: CHAT_FORMAT, id: randomUUID(), title, createdAt: now.toISOString(), turns: [] } };
+  return { id, doc: { id: randomUUID(), title, createdAt: now.toISOString(), turns: [] } };
 }
 
 /** Renames a chat: its title, and its folder to match, keeping the folder's creation stamp. */

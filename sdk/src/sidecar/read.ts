@@ -3,7 +3,7 @@ import path from "node:path";
 import { GptImgError, fsError } from "../errors.ts";
 import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { assertAbsolutePath } from "../internal/absolute-path.ts";
-import { takeFormatVersion } from "../internal/format-version.ts";
+import { takeHeader } from "../internal/file-header.ts";
 import { formatZodError } from "../internal/zodError.ts";
 import type { Sidecar } from "../types.ts";
 import { SidecarSchema } from "./schema.ts";
@@ -17,8 +17,9 @@ export function sidecarPathBeside(imagePath: string): string {
 
 /**
  * Read the sidecar at the absolute `sidecarPath` (`<image stem>.json`), in the
- * current format, as its typed record. An unmarked file is malformed; a newer
- * format is refused. Either way the file is left unchanged.
+ * current format, as its content without the header. A file without a sidecar
+ * header is malformed; a newer format is refused. Either way the file is left
+ * unchanged.
  */
 export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
   assertAbsolutePath(sidecarPath, "sidecar path");
@@ -42,12 +43,12 @@ export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
 
 /** A parsed sidecar body of the current format as its typed record, or `sidecar.malformed`/`sidecar.newerFormat`. */
 function parseSidecar(parsed: unknown, subject: string): Sidecar {
-  const body = takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, subject);
-  // The schema validates; the record returned is the file's own body, so its
+  const body = takeHeader(parsed, "sidecar", SIDECAR_FORMAT_VERSION, subject);
+  // The schema validates; the record returned is the file's own content, so its
   // key order and any unknown keys survive a read-then-write unchanged.
   const r = SidecarSchema.safeParse(body);
   if (!r.success) throw malformed(subject, formatZodError(r.error));
-  return { formatVersion: SIDECAR_FORMAT_VERSION, ...body } as Sidecar;
+  return body as unknown as Sidecar;
 }
 
 function malformed(subject: string, detail: string): GptImgError {
@@ -70,7 +71,7 @@ export async function refuseNewerSidecar(sidecarPath: string): Promise<void> {
     return;
   }
   try {
-    takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, sidecarPath);
+    takeHeader(parsed, "sidecar", SIDECAR_FORMAT_VERSION, sidecarPath);
   } catch (err) {
     if ((err as GptImgError).code === "sidecar.newerFormat") throw err;
   }

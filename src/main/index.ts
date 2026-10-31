@@ -14,6 +14,7 @@ import { SET_KEYS, validateSet, type Settings } from "../shared/settings.ts";
 import { parseUiState, type UiState } from "../shared/ui-state.ts";
 import { KeyStore } from "./api-keys.ts";
 import { loadConfig, saveConfig, type LoadedConfig } from "./config.ts";
+import { APP_WRITER, readHeader, withHeader } from "./file-header.ts";
 import { json, readText, writeTextAtomic } from "./files.ts";
 import { ExportRunner, folderOf } from "./export.ts";
 import { IMAGE_EXTENSIONS, ImageAccess, isImagePath, registerImageScheme } from "./images.ts";
@@ -66,6 +67,8 @@ interface State {
   config: LoadedConfig;
   configExisted: boolean;
   ui: UiState;
+  /** False when state.json holds a newer format, which is left untouched. */
+  uiWritable: boolean;
   keys: KeyStore;
   records: StoreRecords;
   backups: Stores["backups"];
@@ -109,9 +112,13 @@ async function start(paths: AppPaths): Promise<void> {
 
   const stateRead = await readText(paths.state);
   let ui = parseUiState(null);
+  // A newer state.json is left untouched: this build keeps its state in memory only.
+  let stateWritable = true;
   if (stateRead.kind === "ok") {
     try {
-      ui = parseUiState(JSON.parse(stateRead.text));
+      const header = readHeader(JSON.parse(stateRead.text), "state");
+      if (header.kind === "ok") ui = parseUiState(header.body);
+      else if (header.kind === "newer") stateWritable = false;
     } catch {
       // Window and pane state is disposable: a bad copy is dropped.
     }
@@ -121,20 +128,20 @@ async function start(paths: AppPaths): Promise<void> {
   await rm(paths.staging, { recursive: true, force: true }).catch(() => {});
 
   const keys = new KeyStore(paths.apiKeys, process.env, (_event, fields) => records.log("warn", "apiKeys.modeTightened", fields));
-  const sdkApp = { name: "GptImg", version: __APP_VERSION__ };
 
   const state: State = {
     paths,
     config,
     configExisted: configRead.kind !== "absent",
     ui,
+    uiWritable: stateWritable,
     keys,
     records,
     backups,
     language,
     turns: null as unknown as TurnRunner,
     exports: new ExportRunner({
-      sdk: new GptImg({ app: sdkApp }),
+      sdk: new GptImg({ caller: APP_WRITER }),
       records,
       progress: (progress) => state.window?.webContents.send("progress", progress),
     }),
@@ -161,7 +168,7 @@ async function start(paths: AppPaths): Promise<void> {
     state.window?.webContents.send("turnDraft", { chatFolder, path });
   });
   state.turns = new TurnRunner({
-    sdk: chatClients(sdkApp),
+    sdk: chatClients(APP_WRITER),
     records,
     settings: () => state.config.settings,
     apiKey: () => keys.resolve(),
@@ -408,13 +415,14 @@ function installIpc(state: State): void {
   let savingUi = false;
   let pendingUi = false;
   const persistUi = async () => {
+    if (!state.uiWritable) return;
     pendingUi = true;
     if (savingUi) return;
     savingUi = true;
     try {
       while (pendingUi) {
         pendingUi = false;
-        try { await writeTextAtomic(paths.state, json(state.ui)); }
+        try { await writeTextAtomic(paths.state, json(withHeader("state", { ...state.ui }))); }
         catch (error) { records.log("warn", "state.saveFailed", { error: String(error) }); }
       }
     } finally { savingUi = false; }

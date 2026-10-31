@@ -1,5 +1,4 @@
 import type { RefusedResult } from "../refusal.ts";
-import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { callPolicy, requireCredentials, type SdkContext } from "../context.ts";
 import { sidecarWriter } from "../sidecar/writer.ts";
 import { defaultModelFor } from "../ai-models.ts";
@@ -172,9 +171,7 @@ export async function visionImpl(
     logger.emit("info", "response", { event: "provider.returned", operation: "vision", summary: { ok: providerResult.verdict.ok, score: providerResult.verdict.score } });
 
     const record = maskDiagnosticCopy({
-      formatVersion: SIDECAR_FORMAT_VERSION,
-      kind: "vision",
-      writer: sidecarWriter(ctx),
+      operation: "vision",
       request: {
         ...params,
         check,
@@ -196,7 +193,7 @@ export async function visionImpl(
     const sidecarPath = `${stemPath}.json`;
     let sidecar: FilePublication = { status: "published" };
     try {
-      await writeSidecar(sidecarPath, record, { overwrite: args.overwrite ?? false });
+      await writeSidecar(sidecarPath, record, sidecarWriter(ctx), { overwrite: args.overwrite ?? false });
       logger.emit("info", "write", { event: "sidecar.published", path: sidecarPath });
     } catch (err) {
       const failure = err instanceof RefusalSignal

@@ -222,7 +222,7 @@ export async function withVerbLogger<T>(
       arch: process.arch,
       modelsDir: ctx.modelsDir,
       debug: ctx.debug,
-      app: ctx.app ?? null,
+      caller: ctx.caller ?? null,
       apiKey: ctx.apiKey !== null,
       organization: ctx.organization ?? null,
       project: ctx.project ?? null,

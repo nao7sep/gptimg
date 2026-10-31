@@ -4,5 +4,5 @@
  * the current version reads.
  */
 
-/** The `<stem>.json` sidecar beside each paid output. It names its `kind` and its `writer`. */
+/** The `<stem>.json` sidecar beside each paid output. Its header names owner `gptimg` and kind `sidecar`. */
 export const SIDECAR_FORMAT_VERSION = 1;

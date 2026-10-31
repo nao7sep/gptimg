@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import path from "node:path";
 import sharp from "../image/sharp.ts";
 import { defaultModelFor, IMAGE_INPUT_FORMATS, MASK_RULE } from "../ai-models.ts";
@@ -280,7 +279,7 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
       historyTurns: result.historyTurns,
     };
     const published = await publishProviderImages({
-      kind: "chat",
+      operation: "chat",
       outDir,
       stem,
       n: result.images.length,
@@ -297,16 +296,14 @@ export async function chatImpl(ctx: SdkContext, args: ChatArgs, opts: VerbCallOp
     let recordPublication: FilePublication | null = null;
     if (published.files.length === 0) {
       const record = maskDiagnosticCopy({
-        formatVersion: SIDECAR_FORMAT_VERSION,
-        kind: "chat",
-        writer: sidecarWriter(ctx),
+        operation: "chat",
         request: requestRecord,
         response: nullBase64InResponse(result.raw),
         files: [],
       }, [credentials.apiKey]) as ChatSidecar;
       const target = path.join(outDir, `${stem}.json`);
       try {
-        await writeSidecar(target, record, { overwrite });
+        await writeSidecar(target, record, sidecarWriter(ctx), { overwrite });
         recordPath = target;
         recordPublication = { status: "published" };
       } catch (err) {

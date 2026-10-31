@@ -167,21 +167,15 @@ export interface SidecarFileEntry {
   format: string;
 }
 
-/** Who wrote a sidecar: this SDK and its version, and the calling app when the caller named one. */
+/** Who wrote a sidecar, recorded in its header: this SDK and its version, and the calling program when the caller named one. */
 export interface SidecarWriter {
   name: "gptimgsdk";
   version: string;
-  app?: { name: string; version: string };
+  caller?: { name: string; version: string };
 }
 
-export type SidecarKind = "generate" | "edit" | "vision" | "chat";
-
-/** The common shape of every sidecar as `readSidecar` returns it. */
-interface SidecarBase {
-  /** The file's format: always the current one, 1. */
-  formatVersion: 1;
-  writer: SidecarWriter;
-}
+/** The paid operation a sidecar records. */
+export type SidecarOperation = "generate" | "edit" | "vision" | "chat";
 
 /**
  * The request a generate record holds: the parameters sent to the provider as
@@ -220,24 +214,24 @@ export interface VisionRequestRecord {
 }
 
 /** The record beside a generated image: the request as sent, the provider's reply without image bytes, and the image. */
-export interface GenerateSidecar extends SidecarBase {
-  kind: "generate";
+export interface GenerateSidecar {
+  operation: "generate";
   request: GenerateRequestRecord;
   /** The provider's reply as received, with its creation time and token usage; image bytes are nulled. */
   response: Record<string, unknown>;
   files: SidecarFileEntry[];
 }
 
-export interface EditSidecar extends SidecarBase {
-  kind: "edit";
+export interface EditSidecar {
+  operation: "edit";
   request: EditRequestRecord;
   response: Record<string, unknown>;
   files: SidecarFileEntry[];
 }
 
 /** The record of a vision check, which produces no image: the request, the verdict and the provider's raw reply. */
-export interface VisionSidecar extends SidecarBase {
-  kind: "vision";
+export interface VisionSidecar {
+  operation: "vision";
   request: VisionRequestRecord;
   response: { verdict: VisionVerdict; raw: unknown };
   files: [];
@@ -269,8 +263,8 @@ export interface ChatRequestRecord {
  * The record of a chat turn: beside each image the turn produced, or alone as
  * `<stem>.json` when the turn produced none, since its answer was paid for too.
  */
-export interface ChatSidecar extends SidecarBase {
-  kind: "chat";
+export interface ChatSidecar {
+  operation: "chat";
   request: ChatRequestRecord;
   /** The provider's response as received, with its reply, usage and image calls; image bytes are nulled. */
   response: Record<string, unknown>;
@@ -366,7 +360,7 @@ export type SdkEventBody =
       arch: string;
       modelsDir: string;
       debug: boolean;
-      app: { name: string; version: string } | null;
+      caller: { name: string; version: string } | null;
       /** Whether a key was given; never the key. */
       apiKey: boolean;
       organization: string | null;
@@ -1534,10 +1528,8 @@ export type InspectRecord =
   | {
       path: string;
       status: "readable";
-      kind: SidecarKind;
-      formatVersion: number;
-      /** Who wrote it. */
-      writer: SidecarWriter;
+      /** The paid operation it records. */
+      operation: SidecarOperation;
       /** The chroma key the paid request recorded, which `mask` and `keycheck` read with `key: "from-sidecar"`. */
       chromaKey: string | null;
     }
@@ -1590,8 +1582,8 @@ export interface GptImgOptions {
   debug?: boolean;
   /** Policy merged over the built-in defaults; each call's policy merges over this. */
   policy?: Policy;
-  /** The calling app, recorded in each sidecar's `writer` beside the SDK's own name and version. */
-  app?: { name: string; version: string };
+  /** The calling program, recorded in each sidecar's `writer.caller`. */
+  caller?: { name: string; version: string };
 }
 
 // The dependency-free tables a renderer needs beside these types, so the

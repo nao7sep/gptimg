@@ -10,7 +10,6 @@ afterEach(cleanup);
 const at = "2026-10-19T06:00:00.000Z";
 const usage = { input: 1, output: 1 };
 const doc: ChatDoc = {
-  format: 1,
   id: "chat-1",
   title: "Foxes",
   createdAt: at,

@@ -153,7 +153,7 @@ export type {
   ShadowResult,
   Sidecar,
   SidecarFileEntry,
-  SidecarKind,
+  SidecarOperation,
   SidecarWriter,
   TrimArgs,
   TrimResult,

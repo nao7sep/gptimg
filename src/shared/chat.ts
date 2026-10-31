@@ -2,7 +2,6 @@
 // around it: naming, titles, the history a turn sends, token totals.
 import type { Usage } from "gptimgsdk/types";
 
-export const CHAT_FORMAT = 1;
 export const CHAT_FILE = "chat.json";
 export const INPUTS_DIR = "inputs";
 
@@ -61,7 +60,6 @@ export interface AssistantTurn {
 export type Turn = UserTurn | AssistantTurn;
 
 export interface ChatDoc {
-  format: typeof CHAT_FORMAT;
   /** The chat's lasting id: its records carry it, since the folder's name changes with the title. */
   id: string;
   title: string;
@@ -242,11 +240,11 @@ function isUsage(value: unknown): boolean {
     && (usage.imageOutput === undefined || isNonnegative(usage.imageOutput));
 }
 
-/** Validates a parsed chat.json; null when it is not a chat this version can read. */
+/** Validates chat.json's content, its header already checked; null when it is not a chat this version can read. */
 export function parseChat(value: unknown): ChatDoc | null {
   if (!value || typeof value !== "object") return null;
   const doc = value as Record<string, unknown>;
-  if (doc.format !== CHAT_FORMAT || !isString(doc.title) || !isTimestamp(doc.createdAt) || !Array.isArray(doc.turns)) return null;
+  if (!isString(doc.title) || !isTimestamp(doc.createdAt) || !Array.isArray(doc.turns)) return null;
   if (!isString(doc.id)) return null;
   for (const raw of doc.turns) {
     if (!raw || typeof raw !== "object") return null;

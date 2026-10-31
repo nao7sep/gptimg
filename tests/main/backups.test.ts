@@ -58,7 +58,7 @@ describe("backups", () => {
     const backups = openBackups(file, "launch", onError);
     expect(closed).toHaveBeenCalledOnce();
     expect(onError).toHaveBeenCalledOnce();
-    expect(onError.mock.calls[0]![0]).toMatchObject({ code: "ERR_SQLITE_ERROR", message: expect.stringContaining("session_id") });
+    expect(onError.mock.calls[0]![0]).toMatchObject({ message: expect.stringContaining("not a GptImg backups database") });
     expect(() => backups.keep(join(dir, "doc"), "new")).not.toThrow();
     backups.close();
     const check = new DatabaseSync(file);

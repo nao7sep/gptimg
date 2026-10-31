@@ -30,7 +30,7 @@ beforeEach(async () => {
   settings = {};
   records = openRecords(join(home, "records.sqlite3"), join(home, "logs"), "launch", "test");
   runner = new TurnRunner({
-    sdk: chatClients({ name: "GptImg", version: "test" }),
+    sdk: chatClients({ name: "gptimg", version: "test" }),
     records,
     settings: () => ({ ...builtInSettings(), chatsDir: root, "openai.endpoint": openai.baseURL, ...settings }),
     apiKey: async () => "sk-test",

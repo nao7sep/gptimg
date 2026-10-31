@@ -64,7 +64,7 @@ describe("the history a turn sends", () => {
 });
 
 describe("chat.json validation", () => {
-  const doc = { format: 1, id: "c1", title: "t", createdAt: "2026-10-19T00:00:00.000Z", turns: [user("u1", "hi", ["inputs/a.png"])] };
+  const doc = { id: "c1", title: "t", createdAt: "2026-10-19T00:00:00.000Z", turns: [user("u1", "hi", ["inputs/a.png"])] };
 
   it("accepts a well-formed chat", () => {
     expect(parseChat(doc)).not.toBeNull();
@@ -75,16 +75,12 @@ describe("chat.json validation", () => {
       expect(parseChat({ ...doc, turns: [user("u1", "hi", [path])] })).toBeNull();
     }
   });
-
-  it("refuses another format", () => {
-    expect(parseChat({ ...doc, format: 2 })).toBeNull();
-  });
 });
 
 
 
 describe("chat consumed-field validation", () => {
-  const doc = { format: 1, id: "c1", title: "t", createdAt: "2026-10-19T00:00:00.000Z", turns: [reply("a", "r")] };
+  const doc = { id: "c1", title: "t", createdAt: "2026-10-19T00:00:00.000Z", turns: [reply("a", "r")] };
 
   it("rejects invalid timestamps and accepts supported UTC precision", () => {
     for (const createdAt of ["tomorrow", "2026-02-30T00:00:00Z", "2026-10-19T00:00:00+09:00"]) {

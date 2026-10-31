@@ -5,11 +5,11 @@
 import { GptImg, GptImgError, type GptImgErrorData } from "gptimgsdk";
 
 /** One GptImg for chat turns per key and endpoint (OpenAI's own when null), made again when either changes. */
-export function chatClients(app: { name: string; version: string }): (apiKey: string, baseURL: string | null) => GptImg {
+export function chatClients(caller: { name: string; version: string }): (apiKey: string, baseURL: string | null) => GptImg {
   let client: { key: string; baseURL: string | null; sdk: GptImg } | null = null;
   return (apiKey, baseURL) => {
     if (!client || client.key !== apiKey || client.baseURL !== baseURL) {
-      client = { key: apiKey, baseURL, sdk: new GptImg({ apiKey, ...(baseURL && { baseURL }), app }) };
+      client = { key: apiKey, baseURL, sdk: new GptImg({ apiKey, ...(baseURL && { baseURL }), caller }) };
     }
     return client.sdk;
   };

@@ -20,7 +20,7 @@ describe("a real chat", () => {
     const root = join(home, "chats");
     const records = openRecords(join(home, "records.sqlite3"), join(home, "logs"), "live", "live");
     const runner = new TurnRunner({
-      sdk: chatClients({ name: "GptImg", version: "live" }),
+      sdk: chatClients({ name: "gptimg", version: "live" }),
       records,
       settings: () => ({ ...builtInSettings(), chatsDir: root }),
       apiKey: async () => key,

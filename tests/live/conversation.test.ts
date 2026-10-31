@@ -27,7 +27,7 @@ function setup(drafts = 0) {
   let drawn!: () => void;
   const firstDraft = new Promise<void>((resolve) => (drawn = resolve));
   const runner = new TurnRunner({
-    sdk: chatClients({ name: "GptImg", version: "live" }),
+    sdk: chatClients({ name: "gptimg", version: "live" }),
     records,
     settings: () => ({ ...builtInSettings(), chatsDir: root, "openai.drafts": drafts }),
     apiKey: async () => key,

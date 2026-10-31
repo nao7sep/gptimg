@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig, saveConfig } from "../../src/main/config.ts";
+import { withHeader } from "../../src/main/file-header.ts";
 import { builtInSettings } from "../../src/shared/settings.ts";
 
 const fresh = () => join(mkdtempSync(join(tmpdir(), "gptimg-config-")), "config.json");
@@ -18,19 +19,23 @@ describe("config.json", () => {
 
   it("writes only differing sets, keeps unknown keys and keeps the file once every set is back", async () => {
     const path = fresh();
-    writeFileSync(path, JSON.stringify({ theme: "dark", future: 1 }));
+    writeFileSync(path, JSON.stringify(withHeader("config", { theme: "dark", future: 1 })));
     const loaded = await loadConfig(path);
     await saveConfig(path, { ...loaded.settings, language: "ja" }, loaded.unknown, true);
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ future: 1, theme: "dark", language: "ja" });
+    const saved = readFileSync(path, "utf8");
+    expect(JSON.parse(saved)).toEqual(withHeader("config", { future: 1, theme: "dark", language: "ja" }));
+    expect(Object.keys(JSON.parse(saved)).slice(0, 2)).toEqual(["format", "writer"]);
     await saveConfig(path, builtInSettings(), {}, true);
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({});
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(withHeader("config", {}));
   });
 
-  it("locks saving when the file cannot be understood", async () => {
-    const path = fresh();
-    writeFileSync(path, "[1,2");
-    const loaded = await loadConfig(path);
-    expect(loaded.locked).toBe(true);
-    expect(loaded.problem?.key).toBe("settings.problem.malformed");
+  it("locks saving when the file cannot be understood, has no config header or is of a newer format", async () => {
+    for (const text of ["[1,2", JSON.stringify({ theme: "dark" }), JSON.stringify({ format: { owner: "gptimg", kind: "state", version: 1 }, theme: "dark" }), JSON.stringify({ format: { owner: "gptimg", kind: "config", version: 2 }, theme: "dark" })]) {
+      const path = fresh();
+      writeFileSync(path, text);
+      const loaded = await loadConfig(path);
+      expect(loaded.locked).toBe(true);
+      expect(loaded.problem?.key).toBe("settings.problem.malformed");
+    }
   });
 });
