@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GptImg } from "../../src/index.ts";
 import { done } from "../helpers/results.ts";
 
-const WRITER = { name: "gptimgsdk", version: "0.1.0" };
+const WRITER = { name: "gptimgsdk", version: "1.0.0" };
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "green-disk.png");
 
 describe("verify", () => {

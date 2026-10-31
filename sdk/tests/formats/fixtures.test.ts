@@ -25,7 +25,7 @@ describe("sidecar fixtures", () => {
     expect(record).toMatchObject({
       formatVersion: 1,
       kind,
-      writer: { name: "gptimgsdk", version: "0.1.0", app: { name: "GptImg", version: "0.1.0" } },
+      writer: { name: "gptimgsdk", version: "1.0.0", app: { name: "GptImg", version: "1.0.0" } },
     });
     expect(serializeSidecar(record)).toBe(bytes);
   });

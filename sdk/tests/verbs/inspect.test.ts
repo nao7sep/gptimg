@@ -67,7 +67,7 @@ describe("inspect", () => {
     await writeFile(
       path.join(tmp, "star-original.json"),
       JSON.stringify({
-        formatVersion: 1, kind: "generate", writer: { name: "gptimgsdk", version: "0.1.0" },
+        formatVersion: 1, kind: "generate", writer: { name: "gptimgsdk", version: "1.0.0" },
         request: { prompt: "a star", n: 1, chroma: { color: "#00ff00" } }, response: {},
         files: [{ index: 1, name: "star-original.png", sha256: "0".repeat(64), format: "png" }],
       }),
@@ -77,7 +77,7 @@ describe("inspect", () => {
       status: "readable",
       kind: "generate",
       formatVersion: 1,
-      writer: { name: "gptimgsdk", version: "0.1.0" },
+      writer: { name: "gptimgsdk", version: "1.0.0" },
       chromaKey: "#00ff00",
     });
   });

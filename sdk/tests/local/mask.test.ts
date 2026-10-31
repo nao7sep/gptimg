@@ -35,7 +35,7 @@ async function writeSidecarFor(imagePath: string, color: string): Promise<void> 
     JSON.stringify({
       formatVersion: 1,
       kind: "generate",
-      writer: { name: "gptimgsdk", version: "0.1.0" },
+      writer: { name: "gptimgsdk", version: "1.0.0" },
       request: { prompt: "p", n: 1, chroma: { color } },
       response: {},
       files: [{ index: 1, name: path.basename(imagePath), sha256, format: "png" }],
@@ -132,7 +132,7 @@ describe("chromaMask: from-sidecar must describe the input image", () => {
       JSON.stringify({
         formatVersion: 1,
         kind: "generate",
-        writer: { name: "gptimgsdk", version: "0.1.0" },
+        writer: { name: "gptimgsdk", version: "1.0.0" },
         request: { prompt: "a request with no chroma key", n: 1 },
         response: {},
         files: [{ index: 1, name: "edited.png", sha256, format: "png" }],

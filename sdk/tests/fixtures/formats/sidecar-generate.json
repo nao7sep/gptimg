@@ -3,10 +3,10 @@
   "kind": "generate",
   "writer": {
     "name": "gptimgsdk",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "app": {
       "name": "GptImg",
-      "version": "0.1.0"
+      "version": "1.0.0"
     }
   },
   "request": {
