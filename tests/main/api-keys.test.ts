@@ -35,7 +35,7 @@ describe("key store", () => {
   it("writes the obf: form in a 0600 file and clears it", async () => {
     const { keys, file } = store();
     await keys.set("sk-test");
-    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(withHeader("apiKeys", { keys: { openai: encodeKey("sk-test") } }));
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(withHeader("api-keys", { keys: { openai: encodeKey("sk-test") } }));
     if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     await keys.clear();
     expect(await keys.resolve()).toBeNull();
@@ -43,7 +43,7 @@ describe("key store", () => {
 
   it("never replaces a file it cannot understand, without a header or of a newer format", async () => {
     const { keys, file } = store();
-    for (const text of ["{not json", JSON.stringify({ keys: { openai: "sk-old" } }), JSON.stringify({ format: { owner: "gptimg", kind: "apiKeys", version: 2 }, keys: {} })]) {
+    for (const text of ["{not json", JSON.stringify({ keys: { openai: "sk-old" } }), JSON.stringify({ format: { owner: "gptimg", kind: "api-keys", version: 2 }, keys: {} })]) {
       writeFileSync(file, text, { mode: 0o600 });
       expect(await keys.set("sk-new")).toEqual({ key: "key.problem.malformed" });
       expect(readFileSync(file, "utf8")).toBe(text);
@@ -62,7 +62,7 @@ describe("key store", () => {
 
   it("keeps other keys in the file", async () => {
     const { keys, file } = store();
-    writeFileSync(file, JSON.stringify(withHeader("apiKeys", { keys: { gemini: "obf:x" } })), { mode: 0o600 });
+    writeFileSync(file, JSON.stringify(withHeader("api-keys", { keys: { gemini: "obf:x" } })), { mode: 0o600 });
     await keys.set("sk-test");
     expect(Object.keys(JSON.parse(readFileSync(file, "utf8")).keys).sort()).toEqual(["gemini", "openai"]);
   });

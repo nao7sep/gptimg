@@ -6,7 +6,7 @@ import manifest from "../../package.json" with { type: "json" };
 export const OWNER = "gptimg";
 export const FORMAT_VERSION = 1;
 
-export type FileKind = "chat" | "config" | "state" | "apiKeys" | "records" | "backups";
+export type FileKind = "chat" | "config" | "state" | "api-keys" | "records" | "backups";
 
 /** This app as a writer of files, and as the caller the SDK records in its sidecars. */
 export const APP_WRITER = { name: manifest.name, version: manifest.version };

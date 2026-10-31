@@ -44,7 +44,7 @@ export class KeyStore {
     if (read.kind === "failed") return { kind: "failed", problem: message("key.problem.unreadable") };
     try {
       // A newer format is refused like a malformed one, so it is never written over.
-      const header = readHeader(JSON.parse(read.text), "apiKeys");
+      const header = readHeader(JSON.parse(read.text), "api-keys");
       if (header.kind !== "ok") throw new Error("header");
       const raw = header.body;
       const keys = raw.keys;
@@ -108,7 +108,7 @@ export class KeyStore {
     if (read.kind === "failed") return read.problem;
     const raw = read.kind === "ok" ? read.raw : {};
     const keys = read.kind === "ok" ? read.keys : {};
-    await writeTextAtomic(this.file, json(withHeader("apiKeys", { ...raw, keys: { ...keys, [KEY_ID]: encodeKey(trimmed) } })), 0o600);
+    await writeTextAtomic(this.file, json(withHeader("api-keys", { ...raw, keys: { ...keys, [KEY_ID]: encodeKey(trimmed) } })), 0o600);
     this.#tighten();
     return null;
   }
@@ -119,7 +119,7 @@ export class KeyStore {
     if (read.kind === "failed") return read.problem;
     if (!Object.hasOwn(read.keys, KEY_ID)) return null;
     const { [KEY_ID]: _removed, ...rest } = read.keys;
-    await writeTextAtomic(this.file, json(withHeader("apiKeys", { ...read.raw, keys: rest })), 0o600);
+    await writeTextAtomic(this.file, json(withHeader("api-keys", { ...read.raw, keys: rest })), 0o600);
     return null;
   }
 }

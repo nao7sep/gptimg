@@ -27,7 +27,7 @@ import type { SdkEvent, VerbCallOptions } from "../../src/index.ts";
 import { done } from "../helpers/results.ts";
 
 const PACKAGE = fileURLToPath(new URL("../../", import.meta.url));
-const CACHE = join(PACKAGE, "node_modules", ".cache", "gptimgsdk-live");
+const CACHE = join(PACKAGE, "node_modules", ".cache", "gptimgsdklive");
 const MODELS = join(CACHE, "models");
 // The shared corpus is the company repository's, checked out beside the repository
 // that holds this package: found by walking up, so the lane runs the same from the
@@ -67,7 +67,7 @@ async function freshSdk(label: string): Promise<{ img: GptImg; home: string }> {
   // Inside a test, a failure keeps this folder; the install step in beforeAll has no test.
   if (expect.getState().currentTestName !== undefined) onTestFailed(() => void keptHomes.add(home));
   const apiKey = process.env.OPENAI_API_KEY?.trim() || undefined;
-  const sdk = new GptImg({ apiKey, modelsDir: MODELS, debug: true, caller: { name: "gptimgsdk-live", version: "1" } });
+  const sdk = new GptImg({ apiKey, modelsDir: MODELS, debug: true, caller: { name: "gptimgsdklive", version: "1" } });
   const record = (event: SdkEvent): void => appendFileSync(join(home, "events.jsonl"), `${JSON.stringify(event)}\n`);
   const img = new Proxy(sdk, {
     get(target, prop, receiver) {
@@ -130,7 +130,7 @@ async function expectCompleteImageSidecar(
   const sidecar = JSON.parse(text) as ImageSidecar;
   expect(sidecar.format).toEqual({ owner: "gptimg", kind: "sidecar", version: 1 });
   expect(sidecar.operation).toBe(kind);
-  expect(sidecar.writer).toEqual({ name: "gptimgsdk", version: expect.stringMatching(/^\d+\.\d+\.\d+/), caller: { name: "gptimgsdk-live", version: "1" } });
+  expect(sidecar.writer).toEqual({ name: "gptimgsdk", version: expect.stringMatching(/^\d+\.\d+\.\d+/), caller: { name: "gptimgsdklive", version: "1" } });
   // The result carries the same record the sidecar holds, without its header.
   const { format: _format, writer: _writer, ...content } = sidecar;
   expect(file.record).toEqual(content);
