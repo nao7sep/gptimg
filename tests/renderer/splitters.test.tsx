@@ -27,7 +27,7 @@ describe("keyboard splitters", () => {
     function Owner() {
       const [width, setWidth] = useState(240);
       return (
-        <Rail chats={[]} currentId="" running={{}} unreadable={0} failure={null} chatsDir="/chats" timeZone="UTC" width={width}
+        <Rail chats={[]} currentId="" running={{}} refused={[]} failure={null} chatsDir="/chats" timeZone="UTC" width={width}
           onWidth={(next) => { onWidth(next); setWidth(next); }}
           onNew={() => {}} onOpen={() => {}} onRename={() => {}} onTrash={() => {}} mac onMenu={() => {}} />
       );

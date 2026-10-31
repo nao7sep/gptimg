@@ -2,7 +2,7 @@
 // api-keys.json's `openai` entry in the obf: form, the file kept at 0600.
 import { chmodSync, statSync } from "node:fs";
 import { message, type Message } from "../shared/i18n/translator.ts";
-import { readHeader, withHeader } from "./file-header.ts";
+import { readHeader, withHeader, type Refusal } from "./file-header.ts";
 import { json, readText, writeTextAtomic } from "./files.ts";
 
 export const KEY_ID = "openai";
@@ -23,7 +23,7 @@ export function decodeKey(stored: string): string | null {
 type StoreRead =
   | { kind: "ok"; keys: Record<string, unknown>; raw: Record<string, unknown> }
   | { kind: "absent" }
-  | { kind: "failed"; problem: Message };
+  | { kind: "failed"; problem: Message; reason: Refusal };
 
 export class KeyStore {
   #warnedMode = false;
@@ -37,22 +37,31 @@ export class KeyStore {
     this.#warn = warn;
   }
 
-  async #read(): Promise<StoreRead> {
-    this.#tighten();
+  /** Reads the file; its permissions are tightened only once its header has passed. */
+  async #read(tighten = true): Promise<StoreRead> {
     const read = await readText(this.file);
     if (read.kind === "absent") return { kind: "absent" };
-    if (read.kind === "failed") return { kind: "failed", problem: message("key.problem.unreadable") };
+    if (read.kind === "failed") return { kind: "failed", problem: message("key.problem.unreadable"), reason: "unreadable" };
+    let header: ReturnType<typeof readHeader>;
     try {
-      // A newer format is refused like a malformed one, so it is never written over.
-      const header = readHeader(JSON.parse(read.text), "api-keys");
-      if (header.kind !== "ok") throw new Error("header");
-      const raw = header.body;
-      const keys = raw.keys;
-      if (keys !== undefined && (!keys || typeof keys !== "object" || Array.isArray(keys))) throw new Error("shape");
-      return { kind: "ok", keys: (keys ?? {}) as Record<string, unknown>, raw };
+      header = readHeader(JSON.parse(read.text), "api-keys");
     } catch {
-      return { kind: "failed", problem: message("key.problem.malformed") };
+      header = { kind: "unreadable" };
     }
+    if (header.kind === "newer") return { kind: "failed", problem: message("key.problem.malformed"), reason: "newer" };
+    const keys = header.kind === "ok" ? header.body.keys : undefined;
+    if (header.kind !== "ok" || (keys !== undefined && (!keys || typeof keys !== "object" || Array.isArray(keys)))) {
+      return { kind: "failed", problem: message("key.problem.malformed"), reason: "unreadable" };
+    }
+    if (tighten) this.#tighten();
+    return { kind: "ok", keys: (keys ?? {}) as Record<string, unknown>, raw: header.body };
+  }
+
+  /** At launch: why the file is refused, or null when it is absent or readable. */
+  async refusal(): Promise<Refusal | null> {
+    // Only reads: the launch may yet stop, and it writes nothing before stopping.
+    const read = await this.#read(false);
+    return read.kind === "failed" ? read.reason : null;
   }
 
   /** Group- or world-readable: warn once and tighten to 0600. */

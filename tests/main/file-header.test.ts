@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { readChat, writeChat } from "../../src/main/chats.ts";
-import { APP_WRITER, claimDatabase, readHeader, withHeader } from "../../src/main/file-header.ts";
+import { admitDatabase, APP_WRITER, probeDatabase, readHeader, stampDatabase, StoreRefused, withHeader } from "../../src/main/file-header.ts";
+import { openBackups } from "../../src/main/backups.ts";
 import { openRecords } from "../../src/main/records.ts";
 import manifest from "../../package.json" with { type: "json" };
 
@@ -63,9 +64,9 @@ describe("chat.json", () => {
   it("is malformed without a chat header or with a newer version, and is left as it is", async () => {
     const root = mkdtempSync(join(tmpdir(), "gptimg-header-"));
     mkdirSync(join(root, "a"));
-    for (const text of [JSON.stringify({ format: 1, ...doc }), JSON.stringify({ format: format("config"), ...doc }), JSON.stringify({ format: format("chat", 2), ...doc })]) {
+    for (const [text, code] of [[JSON.stringify({ format: 1, ...doc }), "malformed"], [JSON.stringify({ format: format("config"), ...doc }), "malformed"], [JSON.stringify({ format: format("chat", 2), ...doc }), "newer"]] as const) {
       writeFileSync(join(root, "a", "chat.json"), text);
-      await expect(readChat(root, "a")).rejects.toMatchObject({ code: "malformed" });
+      await expect(readChat(root, "a")).rejects.toMatchObject({ code });
       expect(readFileSync(join(root, "a", "chat.json"), "utf8")).toBe(text);
     }
   });
@@ -74,15 +75,11 @@ describe("chat.json", () => {
 describe("the SQLite header", () => {
   const fresh = () => join(mkdtempSync(join(tmpdir(), "gptimg-header-")), "store.sqlite3");
   const claim = (file: string, kind: "records" | "backups") => {
+    const isNew = admitDatabase(file, kind);
     const db = new DatabaseSync(file);
-    try {
-      db.exec("BEGIN");
-      claimDatabase(db, kind);
-      db.exec("COMMIT");
-    } catch (error) {
-      db.close();
-      throw error;
-    }
+    db.exec("BEGIN");
+    stampDatabase(db, kind, isNew);
+    db.exec("COMMIT");
     db.close();
   };
   const rows = (file: string) => {
@@ -94,8 +91,10 @@ describe("the SQLite header", () => {
 
   it("gives a new empty database version 1 and its header rows", () => {
     const file = fresh();
+    expect(probeDatabase(file, "backups")).toBe("new");
     claim(file, "backups");
     expect(rows(file)).toEqual({ version: 1, header: { "format.kind": "backups", "format.owner": "gptimg", "writer.name": "gptimg", "writer.version": manifest.version } });
+    expect(probeDatabase(file, "backups")).toBe("ok");
   });
 
   it("rewrites the writer rows on open and accepts any writer", () => {
@@ -110,34 +109,51 @@ describe("the SQLite header", () => {
     expect(rows(file).header["writer.version"]).toBe(manifest.version);
   });
 
-  it("refuses another kind, a database without a header, and a newer version, changing nothing", () => {
+  it("refuses another kind, a database without a header, a non-database and a newer version, leaving each byte-identical", () => {
     const backups = fresh();
     claim(backups, "backups");
-    expect(() => claim(backups, "records")).toThrow("not a GptImg records database");
-
     const bare = fresh();
     const db = new DatabaseSync(bare);
     db.exec("CREATE TABLE t (x)");
     db.close();
-    expect(() => claim(bare, "records")).toThrow("not a GptImg records database");
-
+    const text = fresh();
+    writeFileSync(text, "not a database at all");
     const newer = fresh();
     claim(newer, "records");
     const raise = new DatabaseSync(newer);
     raise.exec("PRAGMA user_version = 2");
     raise.close();
-    expect(() => claim(newer, "records")).toThrow("newer than 1");
-    expect(rows(newer).version).toBe(2);
+    for (const [file, reason] of [[backups, "unreadable"], [bare, "unreadable"], [text, "unreadable"], [newer, "newer"]] as const) {
+      const before = readFileSync(file);
+      expect(probeDatabase(file, "records")).toBe(reason);
+      expect(() => admitDatabase(file, "records")).toThrow(StoreRefused);
+      expect(readFileSync(file).equals(before)).toBe(true);
+    }
   });
 
-  it("puts the records store in its fallback when the header names another kind", () => {
+  it("leaves a refused records store byte-identical, with no journal files, and uses the fallback", () => {
     const file = fresh();
     claim(file, "backups");
+    const before = readFileSync(file);
     vi.spyOn(console, "error").mockImplementation(() => {});
     const records = openRecords(file, join(file, "..", "logs"), "launch", "1");
+    records.log("info", "app.start");
     expect(records.query({})).toEqual({ rows: [], next: null, failed: true });
     records.close();
     vi.restoreAllMocks();
-    expect(rows(file).header["format.kind"]).toBe("backups");
+    expect(readFileSync(file).equals(before)).toBe(true);
+    expect(existsSync(`${file}-wal`)).toBe(false);
+  });
+
+  it("leaves a refused backups store byte-identical and keeps nothing in it", () => {
+    const file = fresh();
+    claim(file, "records");
+    const before = readFileSync(file);
+    const onError = vi.fn();
+    const backups = openBackups(file, "launch", onError);
+    backups.keep("/x/chat.json", "{}");
+    backups.close();
+    expect(onError).toHaveBeenCalledWith(expect.any(StoreRefused));
+    expect(readFileSync(file).equals(before)).toBe(true);
   });
 });

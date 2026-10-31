@@ -8,14 +8,15 @@ import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, na
 import type { AppFailure, BootInfo, GptImgApi, MenuCommand, Outcome, SendRequest } from "../shared/api.ts";
 import { DraftPreviews } from "./draft-previews.ts";
 import { extensionOf, type ExportRequest } from "../shared/export.ts";
-import { message } from "../shared/i18n/translator.ts";
+import { message, type Message } from "../shared/i18n/translator.ts";
 import { INITIAL_WINDOW, windowMinimum } from "../shared/layout.ts";
-import { SET_KEYS, validateSet, type Settings } from "../shared/settings.ts";
+import { SET_KEYS, validateSet, type SetKey, type Settings } from "../shared/settings.ts";
 import { parseUiState, type UiState } from "../shared/ui-state.ts";
 import { KeyStore } from "./api-keys.ts";
-import { loadConfig, saveConfig, type LoadedConfig } from "./config.ts";
-import { APP_WRITER, readHeader, withHeader } from "./file-header.ts";
-import { json, readText, writeTextAtomic } from "./files.ts";
+import { ConfigRefused, invalidProblem, saveConfig, stillKept, type LoadedConfig } from "./config.ts";
+import { APP_WRITER, withHeader, type RefusedFile } from "./file-header.ts";
+import { checkLaunchFiles } from "./launch-files.ts";
+import { json, writeTextAtomic } from "./files.ts";
 import { ExportRunner, folderOf } from "./export.ts";
 import { IMAGE_EXTENSIONS, ImageAccess, isImagePath, registerImageScheme } from "./images.ts";
 import { chromiumLang, clearAppleLanguages, earlyPreferences, LanguageOwner, writeAppleLanguages } from "./language.ts";
@@ -67,8 +68,8 @@ interface State {
   config: LoadedConfig;
   configExisted: boolean;
   ui: UiState;
-  /** False when state.json holds a newer format, which is left untouched. */
-  uiWritable: boolean;
+  /** Records or backups found unreadable at launch, left untouched and off for the session. */
+  storeNotices: Message[];
   keys: KeyStore;
   records: StoreRecords;
   backups: Stores["backups"];
@@ -92,6 +93,16 @@ async function start(paths: AppPaths): Promise<void> {
 
   await app.whenReady();
 
+  // Every file the launch reads is checked before anything is written; any
+  // refused one stops the launch with a window naming it.
+  const keys = new KeyStore(paths.apiKeys, process.env, (_event, fields) => state.records.log("warn", "apiKeys.modeTightened", fields));
+  const { config, ui, refused, storesOff } = await checkLaunchFiles(paths, keys, early.read);
+  if (refused.length > 0) {
+    await showStartupFailure(null, refused);
+    return;
+  }
+  const storeNotices = storesOff.map((kind) => message(kind === "records" ? "notice.recordsOff" : "notice.backupsOff", { path: paths[kind] }));
+
   const launchId = randomUUID();
   const stores = startStores({
     recordsPath: paths.records, logsDir: paths.logs, backupsPath: paths.backups, sessionId: launchId, version: __APP_VERSION__,
@@ -103,38 +114,20 @@ async function start(paths: AppPaths): Promise<void> {
   clearAppleLanguages((error) => records.log("warn", "language.appleLanguagesFailed", { error: String(error) }));
   language.readComputer();
 
-  const configRead = early.read;
-  const config = await loadConfig(paths.config, configRead);
   await language.use(config.settings.language);
   writeAppleLanguages(config.settings.language, (error) => records.log("warn", "language.appleLanguagesFailed", { error: String(error) }));
   nativeTheme.themeSource = config.settings.theme;
   if (config.problem) records.log("warn", "settings.loadProblem", { problem: config.problem });
 
-  const stateRead = await readText(paths.state);
-  let ui = parseUiState(null);
-  // A newer state.json is left untouched: this build keeps its state in memory only.
-  let stateWritable = true;
-  if (stateRead.kind === "ok") {
-    try {
-      const header = readHeader(JSON.parse(stateRead.text), "state");
-      if (header.kind === "ok") ui = parseUiState(header.body);
-      else if (header.kind === "newer") stateWritable = false;
-    } catch {
-      // Window and pane state is disposable: a bad copy is dropped.
-    }
-  }
-
   // Pasted images from an earlier launch that were never sent.
   await rm(paths.staging, { recursive: true, force: true }).catch(() => {});
-
-  const keys = new KeyStore(paths.apiKeys, process.env, (_event, fields) => records.log("warn", "apiKeys.modeTightened", fields));
 
   const state: State = {
     paths,
     config,
-    configExisted: configRead.kind !== "absent",
+    configExisted: early.read.kind !== "absent",
     ui,
-    uiWritable: stateWritable,
+    storeNotices,
     keys,
     records,
     backups,
@@ -267,23 +260,26 @@ async function start(paths: AppPaths): Promise<void> {
 
 /**
  * GptImg could not start: an app-drawn window in the computer's language says
- * why and closes the app. Nothing has been written. A window cannot be shown
- * at all only when even that fails; then the system's own error box speaks.
+ * why, naming every refused file, and closes the app. Nothing has been written.
+ * A window cannot be shown at all only when even that fails; then the system's
+ * own error box speaks.
  */
-async function showStartupFailure(error: unknown): Promise<void> {
+async function showStartupFailure(error: unknown, refused: RefusedFile[] = []): Promise<void> {
   await app.whenReady();
   const language = new LanguageOwner();
   language.readComputer();
   await language.use("system");
   const t = language.translator;
   const dir = error instanceof DataDirError ? error.dir : "";
-  const message = error instanceof DataDirError && error.fromEnv ? message_("startup.storageEnv", { path: dir }) : message_("startup.storage", { path: dir });
-  ipcMain.handle("startupFailure", () => ({ language: language.info(), message, detail: error instanceof Error ? String(error.cause ?? error.message) : String(error) }));
+  const message = refused.length > 0 ? message_("startup.refused")
+    : error instanceof DataDirError && error.fromEnv ? message_("startup.storageEnv", { path: dir }) : message_("startup.storage", { path: dir });
+  const detail = refused.length > 0 ? "" : error instanceof Error ? String(error.cause ?? error.message) : String(error);
+  ipcMain.handle("startupFailure", () => ({ language: language.info(), message, refused, detail }));
   ipcMain.handle("quitApp", () => app.exit(1));
   try {
     const win = new BrowserWindow({
-      width: 520,
-      height: 320,
+      width: 560,
+      height: refused.length > 0 ? 420 : 320,
       resizable: false,
       show: false,
       title: t.t("startup.title"),
@@ -296,7 +292,8 @@ async function showStartupFailure(error: unknown): Promise<void> {
     if (DEV_URL) await win.loadURL(`${DEV_URL}#startup`);
     else await win.loadFile(join(here, "../renderer/index.html"), { hash: "startup" });
   } catch {
-    dialog.showErrorBox(t.t("startup.title"), t.of(message));
+    const lines = refused.map((file) => t.t(file.reason === "newer" ? "startup.refusedNewer" : "startup.refusedUnreadable", { path: file.path }));
+    dialog.showErrorBox(t.t("startup.title"), [t.of(message), ...lines, ...(refused.length > 0 ? [t.t("startup.refusedAdvice")] : [])].join("\n\n"));
     app.exit(1);
   }
 }
@@ -400,10 +397,13 @@ function failure(key: Parameters<typeof message>[0], values?: Record<string, str
   return { ok: false, failure: { message: message(key, values), retryable } };
 }
 
+/** A chat that cannot be opened, refused alone and named by its file. */
 function chatFailure(error: unknown): { ok: false; failure: AppFailure } {
   if (error instanceof ChatError) {
     if (error.code === "notFound") return failure("failure.chatMissing");
-    if (error.code === "malformed") return failure("failure.chatMalformed");
+    if (error.code === "newer") return failure("failure.chatNewer", { path: error.path });
+    if (error.code === "malformed") return failure("failure.chatMalformed", { path: error.path });
+    if (error.code === "unreadable") return failure("failure.chatUnreadable", { path: error.path });
   }
   return failure("failure.chatRead");
 }
@@ -415,7 +415,6 @@ function installIpc(state: State): void {
   let savingUi = false;
   let pendingUi = false;
   const persistUi = async () => {
-    if (!state.uiWritable) return;
     pendingUi = true;
     if (savingUi) return;
     savingUi = true;
@@ -436,7 +435,7 @@ function installIpc(state: State): void {
         language: language.info(),
         settings: state.config.settings,
         settingsProblem: state.config.problem,
-        settingsLocked: state.config.locked,
+        storeNotices: state.storeNotices,
         key: await keys.status(),
         state: state.ui,
         suggestedChatsDir: suggestedChatsDir(app.getPath("documents")),
@@ -447,7 +446,6 @@ function installIpc(state: State): void {
     async saveSettings(next: Settings) {
       if (state.rootChanging) return failure("failure.taskRunning");
       if (next.chatsDir !== state.config.settings.chatsDir && state.turns.busy) return failure("failure.turnRunning");
-      if (state.config.locked) return failure("settings.problem.locked", { path: paths.config });
       for (const key of SET_KEYS) {
         const problem = validateSet(key, next[key]);
         if (problem) return failure("failure.settingsInvalid");
@@ -455,7 +453,7 @@ function installIpc(state: State): void {
       state.rootChanging = next.chatsDir !== state.config.settings.chatsDir;
       try {
       try {
-        const text = await saveConfig(paths.config, next, state.config.unknown, state.configExisted);
+        const text = await saveConfig(paths.config, next, state.config.unknown, state.configExisted, state.config.kept);
         if (text) {
           state.configExisted = true;
           state.backups.keep(paths.config, text);
@@ -463,10 +461,13 @@ function installIpc(state: State): void {
         records.log("info", "settings.saved", { wrote: text !== null });
       } catch (error) {
         records.log("error", "settings.saveFailed", { error: String(error) });
+        if (error instanceof ConfigRefused) return failure(error.reason === "newer" ? "settings.problem.newer" : "settings.problem.locked", { path: paths.config });
         return failure("failure.settingsWrite");
       }
       const previous = state.config.settings;
-      state.config = { ...state.config, settings: next, invalid: [], problem: null };
+      const kept = stillKept(next, state.config.kept);
+      const invalid = Object.keys(kept) as SetKey[];
+      state.config = { ...state.config, settings: next, invalid, kept, problem: invalidProblem(invalid.length) };
       if (previous.theme !== next.theme) nativeTheme.themeSource = next.theme;
       if (previous.language !== next.language) {
         await language.use(next.language);
@@ -526,7 +527,7 @@ function installIpc(state: State): void {
 
     async listChats() {
       const root = state.config.settings.chatsDir;
-      if (!root) return { ok: true, chats: [], unreadable: 0 };
+      if (!root) return { ok: true, chats: [], refused: [] };
       try {
         return { ok: true, ...(await state.catalog.list(root)) };
       } catch (error) {

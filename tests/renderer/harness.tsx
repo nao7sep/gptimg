@@ -75,7 +75,7 @@ export function bootInfo(): BootInfo {
     language,
     settings: { ...builtInSettings(), chatsDir: "/chats" },
     settingsProblem: null,
-    settingsLocked: false,
+    storeNotices: [],
     key: { source: "stored", problem: null },
     state: defaultUiState(),
     suggestedChatsDir: "/Users/x/Documents/GptImg",

@@ -18,7 +18,7 @@ describe("chat folders", () => {
     writeFileSync(join(dir, "broken", "chat.json"), "{");
     const listing = await listChats(dir);
     expect(listing.chats.map((s) => s.title)).toEqual(["Newer", "Older"]);
-    expect(listing.unreadable).toBe(1);
+    expect(listing.refused).toEqual([{ folder: "broken", reason: "unreadable" }]);
     expect(a.id).toBe("20261018-010000-utc-Older");
   });
 

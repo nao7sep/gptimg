@@ -2,7 +2,7 @@
 // a chat is found by its picture. One tab stop: a listbox whose active row
 // moves with the arrow keys (composite-control-conventions).
 import { useEffect, useRef, useState } from "react";
-import { imageUrl, type AppFailure, type MenuCommand } from "../../../shared/api.ts";
+import { imageUrl, type AppFailure, type MenuCommand, type RefusedChat } from "../../../shared/api.ts";
 import { PANES, railWidth } from "../../../shared/layout.ts";
 import type { ChatSummary } from "../../../shared/chat.ts";
 import { RAIL_WIDTH } from "../../../shared/ui-state.ts";
@@ -17,7 +17,8 @@ interface RailProps {
   chats: ChatSummary[];
   currentId: string;
   running: Record<string, Running>;
-  unreadable: number;
+  /** Chat folders whose chat.json is refused, each named. */
+  refused: RefusedChat[];
   failure: AppFailure | null;
   chatsDir: string;
   timeZone: string;
@@ -182,7 +183,9 @@ export function Rail(props: RailProps) {
           })}
           {chats.length === 0 && !props.failure && <p className="rail-empty">{t("rail.empty")}</p>}
           {props.failure && <p className="rail-problem" role="alert">{of(props.failure.message)}</p>}
-          {props.unreadable > 0 && <p className="rail-note">{t("rail.unreadable", { count: props.unreadable })}</p>}
+          {props.refused.map((chat) => (
+            <p key={chat.folder} className="rail-note">{t(chat.reason === "newer" ? "rail.refusedNewer" : "rail.refusedUnreadable", { name: chat.folder })}</p>
+          ))}
         </div>
       </nav>
       <div

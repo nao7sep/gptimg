@@ -40,7 +40,7 @@ describe("chat failure preservation", () => {
       return actualReadFile(path, options);
     });
     const listed = await listChats(dir);
-    expect(listed.unreadable).toBe(1);
+    expect(listed.refused).toEqual([{ folder: "inaccessible", reason: "unreadable" }]);
     expect(listed.chats.map((entry) => entry.title)).toEqual(["good"]);
   });
 });

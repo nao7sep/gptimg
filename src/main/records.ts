@@ -11,7 +11,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileStamp } from "../shared/chat.ts";
-import { claimDatabase } from "./file-header.ts";
+import { admitDatabase, stampDatabase } from "./file-header.ts";
 import { queryRecords, detailOf } from "./records-query.ts";
 import type { LaunchEntry, RecordDetail, RecordQuery, RecordRef, RecordsPage } from "../shared/records.ts";
 
@@ -162,12 +162,14 @@ export function openRecords(file: string, logsDir: string, sessionId: string, ve
   let eventStmt: ReturnType<DatabaseSync["prepare"]> | undefined;
   let turnStmt: ReturnType<DatabaseSync["prepare"]> | undefined;
   try {
+    // The header is checked before anything opens the file for writing.
+    const fresh = admitDatabase(file, "records");
     db = new DatabaseSync(file);
     db.exec("PRAGMA journal_mode = WAL");
     // Unsupported schemas are not migrated. Roll back initialization if any
     // required statement cannot be prepared, preserving their schema and rows.
     db.exec("BEGIN");
-    claimDatabase(db, "records");
+    stampDatabase(db, "records", fresh);
     db.exec(SCHEMA);
     logStmt = db.prepare("INSERT INTO log (session_id, at_utc, level, event, message, chat_id, fields) VALUES (?, ?, ?, ?, ?, ?, ?)");
     eventStmt = db.prepare(

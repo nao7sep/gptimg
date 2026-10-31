@@ -18,11 +18,12 @@ import {
   type ChatDoc,
   type ChatSummary,
 } from "../shared/chat.ts";
+import type { ChatsListing, RefusedChat } from "../shared/api.ts";
 import { readHeader, withHeader } from "./file-header.ts";
 import { copyFileAtomic, json, readText, writeTextAtomic } from "./files.ts";
 
 export class ChatError extends Error {
-  readonly code: "notFound" | "unreadable" | "malformed" | "badId" | "exists";
+  readonly code: "notFound" | "unreadable" | "malformed" | "newer" | "badId" | "exists";
   readonly path: string;
 
   constructor(code: ChatError["code"], path: string) {
@@ -48,38 +49,40 @@ export function isInside(dir: string, path: string): boolean {
   return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !rel.startsWith(sep) && !/^[a-zA-Z]:/.test(rel);
 }
 
-export async function listChats(root: string): Promise<{ chats: ChatSummary[]; unreadable: number }> {
+export async function listChats(root: string): Promise<ChatsListing> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await readdir(root, { withFileTypes: true });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { chats: [], unreadable: 0 };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { chats: [], refused: [] };
     throw error;
   }
   const chats: ChatSummary[] = [];
-  let unreadable = 0;
+  const refused: RefusedChat[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     try {
       chats.push(summarize(entry.name, await readChat(root, entry.name)));
     } catch (error) {
       if (error instanceof ChatError && error.code === "notFound") continue;
-      unreadable++;
+      refused.push({ folder: entry.name, reason: error instanceof ChatError && error.code === "newer" ? "newer" : "unreadable" });
     }
   }
   chats.sort(bySent);
-  return { chats, unreadable };
+  refused.sort((a, b) => (a.folder < b.folder ? -1 : 1));
+  return { chats, refused };
 }
 
-function parseJson(text: string): ChatDoc | null {
+/** The chat in `text`, or why it is refused; a refused chat is never written over. */
+function parseJson(text: string): ChatDoc | "newer" | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     return null;
   }
-  // A newer format is refused like a malformed one; neither is ever written over.
   const header = readHeader(parsed, "chat");
+  if (header.kind === "newer") return "newer";
   return header.kind === "ok" ? parseChat(header.body) : null;
 }
 
@@ -89,6 +92,7 @@ export async function readChat(root: string, id: string): Promise<ChatDoc> {
   if (read.kind === "absent") throw new ChatError("notFound", path);
   if (read.kind === "failed") throw new ChatError("unreadable", path);
   const doc = parseJson(read.text);
+  if (doc === "newer") throw new ChatError("newer", path);
   if (!doc) throw new ChatError("malformed", path);
   return doc;
 }

@@ -48,17 +48,15 @@ describe("backups", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it("closes an unsupported database after preparation fails without changing its contents", () => {
+  it("refuses an unsupported database before opening it for writing, without changing its contents", () => {
     const old = new DatabaseSync(file);
     old.exec("CREATE TABLE backups (path TEXT PRIMARY KEY, content TEXT)");
     old.prepare("INSERT INTO backups VALUES (?, ?)").run("keep", "original");
     old.close();
     const onError = vi.fn();
-    const closed = vi.spyOn(DatabaseSync.prototype, "close");
     const backups = openBackups(file, "launch", onError);
-    expect(closed).toHaveBeenCalledOnce();
     expect(onError).toHaveBeenCalledOnce();
-    expect(onError.mock.calls[0]![0]).toMatchObject({ message: expect.stringContaining("not a GptImg backups database") });
+    expect(onError.mock.calls[0]![0]).toMatchObject({ reason: "unreadable", message: expect.stringContaining("not a GptImg database") });
     expect(() => backups.keep(join(dir, "doc"), "new")).not.toThrow();
     backups.close();
     const check = new DatabaseSync(file);

@@ -20,7 +20,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 async function mount(over: Partial<GptImgApi> = {}, boot: BootInfo = bootInfo()) {
   let menu: (command: MenuCommand) => void = () => {};
   const api = fakeApi({
-    listChats: vi.fn<GptImgApi["listChats"]>(async () => ({ ok: true, chats: [summarize("A", chat("A").doc), summarize("B", chat("B").doc)], unreadable: 0 })),
+    listChats: vi.fn<GptImgApi["listChats"]>(async () => ({ ok: true, chats: [summarize("A", chat("A").doc), summarize("B", chat("B").doc)], refused: [] })),
     openChat: vi.fn<GptImgApi["openChat"]>(async (id: string) => ({ ok: true, chat: chat(id) })),
     onTurnDraft: () => () => {},
     onMenu: (handler) => { menu = handler; return () => {}; },
@@ -44,7 +44,7 @@ it("ignores an old open completion after another chat is chosen", async () => {
 
 it("ignores an old chat-list completion after the settings folder changes", async () => {
   const old = deferred<{ ok: true } & ChatsListing>();
-  const { api, menu } = await mount({ listChats: vi.fn<GptImgApi["listChats"]>().mockReturnValueOnce(old.promise).mockResolvedValue({ ok: true, chats: [summarize("Fresh", chat("Fresh").doc)], unreadable: 0 }), pickFolder: vi.fn(async () => "/new-chats") });
+  const { api, menu } = await mount({ listChats: vi.fn<GptImgApi["listChats"]>().mockReturnValueOnce(old.promise).mockResolvedValue({ ok: true, chats: [summarize("Fresh", chat("Fresh").doc)], refused: [] }), pickFolder: vi.fn(async () => "/new-chats") });
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Draft in the old folder" } });
   menu("settings");
   fireEvent.click(screen.getByRole("tab", { name: "Chats" }));
@@ -52,7 +52,7 @@ it("ignores an old chat-list completion after the settings folder changes", asyn
   await screen.findByText("/new-chats");
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByRole("button", { name: "Fresh" });
-  await act(async () => old.resolve({ ok: true, chats: [summarize("Old", chat("Old").doc)], unreadable: 0 }));
+  await act(async () => old.resolve({ ok: true, chats: [summarize("Old", chat("Old").doc)], refused: [] }));
   expect(screen.queryByRole("button", { name: "Old" })).toBeNull();
   expect(api.listChats).toHaveBeenCalledTimes(2);
   expect(api.setWindowDirty).toHaveBeenLastCalledWith(true);
@@ -114,7 +114,7 @@ it("does not restore the startup chat after New was chosen during slow discovery
   boot.state.lastChatId = "A";
   const { api } = await mount({ listChats: vi.fn(() => list.promise) }, boot);
   fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-  await act(async () => list.resolve({ ok: true, chats: [summarize("A", chat("A").doc)], unreadable: 0 }));
+  await act(async () => list.resolve({ ok: true, chats: [summarize("A", chat("A").doc)], refused: [] }));
   expect(api.openChat).not.toHaveBeenCalled();
   expect(screen.getByTestId("conversation").textContent).toBe("");
 });
@@ -134,7 +134,7 @@ it("keeps an accepted new chat open when startup discovery finishes later", asyn
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   const request = vi.mocked(api.send).mock.calls[0]![0];
   act(() => started({ requestId: request.requestId, chat: chat("Created") }));
-  await act(async () => list.resolve({ ok: true, chats: [summarize("A", chat("A").doc)], unreadable: 0 }));
+  await act(async () => list.resolve({ ok: true, chats: [summarize("A", chat("A").doc)], refused: [] }));
   expect(api.openChat).not.toHaveBeenCalled();
   expect(screen.getByTestId("conversation").textContent).toBe("Created");
   expect(screen.getByRole("button", { name: "A" })).toBeTruthy();

@@ -34,8 +34,8 @@ export interface BootInfo {
   settings: Settings;
   /** A settings problem found at load (invalid sets fell back, or the file is unreadable). */
   settingsProblem: Message | null;
-  /** True when config.json could not be read: Save is held so nothing overwrites it. */
-  settingsLocked: boolean;
+  /** Records or backups refused at launch: left untouched and off for this session. */
+  storeNotices: Message[];
   key: KeyStatus;
   state: UiState;
   /** The folder chats live in by default, offered at first run. */
@@ -56,10 +56,17 @@ export interface AppFailure {
 
 export type Outcome<T> = ({ ok: true } & T) | { ok: false; failure: AppFailure };
 
+/** A folder in the chats folder whose chat.json is refused, named for the rail. */
+export interface RefusedChat {
+  folder: string;
+  /** A newer version of GptImg wrote it, or it cannot be read as a chat. */
+  reason: "newer" | "unreadable";
+}
+
 export interface ChatsListing {
   chats: ChatSummary[];
-  /** Folders in the chats folder that hold no readable chat.json. */
-  unreadable: number;
+  /** Folders in the chats folder whose chat.json is refused, by name. */
+  refused: RefusedChat[];
 }
 
 export interface OpenedChat {
@@ -109,7 +116,9 @@ export type MenuCommand = "newChat" | "settings" | "shortcuts" | "about" | "reco
 export interface StartupFailure {
   language: LanguageInfo;
   message: Message;
-  /** The system's own words for the cause, shown under Details. */
+  /** Files the launch refused, each named with why; the launch stopped before writing anything. */
+  refused: { path: string; reason: "newer" | "unreadable" }[];
+  /** The system's own words for the cause, shown under Details when there are any. */
   detail: string;
 }
 

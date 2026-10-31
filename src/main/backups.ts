@@ -3,7 +3,7 @@
 // Best effort: a backup that fails never stops the write it protects.
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { claimDatabase } from "./file-header.ts";
+import { admitDatabase, stampDatabase } from "./file-header.ts";
 
 export interface Backups {
   keep(path: string, content: string): void;
@@ -17,10 +17,12 @@ export function openBackups(file: string, sessionId: string, onError: (error: un
   let db: DatabaseSync | null = null;
   let upsert: ReturnType<DatabaseSync["prepare"]> | undefined;
   try {
+    // The header is checked before anything opens the file for writing.
+    const fresh = admitDatabase(file, "backups");
     db = new DatabaseSync(file);
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("BEGIN");
-    claimDatabase(db, "backups");
+    stampDatabase(db, "backups", fresh);
     db.exec(`CREATE TABLE IF NOT EXISTS backups (
       session_id TEXT NOT NULL,
       path TEXT NOT NULL,

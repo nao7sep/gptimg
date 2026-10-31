@@ -1,6 +1,8 @@
 // The identity header every file GptImg writes in its own format carries
 // (file-identity-conventions): `format` says what the file is, `writer` which
 // build saved it. Readers check `format` alone and never read `writer`.
+import { existsSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import manifest from "../../package.json" with { type: "json" };
 
 export const OWNER = "gptimg";
@@ -44,33 +46,73 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-interface HeaderDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): { get(...params: string[]): unknown; all(...params: string[]): unknown[]; run(...params: string[]): unknown };
+/** Why a file was refused: a later version wrote it, or it cannot be read as this kind. */
+export type Refusal = "newer" | "unreadable";
+
+/** A refused file, named for the message that reports it. */
+export interface RefusedFile {
+  path: string;
+  reason: Refusal;
+}
+
+/** A store refused before anything touched it. */
+export class StoreRefused extends Error {
+  readonly path: string;
+  readonly reason: Refusal;
+
+  constructor(path: string, reason: Refusal) {
+    super(reason === "newer" ? `${path} was written by a newer version of GptImg; it was left unchanged` : `${path} is not a GptImg database this version reads; it was left unchanged`);
+    this.path = path;
+    this.reason = reason;
+  }
 }
 
 /**
- * Checks a SQLite store's header inside the caller's open transaction and
- * rewrites its writer rows; a new empty database gets the header. Throws for
- * a newer or unreadable store, so the caller rolls back and leaves it as it is.
+ * Checks a SQLite store's header from a read-only connection, before anything
+ * opens it for writing (no journal-mode change, schema step or writer row
+ * reaches a refused file). "new" for a missing or empty file.
  */
-export function claimDatabase(db: HeaderDatabase, kind: FileKind): void {
-  const version = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-  const tables = (db.prepare("SELECT count(*) AS n FROM sqlite_master").get() as { n: number }).n;
-  if (version === 0 && tables === 0) {
-    db.exec("CREATE TABLE file_header (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-    db.exec(`PRAGMA user_version = ${FORMAT_VERSION}`);
-    const insert = db.prepare("INSERT INTO file_header (key, value) VALUES (?, ?)");
-    insert.run("format.owner", OWNER);
-    insert.run("format.kind", kind);
-  } else {
-    if (version > FORMAT_VERSION) throw new Error(`${kind} store has format version ${version}, newer than ${FORMAT_VERSION}; it was left unchanged`);
+export function probeDatabase(file: string, kind: FileKind): "new" | "ok" | Refusal {
+  if (!existsSync(file)) return "new";
+  let db: DatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(file, { readOnly: true });
+    const version = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+    const tables = (db.prepare("SELECT count(*) AS n FROM sqlite_master").get() as { n: number }).n;
+    if (version === 0 && tables === 0) return "new";
+    if (version > FORMAT_VERSION) return "newer";
     const hasHeader = (db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'file_header'").get() as { n: number }).n === 1;
-    const rows = hasHeader ? new Map((db.prepare("SELECT key, value FROM file_header").all() as { key: string; value: string }[]).map((r) => [r.key, r.value])) : new Map<string, string>();
-    const format = { owner: rows.get("format.owner"), kind: rows.get("format.kind"), version };
-    if (checkFormat(format, kind) !== "ok") throw new Error(`${kind} store is not a GptImg ${kind} database of format ${FORMAT_VERSION}; it was left unchanged`);
+    if (!hasHeader) return "unreadable";
+    const rows = new Map((db.prepare("SELECT key, value FROM file_header").all() as { key: string; value: string }[]).map((r) => [r.key, r.value]));
+    return checkFormat({ owner: rows.get("format.owner"), kind: rows.get("format.kind"), version }, kind) === "ok" ? "ok" : "unreadable";
+  } catch {
+    return "unreadable";
+  } finally {
+    try { db?.close(); } catch { /* the probe's answer stands */ }
+  }
+}
+
+/** Throws StoreRefused unless the store at `file` may be opened for writing; true when it is new. */
+export function admitDatabase(file: string, kind: FileKind): boolean {
+  const probe = probeDatabase(file, kind);
+  if (probe === "newer" || probe === "unreadable") throw new StoreRefused(file, probe);
+  return probe === "new";
+}
+
+/**
+ * Inside the caller's open transaction on an admitted store: a new one gets
+ * its version and header rows, and every open rewrites the writer rows.
+ */
+export function stampDatabase(db: DatabaseSync, kind: FileKind, fresh: boolean): void {
+  if (fresh) {
+    db.exec("CREATE TABLE IF NOT EXISTS file_header (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    db.exec(`PRAGMA user_version = ${FORMAT_VERSION}`);
   }
   const upsert = db.prepare("INSERT INTO file_header (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+  if (fresh) {
+    upsert.run("format.owner", OWNER);
+    upsert.run("format.kind", kind);
+  }
   upsert.run("writer.name", APP_WRITER.name);
   upsert.run("writer.version", APP_WRITER.version);
 }

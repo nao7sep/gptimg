@@ -158,7 +158,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <button type="button" className="button" disabled={saving} onClick={requestClose}>
               {t("common.cancel")}
             </button>
-            <button type="button" className="button primary" disabled={!dirty || invalid.length > 0 || saving || props.boot.settingsLocked} onClick={() => void save()}>
+            <button type="button" className="button primary" disabled={!dirty || invalid.length > 0 || saving} onClick={() => void save()}>
               {t("common.save")}
             </button>
           </>

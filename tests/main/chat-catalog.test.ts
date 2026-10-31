@@ -88,7 +88,7 @@ describe("chat catalog", () => {
     expect(order).toEqual(["listed", "entry"]);
   });
 
-  it("retries a failed read on the next listing, and counts unreadable folders", async () => {
+  it("retries a failed read on the next listing, and names refused folders", async () => {
     const t = setup(() => ({ kind: "error", code: "cancelled" }));
     const file = join(t.root, "not-a-folder");
     writeFileSync(file, "");
@@ -96,6 +96,8 @@ describe("chat catalog", () => {
     await expect(catalog.list(file)).rejects.toThrow();
     mkdirSync(join(t.root, "broken"));
     writeFileSync(join(t.root, "broken", CHAT_FILE), "{");
-    expect(await catalog.list(t.root)).toEqual({ chats: [], unreadable: 1 });
+    mkdirSync(join(t.root, "later"));
+    writeFileSync(join(t.root, "later", CHAT_FILE), JSON.stringify({ format: { owner: "gptimg", kind: "chat", version: 2 } }));
+    expect(await catalog.list(t.root)).toEqual({ chats: [], refused: [{ folder: "broken", reason: "unreadable" }, { folder: "later", reason: "newer" }] });
   });
 });

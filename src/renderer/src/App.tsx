@@ -3,7 +3,7 @@
 // panes receive what they show and report what the user did.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PANES } from "../../shared/layout.ts";
-import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedChat, TurnOutcome } from "../../shared/api.ts";
+import type { AppFailure, BootInfo, KeyStatus, MenuCommand, OpenedChat, RefusedChat, TurnOutcome } from "../../shared/api.ts";
 import { applyChatChange, type ChatSummary, type TurnOptions } from "../../shared/chat.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { commandFor } from "../../shared/shortcuts.ts";
@@ -59,7 +59,7 @@ function editableTarget(target: EventTarget | null): boolean {
 }
 
 export function App({ boot }: { boot: BootInfo }) {
-  const { t } = useI18n();
+  const { t, of } = useI18n();
   const mac = boot.platform === "darwin";
   const [settings, setSettings] = useState<Settings>(boot.settings);
   const [settingsProblem, setSettingsProblem] = useState(boot.settingsProblem);
@@ -69,7 +69,7 @@ export function App({ boot }: { boot: BootInfo }) {
   const uiRef = useRef(ui);
   uiRef.current = ui;
   const [chats, setChats] = useState<ChatSummary[]>([]);
-  const [unreadable, setUnreadable] = useState(0);
+  const [refusedChats, setRefusedChats] = useState<RefusedChat[]>([]);
   const [listFailure, setListFailure] = useState<AppFailure | null>(null);
   const [currentId, setCurrentId] = useState<string>(NEW);
   const [opened, setOpened] = useState<OpenedChat | null>(null);
@@ -124,7 +124,7 @@ export function App({ boot }: { boot: BootInfo }) {
     }
     setListFailure(null);
     setChats(outcome.chats);
-    setUnreadable(outcome.unreadable);
+    setRefusedChats(outcome.refused);
   }, []);
 
   const openChat = useCallback(
@@ -383,7 +383,7 @@ export function App({ boot }: { boot: BootInfo }) {
         imagesPane={paneShown}
         currentId={currentId}
         running={running}
-        unreadable={unreadable}
+        refused={refusedChats}
         failure={listFailure}
         chatsDir={settings.chatsDir}
         timeZone={settings.timeZone}
@@ -397,6 +397,11 @@ export function App({ boot }: { boot: BootInfo }) {
         onMenu={(command) => (command === "chatsFolder" ? api.showChatsFolder() : runCommand(command))}
       />
       <main className="stage">
+        {boot.storeNotices.length > 0 && (
+          <div className="store-notices" role="status">
+            {boot.storeNotices.map((notice, index) => <p key={index} className="notice notice-warn">{of(notice)}</p>)}
+          </div>
+        )}
         <Conversation
           chat={currentId === NEW ? null : opened}
           openFailure={openFailure}

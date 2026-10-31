@@ -4,13 +4,13 @@
 // its one entry, and every window is told that one change. A chat folder
 // added or edited outside GptImg shows once the folder is listed anew.
 import { applyChatChange, summarize, type ChatChange, type ChatSummary } from "../shared/chat.ts";
-import type { ChatsListing } from "../shared/api.ts";
+import type { ChatsListing, RefusedChat } from "../shared/api.ts";
 import { listChats, readChat, ChatError } from "./chats.ts";
 
 export class ChatCatalog {
   #root = "";
   #chats: ChatSummary[] | null = null;
-  #unreadable = 0;
+  #refused: RefusedChat[] = [];
   // Listing and changes take turns, so a change sent to the windows is always
   // in the listing any later reply carries, and never in an earlier one.
   #tail: Promise<unknown> = Promise.resolve();
@@ -28,9 +28,9 @@ export class ChatCatalog {
         this.#chats = null;
         const listing = await listChats(root);
         this.#chats = listing.chats;
-        this.#unreadable = listing.unreadable;
+        this.#refused = listing.refused;
       }
-      return { chats: this.#chats, unreadable: this.#unreadable };
+      return { chats: this.#chats, refused: this.#refused };
     });
     this.#tail = run.catch(() => undefined);
     return run;
