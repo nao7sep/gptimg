@@ -45,18 +45,16 @@ describe("sidecar read/write", () => {
     await expect(readSidecar(sidecarPath)).resolves.toEqual(record);
   });
 
-  it("reads an unmarked v0.1.0 sidecar as format 1, telling its kind apart by shape, with no writer", async () => {
-    const generate = { request: { prompt: "old", n: 1 }, response: {}, files: [{ index: 1, name: "a.png", sha256: "ab", format: "png" }] };
-    await writeFile(sidecarPath, JSON.stringify(generate));
-    await expect(readSidecar(sidecarPath)).resolves.toEqual({ formatVersion: 1, kind: "generate", writer: null, ...generate });
-
-    const edit = { formatVersion: 1, request: { prompt: "e", n: 1, input: "a.png", mask: null }, response: {}, files: [] };
-    await writeFile(sidecarPath, JSON.stringify(edit));
-    await expect(readSidecar(sidecarPath)).resolves.toMatchObject({ formatVersion: 1, kind: "edit" });
-
-    const vision = { formatVersion: 1, request: { check: "c", inputs: [] }, response: { verdict: { ok: true, score: 1, reasons: [] }, raw: {} }, files: [] };
-    await writeFile(sidecarPath, JSON.stringify(vision));
-    await expect(readSidecar(sidecarPath)).resolves.toMatchObject({ formatVersion: 1, kind: "vision" });
+  it("refuses an unmarked or older-format sidecar as malformed and leaves it unchanged", async () => {
+    for (const old of [
+      { request: { prompt: "old", n: 1 }, response: {}, files: [{ index: 1, name: "a.png", sha256: "ab", format: "png" }] },
+      { formatVersion: 1, request: { prompt: "e", n: 1, input: "a.png", mask: null }, response: {}, files: [] },
+    ]) {
+      const text = JSON.stringify(old);
+      await writeFile(sidecarPath, text);
+      await expect(readSidecar(sidecarPath)).rejects.toMatchObject({ code: "sidecar.malformed", subject: sidecarPath });
+      expect(await readFile(sidecarPath, "utf-8")).toBe(text);
+    }
   });
 
   it("treats a formatVersion that is not a positive integer as malformed", async () => {

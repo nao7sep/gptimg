@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GptImg } from "../../src/index.ts";
 import { done } from "../helpers/results.ts";
 
+const WRITER = { name: "gptimgsdk", version: "0.1.0" };
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "green-disk.png");
 
 describe("verify", () => {
@@ -29,8 +30,8 @@ describe("verify", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  async function sidecar(name: string, entry: Record<string, unknown>, formatVersion = 1): Promise<void> {
-    await writeFile(path.join(tmp, "raw.json"), JSON.stringify({ formatVersion, request: { prompt: "p", n: 1 }, response: {}, files: [{ index: 1, name, sha256, format: "png", ...entry }] }));
+  async function sidecar(name: string, entry: Record<string, unknown>): Promise<void> {
+    await writeFile(path.join(tmp, "raw.json"), JSON.stringify({ formatVersion: 2, kind: "generate", writer: WRITER, request: { prompt: "p", n: 1 }, response: {}, files: [{ index: 1, name, sha256, format: "png", ...entry }] }));
   }
 
   it("passes an image whose sidecar names it, carries its digest and records its format", async () => {
@@ -39,10 +40,9 @@ describe("verify", () => {
     expect(result).toMatchObject({ ok: true, findings: [], sidecarPath: path.join(tmp, "raw.json"), record: { kind: "generate" } });
   });
 
-  it.each([1, 2])("chooses a later matching name and digest in format %s", async (formatVersion) => {
+  it("chooses a later matching name and digest", async () => {
     const record = {
-      formatVersion,
-      ...(formatVersion === 2 && { kind: "generate", writer: { name: "gptimgsdk", version: "0.1.0" } }),
+      formatVersion: 2, kind: "generate", writer: WRITER,
       request: { prompt: "p", n: 2 }, response: {},
       files: [
         { index: 1, name: "other.png", sha256, format: "webp" },

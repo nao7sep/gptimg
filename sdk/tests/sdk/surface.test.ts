@@ -130,7 +130,11 @@ describe("GptImg SDK surface", () => {
     await sharp(Buffer.from(rgba), { raw: { width: W, height: H, channels: 4 } }).png().toFile(imgPath);
     await writeFile(
       path.join(tmp, "cutout.json"),
-      JSON.stringify({ formatVersion: 1, request: { chroma: { color: "#00ff00" } }, response: {}, files: [] }),
+      JSON.stringify({
+        formatVersion: 2, kind: "generate", writer: { name: "gptimgsdk", version: "0.1.0" },
+        request: { prompt: "p", n: 1, chroma: { color: "#00ff00" } }, response: {},
+        files: [{ index: 1, name: "cutout.png", sha256: "0".repeat(64), format: "png" }],
+      }),
     );
 
     const res = done(await sdk.keycheck({ in: imgPath, key: "from-sidecar" }));

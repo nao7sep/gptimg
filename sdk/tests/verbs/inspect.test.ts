@@ -66,14 +66,18 @@ describe("inspect", () => {
     await solid(3).png().toFile(file);
     await writeFile(
       path.join(tmp, "star-original.json"),
-      JSON.stringify({ request: { prompt: "a star", n: 1, chroma: { color: "#00ff00" } }, response: {}, files: [] }),
+      JSON.stringify({
+        formatVersion: 2, kind: "generate", writer: { name: "gptimgsdk", version: "0.1.0" },
+        request: { prompt: "a star", n: 1, chroma: { color: "#00ff00" } }, response: {},
+        files: [{ index: 1, name: "star-original.png", sha256: "0".repeat(64), format: "png" }],
+      }),
     );
     expect(done(await sdk.inspect({ in: file })).record).toEqual({
       path: path.join(tmp, "star-original.json"),
       status: "readable",
       kind: "generate",
-      formatVersion: 1,
-      writer: null,
+      formatVersion: 2,
+      writer: { name: "gptimgsdk", version: "0.1.0" },
       chromaKey: "#00ff00",
     });
   });

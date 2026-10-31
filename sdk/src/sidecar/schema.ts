@@ -1,9 +1,8 @@
 import { z } from "zod";
 
 /**
- * Sidecar shapes, checked on read and on write (store-recovery-conventions).
- * Format 1 (and unmarked v0.1.0 files) is one loose shape for every record;
- * its kind is told apart by shape. Format 2 names its `kind` and its `writer`.
+ * The sidecar's shape, checked on read and on write (store-recovery-conventions).
+ * It names its `kind` and its `writer`.
  * The provider's response stays opaque but must be present; unrecognized keys
  * are kept as they are.
  */
@@ -14,19 +13,13 @@ const FileEntrySchema = z.looseObject({
   format: z.string(),
 });
 
-export const SidecarV1Schema = z.looseObject({
-  request: z.record(z.string(), z.unknown()),
-  response: z.custom<unknown>((value) => value !== undefined, { message: "Required" }),
-  files: z.array(FileEntrySchema),
-});
-
 const WriterSchema = z.looseObject({
   name: z.literal("gptimgsdk"),
   version: z.string().min(1),
   app: z.looseObject({ name: z.string().min(1), version: z.string().min(1) }).optional(),
 });
 
-export const SidecarV2Schema = z.discriminatedUnion("kind", [
+export const SidecarSchema = z.discriminatedUnion("kind", [
   z.looseObject({
     kind: z.literal("generate"),
     writer: WriterSchema,

@@ -5,8 +5,8 @@ import { SIDECAR_FORMAT_VERSION } from "../format-versions.ts";
 import { assertAbsolutePath } from "../internal/absolute-path.ts";
 import { takeFormatVersion } from "../internal/format-version.ts";
 import { formatZodError } from "../internal/zodError.ts";
-import type { Sidecar, SidecarKind } from "../types.ts";
-import { SidecarV1Schema, SidecarV2Schema } from "./schema.ts";
+import type { Sidecar } from "../types.ts";
+import { SidecarSchema } from "./schema.ts";
 
 /** The sidecar beside an image: `<stem>.json` in the same folder. */
 export function sidecarPathBeside(imagePath: string): string {
@@ -16,11 +16,9 @@ export function sidecarPathBeside(imagePath: string): string {
 }
 
 /**
- * Read the sidecar at the absolute `sidecarPath` (`<image stem>.json`), any
- * supported format, as its typed record. Format 1 files carry no kind or
- * writer: the kind is told apart by shape (vision: `response.verdict`; edit:
- * `request.input`; otherwise generate) and `writer` is null. A newer format is
- * refused and the file left unchanged.
+ * Read the sidecar at the absolute `sidecarPath` (`<image stem>.json`), in the
+ * current format, as its typed record. An older format is malformed; a newer
+ * one is refused. Either way the file is left unchanged.
  */
 export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
   assertAbsolutePath(sidecarPath, "sidecar path");
@@ -42,26 +40,14 @@ export async function readSidecar(sidecarPath: string): Promise<Sidecar> {
   return parseSidecar(parsed, sidecarPath);
 }
 
-/** A parsed sidecar body of any supported format as its typed record, or `sidecar.malformed`/`sidecar.newerFormat`. */
+/** A parsed sidecar body of the current format as its typed record, or `sidecar.malformed`/`sidecar.newerFormat`. */
 function parseSidecar(parsed: unknown, subject: string): Sidecar {
-  const { version, body } = takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, subject);
-  // The schemas validate; the record returned is the file's own body, so its
+  const body = takeFormatVersion(parsed, SIDECAR_FORMAT_VERSION, subject);
+  // The schema validates; the record returned is the file's own body, so its
   // key order and any unknown keys survive a read-then-write unchanged.
-  if (version === 1) {
-    const r = SidecarV1Schema.safeParse(body);
-    if (!r.success) throw malformed(subject, formatZodError(r.error));
-    return { formatVersion: 1, kind: kindOfV1(r.data), writer: null, ...body } as Sidecar;
-  }
-  const r = SidecarV2Schema.safeParse(body);
+  const r = SidecarSchema.safeParse(body);
   if (!r.success) throw malformed(subject, formatZodError(r.error));
-  return { formatVersion: 2, ...body } as Sidecar;
-}
-
-function kindOfV1(body: { request: Record<string, unknown>; response: unknown }): SidecarKind {
-  const response = body.response as { verdict?: unknown } | null;
-  if (response && typeof response === "object" && "verdict" in response) return "vision";
-  if ("input" in body.request) return "edit";
-  return "generate";
+  return { formatVersion: SIDECAR_FORMAT_VERSION, ...body } as Sidecar;
 }
 
 function malformed(subject: string, detail: string): GptImgError {

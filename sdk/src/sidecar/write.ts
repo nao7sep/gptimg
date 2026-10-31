@@ -6,7 +6,7 @@ import { writeProviderOutput } from "../internal/output-files.ts";
 import { formatZodError } from "../internal/zodError.ts";
 import type { Sidecar } from "../types.ts";
 import { refuseNewerSidecar } from "./read.ts";
-import { SidecarV2Schema } from "./schema.ts";
+import { SidecarSchema } from "./schema.ts";
 
 /** The bytes of a current-format sidecar: fixed key order, two-space indent, trailing newline. */
 export function serializeSidecar(sidecar: Sidecar): string {
@@ -26,7 +26,7 @@ export async function writeSidecar(
   opts: { overwrite: boolean },
 ): Promise<void> {
   const text = serializeSidecar(sidecar);
-  const check = SidecarV2Schema.safeParse(JSON.parse(text));
+  const check = SidecarSchema.safeParse(JSON.parse(text));
   if (!check.success) {
     throw new GptImgError("internal.invariant", `Sidecar for ${sidecarPath} would be invalid: ${formatZodError(check.error)}`, {
       subject: sidecarPath,

@@ -178,10 +178,9 @@ export type SidecarKind = "generate" | "edit" | "vision" | "chat";
 
 /** The common shape of every sidecar as `readSidecar` returns it. */
 interface SidecarBase {
-  /** The file's format: 1 (and unmarked v0.1.0 files) or 2. */
-  formatVersion: 1 | 2;
-  /** Null for format 1, which did not record its writer. */
-  writer: SidecarWriter | null;
+  /** The file's format: always the current one, 2. */
+  formatVersion: 2;
+  writer: SidecarWriter;
 }
 
 /**
@@ -1539,8 +1538,8 @@ export type InspectRecord =
       status: "readable";
       kind: SidecarKind;
       formatVersion: number;
-      /** Who wrote it; null for format 1 and unmarked v0.1.0 sidecars. */
-      writer: SidecarWriter | null;
+      /** Who wrote it. */
+      writer: SidecarWriter;
       /** The chroma key the paid request recorded, which `mask` and `keycheck` read with `key: "from-sidecar"`. */
       chromaKey: string | null;
     }
